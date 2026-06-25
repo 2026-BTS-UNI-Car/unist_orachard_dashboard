@@ -1,0 +1,53 @@
+{
+  "system": {
+    "power_mode": "15W",
+    "throttle_state": "normal"
+  },
+  "rover": {
+    "mode": "FIELD_TEST_READY",
+    "state": "STANDBY",
+    "battery_percent": 84.2,
+    "motor_state": "armed_waiting",
+    "estop": false
+  },
+  "sensors": {
+    "lidar": {
+      "ok": true,
+      "topic": "/scan",
+      "rate_hz": 10.0,
+      "model": "RPLIDAR S2"
+    },
+    "camera": {
+      "ok": true,
+      "topic": "/camera/color/image_raw",
+      "rate_hz": 15.0,
+      "mode": "segmentation_ready"
+    },
+    "imu": {
+      "ok": true,
+      "topic": "/imu/data",
+      "rate_hz": 50.0
+    },
+    "encoder": {
+      "ok": false,
+      "topic": "/wheel/encoder",
+      "rate_hz": 0.0,
+      "mode": "planned"
+    },
+    "mavlink": {
+      "ok": false,
+      "mode": "planned"
+    }
+  },
+  "experiment": {
+    "session_id": "prototype-fixture",
+    "weather_tag": "indoor_mock",
+    "gps_dependency": "none"
+  },
+  "alerts": [
+    {
+      "level": "info",
+      "message": "현재 데이터는 프로토타입 fixture와 mock generator 기반입니다."
+    }
+  ]
+}

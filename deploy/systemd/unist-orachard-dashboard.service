@@ -1,0 +1,23 @@
+[Unit]
+Description=UNIST Orchard Rover Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=uni
+Group=uni
+WorkingDirectory=/home/uni/unist_orachard_dashboard
+Environment=DASHBOARD_HOST=127.0.0.1
+Environment=DASHBOARD_PORT=8080
+Environment=TELEMETRY_FILE=/home/uni/unist_orachard_dashboard/runtime/telemetry_snapshot.json
+ExecStart=/home/uni/unist_orachard_dashboard/scripts/run_dashboard.sh
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/uni/unist_orachard_dashboard/runtime
+
+[Install]
+WantedBy=multi-user.target

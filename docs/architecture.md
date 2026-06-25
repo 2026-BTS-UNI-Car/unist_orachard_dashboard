@@ -1,0 +1,42 @@
+# 아키텍처
+
+이 레포는 Jetson Orin Nano Super 위에서 동작할 연구용 대시보드의 초기 프로토타입입니다. 실험 현장에서는 cloudflared가 외부 HTTPS 접속을 받아 Jetson 내부의 Python HTTP 서버로 전달합니다.
+
+## 구성
+
+```text
+Browser
+  -> Cloudflare Tunnel
+  -> cloudflared on Jetson
+  -> dashboard_server, localhost:8080
+  -> TELEMETRY_FILE JSON
+  -> ROS2 telemetry writer, future
+```
+
+현재 구현은 외부 패키지 없이 Python 표준 라이브러리만 사용합니다. Jetson에 Python만 있으면 바로 실행할 수 있고, 나중에 ROS2 bridge를 붙일 때도 서버 코드와 시각화 코드를 크게 바꾸지 않는 구조입니다.
+
+## 데이터 흐름
+
+1. `dashboard_server.telemetry.TelemetryProvider`가 mock 데이터를 생성합니다.
+2. `TELEMETRY_FILE`이 있으면 해당 JSON을 읽어 mock 데이터 위에 덮어씁니다.
+3. `/api/telemetry`가 최신 상태를 JSON으로 제공합니다.
+4. `static/app.js`가 2초마다 API를 조회하고 화면과 canvas 지도를 갱신합니다.
+
+이 방식은 ROS2와 웹 서버를 느슨하게 분리합니다. ROS2 bridge가 죽어도 웹 서버는 살아 있고, 웹 서버가 재시작되어도 bridge는 파일만 계속 쓰면 됩니다.
+
+## API
+
+- `GET /`: 대시보드 화면
+- `GET /api/health`: 서버 상태
+- `GET /api/plan`: 수행계획 기반 연구 정보
+- `GET /api/telemetry`: 시스템, 로버, 센서, 융합, 실험, 지도 데이터
+
+쓰기 API는 아직 두지 않았습니다. cloudflared로 외부에 공개될 가능성이 있으므로, 초기 버전은 read-only 대시보드로 유지합니다.
+
+## 추후 확장
+
+- ROS2 Python bridge 노드가 `/scan`, `/camera/*`, `/imu/data`, `/cmd_vel`, `/odom`, `/battery_state` 등을 구독
+- bridge 노드가 `runtime/telemetry_snapshot.json`을 atomic write로 갱신
+- 실험 회차별 로그를 SQLite 또는 CSV로 저장
+- Cloudflare Access를 붙여 연구팀 계정만 접속 허용
+- 현장 네트워크가 불안정할 때를 위한 로컬 전용 fallback 모드 제공

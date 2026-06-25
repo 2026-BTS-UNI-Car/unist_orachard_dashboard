@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>UNIST Orchard Rover Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">UNIST BTS 유니주행차</p>
+          <h1>과수원 자율주행 연구 대시보드</h1>
+        </div>
+        <div class="topbar-actions">
+          <span id="connectionState" class="status-pill neutral">연결 확인 중</span>
+          <span id="updatedAt" class="timestamp">--</span>
+        </div>
+      </header>
+
+      <main class="dashboard-grid">
+        <section class="panel map-panel">
+          <div class="panel-header">
+            <div>
+              <h2>LiDAR 지도와 행간 중심선</h2>
+              <p>과수열, clutter, 로버 위치, fused centerline, zigzag route</p>
+            </div>
+            <div class="legend">
+              <span><i class="tree"></i>과수</span>
+              <span><i class="clutter"></i>오검출 요소</span>
+              <span><i class="path"></i>목표 경로</span>
+              <span><i class="center"></i>중심선</span>
+            </div>
+          </div>
+          <div class="map-wrap">
+            <canvas id="mapCanvas" width="1100" height="520" aria-label="LiDAR map canvas"></canvas>
+          </div>
+        </section>
+
+        <section class="panel status-panel">
+          <div class="panel-header">
+            <h2>Jetson Orin Nano 상태</h2>
+          </div>
+          <div class="metric-grid">
+            <div class="metric"><span>CPU</span><strong id="cpuPercent">--%</strong></div>
+            <div class="metric"><span>GPU</span><strong id="gpuPercent">N/A</strong></div>
+            <div class="metric"><span>메모리</span><strong id="memoryPercent">--%</strong></div>
+            <div class="metric"><span>디스크</span><strong id="diskPercent">--%</strong></div>
+            <div class="metric"><span>온도</span><strong id="temperature">--</strong></div>
+            <div class="metric"><span>Load</span><strong id="loadAvg">--</strong></div>
+          </div>
+          <dl class="detail-list">
+            <div><dt>호스트</dt><dd id="hostname">--</dd></div>
+            <div><dt>전원 모드</dt><dd id="powerMode">--</dd></div>
+            <div><dt>스로틀</dt><dd id="throttleState">--</dd></div>
+          </dl>
+        </section>
+
+        <section class="panel rover-panel">
+          <div class="panel-header">
+            <h2>로버 상태</h2>
+          </div>
+          <div class="metric-grid compact">
+            <div class="metric"><span>상태</span><strong id="roverState">--</strong></div>
+            <div class="metric"><span>속도</span><strong id="speed">--</strong></div>
+            <div class="metric"><span>배터리</span><strong id="battery">--%</strong></div>
+            <div class="metric"><span>E-stop</span><strong id="estop">--</strong></div>
+          </div>
+          <dl class="detail-list">
+            <div><dt>주행 모드</dt><dd id="roverMode">--</dd></div>
+            <div><dt>현재 위치</dt><dd id="pose">--</dd></div>
+            <div><dt>모터</dt><dd id="motorState">--</dd></div>
+          </dl>
+        </section>
+
+        <section class="panel sensor-panel">
+          <div class="panel-header">
+            <h2>센서 상태</h2>
+          </div>
+          <div id="sensorList" class="sensor-list"></div>
+        </section>
+
+        <section class="panel fusion-panel">
+          <div class="panel-header">
+            <h2>Vision-LiDAR 신뢰도 융합</h2>
+          </div>
+          <div class="gauge-row">
+            <div class="gauge">
+              <span>LiDAR 신뢰도</span>
+              <div class="bar"><i id="lidarReliability"></i></div>
+              <strong id="lidarReliabilityValue">--</strong>
+            </div>
+            <div class="gauge">
+              <span>Vision 신뢰도</span>
+              <div class="bar magenta"><i id="visionReliability"></i></div>
+              <strong id="visionReliabilityValue">--</strong>
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric"><span>LiDAR 가중치</span><strong id="lidarWeight">--</strong></div>
+            <div class="metric"><span>Vision 가중치</span><strong id="visionWeight">--</strong></div>
+            <div class="metric"><span>중심선 오차</span><strong id="centerlineError">--</strong></div>
+            <div class="metric"><span>경로추종 오차</span><strong id="trackingError">--</strong></div>
+          </div>
+        </section>
+
+        <section class="panel experiment-panel">
+          <div class="panel-header">
+            <h2>실험 통계</h2>
+          </div>
+          <div class="metric-grid">
+            <div class="metric"><span>주행 시간</span><strong id="runtime">--</strong></div>
+            <div class="metric"><span>누적 거리</span><strong id="distance">--</strong></div>
+            <div class="metric"><span>완료 행간</span><strong id="rowsCompleted">--</strong></div>
+            <div class="metric"><span>지도 커버리지</span><strong id="coverage">--</strong></div>
+          </div>
+        </section>
+
+        <section class="panel plan-panel">
+          <div class="panel-header">
+            <h2>수행계획 진행도</h2>
+            <p>수행계획서 월별 일정 기반</p>
+          </div>
+          <div id="milestoneList" class="milestone-list"></div>
+        </section>
+
+        <section class="panel alert-panel">
+          <div class="panel-header">
+            <h2>운용 알림</h2>
+          </div>
+          <div id="alerts" class="alerts"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

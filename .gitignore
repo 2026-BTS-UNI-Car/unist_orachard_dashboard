@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+
+.DS_Store
+*.log
+*.pid
+
+# Local runtime data. Keep sample_data/telemetry_snapshot.json as a committed fixture.
+runtime/
+data/
+*.sqlite3
+
+# Cloudflare tunnel credentials must never be committed.
+.cloudflared/
+*.pem
+*.json.credentials
