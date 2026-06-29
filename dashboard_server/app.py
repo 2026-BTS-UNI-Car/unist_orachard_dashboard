@@ -17,6 +17,9 @@ STATIC_ROOT = ROOT / "static"
 class DashboardHandler(BaseHTTPRequestHandler):
     provider: TelemetryProvider
 
+    def do_HEAD(self):
+        self.do_GET()
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -28,6 +31,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.telemetry())
         elif path == "/api/plan":
             self._send_json(self.provider.plan())
+        elif path == "/api/site-map":
+            self._send_json(self.provider.site_map())
         elif path.startswith("/static/"):
             self._send_file(STATIC_ROOT / path.removeprefix("/static/"))
         else:
@@ -44,7 +49,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _send_file(self, path: Path):
         try:
@@ -68,7 +74,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
 
 def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:

@@ -20,7 +20,7 @@ DEFAULT_TELEMETRY_FILE = ROOT / "sample_data" / "telemetry_snapshot.json"
 def _read_text(path: str | Path) -> str | None:
     try:
         return Path(path).read_text(encoding="utf-8").strip()
-    except OSError:
+    except (OSError, TypeError, UnicodeDecodeError):
         return None
 
 
@@ -101,6 +101,17 @@ class TelemetryProvider:
             ],
         }
 
+    def site_map(self) -> dict[str, Any]:
+        return {
+            "sections": [
+                {"id": "overview", "label": "Overview", "summary": "Jetson, rover, mission health"},
+                {"id": "map", "label": "Map", "summary": "LiDAR orchard map and row centerline"},
+                {"id": "fusion", "label": "Fusion", "summary": "Vision-LiDAR reliability and weighting"},
+                {"id": "ops", "label": "Ops", "summary": "Sensors, services, alerts, deployment state"},
+                {"id": "research", "label": "Research", "summary": "Experiment metrics and project milestones"},
+            ]
+        }
+
     def _mock_telemetry(self, now: float) -> dict[str, Any]:
         t = now - self.started_at
         phase = t / 17.0
@@ -111,18 +122,22 @@ class TelemetryProvider:
         vision_rel = 0.70 + 0.18 * math.sin(t / 13.0 + 0.6)
         center_err = 0.06 + abs(0.12 * math.sin(t / 9.0))
         tracking_err = 0.08 + abs(0.10 * math.cos(t / 12.0))
+        latency_ms = 48.0 + abs(20.0 * math.sin(t / 8.0))
+        row_count = 3 + int((t / 18.0) % 3)
+        mission_progress = min(100.0, (12.0 + t / 5.5) % 100.0)
 
         return {
             "system": {
                 "hostname": socket.gethostname(),
                 "platform": platform.platform(),
-                "power_mode": "future_jetson_orin_nano",
-                "throttle_state": "not_available",
+                "power_mode": "25W",
+                "throttle_state": "normal",
+                "container": "dashboard",
             },
             "rover": {
-                "mode": "SIMULATION_READY",
+                "mode": "FIELD_STANDBY",
                 "autonomy_enabled": False,
-                "state": "IDLE",
+                "state": "READY",
                 "pose": {"x": round(robot_x, 2), "y": lane_y, "yaw_deg": round(math.sin(phase) * 7.0, 1)},
                 "speed_mps": round(0.28 + 0.05 * math.sin(t / 7.0), 2),
                 "battery_percent": round(82.0 - (t % 2000) / 120.0, 1),
@@ -143,7 +158,9 @@ class TelemetryProvider:
                 "vision_weight": round(vision_rel / max(lidar_rel + vision_rel, 0.01), 2),
                 "centerline_error_m": round(center_err, 3),
                 "path_tracking_error_m": round(tracking_err, 3),
-                "row_detection_count": 4,
+                "row_detection_count": row_count,
+                "sensor_latency_ms": round(latency_ms, 1),
+                "fusion_state": "mock_weighting",
             },
             "experiment": {
                 "session_id": "mock-session-001",
@@ -153,6 +170,32 @@ class TelemetryProvider:
                 "map_coverage_percent": round(min(100.0, 12.0 + t / 8.0), 1),
                 "weather_tag": "simulation",
                 "gps_dependency": "low",
+                "data_quality_percent": round(87.0 + 5.0 * math.sin(t / 16.0), 1),
+                "centerline_mae_m": round(center_err * 0.82, 3),
+                "tracking_rmse_m": round(tracking_err * 0.9, 3),
+            },
+            "mission": {
+                "name": "Orchard row-centerline validation",
+                "stage": "prototype",
+                "active_row": lane_index + 1,
+                "total_rows": 3,
+                "progress_percent": round(mission_progress, 1),
+                "target_speed_mps": 0.35,
+                "next_action": "sensor_bridge_pending",
+                "operator": "unist",
+            },
+            "environment": {
+                "illumination": round(640.0 + 120.0 * math.sin(t / 19.0), 1),
+                "canopy_density": round(0.56 + 0.08 * math.sin(t / 23.0), 2),
+                "surface": "grass_soil_mock",
+                "slope_deg": round(1.4 + 0.6 * math.cos(t / 14.0), 1),
+                "network": "cloudflared_online",
+            },
+            "services": {
+                "dashboard": {"ok": True, "state": "serving", "port": 8080},
+                "cloudflared": {"ok": True, "state": "tunnel_ready", "host": "bts.sarihub.com"},
+                "ros2_bridge": {"ok": False, "state": "not_connected"},
+                "data_recorder": {"ok": False, "state": "planned"},
             },
             "map": self._mock_map(robot_x, lane_y),
             "alerts": self._mock_alerts(lidar_rel, vision_rel),
@@ -166,6 +209,10 @@ class TelemetryProvider:
                 trees.append({"x": round(x + 0.08 * math.sin(x + y), 2), "y": round(y + 0.05 * math.cos(x), 2)})
                 x += 2.0
         centerline = [{"x": x, "y": robot_y} for x in [robot_x + i * 0.5 for i in range(16)]]
+        scan = [
+            {"x": round(robot_x + 2.0 + 4.0 * math.cos(i / 12.0), 2), "y": round(robot_y + 2.6 * math.sin(i / 9.0), 2)}
+            for i in range(28)
+        ]
         path = [
             {"x": -4.0, "y": -3.0},
             {"x": 26.0, "y": -3.0},
@@ -188,6 +235,7 @@ class TelemetryProvider:
             "clutter": clutter,
             "centerline": centerline,
             "route": path,
+            "scan": scan,
         }
 
     def _mock_alerts(self, lidar_rel: float, vision_rel: float) -> list[dict[str, str]]:
@@ -201,9 +249,10 @@ class TelemetryProvider:
 
     def _system_status(self) -> dict[str, Any]:
         memory = self._memory_percent()
-        disk = shutil.disk_usage("/")
+        disk = shutil.disk_usage(os.environ.get("DASHBOARD_DISK_PATH", "/"))
+        hostname = _read_text(os.environ.get("DASHBOARD_HOSTNAME_FILE", "/etc/hostname")) or socket.gethostname()
         status = {
-            "hostname": socket.gethostname(),
+            "hostname": hostname,
             "platform": platform.platform(),
             "uptime_s": round(time.time() - self.started_at, 1),
             "os_uptime_s": self._os_uptime_s(),
@@ -214,7 +263,7 @@ class TelemetryProvider:
             "temperature_c": self._temperature_c(),
             "loadavg": os.getloadavg() if hasattr(os, "getloadavg") else [0.0, 0.0, 0.0],
         }
-        jetson_release = _read_text("/etc/nv_tegra_release")
+        jetson_release = _read_text(os.environ.get("JETSON_RELEASE_FILE", "/etc/nv_tegra_release"))
         if jetson_release:
             status["jetson_release"] = jetson_release
         return status

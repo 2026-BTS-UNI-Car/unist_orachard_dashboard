@@ -1,37 +1,38 @@
 # Jetson 배포
 
-초기 운영 위치는 `/home/uni/unist_orachard_dashboard`를 기준으로 합니다.
+초기 운영 위치는 `/home/unist/workspace/unist_orachard_dashboard`를 기준으로 합니다.
 
 ## 1. 코드 받기
 
 ```bash
-cd /home/uni
+cd /home/unist
+mkdir -p workspace
+cd workspace
 git clone https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard.git
 cd unist_orachard_dashboard
 ```
 
-## 2. 로컬 실행 확인
+## 2. Docker 실행 확인
 
 ```bash
-python3 -m dashboard_server --host 0.0.0.0 --port 8080
+docker compose down --remove-orphans 2>/dev/null || docker-compose down --remove-orphans 2>/dev/null || true
+docker ps -aq --filter "name=unist-orachard-dashboard" | xargs -r docker rm -f 2>/dev/null || true
+docker compose up -d --build
+# docker compose 플러그인이 없으면: docker-compose up -d --build
+curl http://127.0.0.1:8080/api/health
 ```
 
-같은 네트워크에서 `http://JETSON_IP:8080`으로 접속합니다.
+Cloudflare Tunnel을 통해 `https://bts.sarihub.com`으로 접속합니다. Docker Compose는 호스트의 `127.0.0.1:8080`에만 포트를 노출합니다.
 
-## 3. systemd 서비스
+## 3. 자동 재시작
 
-```bash
-mkdir -p /home/uni/unist_orachard_dashboard/runtime
-sudo cp deploy/systemd/unist-orachard-dashboard.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now unist-orachard-dashboard.service
-sudo systemctl status unist-orachard-dashboard.service
-```
+`docker-compose.yml`의 `restart: unless-stopped` 설정으로 Docker 서비스 재시작 또는 Jetson 재부팅 후 컨테이너가 자동으로 다시 올라옵니다.
 
 로그 확인:
 
 ```bash
-journalctl -u unist-orachard-dashboard.service -f
+docker compose logs -f
+# docker compose 플러그인이 없으면: docker-compose logs -f
 ```
 
 ## 4. ROS2 연동 예정 방식
@@ -39,7 +40,7 @@ journalctl -u unist-orachard-dashboard.service -f
 ROS2 bridge 노드는 아래 파일을 주기적으로 갱신합니다.
 
 ```text
-/home/uni/unist_orachard_dashboard/runtime/telemetry_snapshot.json
+/home/unist/workspace/unist_orachard_dashboard/runtime/telemetry_snapshot.json
 ```
 
 서버는 이 파일을 매 요청마다 읽기 때문에 별도 재시작 없이 화면이 갱신됩니다.

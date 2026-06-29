@@ -1,14 +1,13 @@
 [Unit]
 Description=Cloudflare Tunnel for UNIST Orchard Rover Dashboard
-After=network-online.target unist-orachard-dashboard.service
+After=network-online.target
 Wants=network-online.target
-Requires=unist-orachard-dashboard.service
 
 [Service]
 Type=simple
-User=uni
-Group=uni
-ExecStart=/usr/local/bin/cloudflared --config /home/uni/.cloudflared/config.yml tunnel run unist-orachard-dashboard
+User=unist
+Group=unist
+ExecStart=/usr/local/bin/cloudflared --config /home/unist/.cloudflared/config.yml tunnel run unist-orachard-dashboard
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

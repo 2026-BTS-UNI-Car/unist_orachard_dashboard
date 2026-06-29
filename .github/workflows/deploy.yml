@@ -1,0 +1,86 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile
+        run: python3 -m py_compile dashboard_server/*.py scripts/*.py
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests
+      - name: Docker build
+        run: docker build -t unist-orachard-dashboard:test .
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cloudflared
+        run: |
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+          chmod +x /usr/local/bin/cloudflared
+          cloudflared --version
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          install -m 600 /dev/null ~/.ssh/jetson_deploy_key
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/jetson_deploy_key
+          cat > ~/.ssh/config <<EOF
+          Host jetson-dashboard
+            HostName ${SSH_HOST}
+            User ${SSH_USER}
+            IdentityFile ~/.ssh/jetson_deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+            ServerAliveInterval 30
+            ProxyCommand cloudflared access ssh --hostname %h --service-token-id ${CF_ACCESS_CLIENT_ID} --service-token-secret ${CF_ACCESS_CLIENT_SECRET}
+          EOF
+
+      - name: Package application
+        run: |
+          tar \
+            --exclude=.git \
+            --exclude=runtime \
+            --exclude=__pycache__ \
+            --exclude='*.pyc' \
+            -czf /tmp/unist_orachard_dashboard.tar.gz .
+
+      - name: Deploy to Jetson
+        run: |
+          scp /tmp/unist_orachard_dashboard.tar.gz jetson-dashboard:/tmp/unist_orachard_dashboard.tar.gz
+          ssh jetson-dashboard 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP_DIR=/home/unist/workspace/unist_orachard_dashboard
+          mkdir -p "$APP_DIR/runtime"
+          find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name runtime -exec rm -rf {} +
+          tar -xzf /tmp/unist_orachard_dashboard.tar.gz -C "$APP_DIR"
+          chown -R unist:unist "$APP_DIR"
+          cd "$APP_DIR"
+          if docker compose version >/dev/null 2>&1; then
+            COMPOSE="docker compose"
+          else
+            COMPOSE="docker-compose"
+          fi
+          $COMPOSE down --remove-orphans >/dev/null 2>&1 || true
+          docker ps -aq --filter "name=unist-orachard-dashboard" | xargs -r docker rm -f >/dev/null 2>&1 || true
+          $COMPOSE up -d --build
+          $COMPOSE ps
+          curl -fsS http://127.0.0.1:8080/api/health
+          REMOTE

@@ -7,8 +7,9 @@ Cloudflare Tunnel을 쓰면 Jetson Orin Nano Super가 공인 IP를 갖지 않아
 대시보드 서버를 먼저 실행합니다.
 
 ```bash
-cd /home/uni/unist_orachard_dashboard
-python3 -m dashboard_server --host 127.0.0.1 --port 8080
+cd /home/unist/workspace/unist_orachard_dashboard
+docker compose up -d --build
+# docker compose 플러그인이 없으면: docker-compose up -d --build
 ```
 
 다른 터미널에서 임시 터널을 엽니다.
@@ -24,12 +25,12 @@ cloudflared tunnel --url http://127.0.0.1:8080
 ```bash
 cloudflared tunnel login
 cloudflared tunnel create unist-orachard-dashboard
-cloudflared tunnel route dns unist-orachard-dashboard dashboard.example.com
-mkdir -p /home/uni/.cloudflared
-cp cloudflared/config.example.yml /home/uni/.cloudflared/config.yml
+cloudflared tunnel route dns unist-orachard-dashboard bts.sarihub.com
+mkdir -p /home/unist/.cloudflared
+cp cloudflared/config.example.yml /home/unist/.cloudflared/config.yml
 ```
 
-`/home/uni/.cloudflared/config.yml`의 `hostname`과 `credentials-file`을 실제 값으로 바꿉니다.
+`/home/unist/.cloudflared/config.yml`의 `hostname`과 `credentials-file`을 실제 값으로 바꿉니다. 현재 공개 예정 주소는 `bts.sarihub.com`입니다.
 
 ## systemd 등록
 

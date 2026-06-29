@@ -1,7 +1,7 @@
 tunnel: unist-orachard-dashboard
-credentials-file: /home/uni/.cloudflared/REPLACE_WITH_TUNNEL_ID.json
+credentials-file: /home/unist/.cloudflared/REPLACE_WITH_TUNNEL_ID.json
 
 ingress:
-  - hostname: dashboard.example.com
+  - hostname: bts.sarihub.com
     service: http://127.0.0.1:8080
   - service: http_status:404

@@ -13,7 +13,7 @@ Browser
   -> ROS2 telemetry writer, future
 ```
 
-현재 구현은 외부 패키지 없이 Python 표준 라이브러리만 사용합니다. Jetson에 Python만 있으면 바로 실행할 수 있고, 나중에 ROS2 bridge를 붙일 때도 서버 코드와 시각화 코드를 크게 바꾸지 않는 구조입니다.
+현재 구현은 외부 패키지 없이 Python 표준 라이브러리만 사용합니다. Jetson 운영 환경에서는 Docker Compose로 실행하고, 나중에 ROS2 bridge를 붙일 때도 서버 코드와 시각화 코드를 크게 바꾸지 않는 구조입니다.
 
 ## 데이터 흐름
 
@@ -29,6 +29,7 @@ Browser
 - `GET /`: 대시보드 화면
 - `GET /api/health`: 서버 상태
 - `GET /api/plan`: 수행계획 기반 연구 정보
+- `GET /api/site-map`: 대시보드 섹션 구조
 - `GET /api/telemetry`: 시스템, 로버, 센서, 융합, 실험, 지도 데이터
 
 쓰기 API는 아직 두지 않았습니다. cloudflared로 외부에 공개될 가능성이 있으므로, 초기 버전은 read-only 대시보드로 유지합니다.

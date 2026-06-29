@@ -1,0 +1,30 @@
+services:
+  dashboard:
+    build:
+      context: .
+    image: unist-orachard-dashboard:latest
+    container_name: unist-orachard-dashboard
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      DASHBOARD_HOST: "0.0.0.0"
+      DASHBOARD_PORT: "8080"
+      DASHBOARD_MODE: "mock"
+      TELEMETRY_FILE: "/app/runtime/telemetry_snapshot.json"
+      DASHBOARD_DISK_PATH: "/host-root"
+      DASHBOARD_HOSTNAME_FILE: "/host-root/etc/hostname"
+      JETSON_RELEASE_FILE: "/etc/nv_tegra_release"
+    volumes:
+      - ./runtime:/app/runtime
+      - /:/host-root:ro
+      - /etc/nv_tegra_release:/etc/nv_tegra_release:ro
+      - /sys/class/thermal:/sys/class/thermal:ro
+      - /sys/devices:/sys/devices:ro
+    pid: host
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json, urllib.request; json.load(urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3))"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

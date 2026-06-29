@@ -31,12 +31,27 @@ cloudflared tunnel --url http://localhost:8080
 
 운영용 named tunnel 설정은 [docs/cloudflared.md](docs/cloudflared.md)를 참고하세요.
 
+## Jetson Docker 실행
+
+Jetson에서는 `/home/unist/workspace/unist_orachard_dashboard` 경로를 기준으로 Docker Compose를 실행합니다.
+
+```bash
+cd /home/unist/workspace/unist_orachard_dashboard
+docker compose down --remove-orphans 2>/dev/null || docker-compose down --remove-orphans 2>/dev/null || true
+docker ps -aq --filter "name=unist-orachard-dashboard" | xargs -r docker rm -f 2>/dev/null || true
+docker compose up -d --build
+# docker compose 플러그인이 없으면: docker-compose up -d --build
+curl http://127.0.0.1:8080/api/health
+```
+
+`docker-compose.yml`은 `restart: unless-stopped`를 사용하므로 Jetson이 재부팅되어도 Docker 서비스가 올라오면 대시보드 컨테이너가 다시 시작됩니다. Cloudflare Tunnel은 `bts.sarihub.com`을 `http://localhost:8080`으로 전달합니다.
+
 ## 텔레메트리 연결 방식
 
 서버는 기본적으로 `sample_data/telemetry_snapshot.json` 파일을 읽어 mock 데이터 위에 덮어씁니다. 나중에 ROS2 bridge 노드가 이 JSON 파일을 주기적으로 갱신하면, 대시보드는 별도 수정 없이 실제 상태를 표시할 수 있습니다.
 
 ```bash
-export TELEMETRY_FILE=/home/uni/unist_orachard_dashboard/runtime/telemetry_snapshot.json
+export TELEMETRY_FILE=/home/unist/workspace/unist_orachard_dashboard/runtime/telemetry_snapshot.json
 python3 -m dashboard_server --host 0.0.0.0 --port 8080
 ```
 

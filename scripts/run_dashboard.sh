@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/home/uni/unist_orachard_dashboard}"
+APP_DIR="${APP_DIR:-/home/unist/workspace/unist_orachard_dashboard}"
 HOST="${DASHBOARD_HOST:-0.0.0.0}"
 PORT="${DASHBOARD_PORT:-8080}"
 TELEMETRY_FILE="${TELEMETRY_FILE:-$APP_DIR/runtime/telemetry_snapshot.json}"
