@@ -1,6 +1,6 @@
 # UNIST Orchard Rover Dashboard
 
-Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대시보드 프로토타입입니다. 현재는 실사용 전 단계라 ROS2 토픽에 직접 붙지 않고, 표준 라이브러리 기반 Python 서버가 mock 텔레메트리와 일부 시스템 상태를 보여줍니다.
+Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대시보드입니다. 현재 서버는 Jetson의 실제 시스템, 네트워크, Docker 상태를 읽고, ROS2/로버 데이터는 추후 bridge가 제공하는 JSON 텔레메트리 파일을 통해 연결합니다.
 
 대시보드는 수행계획서의 연구 방향인 Vision-LiDAR 신뢰도 동적 조절, 행간 중심선 추정, 경로추종 안정화, 과수원 주행 성능 검증을 기준으로 구성했습니다.
 
@@ -10,7 +10,8 @@ Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대�
 - 로버 상태: 주행 모드, 위치, 속도, 배터리, E-stop, 모터 상태
 - 센서 상태: LiDAR, Camera, IMU, Encoder, MAVLink 준비 상태
 - Vision-LiDAR 융합: 센서별 신뢰도, 동적 가중치, 중심선 오차, 경로추종 오차
-- LiDAR 지도: 과수열, 오검출 요소, 로버 위치, 중심선, 목표 경로 canvas 시각화
+- 네트워크 상태: interface, IP, link speed, RX/TX 처리량 그래프
+- Docker 상태: engine 정보, 컨테이너 목록, 컨테이너 CPU/메모리 그래프
 - 실험 통계: 주행 시간, 누적 거리, 완료 행간, 지도 커버리지
 - 수행계획 진행도: 월별 연구 일정 기반 진행 상태
 
@@ -48,7 +49,7 @@ curl http://127.0.0.1:8080/api/health
 
 ## 텔레메트리 연결 방식
 
-서버는 기본적으로 `sample_data/telemetry_snapshot.json` 파일을 읽어 mock 데이터 위에 덮어씁니다. 나중에 ROS2 bridge 노드가 이 JSON 파일을 주기적으로 갱신하면, 대시보드는 별도 수정 없이 실제 상태를 표시할 수 있습니다.
+서버는 기본적으로 `runtime/telemetry_snapshot.json` 파일을 읽습니다. ROS2 bridge 노드가 이 JSON 파일을 주기적으로 갱신하면, 대시보드는 별도 수정 없이 실제 로버/센서/실험 상태를 표시합니다. 파일이 없거나 비어 있으면 연결되지 않은 항목은 `연결 전`으로 표시됩니다.
 
 ```bash
 export TELEMETRY_FILE=/home/unist/workspace/unist_orachard_dashboard/runtime/telemetry_snapshot.json
@@ -57,17 +58,10 @@ python3 -m dashboard_server --host 0.0.0.0 --port 8080
 
 스키마는 [docs/telemetry_schema.md](docs/telemetry_schema.md)에 정리했습니다.
 
-## 로컬 mock 업데이트
-
-```bash
-python3 scripts/update_sample_telemetry.py --output runtime/telemetry_snapshot.json --loop
-TELEMETRY_FILE=runtime/telemetry_snapshot.json python3 -m dashboard_server --host 0.0.0.0 --port 8080
-```
-
 ## 검증
 
 ```bash
-python3 -m py_compile dashboard_server/*.py scripts/*.py
+python3 -m compileall dashboard_server scripts
 python3 -m unittest discover -s tests
 ```
 

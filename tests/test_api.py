@@ -34,9 +34,15 @@ class DashboardApiTest(unittest.TestCase):
 
     def test_telemetry_shape(self):
         payload = self.get_json("/api/telemetry")
-        for key in ["system", "rover", "sensors", "fusion", "experiment", "map"]:
+        for key in ["system", "network", "docker", "rover", "sensors", "fusion", "experiment"]:
             self.assertIn(key, payload)
-        self.assertIn("lidar_reliability", payload["fusion"])
+        self.assertIn("cpu", payload["system"])
+        self.assertIn("interfaces", payload["network"])
+
+    def test_detail_api_shape(self):
+        self.assertIn("memory", self.get_json("/api/system"))
+        self.assertIn("interfaces", self.get_json("/api/network"))
+        self.assertIn("containers", self.get_json("/api/docker"))
 
     def test_plan_contains_research_topic(self):
         payload = self.get_json("/api/plan")

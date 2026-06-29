@@ -12,6 +12,7 @@ from dashboard_server.telemetry import ROOT, TelemetryProvider
 
 
 STATIC_ROOT = ROOT / "static"
+APP_ROUTES = {"/", "/system", "/network", "/docker", "/research"}
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -23,12 +24,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path == "/":
+        if path in APP_ROUTES:
             self._send_file(STATIC_ROOT / "index.html")
         elif path == "/api/health":
             self._send_json(self.provider.health())
         elif path == "/api/telemetry":
             self._send_json(self.provider.telemetry())
+        elif path == "/api/system":
+            self._send_json(self.provider.system())
+        elif path == "/api/network":
+            self._send_json(self.provider.network())
+        elif path == "/api/docker":
+            self._send_json(self.provider.docker())
         elif path == "/api/plan":
             self._send_json(self.provider.plan())
         elif path == "/api/site-map":

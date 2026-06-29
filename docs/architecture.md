@@ -17,10 +17,10 @@ Browser
 
 ## 데이터 흐름
 
-1. `dashboard_server.telemetry.TelemetryProvider`가 mock 데이터를 생성합니다.
-2. `TELEMETRY_FILE`이 있으면 해당 JSON을 읽어 mock 데이터 위에 덮어씁니다.
-3. `/api/telemetry`가 최신 상태를 JSON으로 제공합니다.
-4. `static/app.js`가 2초마다 API를 조회하고 화면과 canvas 지도를 갱신합니다.
+1. `dashboard_server.telemetry.TelemetryProvider`가 Jetson의 `/proc`, `/sys`, Docker socket을 읽습니다.
+2. `TELEMETRY_FILE`이 있으면 ROS2 bridge가 기록한 로버/센서/실험 상태를 함께 표시합니다.
+3. `/api/telemetry`, `/api/system`, `/api/network`, `/api/docker`가 최신 상태를 JSON으로 제공합니다.
+4. `static/app.js`가 1초마다 API를 조회하고 브라우저 안에서 실시간 그래프 history를 갱신합니다.
 
 이 방식은 ROS2와 웹 서버를 느슨하게 분리합니다. ROS2 bridge가 죽어도 웹 서버는 살아 있고, 웹 서버가 재시작되어도 bridge는 파일만 계속 쓰면 됩니다.
 
@@ -30,7 +30,10 @@ Browser
 - `GET /api/health`: 서버 상태
 - `GET /api/plan`: 수행계획 기반 연구 정보
 - `GET /api/site-map`: 대시보드 섹션 구조
-- `GET /api/telemetry`: 시스템, 로버, 센서, 융합, 실험, 지도 데이터
+- `GET /api/telemetry`: 시스템, 네트워크, Docker, 로버, 센서, 융합, 실험 데이터
+- `GET /api/system`: CPU, Memory, GPU, Thermal, Disk
+- `GET /api/network`: interface, IP, RX/TX throughput
+- `GET /api/docker`: Docker engine, container resource
 
 쓰기 API는 아직 두지 않았습니다. cloudflared로 외부에 공개될 가능성이 있으므로, 초기 버전은 read-only 대시보드로 유지합니다.
 

@@ -1,6 +1,6 @@
 # 텔레메트리 스키마
 
-`TELEMETRY_FILE`은 JSON 객체 하나입니다. 모든 필드는 선택 사항이며, 없는 값은 서버의 mock 데이터가 채웁니다.
+`TELEMETRY_FILE`은 JSON 객체 하나입니다. 모든 필드는 선택 사항이며, 없는 로버/센서/실험 값은 대시보드에서 `연결 전`으로 표시합니다.
 
 ## 최상위 구조
 
@@ -11,7 +11,6 @@
   "sensors": {},
   "fusion": {},
   "experiment": {},
-  "map": {},
   "alerts": []
 }
 ```
@@ -81,20 +80,6 @@ CPU, 메모리, 디스크, 온도는 서버가 Linux 시스템에서 직접 읽�
   "map_coverage_percent": 64.5,
   "weather_tag": "sunny_shadow",
   "gps_dependency": "low"
-}
-```
-
-## map
-
-```json
-{
-  "frame": "map",
-  "bounds": {"x_min": -8.0, "x_max": 30.0, "y_min": -7.0, "y_max": 7.0},
-  "robot": {"x": 1.0, "y": -3.0, "yaw_deg": 0.0},
-  "trees": [{"x": 0.0, "y": -4.5}],
-  "clutter": [{"x": 5.0, "y": -2.7}],
-  "centerline": [{"x": 0.0, "y": -3.0}, {"x": 2.0, "y": -3.0}],
-  "route": [{"x": -4.0, "y": -3.0}, {"x": 26.0, "y": -3.0}]
 }
 ```
 

@@ -1,6 +1,6 @@
 {
-  "mode": "mock",
-  "telemetry_file": "sample_data/telemetry_snapshot.json",
+  "mode": "live",
+  "telemetry_file": "runtime/telemetry_snapshot.json",
   "project_name": "UNIST Orchard Rover Dashboard",
   "poll_interval_ms": 2000,
   "site": {

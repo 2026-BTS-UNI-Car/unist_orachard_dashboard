@@ -12,13 +12,8 @@ COPY requirements.txt ./
 COPY dashboard_server ./dashboard_server
 COPY static ./static
 COPY config ./config
-COPY sample_data ./sample_data
 
-RUN mkdir -p /app/runtime \
-  && useradd --create-home --uid 10001 dashboard \
-  && chown -R dashboard:dashboard /app
-
-USER dashboard
+RUN mkdir -p /app/runtime
 
 EXPOSE 8080
 

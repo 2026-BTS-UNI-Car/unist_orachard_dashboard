@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile
-        run: python3 -m py_compile dashboard_server/*.py scripts/*.py
+        run: python3 -m compileall dashboard_server scripts
       - name: Unit tests
         run: python3 -m unittest discover -s tests
       - name: Docker build
