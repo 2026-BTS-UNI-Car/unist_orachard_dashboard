@@ -20,9 +20,6 @@
     <div class="app-shell">
       <aside class="sidebar">
         <a class="brand-block" href="/">
-          <span class="logo-badge logo-badge-sm">
-            <img src="/static/assets/ubts-logo.png" alt="UBTS UNIST" />
-          </span>
           <span>
             <small>UBTS</small>
             <strong>Rover Ops</strong>
@@ -52,9 +49,6 @@
               <p class="eyebrow">Live operations</p>
               <h1>UNIST Orchard Rover</h1>
               <p>Jetson Orin Nano, 네트워크, 컨테이너, 로버 연결 상태를 실시간으로 확인합니다.</p>
-            </div>
-            <div class="logo-badge hero-logo">
-              <img src="/static/assets/ubts-logo.png" alt="UBTS UNIST" />
             </div>
           </header>
 
@@ -90,7 +84,10 @@
                 </div>
                 <a class="text-link" href="/system">details</a>
               </div>
-              <canvas id="chartOverviewSystem" class="resource-chart" width="900" height="280"></canvas>
+              <div class="chart-frame">
+                <canvas id="chartOverviewSystem" class="resource-chart" width="900" height="280"></canvas>
+                <div id="overviewSystemReadout" class="chart-readout compact"></div>
+              </div>
             </article>
 
             <article class="panel chart-panel">
@@ -101,7 +98,10 @@
                 </div>
                 <a class="text-link" href="/network">details</a>
               </div>
-              <canvas id="chartOverviewNetwork" class="resource-chart" width="900" height="280"></canvas>
+              <div class="chart-frame">
+                <canvas id="chartOverviewNetwork" class="resource-chart" width="900" height="280"></canvas>
+                <div id="overviewNetworkReadout" class="chart-readout compact"></div>
+              </div>
             </article>
 
             <article class="panel">
@@ -140,23 +140,50 @@
 
           <section class="resource-grid">
             <article class="panel resource-card">
-              <div class="panel-head"><h2>CPU</h2><strong id="systemCpuValue">--</strong></div>
-              <canvas id="chartCpu" class="resource-chart" width="900" height="260"></canvas>
+              <div class="panel-head">
+                <div>
+                  <h2>CPU</h2>
+                  <small id="cpuModeText">통합 그래프</small>
+                </div>
+                <div class="panel-actions">
+                  <strong id="systemCpuValue">--</strong>
+                  <div class="segmented-control" aria-label="CPU 그래프 표시 방식">
+                    <button type="button" data-cpu-mode="combined">통합</button>
+                    <button type="button" data-cpu-mode="separate">코어별</button>
+                  </div>
+                </div>
+              </div>
+              <div id="cpuCombinedView" class="cpu-mode-view">
+                <div class="chart-frame">
+                  <canvas id="chartCpu" class="resource-chart" width="900" height="260"></canvas>
+                  <div id="cpuReadout" class="chart-readout"></div>
+                </div>
+              </div>
+              <div id="cpuSeparateView" class="cpu-mode-view core-chart-grid" hidden></div>
               <div id="coreList" class="core-grid"></div>
             </article>
             <article class="panel resource-card">
               <div class="panel-head"><h2>Memory</h2><strong id="systemMemoryValue">--</strong></div>
-              <canvas id="chartMemory" class="resource-chart" width="900" height="260"></canvas>
+              <div class="chart-frame">
+                <canvas id="chartMemory" class="resource-chart" width="900" height="260"></canvas>
+                <div id="memoryReadout" class="chart-readout"></div>
+              </div>
               <div id="memoryBar" class="progress"><i></i></div>
               <small id="memoryDetail">--</small>
             </article>
             <article class="panel resource-card">
               <div class="panel-head"><h2>GPU</h2><strong id="systemGpuValue">--</strong></div>
-              <canvas id="chartGpu" class="resource-chart" width="900" height="260"></canvas>
+              <div class="chart-frame">
+                <canvas id="chartGpu" class="resource-chart" width="900" height="260"></canvas>
+                <div id="gpuReadout" class="chart-readout"></div>
+              </div>
             </article>
             <article class="panel resource-card">
               <div class="panel-head"><h2>Thermal</h2><strong id="systemTempValue">--</strong></div>
-              <canvas id="chartTemp" class="resource-chart" width="900" height="260"></canvas>
+              <div class="chart-frame">
+                <canvas id="chartTemp" class="resource-chart" width="900" height="260"></canvas>
+                <div id="tempReadout" class="chart-readout"></div>
+              </div>
               <div id="temperatureList" class="chip-list"></div>
             </article>
           </section>
@@ -164,6 +191,7 @@
           <section class="panel">
             <div class="panel-head">
               <div><p class="eyebrow">Storage</p><h2>Disk</h2></div>
+              <strong id="diskSummary">--</strong>
             </div>
             <div id="diskList" class="disk-list"></div>
           </section>
@@ -195,7 +223,10 @@
                 <div><p class="eyebrow">Live throughput</p><h2>RX / TX</h2></div>
                 <strong id="networkThroughput">--</strong>
               </div>
-              <canvas id="chartNetwork" class="resource-chart" width="1200" height="320"></canvas>
+              <div class="chart-frame">
+                <canvas id="chartNetwork" class="resource-chart" width="1200" height="320"></canvas>
+                <div id="networkReadout" class="chart-readout"></div>
+              </div>
             </article>
             <article class="panel">
               <div class="panel-head">
@@ -223,11 +254,17 @@
           <section class="dashboard-grid">
             <article class="panel chart-panel">
               <div class="panel-head"><h2>Container CPU</h2><strong id="dockerCpuChartValue">--</strong></div>
-              <canvas id="chartDockerCpu" class="resource-chart" width="900" height="260"></canvas>
+              <div class="chart-frame">
+                <canvas id="chartDockerCpu" class="resource-chart" width="900" height="260"></canvas>
+                <div id="dockerCpuReadout" class="chart-readout"></div>
+              </div>
             </article>
             <article class="panel chart-panel">
               <div class="panel-head"><h2>Container Memory</h2><strong id="dockerMemChartValue">--</strong></div>
-              <canvas id="chartDockerMem" class="resource-chart" width="900" height="260"></canvas>
+              <div class="chart-frame">
+                <canvas id="chartDockerMem" class="resource-chart" width="900" height="260"></canvas>
+                <div id="dockerMemReadout" class="chart-readout"></div>
+              </div>
             </article>
           </section>
 

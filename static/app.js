@@ -1,15 +1,21 @@
 const ROUTES = ["/", "/system", "/network", "/docker", "/research"];
 const HISTORY_KEYS = ["cpu", "memory", "gpu", "temp", "rx", "tx", "dockerCpu", "dockerMemory"];
+const CORE_COLORS = ["#55e2b2", "#38d8ff", "#2f76ff", "#8238c9", "#f21b58", "#f4bd4f", "#7dd3fc", "#fb7185"];
 const MAX_POINTS = 90;
 const POLL_INTERVAL_MS = 1000;
 const DPR_LIMIT = 1.5;
+const CPU_MODE_KEY = "ubts-cpu-chart-mode";
 
 const state = {
   telemetry: null,
   plan: null,
   history: Object.fromEntries(HISTORY_KEYS.map((key) => [key, []])),
   visualHistory: Object.fromEntries(HISTORY_KEYS.map((key) => [key, []])),
+  coreHistory: {},
+  visualCoreHistory: {},
+  cpuMode: "combined",
   chartShift: 0,
+  chartShiftStartedAt: 0,
   animationFrame: null,
 };
 
@@ -54,6 +60,29 @@ function fmtDuration(seconds) {
   return d > 0 ? `${d}d ${h}h` : `${h}h ${m}m`;
 }
 
+function memoryPercent(memory) {
+  return memory?.display_percent ?? memory?.percent;
+}
+
+function memoryTotal(memory) {
+  return memory?.display_total ?? memory?.total;
+}
+
+function memoryLabel(memory) {
+  return memory?.display_label || `${fmtBytes(memoryTotal(memory))} 기준`;
+}
+
+function cpuLabel(core) {
+  if (core?.label) return core.label;
+  const name = core?.name || "";
+  if (name.startsWith("cpu") && /^\d+$/.test(name.slice(3))) return `CPU ${Number(name.slice(3)) + 1}`;
+  return name.toUpperCase() || "CPU";
+}
+
+function coreKey(core) {
+  return core?.name || cpuLabel(core);
+}
+
 async function getJson(path) {
   const res = await fetch(path, { cache: "no-store" });
   if (!res.ok) throw new Error(`${path}: ${res.status}`);
@@ -76,7 +105,12 @@ function renderRoute() {
 }
 
 function initTheme() {
-  const stored = localStorage.getItem("ubts-theme");
+  let stored = null;
+  try {
+    stored = localStorage.getItem("ubts-theme");
+  } catch (_) {
+    stored = null;
+  }
   const theme = stored || "dark";
   applyTheme(theme);
   $("themeToggle")?.addEventListener("click", () => {
@@ -87,11 +121,45 @@ function initTheme() {
 
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  localStorage.setItem("ubts-theme", theme);
+  try {
+    localStorage.setItem("ubts-theme", theme);
+  } catch (_) {
+    // Ignore storage failures; theme switching should remain usable.
+  }
   const isLight = theme === "light";
   const toggle = $("themeToggle");
   if (toggle) toggle.setAttribute("aria-pressed", String(isLight));
   text("themeLabel", isLight ? "Light" : "Dark");
+  requestChartAnimation();
+}
+
+function initCpuMode() {
+  try {
+    state.cpuMode = localStorage.getItem(CPU_MODE_KEY) || "combined";
+  } catch (_) {
+    state.cpuMode = "combined";
+  }
+  document.querySelectorAll("[data-cpu-mode]").forEach((button) => {
+    button.addEventListener("click", () => setCpuMode(button.dataset.cpuMode));
+  });
+  setCpuMode(state.cpuMode);
+}
+
+function setCpuMode(mode) {
+  state.cpuMode = mode === "separate" ? "separate" : "combined";
+  try {
+    localStorage.setItem(CPU_MODE_KEY, state.cpuMode);
+  } catch (_) {
+    // Ignore storage failures; the visible toggle still works for this session.
+  }
+  document.querySelectorAll("[data-cpu-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.cpuMode === state.cpuMode);
+  });
+  const combined = $("cpuCombinedView");
+  const separate = $("cpuSeparateView");
+  if (combined) combined.hidden = state.cpuMode !== "combined";
+  if (separate) separate.hidden = state.cpuMode !== "separate";
+  text("cpuModeText", state.cpuMode === "separate" ? "코어별 개별 그래프" : "전체 코어 통합 그래프");
   requestChartAnimation();
 }
 
@@ -117,30 +185,53 @@ function pushHistory(data) {
   const sys = data.system || {};
   const net = data.network || {};
   const docker = data.docker || {};
+  const cores = sys.cpu?.cores || [];
   const dockerCpu = docker.summary?.cpu_percent;
   const dockerMemory = docker.summary?.memory_limit ? (docker.summary.memory_usage / docker.summary.memory_limit) * 100 : null;
   addPoint("cpu", sys.cpu?.total_percent);
-  addPoint("memory", sys.memory?.percent);
+  addPoint("memory", memoryPercent(sys.memory));
   addPoint("gpu", sys.gpu_percent);
   addPoint("temp", sys.temperature_c);
   addPoint("rx", net.total_rx_bps);
   addPoint("tx", net.total_tx_bps);
   addPoint("dockerCpu", dockerCpu);
   addPoint("dockerMemory", dockerMemory);
+  for (const core of cores) addCorePoint(coreKey(core), core.percent);
+  pruneCoreHistory(cores.map(coreKey));
   state.chartShift = 1;
+  state.chartShiftStartedAt = performance.now();
 }
 
 function addPoint(key, value) {
-  const target = state.history[key];
-  const visual = state.visualHistory[key];
+  addPointTo(state.history, state.visualHistory, key, value);
+}
+
+function addCorePoint(key, value) {
+  addPointTo(state.coreHistory, state.visualCoreHistory, key, value);
+}
+
+function addPointTo(historyStore, visualStore, key, value) {
+  const target = historyStore[key] || [];
+  const visual = visualStore[key] || [];
+  historyStore[key] = target;
+  visualStore[key] = visual;
   const numeric = value === null || value === undefined ? null : Number(value);
   if (target.length >= MAX_POINTS) {
     target.shift();
     visual.shift();
   }
   target.push(Number.isFinite(numeric) ? numeric : null);
-  const previous = visual.length ? visual[visual.length - 1] : numeric;
-  visual.push(Number.isFinite(previous) ? previous : numeric);
+  visual.push(Number.isFinite(numeric) ? numeric : null);
+}
+
+function pruneCoreHistory(keys) {
+  const alive = new Set(keys);
+  for (const key of Object.keys(state.coreHistory)) {
+    if (!alive.has(key)) {
+      delete state.coreHistory[key];
+      delete state.visualCoreHistory[key];
+    }
+  }
 }
 
 function setConnection(kind, label) {
@@ -159,8 +250,8 @@ function renderTelemetry(data) {
   text("updatedAt", new Date((data.meta?.generated_at || Date.now() / 1000) * 1000).toLocaleString("ko-KR"));
   text("overviewCpu", fmtPercent(sys.cpu?.total_percent));
   text("overviewLoad", `load ${(sys.loadavg || [0])[0]?.toFixed ? sys.loadavg[0].toFixed(2) : "--"}`);
-  text("overviewMemory", fmtPercent(sys.memory?.percent));
-  text("overviewMemoryText", `${fmtBytes(sys.memory?.used)} / ${fmtBytes(sys.memory?.total)}`);
+  text("overviewMemory", fmtPercent(memoryPercent(sys.memory)));
+  text("overviewMemoryText", `${fmtBytes(sys.memory?.used)} / ${fmtBytes(memoryTotal(sys.memory))} · ${memoryLabel(sys.memory)}`);
   text("overviewNetwork", `${fmtBps(net.total_rx_bps)} RX`);
   text("overviewNetworkText", `${fmtBps(net.total_tx_bps)} TX`);
   text("overviewDocker", docker.available ? `${docker.summary?.running || 0}/${docker.summary?.total || 0}` : "N/A");
@@ -171,11 +262,11 @@ function renderTelemetry(data) {
   text("hostIp", hostIpLabel(net));
 
   text("systemCpuValue", fmtPercent(sys.cpu?.total_percent));
-  text("systemMemoryValue", fmtPercent(sys.memory?.percent));
+  text("systemMemoryValue", fmtPercent(memoryPercent(sys.memory)));
   text("systemGpuValue", fmtPercent(sys.gpu_percent));
   text("systemTempValue", fmtTemp(sys.temperature_c));
-  setProgress("memoryBar", sys.memory?.percent);
-  text("memoryDetail", `${fmtBytes(sys.memory?.used)} used · ${fmtBytes(sys.memory?.available)} available · ${fmtBytes(sys.memory?.total)} total`);
+  setProgress("memoryBar", memoryPercent(sys.memory));
+  text("memoryDetail", `${fmtBytes(sys.memory?.used)} used / ${fmtBytes(memoryTotal(sys.memory))} · ${memoryLabel(sys.memory)} · ${fmtBytes(sys.memory?.available)} available`);
 
   text("networkExternalIp", net.external_ip || "--");
   text("networkExternalIpText", net.external_ip ? "public endpoint" : "확인 대기");
@@ -201,10 +292,12 @@ function renderTelemetry(data) {
   renderServices(services);
   renderSensors(data.sensors || {});
   renderCores(sys.cpu?.cores || []);
+  renderCoreCharts(sys.cpu?.cores || []);
   renderTemperatures(sys.temperatures || []);
   renderDisks(sys.disks || []);
   renderInterfaces(net.interfaces || [], net.primary_interface);
   renderContainers(docker);
+  renderChartReadouts(data);
 }
 
 function hostIpLabel(network) {
@@ -286,7 +379,7 @@ function syncItems(targetId, rows, keyFn, createFn, updateFn) {
 }
 
 function renderCores(cores) {
-  syncItems("coreList", cores, (core) => core.name, createCoreRow, updateCoreRow);
+  syncItems("coreList", cores, coreKey, createCoreRow, updateCoreRow);
 }
 
 function createCoreRow() {
@@ -301,9 +394,32 @@ function createCoreRow() {
 }
 
 function updateCoreRow(el, core) {
-  el.querySelector('[data-role="name"]').textContent = core.name;
+  el.querySelector('[data-role="name"]').textContent = cpuLabel(core);
   el.querySelector('[data-role="value"]').textContent = fmtPercent(core.percent);
   setProgressFill(el.querySelector(".progress i"), core.percent);
+}
+
+function renderCoreCharts(cores) {
+  syncItems("cpuSeparateView", cores, coreKey, createCoreChart, updateCoreChart);
+}
+
+function createCoreChart() {
+  const article = document.createElement("article");
+  article.className = "core-chart";
+  article.innerHTML = `
+    <canvas class="resource-chart" width="520" height="150"></canvas>
+    <div class="core-chart-head">
+      <span data-role="name"></span>
+      <b data-role="value"></b>
+      <small>Y 0-100%<br />X 최근 90초</small>
+    </div>
+  `;
+  return article;
+}
+
+function updateCoreChart(el, core) {
+  el.querySelector('[data-role="name"]').textContent = cpuLabel(core);
+  el.querySelector('[data-role="value"]').textContent = fmtPercent(core.percent);
 }
 
 function renderTemperatures(rows) {
@@ -319,6 +435,8 @@ function renderTemperatures(rows) {
 }
 
 function renderDisks(disks) {
+  const primary = disks[0];
+  text("diskSummary", primary ? `${fmtBytes(primary.used)} / ${fmtBytes(primary.total)} · ${fmtPercent(primary.percent)}` : "--");
   syncItems("diskList", disks, (disk) => disk.mount, createDiskRow, updateDiskRow);
 }
 
@@ -335,7 +453,7 @@ function createDiskRow() {
 
 function updateDiskRow(el, disk) {
   el.querySelector('[data-role="mount"]').textContent = disk.mount;
-  el.querySelector('[data-role="usage"]').textContent = `${fmtBytes(disk.used)} / ${fmtBytes(disk.total)}`;
+  el.querySelector('[data-role="usage"]').textContent = `${fmtBytes(disk.used)} used · ${fmtBytes(disk.free)} free · ${fmtBytes(disk.total)} total`;
   el.querySelector('[data-role="percent"]').textContent = fmtPercent(disk.percent);
   setProgressFill(el.querySelector(".progress i"), disk.percent);
 }
@@ -431,6 +549,72 @@ function updateContainerRow(row, container) {
   row.querySelector('[data-role="status"]').textContent = container.status || "";
 }
 
+function renderChartReadouts(data) {
+  const sys = data.system || {};
+  const net = data.network || {};
+  const docker = data.docker || {};
+  const colors = chartColors();
+  const dockerMemPercent = docker.summary?.memory_limit ? (docker.summary.memory_usage / docker.summary.memory_limit) * 100 : null;
+  renderReadout("overviewSystemReadout", [
+    { label: "CPU", value: fmtPercent(sys.cpu?.total_percent), sub: "전체 사용률", color: colors.good },
+    { label: "Memory", value: fmtPercent(memoryPercent(sys.memory)), sub: `${fmtBytes(sys.memory?.used)} / ${fmtBytes(memoryTotal(sys.memory))}`, color: colors.cyan },
+  ]);
+  renderReadout("overviewNetworkReadout", [
+    { label: "RX", value: fmtBps(net.total_rx_bps), sub: "수신", color: colors.blue },
+    { label: "TX", value: fmtBps(net.total_tx_bps), sub: "송신", color: colors.rose },
+  ]);
+  renderReadout("cpuReadout", [
+    { label: "Total", value: fmtPercent(sys.cpu?.total_percent), sub: `${(sys.cpu?.cores || []).length} cores · 0-100%`, color: colors.good },
+    ...((sys.cpu?.cores || []).slice(0, 6).map((core, index) => ({
+      label: cpuLabel(core),
+      value: fmtPercent(core.percent),
+      sub: "개별 사용률",
+      color: CORE_COLORS[index % CORE_COLORS.length],
+    }))),
+  ]);
+  renderReadout("memoryReadout", [
+    { label: "Usage", value: fmtPercent(memoryPercent(sys.memory)), sub: memoryLabel(sys.memory), color: colors.cyan },
+    { label: "Used", value: fmtBytes(sys.memory?.used), sub: `of ${fmtBytes(memoryTotal(sys.memory))}`, color: colors.blue },
+    { label: "Available", value: fmtBytes(sys.memory?.available), sub: "실제 MemAvailable", color: colors.good },
+  ]);
+  renderReadout("gpuReadout", [
+    { label: "GPU", value: fmtPercent(sys.gpu_percent), sub: "로드", color: colors.rose },
+  ]);
+  renderReadout("tempReadout", [
+    { label: "Max", value: fmtTemp(sys.temperature_c), sub: "thermal zone", color: colors.amber },
+  ]);
+  renderReadout("networkReadout", [
+    { label: "RX", value: fmtBps(net.total_rx_bps), sub: "수신 속도", color: colors.blue },
+    { label: "TX", value: fmtBps(net.total_tx_bps), sub: "송신 속도", color: colors.rose },
+    { label: "Host", value: net.primary_ipv4 || "--", sub: net.primary_interface || "interface", color: colors.cyan },
+  ]);
+  renderReadout("dockerCpuReadout", [
+    { label: "CPU", value: fmtPercent(docker.summary?.cpu_percent), sub: "컨테이너 합산", color: colors.good },
+  ]);
+  renderReadout("dockerMemReadout", [
+    { label: "Memory", value: fmtPercent(dockerMemPercent), sub: `${fmtBytes(docker.summary?.memory_usage)} / ${fmtBytes(docker.summary?.memory_limit)}`, color: colors.cyan },
+  ]);
+}
+
+function renderReadout(targetId, rows) {
+  const target = $(targetId);
+  if (!target) return;
+  target.innerHTML = "";
+  for (const row of rows) {
+    const div = document.createElement("div");
+    div.className = "readout-row";
+    div.innerHTML = `
+      <i class="swatch"></i>
+      <span>${escapeHtml(row.label)}</span>
+      <b>${escapeHtml(row.value)}</b>
+      <small>${escapeHtml(row.sub || "")}</small>
+    `;
+    div.querySelector(".swatch").style.background = row.color;
+    div.querySelector(".swatch").style.color = row.color;
+    target.append(div);
+  }
+}
+
 function renderPlan(plan) {
   const target = $("milestoneList");
   if (!target) return;
@@ -460,46 +644,18 @@ function requestChartAnimation() {
   state.animationFrame = requestAnimationFrame(animateCharts);
 }
 
-function animateCharts() {
+function animateCharts(timestamp) {
   state.animationFrame = null;
-  const active = stepVisualHistory();
+  const active = stepVisualHistory(timestamp);
   drawCharts();
   if (active) state.animationFrame = requestAnimationFrame(animateCharts);
 }
 
-function stepVisualHistory() {
-  let active = false;
-  for (const key of HISTORY_KEYS) {
-    const target = state.history[key];
-    const visual = state.visualHistory[key];
-    for (let i = 0; i < target.length; i += 1) {
-      const nextTarget = target[i];
-      const current = visual[i];
-      if (nextTarget === null) {
-        if (current !== null) active = true;
-        visual[i] = null;
-        continue;
-      }
-      if (current === null || current === undefined || Number.isNaN(current)) {
-        visual[i] = nextTarget;
-        continue;
-      }
-      const next = current + (nextTarget - current) * 0.18;
-      if (Math.abs(nextTarget - next) > 0.04) {
-        active = true;
-        visual[i] = next;
-      } else {
-        visual[i] = nextTarget;
-      }
-    }
-  }
-  if (state.chartShift > 0.01) {
-    state.chartShift += (0 - state.chartShift) * 0.18;
-    active = true;
-  } else {
-    state.chartShift = 0;
-  }
-  return active;
+function stepVisualHistory(timestamp) {
+  if (state.chartShift <= 0) return false;
+  const elapsed = Math.max(0, timestamp - state.chartShiftStartedAt);
+  state.chartShift = Math.max(0, 1 - elapsed / 720);
+  return state.chartShift > 0;
 }
 
 function drawCharts() {
@@ -517,7 +673,7 @@ function drawCharts() {
       ]],
     ],
     "/system": [
-      ["chartCpu", [{ values: state.visualHistory.cpu, color: colors.good, max: 100 }]],
+      ...(state.cpuMode === "combined" ? [["chartCpu", [{ values: state.visualHistory.cpu, color: colors.good, max: 100 }]]] : []),
       ["chartMemory", [{ values: state.visualHistory.memory, color: colors.cyan, max: 100 }]],
       ["chartGpu", [{ values: state.visualHistory.gpu, color: colors.rose, max: 100 }]],
       ["chartTemp", [{ values: state.visualHistory.temp, color: colors.amber, max: tempMax }]],
@@ -535,6 +691,7 @@ function drawCharts() {
     "/research": [],
   };
   for (const [id, series] of groups[currentRoute()] || []) drawMultiLine(id, series);
+  if (currentRoute() === "/system" && state.cpuMode === "separate") drawCoreCharts();
 }
 
 function normalizeBps(values, key) {
@@ -556,8 +713,19 @@ function cssVar(name, fallback) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
-function drawMultiLine(id, series) {
-  const canvas = $(id);
+function drawCoreCharts() {
+  const target = $("cpuSeparateView");
+  if (!target) return;
+  [...target.children].forEach((row, index) => {
+    const canvas = row.querySelector("canvas");
+    const key = row.dataset.key;
+    if (!canvas || !key) return;
+    drawMultiLine(canvas, [{ values: state.visualCoreHistory[key] || [], color: CORE_COLORS[index % CORE_COLORS.length], max: 100 }]);
+  });
+}
+
+function drawMultiLine(target, series) {
+  const canvas = typeof target === "string" ? $(target) : target;
   if (!canvas) return;
   const prepared = prepareCanvas(canvas);
   if (!prepared) return;
@@ -605,7 +773,7 @@ function drawLine(ctx, values, color, max, w, h) {
   const points = values.map((value, index) => {
     if (value === null || Number.isNaN(value)) return null;
     const offset = Math.max(0, MAX_POINTS - values.length);
-    const x = values.length <= 1 ? w : ((offset + index - state.chartShift) / (MAX_POINTS - 1)) * w;
+    const x = values.length <= 1 ? w : ((offset + index + state.chartShift) / (MAX_POINTS - 1)) * w;
     const safe = Math.max(0, Math.min(max, value));
     const y = h - (safe / max) * (h - 18) - 9;
     return { x, y };
@@ -671,6 +839,7 @@ document.addEventListener("click", (event) => {
 });
 
 initTheme();
+initCpuMode();
 renderRoute();
 loadPlan().catch(console.error);
 tick();

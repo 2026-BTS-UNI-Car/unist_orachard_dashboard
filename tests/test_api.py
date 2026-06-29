@@ -37,6 +37,9 @@ class DashboardApiTest(unittest.TestCase):
         for key in ["system", "network", "docker", "rover", "sensors", "fusion", "experiment"]:
             self.assertIn(key, payload)
         self.assertIn("cpu", payload["system"])
+        self.assertEqual(payload["system"]["memory"]["display_total"], 8 * 1024 * 1024 * 1024)
+        for core in payload["system"]["cpu"].get("cores", []):
+            self.assertRegex(core["label"], r"^CPU [0-9]+$")
         self.assertIn("interfaces", payload["network"])
 
     def test_detail_api_shape(self):

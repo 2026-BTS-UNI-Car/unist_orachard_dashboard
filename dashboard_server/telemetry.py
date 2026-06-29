@@ -17,6 +17,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
 DEFAULT_TELEMETRY_FILE = ROOT / "runtime" / "telemetry_snapshot.json"
+DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 
 
 def _read_text(path: str | Path) -> str | None:
@@ -46,6 +47,12 @@ def _pct(used: int, total: int) -> float | None:
     if total <= 0:
         return None
     return round((used / total) * 100.0, 1)
+
+
+def _cpu_display_label(name: str) -> str:
+    if name.startswith("cpu") and name[3:].isdigit():
+        return f"CPU {int(name[3:]) + 1}"
+    return name.upper()
 
 
 class DockerSocketHTTPConnection(http.client.HTTPConnection):
@@ -328,8 +335,17 @@ class TelemetryProvider:
             if name == "cpu":
                 result["total_percent"] = percent
             else:
-                result["cores"].append({"name": name, "percent": percent})
+                index = int(name[3:]) if name.startswith("cpu") and name[3:].isdigit() else len(result["cores"])
+                result["cores"].append(
+                    {
+                        "name": name,
+                        "label": _cpu_display_label(name),
+                        "index": index,
+                        "percent": percent,
+                    }
+                )
         self._last_cpu = current
+        result["cores"].sort(key=lambda row: row.get("index", 0))
         return result
 
     def _read_cpu_times(self) -> dict[str, dict[str, int]] | None:
@@ -354,7 +370,16 @@ class TelemetryProvider:
         total = values.get("MemTotal", 0) * 1024
         available = values.get("MemAvailable", 0) * 1024
         used = max(0, total - available)
-        return {"total": total, "available": available, "used": used, "percent": _pct(used, total)}
+        display_total = int(os.environ.get("MEMORY_DISPLAY_TOTAL_BYTES", DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES))
+        return {
+            "total": total,
+            "available": available,
+            "used": used,
+            "percent": _pct(used, total),
+            "display_total": display_total,
+            "display_percent": _pct(used, display_total),
+            "display_label": "8.0 GB 기준",
+        }
 
     def _swap(self) -> dict[str, Any]:
         values = self._meminfo()
