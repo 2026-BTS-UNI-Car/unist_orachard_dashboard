@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.client
+import ipaddress
 import json
 import os
 import platform
@@ -10,6 +11,7 @@ import struct
 import time
 from pathlib import Path
 from typing import Any
+import urllib.request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +77,9 @@ class TelemetryProvider:
         self._last_cpu = self._read_cpu_times()
         self._last_net = self._read_net_counters()
         self._last_sample_at = time.time()
+        self._external_ip_value: str | None = None
+        self._external_ip_error: str | None = None
+        self._external_ip_next_refresh = 0.0
 
     def health(self) -> dict[str, Any]:
         return {
@@ -153,12 +158,19 @@ class TelemetryProvider:
         self._last_net = counters
         self._last_sample_at = now
         active = [iface for iface in interfaces if iface.get("state") == "up" and iface["name"] != "lo"]
+        primary_ipv4 = self._primary_ipv4(interfaces)
+        primary_interface = self._primary_interface(primary_ipv4, interfaces)
+        traffic_interfaces = [iface for iface in interfaces if iface["name"] != "lo"]
         return {
             "hostname": self._hostname(),
             "interfaces": sorted(interfaces, key=lambda item: (item["name"] == "lo", item["name"])),
             "active_interfaces": [iface["name"] for iface in active],
-            "total_rx_bps": round(sum(iface["rx_bps"] for iface in interfaces), 1),
-            "total_tx_bps": round(sum(iface["tx_bps"] for iface in interfaces), 1),
+            "primary_ipv4": primary_ipv4,
+            "primary_interface": primary_interface,
+            "external_ip": self._cached_external_ip(),
+            "external_ip_error": self._external_ip_error,
+            "total_rx_bps": round(sum(iface["rx_bps"] for iface in traffic_interfaces), 1),
+            "total_tx_bps": round(sum(iface["tx_bps"] for iface in traffic_interfaces), 1),
         }
 
     def docker(self) -> dict[str, Any]:
@@ -444,6 +456,51 @@ class TelemetryProvider:
                 "tx_packets": int(fields[9]),
             }
         return counters
+
+    def _cached_external_ip(self) -> str | None:
+        now = time.time()
+        if now < self._external_ip_next_refresh:
+            return self._external_ip_value
+        url = os.environ.get("EXTERNAL_IP_URL", "https://api64.ipify.org")
+        timeout = float(os.environ.get("EXTERNAL_IP_TIMEOUT_S", "0.8"))
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                value = response.read(96).decode("utf-8").strip().splitlines()[0]
+            ipaddress.ip_address(value)
+            self._external_ip_value = value
+            self._external_ip_error = None
+            self._external_ip_next_refresh = now + int(os.environ.get("EXTERNAL_IP_CACHE_S", "300"))
+        except (OSError, UnicodeDecodeError, ValueError, IndexError) as exc:
+            self._external_ip_error = str(exc)
+            self._external_ip_next_refresh = now + int(os.environ.get("EXTERNAL_IP_RETRY_S", "60"))
+        return self._external_ip_value
+
+    def _primary_ipv4(self, interfaces: list[dict[str, Any]]) -> str | None:
+        target = os.environ.get("PRIMARY_IP_ROUTE_TARGET", "1.1.1.1")
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.settimeout(0.2)
+                sock.connect((target, 80))
+                value = sock.getsockname()[0]
+                if value and not value.startswith("127."):
+                    return value
+        except OSError:
+            pass
+        for iface in interfaces:
+            if iface["name"] == "lo":
+                continue
+            for value in iface.get("ipv4") or []:
+                if value and not value.startswith("127."):
+                    return value
+        return None
+
+    def _primary_interface(self, primary_ipv4: str | None, interfaces: list[dict[str, Any]]) -> str | None:
+        if not primary_ipv4:
+            return None
+        for iface in interfaces:
+            if primary_ipv4 in (iface.get("ipv4") or []):
+                return iface["name"]
+        return None
 
     def _iface_text(self, name: str, field: str) -> str | None:
         return _read_text(self.sys_root / "class/net" / name / field)

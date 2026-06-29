@@ -1,19 +1,18 @@
+const ROUTES = ["/", "/system", "/network", "/docker", "/research"];
+const HISTORY_KEYS = ["cpu", "memory", "gpu", "temp", "rx", "tx", "dockerCpu", "dockerMemory"];
+const MAX_POINTS = 90;
+const POLL_INTERVAL_MS = 1000;
+const DPR_LIMIT = 1.5;
+
 const state = {
   telemetry: null,
   plan: null,
-  history: {
-    cpu: [],
-    memory: [],
-    gpu: [],
-    temp: [],
-    rx: [],
-    tx: [],
-    dockerCpu: [],
-    dockerMemory: [],
-  },
+  history: Object.fromEntries(HISTORY_KEYS.map((key) => [key, []])),
+  visualHistory: Object.fromEntries(HISTORY_KEYS.map((key) => [key, []])),
+  chartShift: 0,
+  animationFrame: null,
 };
 
-const MAX_POINTS = 90;
 const $ = (id) => document.getElementById(id);
 
 function text(id, value) {
@@ -62,7 +61,7 @@ async function getJson(path) {
 }
 
 function currentRoute() {
-  return ["/", "/system", "/network", "/docker", "/research"].includes(location.pathname) ? location.pathname : "/";
+  return ROUTES.includes(location.pathname) ? location.pathname : "/";
 }
 
 function renderRoute() {
@@ -73,6 +72,27 @@ function renderRoute() {
   document.querySelectorAll("[data-route]").forEach((link) => {
     link.classList.toggle("active", link.dataset.route === route);
   });
+  requestChartAnimation();
+}
+
+function initTheme() {
+  const stored = localStorage.getItem("ubts-theme");
+  const theme = stored || "dark";
+  applyTheme(theme);
+  $("themeToggle")?.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    applyTheme(next);
+  });
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem("ubts-theme", theme);
+  const isLight = theme === "light";
+  const toggle = $("themeToggle");
+  if (toggle) toggle.setAttribute("aria-pressed", String(isLight));
+  text("themeLabel", isLight ? "Light" : "Dark");
+  requestChartAnimation();
 }
 
 async function loadPlan() {
@@ -86,6 +106,7 @@ async function tick() {
     pushHistory(state.telemetry);
     renderTelemetry(state.telemetry);
     setConnection("ok", "online");
+    requestChartAnimation();
   } catch (err) {
     setConnection("bad", "offline");
     console.error(err);
@@ -96,30 +117,35 @@ function pushHistory(data) {
   const sys = data.system || {};
   const net = data.network || {};
   const docker = data.docker || {};
-  const cpu = sys.cpu?.total_percent;
-  const memory = sys.memory?.percent;
-  const gpu = sys.gpu_percent;
-  const temp = sys.temperature_c;
   const dockerCpu = docker.summary?.cpu_percent;
   const dockerMemory = docker.summary?.memory_limit ? (docker.summary.memory_usage / docker.summary.memory_limit) * 100 : null;
-  addPoint("cpu", cpu);
-  addPoint("memory", memory);
-  addPoint("gpu", gpu);
-  addPoint("temp", temp);
+  addPoint("cpu", sys.cpu?.total_percent);
+  addPoint("memory", sys.memory?.percent);
+  addPoint("gpu", sys.gpu_percent);
+  addPoint("temp", sys.temperature_c);
   addPoint("rx", net.total_rx_bps);
   addPoint("tx", net.total_tx_bps);
   addPoint("dockerCpu", dockerCpu);
   addPoint("dockerMemory", dockerMemory);
+  state.chartShift = 1;
 }
 
 function addPoint(key, value) {
-  const list = state.history[key];
-  list.push(value === null || value === undefined ? null : Number(value));
-  if (list.length > MAX_POINTS) list.shift();
+  const target = state.history[key];
+  const visual = state.visualHistory[key];
+  const numeric = value === null || value === undefined ? null : Number(value);
+  if (target.length >= MAX_POINTS) {
+    target.shift();
+    visual.shift();
+  }
+  target.push(Number.isFinite(numeric) ? numeric : null);
+  const previous = visual.length ? visual[visual.length - 1] : numeric;
+  visual.push(Number.isFinite(previous) ? previous : numeric);
 }
 
 function setConnection(kind, label) {
   const el = $("connectionState");
+  if (!el) return;
   el.className = `status-pill ${kind}`;
   el.textContent = label;
 }
@@ -142,7 +168,7 @@ function renderTelemetry(data) {
   text("hostName", sys.hostname || "--");
   text("hostUptime", fmtDuration(sys.os_uptime_s));
   text("hostTemp", fmtTemp(sys.temperature_c));
-  text("hostIp", firstActiveIp(net));
+  text("hostIp", hostIpLabel(net));
 
   text("systemCpuValue", fmtPercent(sys.cpu?.total_percent));
   text("systemMemoryValue", fmtPercent(sys.memory?.percent));
@@ -151,7 +177,12 @@ function renderTelemetry(data) {
   setProgress("memoryBar", sys.memory?.percent);
   text("memoryDetail", `${fmtBytes(sys.memory?.used)} used · ${fmtBytes(sys.memory?.available)} available · ${fmtBytes(sys.memory?.total)} total`);
 
+  text("networkExternalIp", net.external_ip || "--");
+  text("networkExternalIpText", net.external_ip ? "public endpoint" : "확인 대기");
+  text("networkInternalIp", net.primary_ipv4 || "--");
+  text("networkInternalIpText", [net.primary_interface, net.hostname].filter(Boolean).join(" · ") || "host route");
   text("networkThroughput", `${fmtBps(net.total_rx_bps)} RX · ${fmtBps(net.total_tx_bps)} TX`);
+
   text("dockerContainerCount", docker.available ? docker.summary?.total ?? "--" : "N/A");
   text("dockerRunningText", docker.available ? `${docker.summary?.running || 0} running · ${docker.summary?.stopped || 0} stopped` : docker.error || "--");
   text("dockerImageCount", docker.available ? docker.engine?.images ?? "--" : "N/A");
@@ -172,12 +203,14 @@ function renderTelemetry(data) {
   renderCores(sys.cpu?.cores || []);
   renderTemperatures(sys.temperatures || []);
   renderDisks(sys.disks || []);
-  renderInterfaces(net.interfaces || []);
+  renderInterfaces(net.interfaces || [], net.primary_interface);
   renderContainers(docker);
-  drawCharts();
 }
 
-function firstActiveIp(network) {
+function hostIpLabel(network) {
+  if (network.primary_ipv4) {
+    return [network.primary_interface, network.primary_ipv4].filter(Boolean).join(" ");
+  }
   for (const iface of network.interfaces || []) {
     if (iface.name !== "lo" && iface.ipv4?.length) return `${iface.name} ${iface.ipv4[0]}`;
   }
@@ -185,8 +218,14 @@ function firstActiveIp(network) {
 }
 
 function setProgress(id, value) {
-  const fill = $(`${id}`)?.querySelector("i");
-  if (fill) fill.style.width = `${Math.max(0, Math.min(100, Number(value || 0)))}%`;
+  setProgressFill($(`${id}`)?.querySelector("i"), value);
+}
+
+function setProgressFill(fill, value) {
+  if (!fill) return;
+  const pct = Math.max(0, Math.min(100, Number(value || 0)));
+  fill.style.transform = `scaleX(${pct / 100})`;
+  fill.setAttribute("aria-valuenow", pct.toFixed(1));
 }
 
 function renderServices(services) {
@@ -225,16 +264,46 @@ function renderStatusRows(targetId, rows) {
   }
 }
 
-function renderCores(cores) {
-  const target = $("coreList");
+function syncItems(targetId, rows, keyFn, createFn, updateFn) {
+  const target = $(targetId);
   if (!target) return;
-  target.innerHTML = "";
-  for (const core of cores) {
-    const div = document.createElement("div");
-    div.className = "core";
-    div.innerHTML = `<span>${escapeHtml(core.name)}</span><div class="progress"><i style="width:${Number(core.percent || 0)}%"></i></div><strong>${fmtPercent(core.percent)}</strong>`;
-    target.append(div);
+  const existing = new Map([...target.children].map((child) => [child.dataset.key, child]));
+  const seen = new Set();
+  for (const row of rows) {
+    const key = String(keyFn(row));
+    let el = existing.get(key);
+    if (!el) {
+      el = createFn();
+      el.dataset.key = key;
+    }
+    updateFn(el, row);
+    target.append(el);
+    seen.add(key);
   }
+  for (const [key, el] of existing) {
+    if (!seen.has(key)) el.remove();
+  }
+}
+
+function renderCores(cores) {
+  syncItems("coreList", cores, (core) => core.name, createCoreRow, updateCoreRow);
+}
+
+function createCoreRow() {
+  const div = document.createElement("div");
+  div.className = "core";
+  div.innerHTML = `
+    <span data-role="name"></span>
+    <div class="progress"><i></i></div>
+    <strong data-role="value"></strong>
+  `;
+  return div;
+}
+
+function updateCoreRow(el, core) {
+  el.querySelector('[data-role="name"]').textContent = core.name;
+  el.querySelector('[data-role="value"]').textContent = fmtPercent(core.percent);
+  setProgressFill(el.querySelector(".progress i"), core.percent);
 }
 
 function renderTemperatures(rows) {
@@ -250,67 +319,116 @@ function renderTemperatures(rows) {
 }
 
 function renderDisks(disks) {
-  const target = $("diskList");
-  if (!target) return;
-  target.innerHTML = "";
-  for (const disk of disks) {
-    const div = document.createElement("div");
-    div.className = "disk-row";
-    div.innerHTML = `
-      <div><strong>${escapeHtml(disk.mount)}</strong><small>${fmtBytes(disk.used)} / ${fmtBytes(disk.total)}</small></div>
-      <div class="progress"><i style="width:${Number(disk.percent || 0)}%"></i></div>
-      <b>${fmtPercent(disk.percent)}</b>
-    `;
-    target.append(div);
-  }
+  syncItems("diskList", disks, (disk) => disk.mount, createDiskRow, updateDiskRow);
 }
 
-function renderInterfaces(interfaces) {
+function createDiskRow() {
+  const div = document.createElement("div");
+  div.className = "disk-row";
+  div.innerHTML = `
+    <div><strong data-role="mount"></strong><small data-role="usage"></small></div>
+    <div class="progress"><i></i></div>
+    <b data-role="percent"></b>
+  `;
+  return div;
+}
+
+function updateDiskRow(el, disk) {
+  el.querySelector('[data-role="mount"]').textContent = disk.mount;
+  el.querySelector('[data-role="usage"]').textContent = `${fmtBytes(disk.used)} / ${fmtBytes(disk.total)}`;
+  el.querySelector('[data-role="percent"]').textContent = fmtPercent(disk.percent);
+  setProgressFill(el.querySelector(".progress i"), disk.percent);
+}
+
+function renderInterfaces(interfaces, primaryInterface) {
   const target = $("interfaceList");
   if (!target) return;
-  target.innerHTML = "";
-  for (const iface of interfaces) {
-    const div = document.createElement("article");
-    div.className = "interface-card";
-    div.innerHTML = `
-      <div class="card-title">
-        <strong>${escapeHtml(iface.name)}</strong>
-        <span class="tag ${iface.state === "up" ? "ok" : ""}">${escapeHtml(iface.state || "unknown")}</span>
-      </div>
-      <dl class="detail-list compact">
-        <div><dt>IPv4</dt><dd>${escapeHtml((iface.ipv4 || []).join(", ") || "--")}</dd></div>
-        <div><dt>MAC</dt><dd>${escapeHtml(iface.mac || "--")}</dd></div>
-        <div><dt>Link speed</dt><dd>${iface.speed_mbps ? `${iface.speed_mbps} Mbps` : "--"}</dd></div>
-        <div><dt>RX / TX</dt><dd>${fmtBps(iface.rx_bps)} / ${fmtBps(iface.tx_bps)}</dd></div>
-      </dl>
-    `;
-    target.append(div);
+  const rows = usefulInterfaces(interfaces, primaryInterface);
+  if (!rows.length) {
+    target.innerHTML = `<div class="empty-state">활성 네트워크 인터페이스를 찾지 못했습니다.</div>`;
+    return;
   }
+  if (target.querySelector(".empty-state")) target.innerHTML = "";
+  syncItems("interfaceList", rows, (iface) => iface.name, createInterfaceCard, (el, iface) => updateInterfaceCard(el, iface, primaryInterface));
+}
+
+function usefulInterfaces(interfaces, primaryInterface) {
+  return interfaces
+    .filter((iface) => iface.name !== "lo")
+    .filter((iface) => iface.name === primaryInterface || (iface.state === "up" && ((iface.ipv4 || []).length || iface.speed_mbps || iface.rx_bps || iface.tx_bps)))
+    .sort((a, b) => {
+      if (a.name === primaryInterface) return -1;
+      if (b.name === primaryInterface) return 1;
+      if (a.state === "up" && b.state !== "up") return -1;
+      if (b.state === "up" && a.state !== "up") return 1;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 6);
+}
+
+function createInterfaceCard() {
+  const div = document.createElement("article");
+  div.className = "interface-card";
+  div.innerHTML = `
+    <div class="card-title">
+      <strong data-role="name"></strong>
+      <span data-role="state" class="tag"></span>
+    </div>
+    <div class="interface-metrics">
+      <div><span>IPv4</span><b data-role="ip"></b></div>
+      <div><span>Link</span><b data-role="link"></b></div>
+      <div><span>RX / TX</span><b data-role="traffic"></b></div>
+    </div>
+  `;
+  return div;
+}
+
+function updateInterfaceCard(el, iface, primaryInterface) {
+  el.querySelector('[data-role="name"]').textContent = iface.name === primaryInterface ? `${iface.name} · primary` : iface.name;
+  const stateEl = el.querySelector('[data-role="state"]');
+  stateEl.className = `tag ${iface.state === "up" ? "ok" : ""}`;
+  stateEl.textContent = iface.state || "unknown";
+  el.querySelector('[data-role="ip"]').textContent = (iface.ipv4 || []).join(", ") || "--";
+  el.querySelector('[data-role="link"]').textContent = iface.speed_mbps ? `${iface.speed_mbps} Mbps` : "--";
+  el.querySelector('[data-role="traffic"]').textContent = `${fmtBps(iface.rx_bps)} / ${fmtBps(iface.tx_bps)}`;
 }
 
 function renderContainers(docker) {
   const target = $("containerList");
   if (!target) return;
-  target.innerHTML = "";
   if (!docker.available) {
     target.innerHTML = `<div class="empty-state">${escapeHtml(docker.error || "Docker 정보를 읽을 수 없습니다.")}</div>`;
     return;
   }
-  for (const container of docker.containers || []) {
-    const row = document.createElement("div");
-    row.className = "container-row";
-    row.innerHTML = `
-      <div>
-        <strong>${escapeHtml(container.name || container.id)}</strong>
-        <small>${escapeHtml(container.image || "")}</small>
-      </div>
-      <span class="tag ${container.state === "running" ? "ok" : ""}">${escapeHtml(container.state || "--")}</span>
-      <b>${fmtPercent(container.cpu_percent)}</b>
-      <b>${fmtBytes(container.memory_usage)}</b>
-      <small>${escapeHtml(container.status || "")}</small>
-    `;
-    target.append(row);
-  }
+  if (target.querySelector(".empty-state")) target.innerHTML = "";
+  syncItems("containerList", docker.containers || [], (container) => container.id || container.name, createContainerRow, updateContainerRow);
+}
+
+function createContainerRow() {
+  const row = document.createElement("div");
+  row.className = "container-row";
+  row.innerHTML = `
+    <div>
+      <strong data-role="name"></strong>
+      <small data-role="image"></small>
+    </div>
+    <span data-role="state" class="tag"></span>
+    <b data-role="cpu"></b>
+    <b data-role="memory"></b>
+    <small data-role="status"></small>
+  `;
+  return row;
+}
+
+function updateContainerRow(row, container) {
+  row.querySelector('[data-role="name"]').textContent = container.name || container.id;
+  row.querySelector('[data-role="image"]').textContent = container.image || "";
+  const stateEl = row.querySelector('[data-role="state"]');
+  stateEl.className = `tag ${container.state === "running" ? "ok" : ""}`;
+  stateEl.textContent = container.state || "--";
+  row.querySelector('[data-role="cpu"]').textContent = fmtPercent(container.cpu_percent);
+  row.querySelector('[data-role="memory"]').textContent = fmtBytes(container.memory_usage);
+  row.querySelector('[data-role="status"]').textContent = container.status || "";
 }
 
 function renderPlan(plan) {
@@ -337,51 +455,141 @@ function serviceLabel(key) {
   return { dashboard: "Dashboard", cloudflared: "Cloudflare", ros2_bridge: "ROS2 Bridge", data_recorder: "Data Recorder" }[key] || key;
 }
 
-function drawCharts() {
-  drawMultiLine("chartOverviewSystem", [
-    { values: state.history.cpu, color: "#70e2b4", max: 100 },
-    { values: state.history.memory, color: "#68d8ee", max: 100 },
-  ]);
-  drawMultiLine("chartOverviewNetwork", [
-    { values: normalizeBps(state.history.rx), color: "#70e2b4", max: 100 },
-    { values: normalizeBps(state.history.tx), color: "#f2b84b", max: 100 },
-  ]);
-  drawMultiLine("chartCpu", [{ values: state.history.cpu, color: "#70e2b4", max: 100 }]);
-  drawMultiLine("chartMemory", [{ values: state.history.memory, color: "#68d8ee", max: 100 }]);
-  drawMultiLine("chartGpu", [{ values: state.history.gpu, color: "#d977bc", max: 100 }]);
-  drawMultiLine("chartTemp", [{ values: state.history.temp, color: "#f2b84b", max: Math.max(90, ...state.history.temp.filter((v) => v !== null)) }]);
-  drawMultiLine("chartNetwork", [
-    { values: normalizeBps(state.history.rx), color: "#70e2b4", max: 100 },
-    { values: normalizeBps(state.history.tx), color: "#f2b84b", max: 100 },
-  ]);
-  drawMultiLine("chartDockerCpu", [{ values: state.history.dockerCpu, color: "#70e2b4", max: 100 }]);
-  drawMultiLine("chartDockerMem", [{ values: state.history.dockerMemory, color: "#68d8ee", max: 100 }]);
+function requestChartAnimation() {
+  if (state.animationFrame) return;
+  state.animationFrame = requestAnimationFrame(animateCharts);
 }
 
-function normalizeBps(values) {
-  const max = Math.max(1, ...values.filter((v) => v !== null));
+function animateCharts() {
+  state.animationFrame = null;
+  const active = stepVisualHistory();
+  drawCharts();
+  if (active) state.animationFrame = requestAnimationFrame(animateCharts);
+}
+
+function stepVisualHistory() {
+  let active = false;
+  for (const key of HISTORY_KEYS) {
+    const target = state.history[key];
+    const visual = state.visualHistory[key];
+    for (let i = 0; i < target.length; i += 1) {
+      const nextTarget = target[i];
+      const current = visual[i];
+      if (nextTarget === null) {
+        if (current !== null) active = true;
+        visual[i] = null;
+        continue;
+      }
+      if (current === null || current === undefined || Number.isNaN(current)) {
+        visual[i] = nextTarget;
+        continue;
+      }
+      const next = current + (nextTarget - current) * 0.18;
+      if (Math.abs(nextTarget - next) > 0.04) {
+        active = true;
+        visual[i] = next;
+      } else {
+        visual[i] = nextTarget;
+      }
+    }
+  }
+  if (state.chartShift > 0.01) {
+    state.chartShift += (0 - state.chartShift) * 0.18;
+    active = true;
+  } else {
+    state.chartShift = 0;
+  }
+  return active;
+}
+
+function drawCharts() {
+  const colors = chartColors();
+  const tempMax = Math.max(90, ...state.history.temp.filter((v) => v !== null));
+  const groups = {
+    "/": [
+      ["chartOverviewSystem", [
+        { values: state.visualHistory.cpu, color: colors.good, max: 100 },
+        { values: state.visualHistory.memory, color: colors.cyan, max: 100 },
+      ]],
+      ["chartOverviewNetwork", [
+        { values: normalizeBps(state.visualHistory.rx, "rx"), color: colors.blue, max: 100 },
+        { values: normalizeBps(state.visualHistory.tx, "tx"), color: colors.rose, max: 100 },
+      ]],
+    ],
+    "/system": [
+      ["chartCpu", [{ values: state.visualHistory.cpu, color: colors.good, max: 100 }]],
+      ["chartMemory", [{ values: state.visualHistory.memory, color: colors.cyan, max: 100 }]],
+      ["chartGpu", [{ values: state.visualHistory.gpu, color: colors.rose, max: 100 }]],
+      ["chartTemp", [{ values: state.visualHistory.temp, color: colors.amber, max: tempMax }]],
+    ],
+    "/network": [
+      ["chartNetwork", [
+        { values: normalizeBps(state.visualHistory.rx, "rx"), color: colors.blue, max: 100 },
+        { values: normalizeBps(state.visualHistory.tx, "tx"), color: colors.rose, max: 100 },
+      ]],
+    ],
+    "/docker": [
+      ["chartDockerCpu", [{ values: state.visualHistory.dockerCpu, color: colors.good, max: 100 }]],
+      ["chartDockerMem", [{ values: state.visualHistory.dockerMemory, color: colors.cyan, max: 100 }]],
+    ],
+    "/research": [],
+  };
+  for (const [id, series] of groups[currentRoute()] || []) drawMultiLine(id, series);
+}
+
+function normalizeBps(values, key) {
+  const max = Math.max(1, ...state.history[key].filter((v) => v !== null));
   return values.map((value) => (value === null ? null : (value / max) * 100));
+}
+
+function chartColors() {
+  return {
+    blue: cssVar("--chart-blue", "#2f76ff"),
+    cyan: cssVar("--chart-cyan", "#38d8ff"),
+    rose: cssVar("--chart-rose", "#f21b58"),
+    amber: cssVar("--chart-amber", "#f4bd4f"),
+    good: cssVar("--chart-good", "#55e2b2"),
+  };
+}
+
+function cssVar(name, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
 function drawMultiLine(id, series) {
   const canvas = $(id);
   if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width;
-  const h = canvas.height;
+  const prepared = prepareCanvas(canvas);
+  if (!prepared) return;
+  const { ctx, w, h } = prepared;
   ctx.clearRect(0, 0, w, h);
   const gradient = ctx.createLinearGradient(0, 0, 0, h);
-  gradient.addColorStop(0, "rgba(255,255,255,0.045)");
-  gradient.addColorStop(1, "rgba(255,255,255,0.01)");
+  gradient.addColorStop(0, cssVar("--chart-bg-top", "rgba(255,255,255,0.05)"));
+  gradient.addColorStop(1, cssVar("--chart-bg-bottom", "rgba(255,255,255,0.01)"));
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, w, h);
   drawGrid(ctx, w, h);
   for (const item of series) drawLine(ctx, item.values, item.color, item.max || 100, w, h);
 }
 
+function prepareCanvas(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const dpr = Math.min(window.devicePixelRatio || 1, DPR_LIMIT);
+  const width = Math.round(rect.width * dpr);
+  const height = Math.round(rect.height * dpr);
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const ctx = canvas.getContext("2d", { alpha: true });
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
 function drawGrid(ctx, w, h) {
   ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.strokeStyle = cssVar("--chart-grid", "rgba(255,255,255,0.1)");
   ctx.lineWidth = 1;
   for (let i = 1; i < 4; i += 1) {
     const y = (h / 4) * i;
@@ -396,34 +604,50 @@ function drawGrid(ctx, w, h) {
 function drawLine(ctx, values, color, max, w, h) {
   const points = values.map((value, index) => {
     if (value === null || Number.isNaN(value)) return null;
-    const x = values.length <= 1 ? w : (index / (MAX_POINTS - 1)) * w;
+    const offset = Math.max(0, MAX_POINTS - values.length);
+    const x = values.length <= 1 ? w : ((offset + index - state.chartShift) / (MAX_POINTS - 1)) * w;
     const safe = Math.max(0, Math.min(max, value));
     const y = h - (safe / max) * (h - 18) - 9;
     return { x, y };
   });
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2.8;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   ctx.shadowColor = color;
-  ctx.shadowBlur = 10;
+  ctx.shadowBlur = 8;
   ctx.beginPath();
-  let started = false;
+  let segment = [];
   for (const point of points) {
-    if (!point) {
-      started = false;
+    if (point) {
+      segment.push(point);
       continue;
     }
-    if (!started) {
-      ctx.moveTo(point.x, point.y);
-      started = true;
-    } else {
-      ctx.lineTo(point.x, point.y);
-    }
+    strokeSegment(ctx, segment);
+    segment = [];
   }
+  strokeSegment(ctx, segment);
   ctx.stroke();
   ctx.restore();
+}
+
+function strokeSegment(ctx, points) {
+  if (!points.length) return;
+  ctx.moveTo(points[0].x, points[0].y);
+  if (points.length === 1) {
+    ctx.lineTo(points[0].x + 0.01, points[0].y);
+    return;
+  }
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1];
+    const current = points[i];
+    const midX = (prev.x + current.x) / 2;
+    const midY = (prev.y + current.y) / 2;
+    ctx.quadraticCurveTo(prev.x, prev.y, midX, midY);
+  }
+  const last = points[points.length - 1];
+  ctx.lineTo(last.x, last.y);
 }
 
 function escapeHtml(value) {
@@ -437,16 +661,17 @@ function escapeHtml(value) {
 }
 
 window.addEventListener("popstate", renderRoute);
+window.addEventListener("resize", requestChartAnimation);
 document.addEventListener("click", (event) => {
   const link = event.target.closest("a[data-route]");
   if (!link) return;
   event.preventDefault();
   history.pushState({}, "", link.getAttribute("href"));
   renderRoute();
-  drawCharts();
 });
 
+initTheme();
 renderRoute();
 loadPlan().catch(console.error);
 tick();
-setInterval(tick, 1000);
+setInterval(tick, POLL_INTERVAL_MS);

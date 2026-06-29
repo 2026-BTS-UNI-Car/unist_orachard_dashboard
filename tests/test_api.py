@@ -41,7 +41,10 @@ class DashboardApiTest(unittest.TestCase):
 
     def test_detail_api_shape(self):
         self.assertIn("memory", self.get_json("/api/system"))
-        self.assertIn("interfaces", self.get_json("/api/network"))
+        network = self.get_json("/api/network")
+        self.assertIn("interfaces", network)
+        self.assertIn("primary_ipv4", network)
+        self.assertIn("external_ip", network)
         self.assertIn("containers", self.get_json("/api/docker"))
 
     def test_plan_contains_research_topic(self):

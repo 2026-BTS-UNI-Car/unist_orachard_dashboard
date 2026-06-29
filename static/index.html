@@ -3,17 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>UNIST Orchard Rover Dashboard</title>
+    <title>UBTS Rover Ops</title>
+    <link rel="icon" href="/static/favicon.ico" sizes="any" />
+    <link rel="icon" href="/static/assets/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/static/assets/apple-touch-icon.png" />
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("ubts-theme") || "dark";
+      } catch (_) {
+        document.documentElement.dataset.theme = "dark";
+      }
+    </script>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
         <a class="brand-block" href="/">
-          <span class="brand-mark"></span>
+          <span class="logo-badge logo-badge-sm">
+            <img src="/static/assets/ubts-logo.png" alt="UBTS UNIST" />
+          </span>
           <span>
-            <small>UNIST BTS</small>
-            <strong>Orchard Rover</strong>
+            <small>UBTS</small>
+            <strong>Rover Ops</strong>
           </span>
         </a>
         <nav class="nav-list">
@@ -24,6 +36,10 @@
           <a data-route="/research" href="/research">Research</a>
         </nav>
         <div class="sidebar-footer">
+          <button id="themeToggle" class="theme-toggle" type="button" aria-label="테마 변경" aria-pressed="false">
+            <span class="theme-track"><i></i></span>
+            <b id="themeLabel">Dark</b>
+          </button>
           <span id="connectionState" class="status-pill neutral">checking</span>
           <small id="updatedAt">--</small>
         </div>
@@ -32,9 +48,14 @@
       <main class="main-surface">
         <section class="page page-overview" data-page="/">
           <header class="page-head">
-            <p class="eyebrow">Live operations</p>
-            <h1>Jetson 관제 대시보드</h1>
-            <p>실제 Jetson 시스템, 네트워크, Docker 상태를 중심으로 표시합니다.</p>
+            <div class="hero-copy">
+              <p class="eyebrow">Live operations</p>
+              <h1>UNIST Orchard Rover</h1>
+              <p>Jetson Orin Nano, 네트워크, 컨테이너, 로버 연결 상태를 실시간으로 확인합니다.</p>
+            </div>
+            <div class="logo-badge hero-logo">
+              <img src="/static/assets/ubts-logo.png" alt="UBTS UNIST" />
+            </div>
           </header>
 
           <section class="kpi-grid">
@@ -152,8 +173,21 @@
           <header class="page-head">
             <p class="eyebrow">Network</p>
             <h1>네트워크 상태</h1>
-            <p>인터페이스, IP, 링크 속도, RX/TX 처리량을 표시합니다.</p>
+            <p>외부 접속 주소와 Jetson host 주소, 실시간 RX/TX 처리량만 우선 표시합니다.</p>
           </header>
+
+          <section class="network-focus-grid">
+            <article class="kpi">
+              <span>External IP</span>
+              <strong id="networkExternalIp">--</strong>
+              <small id="networkExternalIpText">public endpoint</small>
+            </article>
+            <article class="kpi">
+              <span>Internal Host</span>
+              <strong id="networkInternalIp">--</strong>
+              <small id="networkInternalIpText">host route</small>
+            </article>
+          </section>
 
           <section class="dashboard-grid">
             <article class="panel chart-panel wide">
