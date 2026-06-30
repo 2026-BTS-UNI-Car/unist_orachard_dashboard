@@ -324,7 +324,7 @@ def _serial_stream_at_baud(
     return True
 
 
-async def serve_websocket(state: ScanState, host: str, port: int, path: str, max_hz: float):
+async def serve_websocket(state: ScanState, host: str, port: int, path: str, max_hz: float, source_max_points: int):
     try:
         import websockets
     except ImportError as exc:
@@ -343,7 +343,7 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
             if parsed_path.path != path:
                 await websocket.close(code=1008, reason="unsupported path")
                 return
-            requested_max_points = client_max_points(actual_path, default=900, source_max=max_points)
+            requested_max_points = client_max_points(actual_path, default=900, source_max=source_max_points)
             await websocket.send(json.dumps({"type": "socket", "ok": True, "message": "lidar websocket connected"}))
             while True:
                 snap = state.snapshot()
@@ -386,7 +386,8 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                         )
                     )
                 await asyncio.sleep(interval)
-        except Exception:
+        except Exception as exc:
+            print(f"LiDAR WebSocket handler error: {exc}", file=sys.stderr, flush=True)
             return
 
     async with websockets.serve(handler, host, port):
@@ -444,7 +445,7 @@ def main() -> int:
         except NotImplementedError:
             pass
     try:
-        loop.run_until_complete(serve_websocket(state, args.host, args.port, args.path, args.max_hz))
+        loop.run_until_complete(serve_websocket(state, args.host, args.port, args.path, args.max_hz, args.max_points))
     finally:
         stop.set()
         for thread in threads:

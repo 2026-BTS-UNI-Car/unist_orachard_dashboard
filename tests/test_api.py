@@ -262,6 +262,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertNotIn("Front 0°", app_js)
         compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
         telemetry_py = (Path(__file__).resolve().parents[1] / "dashboard_server" / "telemetry.py").read_text()
+        lidar_bridge_py = (Path(__file__).resolve().parents[1] / "scripts" / "lidar_ws_bridge.py").read_text()
         lidar_driver_dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile.lidar_driver").read_text()
         self.assertIn("ros2-lidar-driver", compose)
         self.assertIn("ros2-lidar-bridge", compose)
@@ -275,6 +276,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("def docker_container_logs", telemetry_py)
         self.assertIn("ina3221", telemetry_py)
         self.assertNotIn("def _gpu_percent", telemetry_py)
+        self.assertIn("source_max_points", lidar_bridge_py)
+        self.assertNotIn("source_max=max_points", lidar_bridge_py)
         self.assertIn("sllidar_s2_launch.py", lidar_driver_dockerfile)
         self.assertIn("/sys/class/hwmon:/sys/class/hwmon:rw", compose)
 
