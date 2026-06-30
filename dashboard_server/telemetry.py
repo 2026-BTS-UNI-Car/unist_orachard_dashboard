@@ -1476,7 +1476,7 @@ class TelemetryProvider:
 
     def _docker_container_stats(self, container_id: str) -> dict[str, Any]:
         try:
-            stats = self._docker_get_json(f"/containers/{container_id}/stats?stream=false")
+            stats = self._docker_get_json(f"/containers/{container_id}/stats?stream=false&one-shot=true")
         except (OSError, json.JSONDecodeError):
             return {}
         cpu_stats = stats.get("cpu_stats", {})
