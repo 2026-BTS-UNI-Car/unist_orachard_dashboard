@@ -55,16 +55,18 @@ tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 tmp_path.replace(target_path)
 ```
 
-## 5. Jetson 상태 확장 후보
+## 5. Jetson 상태
 
-- `tegrastats` 로그 파싱: GPU, RAM, EMC, 온도, 전력
-- `/sys/class/thermal` 기반 온도 모니터링
+System 페이지는 CPU, Memory, Swap, Network, Power를 실시간 그래프로 표시합니다. Network 상세 정보는 Network 탭에 유지합니다.
+
+Jetson Orin Nano Super의 GPU 사용률은 일반 Linux GPU처럼 안정적인 percent 값으로 노출되지 않아 대시보드 리소스 그래프에서 제외합니다. 대신 `/sys/class/hwmon`의 `ina3221` 전류/전압 rail을 읽을 수 있으면 실시간 소비 전력을 표시합니다. 현재 총 전력은 `VDD_IN` rail을 우선 사용하고, 없으면 읽힌 rail의 합계를 fallback으로 사용합니다.
+
+추후 확장 후보:
+
 - `nvpmodel` 전원 모드
 - 배터리 BMS 또는 전압 센서
 - 모터 드라이버 fault pin
 - ROS2 node liveliness와 topic rate
-
-현재 프로토타입은 CPU, 메모리, 디스크, 온도처럼 컨테이너/일반 Linux에서도 읽을 수 있는 값부터 표시합니다.
 
 ## 6. LiDAR 연결
 
@@ -109,6 +111,8 @@ curl -i http://127.0.0.1:8080/ws/lidar
 ## 7. Fan Control
 
 기본 Docker Compose는 Jetson 팬 제어를 위해 `/sys/class/hwmon`과 `/sys/devices`를 rw로 마운트하고 privileged mode로 실행합니다. Fan Control 페이지에서 수동 PWM을 조정할 수 있으며, `nvfancontrol` 자동 모드는 컨테이너가 `nsenter`로 호스트 systemd에 접근해 제어합니다.
+
+수동 PWM은 같은 Jetson 부팅 세션 안에서만 유지합니다. Jetson이 재부팅되면 Dashboard는 저장된 수동 상태를 자동 상태로 되돌리고 `nvfancontrol`이 기본 제어자가 되도록 설계합니다.
 
 수동 검증:
 

@@ -137,6 +137,7 @@
                 <div><dt>Hostname</dt><dd id="hostName">--</dd></div>
                 <div><dt>Uptime</dt><dd id="hostUptime">--</dd></div>
                 <div><dt>Temperature</dt><dd id="hostTemp">--</dd></div>
+                <div><dt>Power</dt><dd id="hostPower">--</dd></div>
                 <div><dt>External IP</dt><dd id="hostExternalIp">--</dd></div>
                 <div><dt>Internal Host</dt><dd id="hostInternalIp">--</dd></div>
               </dl>
@@ -162,7 +163,7 @@
             <article class="kpi">
               <span>Protocol</span>
               <strong id="connectionLidarProtocol">--</strong>
-              <small id="connectionLidarBaud">--</small>
+              <small id="connectionLidarSubtext">--</small>
             </article>
             <article class="kpi">
               <span>Health</span>
@@ -237,11 +238,22 @@
                       <input id="lidarRangeSlider" type="range" min="1" max="30" step="0.1" value="25" />
                     </label>
                   </div>
+                  <div class="map-control">
+                    <div>
+                      <span>Points</span>
+                      <strong id="lidarPointValue">900 pts</strong>
+                    </div>
+                    <div class="map-zoom-buttons" aria-label="LiDAR point 수">
+                      <button type="button" data-lidar-points="down">−</button>
+                      <button type="button" data-lidar-points="reset">900</button>
+                      <button type="button" data-lidar-points="up">+</button>
+                    </div>
+                    <label class="map-range-slider" for="lidarPointSlider">
+                      <span>Point limit</span>
+                      <input id="lidarPointSlider" type="range" min="300" max="3600" step="100" value="900" />
+                    </label>
+                  </div>
                   <div id="lidarScanStats" class="chart-readout"></div>
-                  <label class="toggle-row">
-                    <input id="lidarAccumulateToggle" type="checkbox" />
-                    <span>점 누적</span>
-                  </label>
                   <div class="segmented-control download-mode" aria-label="LiDAR 다운로드 형식">
                     <button type="button" data-lidar-download="json">JSON</button>
                     <button type="button" data-lidar-download="csv">CSV</button>
@@ -277,7 +289,7 @@
           <header class="page-head">
             <p class="eyebrow">System resources</p>
             <h1>시스템 리소스</h1>
-            <p>CPU, Memory, GPU, Thermal, Disk를 실시간 그래프로 표시합니다.</p>
+            <p>CPU, Memory, Swap, Network, Power를 실시간 그래프로 표시합니다.</p>
           </header>
 
           <section class="resource-grid">
@@ -314,19 +326,25 @@
               <small id="memoryDetail">--</small>
             </article>
             <article class="panel resource-card">
-              <div class="panel-head"><h2>GPU</h2><strong id="systemGpuValue">--</strong></div>
+              <div class="panel-head"><h2>Swap</h2><strong id="systemSwapValue">--</strong></div>
               <div class="chart-frame">
-                <canvas id="chartGpu" class="resource-chart" width="900" height="260"></canvas>
-                <div id="gpuReadout" class="chart-readout"></div>
+                <canvas id="chartSwap" class="resource-chart" width="900" height="260"></canvas>
+                <div id="swapReadout" class="chart-readout"></div>
               </div>
             </article>
             <article class="panel resource-card">
-              <div class="panel-head"><h2>Thermal</h2><strong id="systemTempValue">--</strong></div>
+              <div class="panel-head"><h2>Network</h2><strong id="systemNetworkValue">--</strong></div>
               <div class="chart-frame">
-                <canvas id="chartTemp" class="resource-chart" width="900" height="260"></canvas>
-                <div id="tempReadout" class="chart-readout"></div>
+                <canvas id="chartSystemNetwork" class="resource-chart" width="900" height="260"></canvas>
+                <div id="systemNetworkReadout" class="chart-readout"></div>
               </div>
-              <div id="temperatureList" class="chip-list"></div>
+            </article>
+            <article class="panel resource-card">
+              <div class="panel-head"><h2>Power</h2><strong id="systemPowerValue">--</strong></div>
+              <div class="chart-frame">
+                <canvas id="chartPower" class="resource-chart" width="900" height="260"></canvas>
+                <div id="powerReadout" class="chart-readout"></div>
+              </div>
             </article>
           </section>
 
@@ -415,6 +433,17 @@
               <div><p class="eyebrow">Containers</p><h2>컨테이너 목록</h2></div>
             </div>
             <div id="containerList" class="container-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div><p class="eyebrow">Inspect</p><h2 id="containerDetailTitle">컨테이너 상세</h2></div>
+              <button id="containerRefreshButton" class="action-button secondary" type="button">새로고침</button>
+            </div>
+            <div id="containerDetail" class="container-detail">
+              <div class="empty-state">컨테이너를 선택하세요.</div>
+            </div>
+            <pre id="containerLogs" class="log-view">로그 대기 중</pre>
           </section>
         </section>
 

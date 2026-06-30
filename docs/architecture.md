@@ -33,14 +33,20 @@ Browser
 - `GET /api/site-map`: 대시보드 섹션 구조
 - `GET /api/telemetry`: 시스템, 네트워크, Docker, 로버, 센서, 융합, 실험 데이터
 - `GET /api/connection`: LiDAR, ROS2 bridge, sensor link 상태
-- `GET /api/system`: CPU, Memory, GPU, Thermal, Disk
+- `GET /api/system`: CPU, Memory, Swap, Network, Power, Disk
 - `GET /api/network`: interface, IP, RX/TX throughput
 - `GET /api/docker`: Docker engine, container resource
+- `GET /api/docker/container/<id>`: container inspect summary
+- `GET /api/docker/container/<id>/logs?tail=180`: container stdout/stderr logs
 - `POST /api/lidar/test`: serial port를 열지 않는 LiDAR 장치/소유 상태 확인
 
 `POST /api/lidar/test`는 Dashboard가 LiDAR serial port를 열지 않는다는 운영 원칙을 지킵니다. 이 API는 `/dev/ttyUSB*`, `/dev/serial/by-id/*`, `/proc/*/fd` 기반 holder 정보만 갱신합니다. 실제 scan은 ROS2 driver가 `/scan`으로 publish하고, Dashboard는 WebSocket bridge를 통해 구독합니다.
 
 Connection 페이지의 지도는 `/ws/lidar` WebSocket만 사용합니다. 이 경로는 dashboard server가 `ros2-lidar-bridge`의 `ws://127.0.0.1:8765/ws/lidar`로 프록시합니다.
+
+Docker 페이지는 컨테이너 행을 선택하면 Docker socket의 inspect API와 logs API를 읽어 상세 상태와 최근 로그를 보여줍니다. 로그는 화면 표시용이며, 장기 보관은 별도 Data Recorder 또는 rosbag 저장 서비스에서 담당해야 합니다.
+
+`Data Recorder` 서비스 표시는 현재 placeholder입니다. 아직 실제 recorder 컨테이너나 rosbag2 기록 노드가 Compose에 없기 때문에 `not_connected`가 정상이며, 이후 실험 회차별 데이터 저장 파이프라인을 붙일 때 연결 상태로 전환합니다.
 
 ## 추후 확장
 

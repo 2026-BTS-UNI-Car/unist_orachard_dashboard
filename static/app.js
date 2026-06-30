@@ -1,5 +1,5 @@
 const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs"];
-const HISTORY_KEYS = ["cpu", "memory", "gpu", "temp", "rx", "tx", "dockerCpu", "dockerMemory", "fanTemp", "fanPwm"];
+const HISTORY_KEYS = ["cpu", "memory", "swap", "power", "temp", "rx", "tx", "dockerCpu", "dockerMemory", "fanTemp", "fanPwm"];
 const CORE_COLORS = ["#55e2b2", "#38d8ff", "#2f76ff", "#8238c9", "#f21b58", "#f4bd4f", "#7dd3fc", "#fb7185"];
 const MAX_POINTS = 90;
 const POLL_INTERVAL_MS = 1000;
@@ -7,6 +7,7 @@ const DPR_LIMIT = 1.5;
 const CPU_MODE_KEY = "ubts-cpu-chart-mode";
 const LIDAR_RANGE_KEY = "ubts-lidar-map-range-v2";
 const LIDAR_RANGE_AUTO_KEY = "ubts-lidar-map-range-auto-v2";
+const LIDAR_POINTS_KEY = "ubts-lidar-points-v1";
 
 const state = {
   telemetry: null,
@@ -34,12 +35,9 @@ const state = {
   },
   lidarExport: {
     latestScan: null,
-    accumulatedPoints: [],
     lastUpdatedAt: null,
     source: "ros2_scan",
     frameId: "laser",
-    maxPoints: 50000,
-    accumulate: false,
     format: "json",
   },
   lidarMap: {
@@ -50,6 +48,18 @@ const state = {
     minRange: 1,
     maxRange: 30,
   },
+  lidarPoints: {
+    value: 900,
+    min: 300,
+    max: 3600,
+    step: 100,
+  },
+  selectedContainerId: null,
+  containerDetail: null,
+  containerLogs: null,
+  containerRequestInFlight: false,
+  containerLogInFlight: false,
+  containerLogsUpdatedAt: null,
   chartShift: 0,
   chartShiftStartedAt: 0,
   animationFrame: null,
@@ -90,6 +100,10 @@ function fmtBps(value) {
 
 function fmtTemp(value) {
   return value === null || value === undefined ? "--" : `${Number(value).toFixed(1)}°C`;
+}
+
+function fmtPower(value) {
+  return value === null || value === undefined ? "--" : `${Number(value).toFixed(2)} W`;
 }
 
 function fmtNumber(value, digits = 1) {
@@ -168,6 +182,10 @@ function renderRoute() {
     link.classList.toggle("active", link.dataset.route === route);
   });
   if (route === "/docs") renderDocsRoute();
+  if (route === "/docker" && state.telemetry?.docker) {
+    renderContainers(state.telemetry.docker);
+    maybeRefreshContainerDetail(true);
+  }
   if (route === "/connection") {
     renderActiveLidarMap();
     if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
@@ -260,11 +278,6 @@ function initLidarTest() {
   $("lidarTestButton")?.addEventListener("click", runLidarTest);
   $("lidarLiveButton")?.addEventListener("click", toggleLidarLive);
   $("lidarDownloadButton")?.addEventListener("click", downloadCurrentLidarMap);
-  $("lidarAccumulateToggle")?.addEventListener("change", (event) => {
-    state.lidarExport.accumulate = Boolean(event.target.checked);
-    if (!state.lidarExport.accumulate) state.lidarExport.accumulatedPoints = [];
-    updateLidarDownloadState();
-  });
   document.querySelectorAll("[data-lidar-download]").forEach((button) => {
     button.addEventListener("click", () => setLidarDownloadFormat(button.dataset.lidarDownload));
   });
@@ -275,7 +288,14 @@ function initLidarTest() {
     setLidarRange(Number(event.target.value), { auto: false, persist: true });
     requestChartAnimation();
   });
+  document.querySelectorAll("[data-lidar-points]").forEach((button) => {
+    button.addEventListener("click", () => changeLidarPointLimit(button.dataset.lidarPoints));
+  });
+  $("lidarPointSlider")?.addEventListener("input", (event) => {
+    setLidarPointLimit(Number(event.target.value), { persist: true, reconnect: true });
+  });
   initLidarRange();
+  initLidarPointLimit();
   setLidarDownloadFormat(state.lidarExport.format);
   renderLidarLiveState();
 }
@@ -350,6 +370,57 @@ function updateLidarRangeControls() {
   });
 }
 
+function initLidarPointLimit() {
+  let stored = null;
+  try {
+    const raw = localStorage.getItem(LIDAR_POINTS_KEY);
+    stored = raw === null ? null : Number(raw);
+  } catch (_) {
+    stored = null;
+  }
+  if (Number.isFinite(stored)) state.lidarPoints.value = clampLidarPointLimit(stored);
+  updateLidarPointControls();
+}
+
+function changeLidarPointLimit(action) {
+  const current = state.lidarPoints.value;
+  let next = current;
+  if (action === "down") next = current - state.lidarPoints.step;
+  else if (action === "up") next = current + state.lidarPoints.step;
+  else next = 900;
+  setLidarPointLimit(next, { persist: true, reconnect: true });
+}
+
+function setLidarPointLimit(value, options = {}) {
+  state.lidarPoints.value = clampLidarPointLimit(value);
+  if (options.persist) {
+    try {
+      localStorage.setItem(LIDAR_POINTS_KEY, String(state.lidarPoints.value));
+    } catch (_) {
+      // Point limit remains session-local when storage is unavailable.
+    }
+  }
+  updateLidarPointControls();
+  if (options.reconnect && state.lidarLive.socket) restartLidarLiveForSettings();
+}
+
+function clampLidarPointLimit(value) {
+  const step = state.lidarPoints.step;
+  const rounded = Math.round((Number(value) || 900) / step) * step;
+  return Math.max(state.lidarPoints.min, Math.min(state.lidarPoints.max, rounded));
+}
+
+function updateLidarPointControls() {
+  text("lidarPointValue", `${state.lidarPoints.value} pts`);
+  const slider = $("lidarPointSlider");
+  if (slider && document.activeElement !== slider) slider.value = String(state.lidarPoints.value);
+  document.querySelectorAll("[data-lidar-points]").forEach((button) => {
+    const action = button.dataset.lidarPoints;
+    button.disabled = (action === "down" && state.lidarPoints.value <= state.lidarPoints.min)
+      || (action === "up" && state.lidarPoints.value >= state.lidarPoints.max);
+  });
+}
+
 async function loadPlan() {
   state.plan = await getJson("/api/plan");
   renderPlan(state.plan);
@@ -398,7 +469,8 @@ function pushHistory(data) {
   const dockerMemory = docker.summary?.memory_limit ? (docker.summary.memory_usage / docker.summary.memory_limit) * 100 : null;
   addPoint("cpu", sys.cpu?.total_percent);
   addPoint("memory", memoryPercent(sys.memory));
-  addPoint("gpu", sys.gpu_percent);
+  addPoint("swap", sys.swap?.percent);
+  addPoint("power", sys.power?.total_w);
   addPoint("temp", sys.temperature_c);
   addPoint("rx", net.total_rx_bps);
   addPoint("tx", net.total_tx_bps);
@@ -471,13 +543,15 @@ function renderTelemetry(data) {
   text("hostName", sys.hostname || "--");
   text("hostUptime", fmtDuration(sys.os_uptime_s));
   text("hostTemp", fmtTemp(sys.temperature_c));
+  text("hostPower", fmtPower(sys.power?.total_w));
   text("hostExternalIp", net.external_ip || net.external_ip_error || "--");
   text("hostInternalIp", hostIpLabel(net));
 
   text("systemCpuValue", fmtPercent(sys.cpu?.total_percent));
   text("systemMemoryValue", fmtPercent(memoryPercent(sys.memory)));
-  text("systemGpuValue", fmtPercent(sys.gpu_percent));
-  text("systemTempValue", fmtTemp(sys.temperature_c));
+  text("systemSwapValue", fmtPercent(sys.swap?.percent));
+  text("systemNetworkValue", `${fmtBps(net.total_rx_bps)} / ${fmtBps(net.total_tx_bps)}`);
+  text("systemPowerValue", fmtPower(sys.power?.total_w));
   setProgress("memoryBar", memoryPercent(sys.memory));
   text("memoryDetail", `${fmtBytes(sys.memory?.used)} used / ${fmtBytes(memoryTotal(sys.memory))} · ${memoryLabel(sys.memory)} · ${fmtBytes(sys.memory?.available)} available`);
 
@@ -512,6 +586,7 @@ function renderTelemetry(data) {
   renderDisks(sys.disks || []);
   renderInterfaces(net.interfaces || [], net.primary_interface);
   renderContainers(docker);
+  maybeRefreshContainerDetail();
   renderChartReadouts(data);
 }
 
@@ -605,10 +680,28 @@ function stopLidarLive(message = "disconnected") {
   renderLidarLiveState(message);
 }
 
+function restartLidarLiveForSettings() {
+  const wasEnabled = state.lidarLive.enabled && !state.lidarLive.userStopped;
+  const socket = state.lidarLive.socket;
+  state.lidarLive.socket = null;
+  state.lidarLive.connected = false;
+  state.lidarLive.scanTopicAlive = false;
+  if (socket && socket.readyState <= 1) socket.close();
+  if (wasEnabled) {
+    window.setTimeout(() => {
+      if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
+    }, 180);
+  }
+}
+
 function lidarWebSocketUrl() {
-  if (window.UBTS_LIDAR_WS_URL) return window.UBTS_LIDAR_WS_URL;
+  const params = new URLSearchParams({ max_points: String(state.lidarPoints.value) });
+  if (window.UBTS_LIDAR_WS_URL) {
+    const separator = String(window.UBTS_LIDAR_WS_URL).includes("?") ? "&" : "?";
+    return `${window.UBTS_LIDAR_WS_URL}${separator}${params.toString()}`;
+  }
   const scheme = location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${location.host}/ws/lidar`;
+  return `${scheme}://${location.host}/ws/lidar?${params.toString()}`;
 }
 
 function handleLidarLiveMessage(raw) {
@@ -626,6 +719,7 @@ function handleLidarLiveMessage(raw) {
   if (payload.type === "status") {
     state.lidarLive.lastScanAgeSec = payload.last_scan_age_sec;
     state.lidarLive.pointCount = payload.point_count || 0;
+    state.lidarLive.sourcePointCount = payload.source_point_count || payload.point_count || 0;
     state.lidarLive.scanTopicAlive = Boolean(payload.scan_topic_alive);
     state.lidarLive.source = payload.source || "waiting";
     state.lidarLive.error = payload.error || (payload.scan_topic_alive === false ? "ROS2 /scan 대기" : "");
@@ -665,6 +759,7 @@ function lidarScanFromLive(payload) {
   const distances = points.map((point) => point.distance_m).filter((value) => Number.isFinite(value));
   const metrics = {
     points: payload.point_count || points.length,
+    source_points: payload.source_point_count || payload.point_count || points.length,
     rendered_points: points.length,
     min_distance_m: distances.length ? Math.min(...distances) : null,
     max_distance_m: distances.length ? Math.max(...distances) : null,
@@ -769,12 +864,6 @@ function updateLidarExport(result, source) {
   state.lidarExport.lastUpdatedAt = new Date();
   state.lidarExport.source = source || result.source || "ros2_scan";
   state.lidarExport.frameId = result.frame_id || "laser";
-  if (state.lidarExport.accumulate) {
-    state.lidarExport.accumulatedPoints.push(...points);
-    if (state.lidarExport.accumulatedPoints.length > state.lidarExport.maxPoints) {
-      state.lidarExport.accumulatedPoints.splice(0, state.lidarExport.accumulatedPoints.length - state.lidarExport.maxPoints);
-    }
-  }
   updateLidarDownloadState();
 }
 
@@ -791,12 +880,10 @@ function downloadCurrentLidarMap() {
   const stamp = formatTimestampForFilename();
   const format = state.lidarExport.format;
   if (format === "png") {
-    downloadCanvasPng("lidarScanCanvas", `ubts_lidar_2d_view_${stamp}.png`);
+    downloadLidarPng(`ubts_lidar_2d_view_${stamp}.png`);
     return;
   }
-  const points = state.lidarExport.accumulate && state.lidarExport.accumulatedPoints.length
-    ? state.lidarExport.accumulatedPoints
-    : state.lidarExport.latestScan.points;
+  const points = state.lidarExport.latestScan.points;
   if (format === "csv") {
     const rows = points.map(normalizeLidarExportPoint).filter(Boolean);
     downloadCsv(`ubts_lidar_2d_scan_${stamp}.csv`, rows);
@@ -866,9 +953,17 @@ function downloadCsv(filename, rows) {
   downloadBlob(filename, [header, ...body].join("\n"), "text/csv;charset=utf-8");
 }
 
-function downloadCanvasPng(canvasId, filename) {
-  const canvas = $(canvasId);
-  if (!canvas) return;
+function downloadLidarPng(filename) {
+  const source = $("lidarScanCanvas");
+  if (!source) return;
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext("2d");
+  const isLight = document.documentElement.dataset.theme === "light";
+  ctx.fillStyle = isLight ? "#ffffff" : "#050816";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(source, 0, 0);
   canvas.toBlob((blob) => {
     if (blob) downloadBlob(filename, blob, "image/png");
   }, "image/png");
@@ -910,11 +1005,9 @@ function renderConnection(connection) {
   text("connectionLidarState", scanLive ? "수신 중" : (lidar.present ? lidarStateLabel(lidar.state) : "미인식"));
   text("connectionLidarDevice", lidar.device || "--");
   text("connectionLidarProtocol", "ROS2 /scan");
-  text("connectionLidarBaud", "subscribe-only");
+  text("connectionLidarSubtext", "subscribe-only");
   text("connectionLidarHealth", scanLive ? "수신 중" : (lidar.present ? "ROS2 대기" : "--"));
   text("connectionLidarHealthText", scanLive ? `${bridge.point_count || state.lidarLive.pointCount || 0} points live` : "ROS2 /scan 대기");
-  text("connectionLidarGuard", (lidar.holders || []).length ? "ROS2 소유" : "포트 비점유");
-  text("connectionLidarGuardText", (lidar.holders || []).length ? holderLabel(lidar.holders) : "Dashboard는 serial을 열지 않음");
   text("lidarDeviceDetail", lidar.present ? shortPath(lidar.device) : "장치 미인식");
   text("lidarByIdDetail", lidar.by_id ? shortPath(lidar.by_id, 42) : "stable ID 대기");
   text("lidarDriverDetail", driverLabel(lidar.driver_hint));
@@ -956,10 +1049,9 @@ function renderLidarScan(result, source = result?.source || "ros2_scan") {
   setScanResult(ok ? "ok" : "bad", message);
   const colors = chartColors();
   renderReadout("lidarScanStats", [
-    { label: "Points", value: String(metrics.points || points.length || 0), sub: `render ${metrics.rendered_points || points.length || 0}`, color: colors.cyan },
+    { label: "Points", value: String(metrics.rendered_points || points.length || 0), sub: `source ${metrics.source_points || metrics.points || points.length || 0}`, color: colors.cyan },
     { label: "Coverage", value: `${fmtNumber(metrics.coverage_deg, 0)}°`, sub: "1° bins", color: colors.good },
     { label: "Range", value: `${fmtNumber(metrics.min_distance_m, 2)}-${fmtNumber(metrics.max_distance_m, 2)} m`, sub: "valid points", color: colors.blue },
-    { label: "Baud", value: result.baud ? `${result.baud}` : "--", sub: result.protocol || "RPLIDAR", color: colors.rose },
   ]);
   updateLidarExport(result, source);
   renderActiveLidarMap();
@@ -1289,15 +1381,40 @@ function renderContainers(docker) {
   if (!target) return;
   if (!docker.available) {
     target.innerHTML = `<div class="empty-state">${escapeHtml(docker.error || "Docker 정보를 읽을 수 없습니다.")}</div>`;
+    state.selectedContainerId = null;
+    renderContainerDetailError(docker.error || "Docker 정보를 읽을 수 없습니다.");
+    return;
+  }
+  const containers = docker.containers || [];
+  if (!containers.length) {
+    target.innerHTML = `<div class="empty-state">표시할 컨테이너가 없습니다.</div>`;
+    state.selectedContainerId = null;
+    renderContainerDetailError("컨테이너가 없습니다.");
     return;
   }
   if (target.querySelector(".empty-state")) target.innerHTML = "";
-  syncItems("containerList", docker.containers || [], (container) => container.id || container.name, createContainerRow, updateContainerRow);
+  const ids = containers.map((container) => container.id || container.name).filter(Boolean);
+  if (state.selectedContainerId && !ids.includes(state.selectedContainerId)) {
+    state.selectedContainerId = null;
+    state.containerDetail = null;
+    state.containerLogs = null;
+  }
+  if (!state.selectedContainerId && currentRoute() === "/docker") state.selectedContainerId = ids[0] || null;
+  syncItems("containerList", containers, (container) => container.id || container.name, createContainerRow, updateContainerRow);
 }
 
 function createContainerRow() {
   const row = document.createElement("div");
   row.className = "container-row";
+  row.setAttribute("role", "button");
+  row.setAttribute("tabindex", "0");
+  row.addEventListener("click", () => selectContainer(row.dataset.key));
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectContainer(row.dataset.key);
+    }
+  });
   row.innerHTML = `
     <div>
       <strong data-role="name"></strong>
@@ -1312,6 +1429,9 @@ function createContainerRow() {
 }
 
 function updateContainerRow(row, container) {
+  const key = container.id || container.name;
+  row.classList.toggle("active", Boolean(key && key === state.selectedContainerId));
+  row.setAttribute("aria-pressed", key && key === state.selectedContainerId ? "true" : "false");
   row.querySelector('[data-role="name"]').textContent = container.name || container.id;
   row.querySelector('[data-role="image"]').textContent = container.image || "";
   const stateEl = row.querySelector('[data-role="state"]');
@@ -1320,6 +1440,132 @@ function updateContainerRow(row, container) {
   row.querySelector('[data-role="cpu"]').textContent = fmtPercent(container.cpu_percent);
   row.querySelector('[data-role="memory"]').textContent = fmtBytes(container.memory_usage);
   row.querySelector('[data-role="status"]').textContent = container.status || "";
+}
+
+function selectContainer(containerId) {
+  if (!containerId || containerId === state.selectedContainerId) return;
+  state.selectedContainerId = containerId;
+  state.containerDetail = null;
+  state.containerLogs = null;
+  state.containerLogsUpdatedAt = null;
+  document.querySelectorAll(".container-row").forEach((row) => {
+    row.classList.toggle("active", row.dataset.key === containerId);
+    row.setAttribute("aria-pressed", row.dataset.key === containerId ? "true" : "false");
+  });
+  renderContainerDetailLoading(containerId);
+  maybeRefreshContainerDetail(true);
+}
+
+function maybeRefreshContainerDetail(force = false) {
+  if (currentRoute() !== "/docker" || !state.selectedContainerId) return;
+  const now = Date.now();
+  if (!force && state.containerLogsUpdatedAt && now - state.containerLogsUpdatedAt < 2500) return;
+  if (state.containerRequestInFlight || state.containerLogInFlight) return;
+  loadSelectedContainer(force).catch((err) => {
+    debugLog("docker", "container detail failed", err);
+    renderContainerDetailError(err.message);
+  });
+}
+
+async function loadSelectedContainer(force = false) {
+  const id = state.selectedContainerId;
+  if (!id) return;
+  state.containerRequestInFlight = true;
+  state.containerLogInFlight = true;
+  if (force || !state.containerDetail) renderContainerDetailLoading(id);
+  try {
+    const encoded = encodeURIComponent(id);
+    const [detail, logs] = await Promise.all([
+      getJson(`/api/docker/container/${encoded}`),
+      getJson(`/api/docker/container/${encoded}/logs?tail=180`),
+    ]);
+    if (id !== state.selectedContainerId) return;
+    state.containerDetail = detail;
+    state.containerLogs = logs;
+    state.containerLogsUpdatedAt = Date.now();
+    renderContainerDetail(detail, logs);
+  } finally {
+    state.containerRequestInFlight = false;
+    state.containerLogInFlight = false;
+  }
+}
+
+function renderContainerDetailLoading(containerId) {
+  text("containerDetailTitle", containerId ? `컨테이너 상세 · ${containerId}` : "컨테이너 상세");
+  const detail = $("containerDetail");
+  const logs = $("containerLogs");
+  if (detail) detail.innerHTML = `<div class="empty-state">컨테이너 정보를 불러오는 중입니다.</div>`;
+  if (logs) logs.textContent = "로그를 불러오는 중입니다.";
+}
+
+function renderContainerDetailError(message) {
+  text("containerDetailTitle", "컨테이너 상세");
+  const detail = $("containerDetail");
+  const logs = $("containerLogs");
+  if (detail) detail.innerHTML = `<div class="empty-state">${escapeHtml(message || "컨테이너를 선택하세요.")}</div>`;
+  if (logs) logs.textContent = "로그 대기 중";
+}
+
+function renderContainerDetail(detailPayload, logsPayload) {
+  const detail = $("containerDetail");
+  const logs = $("containerLogs");
+  if (!detailPayload?.ok) {
+    renderContainerDetailError(detailPayload?.error || "컨테이너 정보를 읽을 수 없습니다.");
+    return;
+  }
+  text("containerDetailTitle", `컨테이너 상세 · ${detailPayload.name || detailPayload.id}`);
+  const stats = detailPayload.stats || {};
+  const stateInfo = detailPayload.state || {};
+  const restartPolicy = detailPayload.restart_policy || {};
+  if (detail) {
+    detail.innerHTML = `
+      <div class="container-detail-grid">
+        ${containerDetailCell("State", containerStateLabel(stateInfo), stateInfo.StartedAt ? `since ${formatShortDate(stateInfo.StartedAt)}` : "")}
+        ${containerDetailCell("Image", detailPayload.image || "--", detailPayload.full_id || detailPayload.id || "")}
+        ${containerDetailCell("CPU", fmtPercent(stats.cpu_percent), "one-shot stat")}
+        ${containerDetailCell("Memory", `${fmtBytes(stats.memory_usage)} / ${fmtBytes(stats.memory_limit)}`, fmtPercent(stats.memory_percent))}
+        ${containerDetailCell("Network", `${fmtBytes(stats.rx_bytes)} RX / ${fmtBytes(stats.tx_bytes)} TX`, detailPayload.network_mode || "")}
+        ${containerDetailCell("Restart", restartPolicyLabel(restartPolicy), "policy")}
+      </div>
+    `;
+  }
+  if (logs) {
+    if (!logsPayload?.ok) {
+      logs.textContent = `로그 읽기 실패: ${logsPayload?.error || "unknown"}`;
+    } else if ((logsPayload.lines || []).length) {
+      logs.textContent = logsPayload.lines.join("\n");
+    } else {
+      logs.textContent = "로그가 없습니다.";
+    }
+  }
+}
+
+function containerDetailCell(label, value, sub = "") {
+  return `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(sub || "")}</small>
+    </article>
+  `;
+}
+
+function containerStateLabel(stateInfo) {
+  if (!stateInfo) return "--";
+  if (stateInfo.Running) return "running";
+  return stateInfo.Status || (stateInfo.ExitCode !== undefined ? `exited ${stateInfo.ExitCode}` : "--");
+}
+
+function restartPolicyLabel(policy) {
+  const name = policy?.Name || "--";
+  const retry = policy?.MaximumRetryCount;
+  return retry ? `${name} (${retry})` : name;
+}
+
+function formatShortDate(value) {
+  if (!value) return "--";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("ko-KR");
 }
 
 function initFanControls() {
@@ -1337,6 +1583,10 @@ function initFanControls() {
       await postFanJson("/api/fan/preset", { preset: button.dataset.fanPreset });
     });
   });
+}
+
+function initDockerControls() {
+  $("containerRefreshButton")?.addEventListener("click", () => maybeRefreshContainerDetail(true));
 }
 
 async function postFanJson(path, payload) {
@@ -1451,11 +1701,17 @@ function renderChartReadouts(data) {
     { label: "Used", value: fmtBytes(sys.memory?.used), sub: `of ${fmtBytes(memoryTotal(sys.memory))}`, color: colors.blue },
     { label: "Available", value: fmtBytes(sys.memory?.available), sub: "실제 MemAvailable", color: colors.good },
   ]);
-  renderReadout("gpuReadout", [
-    { label: "GPU", value: fmtPercent(sys.gpu_percent), sub: "로드", color: colors.rose },
+  renderReadout("swapReadout", [
+    { label: "Usage", value: fmtPercent(sys.swap?.percent), sub: `${fmtBytes(sys.swap?.used)} / ${fmtBytes(sys.swap?.total)}`, color: colors.rose },
+    { label: "Free", value: fmtBytes(sys.swap?.free), sub: "swap available", color: colors.good },
   ]);
-  renderReadout("tempReadout", [
-    { label: "Max", value: fmtTemp(sys.temperature_c), sub: "thermal zone", color: colors.amber },
+  renderReadout("systemNetworkReadout", [
+    { label: "RX", value: fmtBps(net.total_rx_bps), sub: "수신", color: colors.blue },
+    { label: "TX", value: fmtBps(net.total_tx_bps), sub: "송신", color: colors.rose },
+  ]);
+  renderReadout("powerReadout", [
+    { label: "Power", value: fmtPower(sys.power?.total_w), sub: sys.power?.source || "ina3221", color: colors.amber },
+    { label: "Rails", value: String((sys.power?.rails || []).length || 0), sub: sys.power?.available ? "available" : "unavailable", color: colors.cyan },
   ]);
   renderReadout("networkReadout", [
     { label: "RX", value: fmtBps(net.total_rx_bps), sub: "수신 속도", color: colors.blue },
@@ -1785,7 +2041,7 @@ function stepLidarMapRange() {
 
 function drawCharts() {
   const colors = chartColors();
-  const tempMax = Math.max(90, ...state.history.temp.filter((v) => v !== null));
+  const powerMax = Math.max(10, ...state.history.power.filter((v) => v !== null));
   const groups = {
     "/": [
       ["chartOverviewSystem", [
@@ -1801,8 +2057,12 @@ function drawCharts() {
     "/system": [
       ...(state.cpuMode === "combined" ? [["chartCpu", [{ values: state.visualHistory.cpu, color: colors.good, max: 100 }]]] : []),
       ["chartMemory", [{ values: state.visualHistory.memory, color: colors.cyan, max: 100 }]],
-      ["chartGpu", [{ values: state.visualHistory.gpu, color: colors.rose, max: 100 }]],
-      ["chartTemp", [{ values: state.visualHistory.temp, color: colors.amber, max: tempMax }]],
+      ["chartSwap", [{ values: state.visualHistory.swap, color: colors.rose, max: 100 }]],
+      ["chartSystemNetwork", [
+        { values: normalizeBps(state.visualHistory.rx, "rx"), color: colors.blue, max: 100 },
+        { values: normalizeBps(state.visualHistory.tx, "tx"), color: colors.rose, max: 100 },
+      ]],
+      ["chartPower", [{ values: state.visualHistory.power, color: colors.amber, max: powerMax }]],
     ],
     "/network": [
       ["chartNetwork", [
@@ -2100,6 +2360,7 @@ initTheme();
 initCpuMode();
 initLidarTest();
 initFanControls();
+initDockerControls();
 renderRoute();
 loadPlan().catch(console.error);
 loadDocs().catch(console.error);

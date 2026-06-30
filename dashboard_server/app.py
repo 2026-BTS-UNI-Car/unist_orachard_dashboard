@@ -12,7 +12,7 @@ import socket
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from dashboard_server.telemetry import ROOT, TelemetryProvider
 
@@ -123,6 +123,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.network())
         elif path == "/api/docker":
             self._send_json(self.provider.docker())
+        elif path.startswith("/api/docker/container/"):
+            self._send_docker_container_payload(path, parsed.query)
         elif path == "/api/connection":
             self._send_json(self.provider.connection())
         elif path == "/api/plan":
@@ -222,6 +224,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         self.close_connection = True
 
+    def _send_docker_container_payload(self, path: str, query: str):
+        raw = path.removeprefix("/api/docker/container/").strip("/")
+        if not raw:
+            self.send_error(404, "Container id required")
+            return
+        if raw.endswith("/logs"):
+            container_id = unquote(raw.removesuffix("/logs").strip("/"))
+            params = parse_qs(query)
+            tail = (params.get("tail") or ["160"])[0]
+            self._send_json(self.provider.docker_container_logs(container_id, tail=tail))
+            return
+        self._send_json(self.provider.docker_container_detail(unquote(raw)))
+
     def _proxy_lidar_websocket(self):
         if self.headers.get("Upgrade", "").lower() != "websocket":
             self.send_error(426, "WebSocket upgrade required")
@@ -241,7 +256,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
 
-        upstream_url = os.environ.get("LIDAR_WS_UPSTREAM", "ws://127.0.0.1:8765/ws/lidar")
+        upstream_url = self._lidar_upstream_with_client_query(
+            os.environ.get("LIDAR_WS_UPSTREAM", "ws://127.0.0.1:8765/ws/lidar")
+        )
         while True:
             try:
                 upstream, initial_upstream = self._connect_lidar_upstream(upstream_url)
@@ -304,6 +321,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             raise OSError("local bridge did not accept WebSocket upgrade")
         sock.settimeout(None)
         return sock, initial
+
+    def _lidar_upstream_with_client_query(self, upstream_url: str) -> str:
+        client_query = urlparse(self.path).query
+        if not client_query:
+            return upstream_url
+        separator = "&" if urlparse(upstream_url).query else "?"
+        return f"{upstream_url}{separator}{client_query}"
 
     def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b""):
         if initial_upstream:

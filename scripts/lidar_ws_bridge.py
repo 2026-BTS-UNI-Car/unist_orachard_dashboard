@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -118,10 +119,25 @@ def scan_to_points(msg: Any, max_points: int) -> list[dict[str, float | int]]:
                 "y_m": round(math.cos(theta) * r, 3),
             }
         )
-    if len(valid) <= max_points:
-        return valid
-    step = len(valid) / max_points
-    return [valid[min(len(valid) - 1, int(i * step))] for i in range(max_points)]
+    return decimate_points(valid, max_points)
+
+
+def decimate_points(points: list[dict[str, float | int]], max_points: int) -> list[dict[str, float | int]]:
+    max_points = max(100, int(max_points or 900))
+    if len(points) <= max_points:
+        return points
+    step = len(points) / max_points
+    return [points[min(len(points) - 1, int(i * step))] for i in range(max_points)]
+
+
+def client_max_points(actual_path: str, default: int, source_max: int) -> int:
+    parsed = urlparse(actual_path)
+    raw = (parse_qs(parsed.query).get("max_points") or [default])[0]
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = default
+    return max(100, min(max(source_max, default), value))
 
 
 def ros_thread(state: ScanState, topic: str, max_points: int, ready: threading.Event, stop: threading.Event) -> None:
@@ -323,12 +339,15 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                 actual_path = getattr(request_path, "path", path)
             else:
                 actual_path = legacy_path or getattr(websocket, "path", path)
-            if actual_path != path:
+            parsed_path = urlparse(actual_path)
+            if parsed_path.path != path:
                 await websocket.close(code=1008, reason="unsupported path")
                 return
+            requested_max_points = client_max_points(actual_path, default=900, source_max=max_points)
             await websocket.send(json.dumps({"type": "socket", "ok": True, "message": "lidar websocket connected"}))
             while True:
                 snap = state.snapshot()
+                points = decimate_points(snap["points"], requested_max_points)
                 await websocket.send(
                     json.dumps(
                         {
@@ -336,7 +355,9 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                             "device_found": True,
                             "scan_topic_alive": snap["last_scan_age_sec"] is not None and snap["last_scan_age_sec"] < 2.0,
                             "last_scan_age_sec": snap["last_scan_age_sec"],
-                            "point_count": snap["point_count"],
+                            "point_count": len(points),
+                            "source_point_count": snap["point_count"],
+                            "requested_max_points": requested_max_points,
                             "source": snap["source"],
                             "frame_id": snap["frame_id"],
                             "error": snap["error"] or (
@@ -348,7 +369,7 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                         separators=(",", ":"),
                     )
                 )
-                if snap["points"]:
+                if points:
                     await websocket.send(
                         json.dumps(
                             {
@@ -356,8 +377,10 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                                 "frame_id": snap["frame_id"],
                                 "source": snap["source"],
                                 "stamp": snap["stamp"],
-                                "point_count": snap["point_count"],
-                                "points": snap["points"],
+                                "point_count": len(points),
+                                "source_point_count": snap["point_count"],
+                                "requested_max_points": requested_max_points,
+                                "points": points,
                             },
                             separators=(",", ":"),
                         )
@@ -376,7 +399,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--path", default="/ws/lidar")
     parser.add_argument("--topic", default="/scan")
-    parser.add_argument("--max-points", type=int, default=900)
+    parser.add_argument("--max-points", type=int, default=3600)
     parser.add_argument("--max-hz", type=float, default=10.0)
     parser.add_argument("--source", choices=["auto", "ros2", "serial"], default=os.environ.get("LIDAR_BRIDGE_SOURCE", "ros2"))
     parser.add_argument("--serial-poll-s", type=float, default=float(os.environ.get("LIDAR_SERIAL_POLL_S", "0.2")))

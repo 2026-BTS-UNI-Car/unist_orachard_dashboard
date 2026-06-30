@@ -112,6 +112,7 @@ class TelemetryProvider:
         self._last_lidar_test: dict[str, Any] | None = None
         self._last_lidar_scan: dict[str, Any] | None = None
         self._fan_hwmon_cache: dict[str, Any] | None = None
+        self._power_hwmon_cache: Path | None = None
         self._fan_hold_interval_s = max(0.0, float(os.environ.get("FAN_HOLD_INTERVAL_S", "1.5")))
         self._fan_hold_thread: threading.Thread | None = None
         if self._fan_hold_interval_s > 0:
@@ -173,7 +174,7 @@ class TelemetryProvider:
             "cpu": cpu,
             "memory": memory,
             "swap": swap,
-            "gpu_percent": self._gpu_percent(),
+            "power": self._power(),
             "temperatures": self._temperatures(),
             "temperature_c": self._max_temperature(),
             "disks": disks,
@@ -277,6 +278,56 @@ class TelemetryProvider:
             },
             "containers": rows,
         }
+
+    def docker_container_detail(self, container_id: str) -> dict[str, Any]:
+        safe_id = str(container_id or "").strip().lstrip("/")
+        if not safe_id:
+            return {"ok": False, "error": "container_id_required"}
+        if not Path(self.docker_socket).exists():
+            return {"ok": False, "error": "docker socket not mounted"}
+        try:
+            detail = self._docker_get_json(f"/containers/{safe_id}/json")
+            stats = self._docker_container_stats(safe_id)
+        except (OSError, json.JSONDecodeError) as exc:
+            return {"ok": False, "id": safe_id, "error": str(exc)}
+        config = detail.get("Config", {})
+        state = detail.get("State", {})
+        host_config = detail.get("HostConfig", {})
+        network_settings = detail.get("NetworkSettings", {})
+        return {
+            "ok": True,
+            "id": (detail.get("Id") or safe_id)[:12],
+            "full_id": detail.get("Id"),
+            "name": str(detail.get("Name") or "").lstrip("/"),
+            "image": config.get("Image"),
+            "created": detail.get("Created"),
+            "state": state,
+            "restart_policy": host_config.get("RestartPolicy"),
+            "network_mode": host_config.get("NetworkMode"),
+            "mounts": detail.get("Mounts", []),
+            "ports": network_settings.get("Ports") or {},
+            "stats": stats,
+        }
+
+    def docker_container_logs(self, container_id: str, tail: int = 160) -> dict[str, Any]:
+        safe_id = str(container_id or "").strip().lstrip("/")
+        if not safe_id:
+            return {"ok": False, "error": "container_id_required", "lines": []}
+        if not Path(self.docker_socket).exists():
+            return {"ok": False, "error": "docker socket not mounted", "lines": []}
+        try:
+            tail = max(20, min(500, int(tail)))
+        except (TypeError, ValueError):
+            tail = 160
+        try:
+            raw = self._docker_get_raw(
+                f"/containers/{safe_id}/logs?stdout=1&stderr=1&timestamps=1&tail={tail}"
+            )
+        except OSError as exc:
+            return {"ok": False, "id": safe_id, "error": str(exc), "lines": []}
+        text = self._decode_docker_log_stream(raw)
+        lines = [line for line in text.splitlines() if line.strip()]
+        return {"ok": True, "id": safe_id, "tail": tail, "lines": lines[-tail:]}
 
     def lidar_status(self) -> dict[str, Any]:
         candidates = self._lidar_candidates()
@@ -581,15 +632,28 @@ class TelemetryProvider:
         path = Path(raw)
         return path if path.is_absolute() else ROOT / path
 
+    def _host_boot_id(self) -> str | None:
+        return _read_text(self.proc_root / "sys/kernel/random/boot_id") or _read_text("/proc/sys/kernel/random/boot_id")
+
     def _fan_desired_state(self) -> dict[str, Any]:
         data = _load_json(self._fan_state_path())
         if data.get("mode") not in {"auto", "manual"}:
-            return {}
+            return {"mode": "auto", "default": True}
+        if data.get("mode") == "manual":
+            current_boot = self._host_boot_id()
+            saved_boot = data.get("boot_id")
+            if current_boot and saved_boot and saved_boot != current_boot:
+                self._save_fan_desired_state({"mode": "auto", "recovered_after_reboot": True})
+                return {"mode": "auto", "recovered_after_reboot": True}
+            if current_boot and not saved_boot:
+                self._save_fan_desired_state({"mode": "auto", "recovered_from_legacy_manual_state": True})
+                return {"mode": "auto", "recovered_from_legacy_manual_state": True}
         return data
 
     def _save_fan_desired_state(self, payload: dict[str, Any]) -> None:
         data = {
             **payload,
+            "boot_id": self._host_boot_id(),
             "updated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         }
         path = self._fan_state_path()
@@ -1080,7 +1144,7 @@ class TelemetryProvider:
             "routes": [
                 {"path": "/", "label": "Overview", "summary": "핵심 상태"},
                 {"path": "/connection", "label": "Connection", "summary": "LiDAR, ROS2 bridge, sensor links"},
-                {"path": "/system", "label": "System", "summary": "CPU, Memory, GPU, Thermal, Disk"},
+                {"path": "/system", "label": "System", "summary": "CPU, Memory, Swap, Network, Power, Disk"},
                 {"path": "/network", "label": "Network", "summary": "IP, interface, RX/TX throughput"},
                 {"path": "/docker", "label": "Docker", "summary": "Docker engine and containers"},
                 {"path": "/fan", "label": "Fan Control", "summary": "Jetson 온도와 수동 PWM"},
@@ -1352,15 +1416,54 @@ class TelemetryProvider:
         except (IndexError, ValueError):
             return None
 
-    def _gpu_percent(self) -> float | None:
-        candidates = [self.sys_root / "devices/gpu.0/load"]
-        candidates.extend((self.sys_root / "devices/platform").glob("*gpu*/load"))
-        candidates.extend((self.sys_root / "devices/platform").glob("*.gpu/load"))
-        for path in candidates:
-            raw = _read_text(path)
-            if raw and raw.lstrip("-").isdigit():
-                value = int(raw)
-                return round(value / 10.0 if value > 100 else float(value), 1)
+    def _power(self) -> dict[str, Any]:
+        root = self._power_hwmon()
+        if not root:
+            return {"available": False, "total_w": None, "rails": []}
+        rails = []
+        for curr_path in sorted(root.glob("curr*_input")):
+            suffix = curr_path.name.removeprefix("curr").removesuffix("_input")
+            current_ma = _safe_int(_read_text(curr_path))
+            voltage_mv = _safe_int(_read_text(root / f"in{suffix}_input"))
+            label = _read_text(root / f"in{suffix}_label") or f"rail_{suffix}"
+            if current_ma is None:
+                continue
+            power_w = None
+            if voltage_mv is not None:
+                power_w = round((voltage_mv * current_ma) / 1_000_000.0, 3)
+            rails.append(
+                {
+                    "name": label,
+                    "current_ma": current_ma,
+                    "voltage_mv": voltage_mv,
+                    "power_w": power_w,
+                }
+            )
+        total_rail = next((rail for rail in rails if rail["name"] == "VDD_IN" and rail["power_w"] is not None), None)
+        if total_rail:
+            total_w = total_rail["power_w"]
+            source = "VDD_IN"
+        else:
+            total_w = round(sum(rail["power_w"] or 0.0 for rail in rails), 3) if rails else None
+            source = "sum"
+        return {
+            "available": bool(rails),
+            "total_w": total_w,
+            "source": source,
+            "rails": rails,
+        }
+
+    def _power_hwmon(self) -> Path | None:
+        if self._power_hwmon_cache and self._power_hwmon_cache.exists():
+            return self._power_hwmon_cache
+        hwmon_root = self.sys_root / "class/hwmon"
+        if not hwmon_root.exists():
+            return None
+        for root in sorted(hwmon_root.glob("hwmon*")):
+            name = _read_text(root / "name")
+            if name == "ina3221" and list(root.glob("curr*_input")):
+                self._power_hwmon_cache = root
+                return root
         return None
 
     def _temperatures(self) -> list[dict[str, Any]]:
@@ -1463,6 +1566,10 @@ class TelemetryProvider:
                 sock.close()
 
     def _docker_get_json(self, path: str) -> Any:
+        body = self._docker_get_raw(path)
+        return json.loads(body.decode("utf-8"))
+
+    def _docker_get_raw(self, path: str) -> bytes:
         conn = DockerSocketHTTPConnection(self.docker_socket)
         try:
             conn.request("GET", path)
@@ -1470,9 +1577,23 @@ class TelemetryProvider:
             body = response.read()
             if response.status >= 400:
                 raise OSError(f"Docker API {path} returned {response.status}")
-            return json.loads(body.decode("utf-8"))
+            return body
         finally:
             conn.close()
+
+    def _decode_docker_log_stream(self, raw: bytes) -> str:
+        chunks: list[bytes] = []
+        index = 0
+        while index + 8 <= len(raw):
+            stream_type = raw[index]
+            size = int.from_bytes(raw[index + 4 : index + 8], "big")
+            if stream_type not in {0, 1, 2} or size < 0 or index + 8 + size > len(raw):
+                break
+            chunks.append(raw[index + 8 : index + 8 + size])
+            index += 8 + size
+        if chunks and index == len(raw):
+            raw = b"".join(chunks)
+        return raw.decode("utf-8", errors="replace")
 
     def _docker_container_stats(self, container_id: str) -> dict[str, Any]:
         try:

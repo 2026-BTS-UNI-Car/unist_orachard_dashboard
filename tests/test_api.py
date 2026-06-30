@@ -70,12 +70,12 @@ class DashboardApiTest(unittest.TestCase):
             data.extend(sock.recv(length - len(data)))
         return bytes(data[:length]).decode("utf-8")
 
-    def open_dashboard_ws(self) -> tuple[socket.socket, bytes]:
+    def open_dashboard_ws(self, path: str = "/ws/lidar") -> tuple[socket.socket, bytes]:
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
         sock = socket.create_connection(("127.0.0.1", self.port), timeout=3)
         sock.sendall(
             (
-                "GET /ws/lidar HTTP/1.1\r\n"
+                f"GET {path} HTTP/1.1\r\n"
                 f"Host: 127.0.0.1:{self.port}\r\n"
                 "Upgrade: websocket\r\n"
                 "Connection: Upgrade\r\n"
@@ -106,6 +106,9 @@ class DashboardApiTest(unittest.TestCase):
         for key in ["system", "network", "docker", "fan", "connection", "rover", "sensors", "fusion", "experiment"]:
             self.assertIn(key, payload)
         self.assertIn("cpu", payload["system"])
+        self.assertIn("swap", payload["system"])
+        self.assertIn("power", payload["system"])
+        self.assertNotIn("gpu_percent", payload["system"])
         self.assertEqual(payload["system"]["memory"]["display_total"], 8 * 1024 * 1024 * 1024)
         for core in payload["system"]["cpu"].get("cores", []):
             self.assertRegex(core["label"], r"^CPU [0-9]+$")
@@ -121,6 +124,11 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("primary_ipv4", network)
         self.assertIn("external_ip", network)
         self.assertIn("containers", self.get_json("/api/docker"))
+        docker_detail = self.get_json("/api/docker/container/test")
+        self.assertFalse(docker_detail["ok"])
+        docker_logs = self.get_json("/api/docker/container/test/logs?tail=25")
+        self.assertFalse(docker_logs["ok"])
+        self.assertIn("lines", docker_logs)
         fan = self.get_json("/api/fan/status")
         self.assertIn("available", fan)
         self.assertIn("mode", fan)
@@ -206,12 +214,26 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("id=\"fanAutoToggle\"", html)
         self.assertIn("id=\"lidarRangeValue\"", html)
         self.assertIn("id=\"lidarRangeSlider\"", html)
+        self.assertIn("id=\"lidarPointSlider\"", html)
+        self.assertIn("data-lidar-points=\"reset\"", html)
+        self.assertIn("id=\"systemSwapValue\"", html)
+        self.assertIn("id=\"systemNetworkValue\"", html)
+        self.assertIn("id=\"systemPowerValue\"", html)
+        self.assertIn("id=\"hostPower\"", html)
+        self.assertIn("id=\"containerDetail\"", html)
+        self.assertIn("id=\"containerLogs\"", html)
+        self.assertIn("id=\"containerRefreshButton\"", html)
         self.assertIn("data-lidar-range=\"reset\"", html)
         self.assertIn(">Auto</button>", html)
+        self.assertNotIn("chartGpu", html)
+        self.assertNotIn("systemGpuValue", html)
         self.assertNotIn("Fan RPM", html)
         self.assertNotIn("PWM-RPM", html)
         self.assertNotIn("fanCalibrateButton", html)
         self.assertNotIn("lidarScanButton", html)
+        self.assertNotIn("lidarAccumulateToggle", html)
+        self.assertNotIn("점 누적", html)
+        self.assertNotIn(">Baud<", html)
         self.assertNotIn("360 스캔 테스트", html)
         self.assertNotIn("serial live fallback", html)
         self.assertNotIn("LiDAR serial port는 ROS2 driver만 소유합니다", html)
@@ -229,6 +251,13 @@ class DashboardApiTest(unittest.TestCase):
         self.assertNotIn("${scheme}://${location.hostname}:8765/ws/lidar", app_js)
         self.assertIn("[UBTS:", app_js)
         self.assertIn("LIDAR_RANGE_AUTO_KEY", app_js)
+        self.assertIn("LIDAR_POINTS_KEY", app_js)
+        self.assertIn("max_points", app_js)
+        self.assertIn("downloadLidarPng", app_js)
+        self.assertIn("/api/docker/container/", app_js)
+        self.assertNotIn("downloadCanvasPng", app_js)
+        self.assertNotIn("lidarAccumulate", app_js)
+        self.assertNotIn("gpuReadout", app_js)
         self.assertIn("displayAngle", app_js)
         self.assertNotIn("Front 0°", app_js)
         compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
@@ -239,9 +268,13 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("Dockerfile.lidar_driver", compose)
         self.assertIn("Dockerfile.ros2", compose)
         self.assertIn("LIDAR_BRIDGE_SOURCE:-ros2", compose)
+        self.assertIn("LIDAR_SCAN_MAX_POINTS:-3600", compose)
         self.assertIn("./runtime:/app/runtime", compose)
         self.assertNotIn("LIDAR_BRIDGE_SOURCE:-auto", compose)
         self.assertIn("stats?stream=false&one-shot=true", telemetry_py)
+        self.assertIn("def docker_container_logs", telemetry_py)
+        self.assertIn("ina3221", telemetry_py)
+        self.assertNotIn("def _gpu_percent", telemetry_py)
         self.assertIn("sllidar_s2_launch.py", lidar_driver_dockerfile)
         self.assertIn("/sys/class/hwmon:/sys/class/hwmon:rw", compose)
 
@@ -266,6 +299,7 @@ class DashboardApiTest(unittest.TestCase):
         upstream.bind(("127.0.0.1", 0))
         upstream.listen(1)
         upstream_port = upstream.getsockname()[1]
+        captured_request_line = []
 
         def serve_once():
             conn, _ = upstream.accept()
@@ -273,8 +307,10 @@ class DashboardApiTest(unittest.TestCase):
                 request = b""
                 while b"\r\n\r\n" not in request:
                     request += conn.recv(1024)
+                request_lines = request.decode("iso-8859-1").split("\r\n")
+                captured_request_line.append(request_lines[0])
                 key_line = next(
-                    line for line in request.decode("iso-8859-1").split("\r\n")
+                    line for line in request_lines
                     if line.lower().startswith("sec-websocket-key:")
                 )
                 upstream_key = key_line.split(":", 1)[1].strip()
@@ -300,12 +336,13 @@ class DashboardApiTest(unittest.TestCase):
         old_upstream = os.environ.get("LIDAR_WS_UPSTREAM")
         os.environ["LIDAR_WS_UPSTREAM"] = f"ws://127.0.0.1:{upstream_port}/ws/lidar"
         try:
-            sock, leftover = self.open_dashboard_ws()
+            sock, leftover = self.open_dashboard_ws("/ws/lidar?max_points=1700")
             with sock:
                 payload = json.loads(self.read_ws_text(sock, leftover))
                 self.assertEqual(payload["type"], "socket")
                 self.assertTrue(payload["ok"])
                 self.assertEqual(payload["message"], "fake bridge connected")
+            self.assertEqual(captured_request_line, ["GET /ws/lidar?max_points=1700 HTTP/1.1"])
         finally:
             if old_upstream is None:
                 os.environ.pop("LIDAR_WS_UPSTREAM", None)

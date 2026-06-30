@@ -25,7 +25,7 @@
 }
 ```
 
-CPU, 메모리, 디스크, 온도는 서버가 Linux 시스템에서 직접 읽습니다. Jetson 전용 값은 추후 ROS2 bridge 또는 tegrastats parser가 넣을 수 있습니다.
+CPU, 메모리, swap, 네트워크, 디스크, 온도, Jetson `ina3221` 전력 값은 서버가 Linux `/proc`, `/sys`, Docker socket에서 직접 읽습니다. `TELEMETRY_FILE`의 `system`은 추후 ROS2 bridge가 `nvpmodel`, throttle 상태 같은 보강 정보를 전달할 때 사용합니다.
 
 ## connection
 

@@ -60,6 +60,10 @@ Connection 페이지에 들어가면 브라우저가 LiDAR WebSocket bridge에 �
 - `status`: live source, 마지막 scan age, point count
 - `scan`: 2D point 배열
 
+브라우저는 `/ws/lidar?max_points=900`처럼 표시할 최대 point 수를 요청합니다. 기본값은 900개이고, Connection 탭의 point slider와 `+`, `-`, `900` 버튼으로 조절합니다. 이 값은 브라우저 `localStorage`에 저장되므로 같은 대시보드를 여러 사람이 열어도 각자의 화면 설정만 바뀝니다.
+
+Bridge 컨테이너는 ROS2 `/scan`에서 받은 source point를 최대 `LIDAR_SCAN_MAX_POINTS`까지 보관하고, 각 WebSocket client 요청에 맞춰 downsample합니다. source point 수 자체가 900개라면 브라우저에서 3600개를 요청해도 900개 이상으로 늘릴 수 없습니다. 더 높은 점 밀도는 ROS2 LiDAR driver의 scan mode, angle compensation, publish 설정에서 결정됩니다.
+
 ### 상태 확인
 
 `상태 새로고침` 버튼은 serial port를 열지 않습니다. Dashboard가 볼 수 있는 `/dev/ttyUSB*` 표시, 안정적인 by-id 경로, 현재 포트 holder만 확인합니다.
@@ -87,6 +91,8 @@ Connection 탭의 `현재 지도 다운로드`는 대시보드가 표시 중인 
 - JSON: point data, 좌표계 설명, grid/range metadata
 - CSV: `angle_deg,distance_m,quality,x_m,y_m`
 - PNG: 현재 canvas 시각화 스냅샷
+
+PNG 저장은 투명 배경이 아니라 현재 테마 기준의 단색 배경을 포함합니다. Light mode에서는 흰색 배경, Dark mode에서는 어두운 배경과 해당 테마의 글자색/격자색이 들어간 이미지로 저장됩니다.
 
 이 다운로드는 ROS2 SLAM 공식 map 저장(`map.pgm`, `map.yaml`)과 다릅니다. Nav2 재사용 지도는 `nav2_map_server map_saver_cli` 또는 `/map` OccupancyGrid 저장 기능으로 별도 구현해야 합니다.
 

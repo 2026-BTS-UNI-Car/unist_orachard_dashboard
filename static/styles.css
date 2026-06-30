@@ -1537,6 +1537,87 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-2) 64%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+.container-row:hover,
+.container-row:focus-visible,
+.container-row.active {
+  border-color: var(--line-strong);
+  background:
+    linear-gradient(90deg, rgba(17, 85, 230, 0.14), rgba(242, 27, 88, 0.08)),
+    color-mix(in srgb, var(--surface-2) 72%, transparent);
+}
+
+.container-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--cyan) 58%, transparent);
+  outline-offset: 2px;
+}
+
+.container-detail {
+  margin-bottom: 14px;
+}
+
+.container-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.container-detail-grid article {
+  min-width: 0;
+  min-height: 94px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-2) 58%, transparent);
+}
+
+.container-detail-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.container-detail-grid strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.container-detail-grid small {
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.log-view {
+  width: 100%;
+  max-height: 360px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(3, 8, 24, 0.72);
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+:root[data-theme="light"] .log-view {
+  background: rgba(236, 241, 255, 0.9);
 }
 
 .empty-state {
@@ -1591,6 +1672,7 @@ h2 {
   .probe-card,
   .scan-progress,
   .notice-panel,
+  .container-detail-grid article,
   .live-status-grid div,
   .markdown-body blockquote,
   .empty-state,
@@ -1807,6 +1889,15 @@ h2 {
   .detail-list div {
     grid-template-columns: 1fr;
     gap: 7px;
+  }
+
+  .container-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .container-row b,
+  .container-row small {
+    text-align: left;
   }
 
   .detail-list dd {

@@ -18,7 +18,9 @@ Fan Control 페이지는 Jetson Orin Nano의 현재 온도를 보면서 `nvfanco
 
 수동 모드나 PWM 값을 적용하면 서버는 호스트의 `nvfancontrol`을 중지하고 `/sys/class/hwmon/.../pwm1`에 값을 씁니다.
 
-적용한 값은 `data/fan_state.json`에 저장됩니다. Jetson이나 다른 프로세스가 PWM을 바꾸면 dashboard server가 저장된 값을 다시 적용해서 사용자 설정을 유지합니다.
+적용한 값은 `data/fan_state.json`에 저장됩니다. Jetson이나 다른 프로세스가 PWM을 바꾸면 dashboard server가 저장된 값을 다시 적용해서 같은 부팅 세션 안에서 사용자 설정을 유지합니다.
+
+재부팅 후 기본 제어자는 `nvfancontrol`입니다. 수동 PWM 상태에는 host boot id가 함께 저장되며, Jetson 재부팅으로 boot id가 바뀌면 Dashboard가 저장 상태를 자동 모드로 되돌립니다. 예전 버전에서 만든 boot id 없는 수동 상태 파일도 자동 모드로 복구합니다.
 
 ## sysfs 탐색
 
