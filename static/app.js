@@ -5,6 +5,13 @@ const MAX_POINTS = 90;
 const POLL_INTERVAL_MS = 1000;
 const DPR_LIMIT = 1.5;
 const CPU_MODE_KEY = "ubts-cpu-chart-mode";
+const LIDAR_MAP_MODE_KEY = "ubts-lidar-map-mode";
+const SCAN_PROGRESS_STAGES = [
+  { at: 0, label: "포트 점유 확인" },
+  { at: 0.2, label: "모터 라인 준비" },
+  { at: 0.44, label: "360도 점군 수집" },
+  { at: 0.78, label: "STOP 전송 및 포트 정리" },
+];
 
 const state = {
   telemetry: null,
@@ -16,7 +23,11 @@ const state = {
   coreHistory: {},
   visualCoreHistory: {},
   cpuMode: "combined",
+  lidarMapMode: "2d",
   lidarScan: null,
+  scanProgressFrame: null,
+  scanProgressStartedAt: 0,
+  scanProgressDurationMs: 3800,
   chartShift: 0,
   chartShiftStartedAt: 0,
   animationFrame: null,
@@ -110,7 +121,30 @@ function renderRoute() {
     link.classList.toggle("active", link.dataset.route === route);
   });
   if (route === "/docs") renderDocsRoute();
+  if (route === "/connection") renderActiveLidarMap();
   requestChartAnimation();
+}
+
+function initMobileNav() {
+  const button = $("mobileMenuButton");
+  const backdrop = $("mobileNavBackdrop");
+  button?.addEventListener("click", () => setMobileNav(!document.body.classList.contains("nav-open")));
+  backdrop?.addEventListener("click", () => setMobileNav(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setMobileNav(false);
+  });
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 1180) setMobileNav(false);
+  });
+}
+
+function setMobileNav(open) {
+  document.body.classList.toggle("nav-open", Boolean(open));
+  const button = $("mobileMenuButton");
+  if (button) {
+    button.setAttribute("aria-expanded", String(Boolean(open)));
+    button.setAttribute("aria-label", open ? "사이트맵 닫기" : "사이트맵 열기");
+  }
 }
 
 function initTheme() {
@@ -139,6 +173,7 @@ function applyTheme(theme) {
   const toggle = $("themeToggle");
   if (toggle) toggle.setAttribute("aria-pressed", String(isLight));
   text("themeLabel", isLight ? "Light" : "Dark");
+  window.ubtsLidar3d?.setTheme?.();
   requestChartAnimation();
 }
 
@@ -175,6 +210,44 @@ function setCpuMode(mode) {
 function initLidarTest() {
   $("lidarTestButton")?.addEventListener("click", runLidarTest);
   $("lidarScanButton")?.addEventListener("click", runLidarScan);
+  initLidarMapMode();
+}
+
+function initLidarMapMode() {
+  try {
+    state.lidarMapMode = localStorage.getItem(LIDAR_MAP_MODE_KEY) || "2d";
+  } catch (_) {
+    state.lidarMapMode = "2d";
+  }
+  document.querySelectorAll("[data-lidar-map-mode]").forEach((button) => {
+    button.addEventListener("click", () => setLidarMapMode(button.dataset.lidarMapMode));
+  });
+  setLidarMapMode(state.lidarMapMode);
+}
+
+function setLidarMapMode(mode) {
+  state.lidarMapMode = mode === "3d" ? "3d" : "2d";
+  try {
+    localStorage.setItem(LIDAR_MAP_MODE_KEY, state.lidarMapMode);
+  } catch (_) {
+    // Keep the current session usable when storage is blocked.
+  }
+  document.querySelectorAll("[data-lidar-map-mode]").forEach((button) => {
+    const active = button.dataset.lidarMapMode === state.lidarMapMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  const canvas2d = $("lidarScanCanvas");
+  const canvas3d = $("lidarScanCanvas3d");
+  if (canvas2d) canvas2d.hidden = state.lidarMapMode !== "2d";
+  if (canvas3d) canvas3d.hidden = state.lidarMapMode !== "3d";
+  text(
+    "lidarMapHint",
+    state.lidarMapMode === "3d"
+      ? "3D 지도는 마우스 드래그 또는 터치로 회전하고, 휠/핀치로 확대합니다."
+      : "2D 지도는 위에서 본 360도 점군입니다.",
+  );
+  requestAnimationFrame(renderActiveLidarMap);
 }
 
 async function loadPlan() {
@@ -327,7 +400,7 @@ function renderTelemetry(data) {
 async function runLidarTest() {
   const button = $("lidarTestButton");
   if (button) button.disabled = true;
-  setTestResult("testing", "테스트 중: 포트 점유 여부 확인 후 RPLIDAR Info/Health만 요청합니다.");
+  setTestResult("testing", "장치 점유 여부를 확인한 뒤 Info/Health 요청만 짧게 보냅니다.");
   try {
     const res = await fetch("/api/lidar/test", { method: "POST", cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -335,7 +408,7 @@ async function runLidarTest() {
     renderLidarTest(payload);
     await tick();
   } catch (err) {
-    setTestResult("bad", `테스트 실패: ${err.message}`);
+    setTestResult("bad", `정보 확인 실패: ${err.message}`);
   } finally {
     if (button) button.disabled = false;
   }
@@ -344,17 +417,20 @@ async function runLidarTest() {
 async function runLidarScan() {
   const button = $("lidarScanButton");
   if (button) button.disabled = true;
-  setScanResult("testing", "스캔 중: 포트 점유 여부 확인 후 1회전 이상 점군을 캡처합니다.");
+  startLidarScanProgress();
+  setScanResult("testing", "스캔 준비 중입니다. ROS2가 포트를 사용 중이면 바로 중단합니다.");
   try {
     const res = await fetch("/api/lidar/scan", { method: "POST", cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const payload = await res.json();
     state.lidarScan = payload;
     renderLidarScan(payload);
+    finishLidarScanProgress(Boolean(payload.ok));
     await tick();
   } catch (err) {
     setScanResult("bad", `스캔 실패: ${err.message}`);
-    drawLidarMap(state.lidarScan);
+    finishLidarScanProgress(false);
+    renderActiveLidarMap();
   } finally {
     if (button) button.disabled = false;
   }
@@ -372,11 +448,11 @@ function renderConnection(connection) {
   text("connectionLidarHealthText", last.health ? `error ${last.health.error_code}` : "테스트 버튼으로 확인");
   text("connectionLidarGuard", (lidar.holders || []).length ? "점유 중" : "OK");
   text("connectionLidarGuardText", (lidar.holders || []).length ? holderLabel(lidar.holders) : "테스트 시에만 포트 사용");
-  text("lidarDeviceDetail", lidar.device || "--");
-  text("lidarByIdDetail", lidar.by_id || "--");
-  text("lidarDriverDetail", lidar.driver_hint || "--");
-  text("lidarLastTestDetail", last.ok ? `${last.protocol} · ${last.baud} bps · ${last.info?.serial || ""}` : last.message || "--");
-  text("lidarPolicyDetail", lidar.conflict_policy || "--");
+  text("lidarDeviceDetail", lidar.present ? shortPath(lidar.device) : "장치 미인식");
+  text("lidarByIdDetail", lidar.by_id ? shortPath(lidar.by_id, 42) : "stable ID 대기");
+  text("lidarDriverDetail", driverLabel(lidar.driver_hint));
+  text("lidarLastTestDetail", lidarLastTestLabel(last));
+  text("lidarPolicyDetail", policyLabel(lidar.conflict_policy));
   renderStatusRows("connectionServices", serviceRows(connection.services || {}));
   renderStatusRows("connectionSensors", sensorRows(connection.sensors || {}));
   if (last.ok || last.message) renderLidarTest(last);
@@ -391,12 +467,7 @@ function renderConnection(connection) {
 function renderLidarTest(result) {
   if (!result) return;
   const state = result.ok ? "ok" : "bad";
-  const info = result.info || {};
-  const health = result.health || {};
-  const message = result.ok
-    ? `응답 확인: ${result.protocol} · ${result.baud} bps · firmware ${info.firmware || "--"} · health ${health.status || "--"}`
-    : result.message || "응답 없음";
-  setTestResult(state, message);
+  setTestResult(state, lidarTestMessage(result));
 }
 
 function setTestResult(kind, message) {
@@ -412,8 +483,8 @@ function renderLidarScan(result) {
   const points = result.points || [];
   const ok = Boolean(result.ok && points.length);
   const message = ok
-    ? `스캔 확인: ${metrics.points || points.length} points · coverage ${fmtNumber(metrics.coverage_deg, 0)}° · ${fmtNumber(result.duration_s, 1)}s`
-    : result.message || "스캔 데이터 없음";
+    ? `스캔 완료: ${metrics.points || points.length}개 점 · ${fmtNumber(metrics.coverage_deg, 0)}도 커버리지 · ${fmtNumber(result.duration_s, 1)}초`
+    : cleanLidarError(result, "스캔 데이터를 받지 못했습니다.");
   setScanResult(ok ? "ok" : "bad", message);
   const colors = chartColors();
   renderReadout("lidarScanStats", [
@@ -422,7 +493,7 @@ function renderLidarScan(result) {
     { label: "Range", value: `${fmtNumber(metrics.min_distance_m, 2)}-${fmtNumber(metrics.max_distance_m, 2)} m`, sub: "valid points", color: colors.blue },
     { label: "Baud", value: result.baud ? `${result.baud}` : "--", sub: result.protocol || "RPLIDAR", color: colors.rose },
   ]);
-  drawLidarMap(result);
+  renderActiveLidarMap();
 }
 
 function setScanResult(kind, message) {
@@ -432,12 +503,118 @@ function setScanResult(kind, message) {
   target.textContent = message;
 }
 
+function startLidarScanProgress() {
+  stopLidarScanProgress();
+  state.scanProgressStartedAt = performance.now();
+  state.scanProgressDurationMs = 3800;
+  const box = $("lidarScanProgress");
+  if (box) {
+    box.classList.add("active");
+    box.setAttribute("aria-hidden", "false");
+  }
+  updateLidarScanProgress(state.scanProgressStartedAt);
+}
+
+function stopLidarScanProgress() {
+  if (state.scanProgressFrame) {
+    cancelAnimationFrame(state.scanProgressFrame);
+    state.scanProgressFrame = null;
+  }
+}
+
+function updateLidarScanProgress(timestamp) {
+  const elapsed = Math.max(0, timestamp - state.scanProgressStartedAt);
+  const raw = Math.min(0.92, elapsed / state.scanProgressDurationMs);
+  const eased = 1 - Math.pow(1 - raw, 2.2);
+  const stage = [...SCAN_PROGRESS_STAGES].reverse().find((item) => raw >= item.at) || SCAN_PROGRESS_STAGES[0];
+  setProgressFill($("lidarScanProgressBar"), eased * 100);
+  text("lidarScanProgressText", stage.label);
+  text("lidarScanProgressPercent", `${Math.round(eased * 100)}%`);
+  if (raw < 0.92) {
+    state.scanProgressFrame = requestAnimationFrame(updateLidarScanProgress);
+  }
+}
+
+function finishLidarScanProgress(ok) {
+  stopLidarScanProgress();
+  const pct = ok ? 100 : 100;
+  setProgressFill($("lidarScanProgressBar"), pct);
+  text("lidarScanProgressText", ok ? "스캔 완료" : "스캔 중단");
+  text("lidarScanProgressPercent", ok ? "100%" : "확인 필요");
+}
+
 function lidarStateLabel(state) {
   return { detected: "인식됨", in_use: "점유 중", not_found: "미인식" }[state] || state || "--";
 }
 
 function holderLabel(holders) {
   return holders.map((item) => `${item.pid} ${item.cmd || ""}`.trim()).join(", ");
+}
+
+function shortPath(path, maxLength = 34) {
+  if (!path) return "--";
+  const value = String(path);
+  const byIdPrefix = "/dev/serial/by-id/";
+  const label = value.startsWith(byIdPrefix) ? `by-id/${value.slice(byIdPrefix.length)}` : value;
+  if (label.length <= maxLength) return label;
+  const keep = Math.max(8, Math.floor((maxLength - 3) / 2));
+  return `${label.slice(0, keep)}...${label.slice(-keep)}`;
+}
+
+function driverLabel(driver) {
+  const value = String(driver || "").toLowerCase();
+  if (value.includes("cp210")) return "CP210x USB-UART 연결";
+  if (value.includes("cdc") || value.includes("ttyacm")) return "USB CDC ACM 연결";
+  if (value.includes("ttyusb")) return "USB-UART 직렬 연결";
+  return "직렬 드라이버 확인 전";
+}
+
+function lidarLastTestLabel(result) {
+  if (!result || (!result.ok && !result.message)) return "아직 확인 전";
+  if (!result.ok) return cleanLidarError(result, "응답 없음");
+  const info = result.info || {};
+  const health = result.health || {};
+  const parts = [
+    "정상",
+    result.baud ? `${Number(result.baud).toLocaleString()} bps` : "",
+    info.firmware ? `FW ${info.firmware}` : "",
+    info.hardware ? `HW ${info.hardware}` : "",
+    health.status ? `health ${health.status}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function policyLabel(policy) {
+  if (!policy) return "버튼 실행 중에만 포트를 열고 바로 닫습니다.";
+  return "ROS2가 포트를 사용 중이면 테스트하지 않고, 수동 테스트 후에는 STOP과 포트 해제를 수행합니다.";
+}
+
+function lidarTestMessage(result) {
+  if (!result) return "정보 없음";
+  if (!result.ok) return cleanLidarError(result, "RPLIDAR 응답을 받지 못했습니다.");
+  const info = result.info || {};
+  const health = result.health || {};
+  const parts = [
+    "정상 응답",
+    result.baud ? `${Number(result.baud).toLocaleString()} bps` : "",
+    info.firmware ? `펌웨어 ${info.firmware}` : "",
+    info.hardware ? `하드웨어 ${info.hardware}` : "",
+    health.status ? `상태 ${health.status}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function cleanLidarError(result, fallback) {
+  const stateName = result?.state || result?.status?.state;
+  const messages = {
+    not_found: "LiDAR 장치를 찾지 못했습니다. USB 연결과 전원을 확인하세요.",
+    in_use: "다른 프로세스가 LiDAR 포트를 사용 중이라 테스트를 건너뛰었습니다.",
+    busy: "이미 다른 LiDAR 테스트가 실행 중입니다.",
+    no_protocol_response: "직렬 장치는 보이지만 RPLIDAR Info/Health 응답이 없습니다.",
+    no_scan_data: "스캔 데이터가 들어오지 않았습니다. 모터 전원과 baudrate를 확인하세요.",
+    no_scan_points: "스캔 명령 후 유효한 거리 점을 받지 못했습니다.",
+  };
+  return messages[stateName] || result?.message || fallback || "확인 실패";
 }
 
 function hostIpLabel(network) {
@@ -1067,7 +1244,19 @@ function drawCharts() {
   };
   for (const [id, series] of groups[currentRoute()] || []) drawMultiLine(id, series);
   if (currentRoute() === "/system" && state.cpuMode === "separate") drawCoreCharts();
-  if (currentRoute() === "/connection") drawLidarMap(state.lidarScan);
+  if (currentRoute() === "/connection") renderActiveLidarMap();
+}
+
+function renderActiveLidarMap() {
+  if (state.lidarMapMode === "3d") {
+    renderLidarMap3d(state.lidarScan);
+    return;
+  }
+  drawLidarMap(state.lidarScan);
+}
+
+function renderLidarMap3d(result) {
+  window.ubtsLidar3d?.setScan?.(result);
 }
 
 function normalizeBps(values, key) {
@@ -1295,11 +1484,13 @@ function escapeHtml(value) {
 
 window.addEventListener("popstate", renderRoute);
 window.addEventListener("resize", requestChartAnimation);
+window.addEventListener("ubts-lidar3d-ready", renderActiveLidarMap);
 document.addEventListener("click", (event) => {
   const docLink = event.target.closest("a[data-doc-link]");
   if (docLink) {
     event.preventDefault();
     history.pushState({}, "", docLink.getAttribute("href"));
+    setMobileNav(false);
     renderRoute();
     return;
   }
@@ -1307,9 +1498,11 @@ document.addEventListener("click", (event) => {
   if (!link) return;
   event.preventDefault();
   history.pushState({}, "", link.getAttribute("href"));
+  setMobileNav(false);
   renderRoute();
 });
 
+initMobileNav();
 initTheme();
 initCpuMode();
 initLidarTest();

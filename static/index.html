@@ -17,9 +17,18 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
+    <button id="mobileNavBackdrop" class="mobile-nav-backdrop" type="button" aria-label="메뉴 닫기"></button>
+    <header class="mobile-topbar">
+      <a class="mobile-brand" data-route="/" href="/">UBTS Dashboard</a>
+      <button id="mobileMenuButton" class="menu-button" type="button" aria-label="사이트맵 열기" aria-controls="sidebar" aria-expanded="false">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </header>
     <div class="app-shell">
-      <aside class="sidebar">
-        <a class="brand-block" href="/">
+      <aside id="sidebar" class="sidebar" aria-label="Site map">
+        <a class="brand-block" data-route="/" href="/">
           <span>
             <small>UBTS</small>
             <strong>Dashboard</strong>
@@ -170,19 +179,39 @@
             <article class="panel">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">LiDAR probe</p>
-                  <h2>RPLIDAR 테스트</h2>
+                  <p class="eyebrow">Serial check</p>
+                  <h2>RPLIDAR 상태 확인</h2>
                 </div>
                 <button id="lidarTestButton" class="action-button" type="button">정보 확인</button>
               </div>
               <div id="lidarTestResult" class="test-result">대기 중</div>
-              <dl class="detail-list">
-                <div><dt>Device</dt><dd id="lidarDeviceDetail">--</dd></div>
-                <div><dt>By ID</dt><dd id="lidarByIdDetail">--</dd></div>
-                <div><dt>Driver</dt><dd id="lidarDriverDetail">--</dd></div>
-                <div><dt>Last Test</dt><dd id="lidarLastTestDetail">--</dd></div>
-                <div><dt>Policy</dt><dd id="lidarPolicyDetail">--</dd></div>
-              </dl>
+              <div class="probe-grid">
+                <article class="probe-card">
+                  <span>Device</span>
+                  <strong id="lidarDeviceDetail">--</strong>
+                  <small>serial endpoint</small>
+                </article>
+                <article class="probe-card">
+                  <span>Stable ID</span>
+                  <strong id="lidarByIdDetail">--</strong>
+                  <small>reboot-safe path</small>
+                </article>
+                <article class="probe-card">
+                  <span>Driver</span>
+                  <strong id="lidarDriverDetail">--</strong>
+                  <small>USB bridge</small>
+                </article>
+                <article class="probe-card">
+                  <span>Last Check</span>
+                  <strong id="lidarLastTestDetail">--</strong>
+                  <small>info / health</small>
+                </article>
+                <article class="probe-card wide">
+                  <span>ROS Guard</span>
+                  <strong id="lidarPolicyDetail">--</strong>
+                  <small>port conflict policy</small>
+                </article>
+              </div>
             </article>
 
             <article class="panel wide">
@@ -191,11 +220,28 @@
                   <p class="eyebrow">LiDAR scan</p>
                   <h2>360 스캔 지도</h2>
                 </div>
-                <button id="lidarScanButton" class="action-button" type="button">360 스캔 테스트</button>
+                <div class="panel-actions">
+                  <div class="segmented-control map-mode-toggle" aria-label="LiDAR 지도 표시 방식">
+                    <button type="button" data-lidar-map-mode="2d">2D</button>
+                    <button type="button" data-lidar-map-mode="3d">3D</button>
+                  </div>
+                  <button id="lidarScanButton" class="action-button" type="button">360 스캔 테스트</button>
+                </div>
               </div>
               <div id="lidarScanResult" class="test-result">스캔 대기 중</div>
+              <div id="lidarScanProgress" class="scan-progress" aria-hidden="true">
+                <div class="scan-progress-meta">
+                  <span id="lidarScanProgressText">대기 중</span>
+                  <b id="lidarScanProgressPercent">0%</b>
+                </div>
+                <div class="progress"><i id="lidarScanProgressBar"></i></div>
+              </div>
               <div class="lidar-map-frame">
-                <canvas id="lidarScanCanvas" class="lidar-map" width="720" height="720"></canvas>
+                <div class="lidar-map-stage">
+                  <canvas id="lidarScanCanvas" class="lidar-map" width="720" height="720"></canvas>
+                  <canvas id="lidarScanCanvas3d" class="lidar-map lidar-map-3d" width="720" height="720" hidden></canvas>
+                  <div id="lidarMapHint" class="map-hint">2D 지도는 위에서 본 점군입니다.</div>
+                </div>
                 <div id="lidarScanStats" class="chart-readout"></div>
               </div>
             </article>
@@ -439,6 +485,7 @@
       </main>
     </div>
 
+    <script type="module" src="/static/lidar3d.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>
