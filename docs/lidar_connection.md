@@ -36,7 +36,7 @@ Connection 페이지에는 두 가지 수동 테스트가 있습니다.
 
 1. 정보 확인과 동일하게 포트 점유 여부를 먼저 확인합니다.
 2. 점유 중이 아니면 serial 포트를 `1,000,000 bps`로 열고 DTR motor line을 활성화합니다.
-3. RPLIDAR normal scan 명령 `A5 20`을 전송하고 기본 1.2초 동안 scan node를 수집합니다.
+3. RPLIDAR normal scan 명령 `A5 20`을 전송하고 기본 3초 동안 spin-up과 scan node를 수집합니다.
 4. STOP 명령 `A5 25`를 전송하고 DTR/RTS를 끈 뒤 포트를 닫습니다.
 5. 수집된 angle/distance point를 Connection 페이지의 360도 polar map에 표시합니다.
 

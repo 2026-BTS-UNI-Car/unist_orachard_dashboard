@@ -22,7 +22,7 @@ DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
 DEFAULT_TELEMETRY_FILE = ROOT / "runtime" / "telemetry_snapshot.json"
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_LIDAR_BAUDS = [1_000_000, 460_800, 256_000, 115_200]
-DEFAULT_LIDAR_SCAN_DURATION_S = 1.2
+DEFAULT_LIDAR_SCAN_DURATION_S = 3.0
 DEFAULT_LIDAR_SCAN_MAX_POINTS = 1800
 RPLIDAR_STOP = bytes([0xA5, 0x25])
 RPLIDAR_SCAN = bytes([0xA5, 0x20])
@@ -461,7 +461,14 @@ class TelemetryProvider:
                 continue
             if response["ok"]:
                 return response
-            errors.append({"baud": baud, "error": response.get("message", "no_scan_data")})
+            error = {
+                "baud": baud,
+                "error": response.get("message", "no_scan_data"),
+                "state": response.get("state"),
+                "raw_bytes": response.get("raw_bytes"),
+                "motor_line": response.get("motor_line"),
+            }
+            errors.append({key: value for key, value in error.items() if value is not None})
         return {
             "ok": False,
             "state": "no_scan_data",

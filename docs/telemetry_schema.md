@@ -50,7 +50,7 @@ CPU, 메모리, 디스크, 온도는 서버가 Linux 시스템에서 직접 읽�
       "ok": true,
       "protocol": "RPLIDAR normal scan",
       "baud": 1000000,
-      "duration_s": 1.2,
+      "duration_s": 3.0,
       "metrics": {
         "points": 476,
         "rendered_points": 476,
@@ -63,7 +63,7 @@ CPU, 메모리, 디스크, 온도는 서버가 Linux 시스템에서 직접 읽�
 }
 ```
 
-대시보드는 LiDAR 포트를 상시 점유하지 않습니다. 정보 확인 버튼은 `GET_INFO`/`GET_HEALTH`만 수행하고, 360 스캔 버튼은 normal scan을 약 1.2초만 수집한 뒤 STOP과 DTR/RTS off를 수행하고 즉시 닫습니다. 포트가 ROS2 driver 등 다른 프로세스에 의해 점유 중이면 두 테스트 모두 실행하지 않습니다.
+대시보드는 LiDAR 포트를 상시 점유하지 않습니다. 정보 확인 버튼은 `GET_INFO`/`GET_HEALTH`만 수행하고, 360 스캔 버튼은 normal scan을 약 3초만 수집한 뒤 STOP과 DTR/RTS off를 수행하고 즉시 닫습니다. 포트가 ROS2 driver 등 다른 프로세스에 의해 점유 중이면 두 테스트 모두 실행하지 않습니다.
 
 ## rover
 

@@ -82,7 +82,7 @@ Silicon Labs CP210x VCP 릴리즈 노트는 구형 Linux용 out-of-tree 드라�
 2. `/proc/*/fd`를 스캔해 포트 점유 프로세스 확인
 3. 점유 중이면 테스트 중단
 4. 정보 확인은 RPLIDAR `GET_INFO`/`GET_HEALTH`만 요청
-5. 360 스캔 지도는 DTR motor line을 켜고 normal scan을 약 1.2초 수집
+5. 360 스캔 지도는 DTR motor line을 켜고 normal scan을 약 3초 수집
 6. STOP 명령 후 DTR/RTS를 끄고 즉시 포트를 닫아 결과를 화면에 표시
 
 추후 ROS2에서 `/scan`을 실제로 구독하는 세부 LiDAR 대시보드는 별도 ROS2 bridge가 topic rate, scan range 요약, frame id, scan health를 `runtime/telemetry_snapshot.json`으로 써주는 방식이 안전합니다. 이 웹 서버가 직접 scan stream을 계속 읽는 구조는 ROS2 driver와 포트 경쟁을 만들 수 있으므로 사용하지 않습니다.
