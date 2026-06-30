@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     network_mode: host
     user: "0:0"
+    privileged: true
     environment:
       DASHBOARD_HOST: "0.0.0.0"
       DASHBOARD_PORT: "8080"
@@ -20,13 +21,17 @@ services:
       DOCKER_SOCKET: "/var/run/docker.sock"
       LIDAR_DEV_ROOT: "/host-dev"
       LIDAR_BAUDS: "1000000,460800,256000,115200"
+      LIDAR_WS_UPSTREAM: "ws://127.0.0.1:8765/ws/lidar"
     volumes:
       - ./runtime:/app/runtime
+      - ./data:/app/data
       - /:/host-root:ro
       - /dev:/host-dev
       - /etc/nv_tegra_release:/etc/nv_tegra_release:ro
       - /sys/class/thermal:/sys/class/thermal:ro
-      - /sys/devices:/sys/devices:ro
+      - /sys/class/hwmon:/sys/class/hwmon:rw
+      - /sys/devices:/sys/devices:rw
+      - /run/systemd:/run/systemd:rw
       - /var/run/docker.sock:/var/run/docker.sock
     device_cgroup_rules:
       - "c 166:* rwm"
@@ -40,3 +45,42 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  ros2-lidar-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-lidar-bridge:latest
+    container_name: unist-orachard-ros2-lidar-bridge
+    restart: unless-stopped
+    network_mode: host
+    privileged: true
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      LIDAR_BRIDGE_SOURCE: "${LIDAR_BRIDGE_SOURCE:-auto}"
+      LIDAR_DEV_ROOT: "/host-dev"
+      LIDAR_BAUDS: "1000000,460800,256000,115200"
+      LIDAR_SCAN_DURATION_S: "${LIDAR_SCAN_DURATION_S:-2.5}"
+      LIDAR_SCAN_MAX_POINTS: "${LIDAR_SCAN_MAX_POINTS:-900}"
+      LIDAR_SERIAL_POLL_S: "${LIDAR_SERIAL_POLL_S:-0.15}"
+      LIDAR_ROS_FALLBACK_S: "${LIDAR_ROS_FALLBACK_S:-2.5}"
+    volumes:
+      - /dev:/host-dev
+    device_cgroup_rules:
+      - "c 166:* rwm"
+      - "c 188:* rwm"
+      - "c 204:* rwm"
+      - "c 240:* rwm"
+    pid: host
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        source /opt/ros/iron/setup.bash
+        python3 /app/scripts/lidar_ws_bridge.py \
+          --host 0.0.0.0 \
+          --port 8765 \
+          --topic /scan \
+          --source "$${LIDAR_BRIDGE_SOURCE}" \
+          --max-points "$${LIDAR_SCAN_MAX_POINTS}" \
+          --max-hz 8

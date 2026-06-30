@@ -5,12 +5,6 @@ const MAX_POINTS = 90;
 const POLL_INTERVAL_MS = 1000;
 const DPR_LIMIT = 1.5;
 const CPU_MODE_KEY = "ubts-cpu-chart-mode";
-const SCAN_PROGRESS_STAGES = [
-  { at: 0, label: "포트 점유 확인" },
-  { at: 0.2, label: "모터 라인 준비" },
-  { at: 0.44, label: "360도 점군 수집" },
-  { at: 0.78, label: "STOP 전송 및 포트 정리" },
-];
 
 const state = {
   telemetry: null,
@@ -28,10 +22,12 @@ const state = {
     socket: null,
     connected: false,
     scanTopicAlive: false,
+    source: "waiting",
     lastMessageAt: null,
     lastScanAgeSec: null,
     pointCount: 0,
     error: "",
+    messageCount: 0,
   },
   lidarExport: {
     latestScan: null,
@@ -43,12 +39,10 @@ const state = {
     accumulate: false,
     format: "json",
   },
-  scanProgressFrame: null,
-  scanProgressStartedAt: 0,
-  scanProgressDurationMs: 3800,
   chartShift: 0,
   chartShiftStartedAt: 0,
   animationFrame: null,
+  apiLogCounter: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -119,10 +113,30 @@ function coreKey(core) {
   return core?.name || cpuLabel(core);
 }
 
+function debugLog(scope, message, detail) {
+  if (!window.console?.debug) return;
+  if (detail === undefined) {
+    console.debug(`[UBTS:${scope}] ${message}`);
+  } else {
+    console.debug(`[UBTS:${scope}] ${message}`, detail);
+  }
+}
+
 async function getJson(path) {
-  const res = await fetch(path, { cache: "no-store" });
-  if (!res.ok) throw new Error(`${path}: ${res.status}`);
-  return res.json();
+  const started = performance.now();
+  try {
+    const res = await fetch(path, { cache: "no-store" });
+    const ms = Math.round(performance.now() - started);
+    state.apiLogCounter += 1;
+    if (path !== "/api/telemetry" || state.apiLogCounter % 10 === 0) {
+      debugLog("api", `${path} -> ${res.status} (${ms}ms)`);
+    }
+    if (!res.ok) throw new Error(`${path}: ${res.status}`);
+    return res.json();
+  } catch (err) {
+    debugLog("api", `${path} failed`, err);
+    throw err;
+  }
 }
 
 function currentRoute() {
@@ -226,7 +240,6 @@ function setCpuMode(mode) {
 
 function initLidarTest() {
   $("lidarTestButton")?.addEventListener("click", runLidarTest);
-  $("lidarScanButton")?.addEventListener("click", runLidarScan);
   $("lidarLiveButton")?.addEventListener("click", toggleLidarLive);
   $("lidarDownloadButton")?.addEventListener("click", downloadCurrentLidarMap);
   $("lidarAccumulateToggle")?.addEventListener("change", (event) => {
@@ -411,32 +424,6 @@ async function runLidarTest() {
   }
 }
 
-async function runLidarScan() {
-  const button = $("lidarScanButton");
-  if (state.lidarLive.connected) {
-    setScanResult("bad", "실시간 ROS2 /scan 사용 중에는 serial 단발 스캔을 실행하지 않습니다.");
-    return;
-  }
-  if (button) button.disabled = true;
-  startLidarScanProgress();
-  setScanResult("testing", "스캔 준비 중입니다. ROS2가 포트를 사용 중이면 바로 중단합니다.");
-  try {
-    const res = await fetch("/api/lidar/scan", { method: "POST", cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const payload = await res.json();
-    state.lidarScan = payload;
-    renderLidarScan(payload, "manual_serial_scan");
-    finishLidarScanProgress(Boolean(payload.ok));
-    await tick();
-  } catch (err) {
-    setScanResult("bad", `스캔 실패: ${err.message}`);
-    finishLidarScanProgress(false);
-    renderActiveLidarMap();
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
 function toggleLidarLive() {
   if (state.lidarLive.connected || state.lidarLive.socket) {
     stopLidarLive("사용자가 실시간 연결을 중지했습니다.");
@@ -451,31 +438,38 @@ function startLidarLive() {
   state.lidarLive.error = "";
   state.lidarLive.connected = false;
   state.lidarLive.scanTopicAlive = false;
+  state.lidarLive.source = "waiting";
   renderLidarLiveState("연결 중");
+  debugLog("ws", `connecting ${url}`);
   try {
     const socket = new WebSocket(url);
     state.lidarLive.socket = socket;
     socket.addEventListener("open", () => {
       state.lidarLive.connected = true;
       state.lidarLive.error = "";
+      debugLog("ws", "open");
       renderLidarLiveState();
     });
     socket.addEventListener("message", (event) => handleLidarLiveMessage(event.data));
-    socket.addEventListener("error", () => {
+    socket.addEventListener("error", (event) => {
       state.lidarLive.error = "WebSocket 연결 오류";
+      debugLog("ws", "error", event);
       renderLidarLiveState();
     });
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       state.lidarLive.socket = null;
       state.lidarLive.connected = false;
       state.lidarLive.scanTopicAlive = false;
+      debugLog("ws", `close code=${event.code} reason=${event.reason || "-"}`);
       renderLidarLiveState(state.lidarLive.error || "disconnected");
     });
   } catch (err) {
     state.lidarLive.socket = null;
     state.lidarLive.connected = false;
     state.lidarLive.scanTopicAlive = false;
+    state.lidarLive.source = "waiting";
     state.lidarLive.error = err.message;
+    debugLog("ws", "create failed", err);
     renderLidarLiveState();
   }
 }
@@ -486,8 +480,10 @@ function stopLidarLive(message = "disconnected") {
   state.lidarLive.socket = null;
   state.lidarLive.connected = false;
   state.lidarLive.scanTopicAlive = false;
+  state.lidarLive.source = "waiting";
   state.lidarLive.error = "";
   if (socket && socket.readyState <= 1) socket.close();
+  debugLog("ws", `stopped: ${message}`);
   renderLidarLiveState(message);
 }
 
@@ -503,15 +499,19 @@ function handleLidarLiveMessage(raw) {
     payload = JSON.parse(raw);
   } catch (err) {
     state.lidarLive.error = "잘못된 WebSocket 메시지";
+    debugLog("ws", "invalid message", raw);
     renderLidarLiveState();
     return;
   }
   state.lidarLive.lastMessageAt = Date.now();
+  state.lidarLive.messageCount += 1;
   if (payload.type === "status") {
     state.lidarLive.lastScanAgeSec = payload.last_scan_age_sec;
     state.lidarLive.pointCount = payload.point_count || 0;
     state.lidarLive.scanTopicAlive = Boolean(payload.scan_topic_alive);
+    state.lidarLive.source = payload.source || "waiting";
     state.lidarLive.error = payload.error || (payload.scan_topic_alive === false ? "ROS2 /scan 대기" : "");
+    if (state.lidarLive.messageCount % 10 === 1 || payload.error) debugLog("ws", "status", payload);
     renderLidarLiveState();
     return;
   }
@@ -520,14 +520,17 @@ function handleLidarLiveMessage(raw) {
     state.lidarLive.lastScanAgeSec = 0;
     state.lidarLive.pointCount = result.points.length;
     state.lidarLive.scanTopicAlive = true;
+    state.lidarLive.source = payload.source || "ros2";
     state.lidarLive.error = "";
     state.lidarScan = result;
+    if (state.lidarLive.messageCount % 10 === 1) debugLog("ws", "scan", { source: payload.source, points: result.points.length });
     renderLidarScan(result, "live_websocket");
     renderLidarLiveState();
     return;
   }
   if (payload.type === "socket") {
     state.lidarLive.error = payload.ok ? "" : payload.message || "socket status error";
+    debugLog("ws", "socket", payload);
     renderLidarLiveState();
   }
 }
@@ -546,7 +549,7 @@ function lidarScanFromLive(payload) {
   return {
     ok: true,
     state: "live_scan",
-    protocol: "ROS2 /scan WebSocket",
+    protocol: payload.source === "serial" ? "RPLIDAR serial live WebSocket" : "ROS2 /scan WebSocket",
     frame_id: payload.frame_id || "laser",
     stamp: payload.stamp,
     tested_at: Math.floor(Date.now() / 1000),
@@ -564,16 +567,15 @@ function renderLidarLiveState(overrideLabel) {
       : state.lidarLive.connected ? "실시간 중지" : "실시간 연결";
     button.classList.toggle("active", state.lidarLive.connected);
   }
-  const scanButton = $("lidarScanButton");
-  if (scanButton) {
-    scanButton.disabled = Boolean(state.lidarLive.connected);
-    scanButton.title = state.lidarLive.connected ? "실시간 ROS2 /scan 사용 중에는 serial 단발 스캔을 실행하지 않습니다." : "";
-  }
   text("lidarLiveDevice", state.telemetry?.connection?.lidar?.device || "--");
-  text("lidarLiveTopic", state.lidarLive.scanTopicAlive ? "alive" : "대기");
+  text("lidarLiveTopic", state.lidarLive.scanTopicAlive ? `${lidarSourceLabel(state.lidarLive.source)} live` : lidarSourceLabel(state.lidarLive.source));
   text("lidarLiveSocket", overrideLabel || (state.lidarLive.connected ? "connected" : state.lidarLive.error || "disconnected"));
   text("lidarLiveAge", state.lidarLive.lastScanAgeSec === null || state.lidarLive.lastScanAgeSec === undefined ? "--" : `${fmtNumber(state.lidarLive.lastScanAgeSec, 1)}s`);
   text("lidarLivePoints", state.lidarLive.pointCount ? String(state.lidarLive.pointCount) : "--");
+}
+
+function lidarSourceLabel(source) {
+  return { ros2: "ROS2 /scan", serial: "Serial live", bridge: "Bridge", waiting: "대기" }[source] || source || "대기";
 }
 
 function setLidarDownloadFormat(format) {
@@ -772,8 +774,8 @@ function renderLidarScan(result, source = result?.source || "manual_serial_scan"
   const points = result.points || [];
   const ok = Boolean(result.ok && points.length);
   const message = ok
-    ? `스캔 완료: ${metrics.points || points.length}개 점 · ${fmtNumber(metrics.coverage_deg, 0)}도 커버리지 · ${fmtNumber(result.duration_s, 1)}초`
-    : cleanLidarError(result, "스캔 데이터를 받지 못했습니다.");
+    ? `실시간 수신: ${metrics.points || points.length}개 점 · ${fmtNumber(metrics.coverage_deg, 0)}도 커버리지 · ${result.protocol || "LiDAR"}`
+    : cleanLidarError(result, "실시간 LiDAR 데이터를 기다리는 중입니다.");
   setScanResult(ok ? "ok" : "bad", message);
   const colors = chartColors();
   renderReadout("lidarScanStats", [
@@ -791,46 +793,6 @@ function setScanResult(kind, message) {
   if (!target) return;
   target.className = `test-result ${kind}`;
   target.textContent = message;
-}
-
-function startLidarScanProgress() {
-  stopLidarScanProgress();
-  state.scanProgressStartedAt = performance.now();
-  state.scanProgressDurationMs = 3800;
-  const box = $("lidarScanProgress");
-  if (box) {
-    box.classList.add("active");
-    box.setAttribute("aria-hidden", "false");
-  }
-  updateLidarScanProgress(state.scanProgressStartedAt);
-}
-
-function stopLidarScanProgress() {
-  if (state.scanProgressFrame) {
-    cancelAnimationFrame(state.scanProgressFrame);
-    state.scanProgressFrame = null;
-  }
-}
-
-function updateLidarScanProgress(timestamp) {
-  const elapsed = Math.max(0, timestamp - state.scanProgressStartedAt);
-  const raw = Math.min(0.92, elapsed / state.scanProgressDurationMs);
-  const eased = 1 - Math.pow(1 - raw, 2.2);
-  const stage = [...SCAN_PROGRESS_STAGES].reverse().find((item) => raw >= item.at) || SCAN_PROGRESS_STAGES[0];
-  setProgressFill($("lidarScanProgressBar"), eased * 100);
-  text("lidarScanProgressText", stage.label);
-  text("lidarScanProgressPercent", `${Math.round(eased * 100)}%`);
-  if (raw < 0.92) {
-    state.scanProgressFrame = requestAnimationFrame(updateLidarScanProgress);
-  }
-}
-
-function finishLidarScanProgress(ok) {
-  stopLidarScanProgress();
-  const pct = ok ? 100 : 100;
-  setProgressFill($("lidarScanProgressBar"), pct);
-  text("lidarScanProgressText", ok ? "스캔 완료" : "스캔 중단");
-  text("lidarScanProgressPercent", ok ? "100%" : "확인 필요");
 }
 
 function lidarStateLabel(state) {
@@ -1192,6 +1154,7 @@ function initFanControls() {
 
 async function postFanJson(path, payload) {
   setFanStatus("testing", "요청을 적용하는 중입니다.");
+  debugLog("fan", `POST ${path}`, payload || {});
   try {
     const res = await fetch(path, {
       method: "POST",
@@ -1201,11 +1164,20 @@ async function postFanJson(path, payload) {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const result = await res.json();
-    setFanStatus(result.ok ? "ok" : "bad", result.message || result.state || (result.ok ? "적용 완료" : "적용 실패"));
+    debugLog("fan", `${path} result`, result);
+    setFanStatus(result.ok ? "ok" : "bad", fanResultMessage(result));
     await tick();
   } catch (err) {
+    debugLog("fan", `${path} failed`, err);
     setFanStatus("bad", `Fan API 실패: ${err.message}`);
   }
+}
+
+function fanResultMessage(result) {
+  if (result.ok) return result.message || result.state || "적용 완료";
+  const writeError = result.write?.error || result.enable?.error || result.systemctl?.error;
+  const stateText = result.message || result.state || result.systemctl?.state || "적용 실패";
+  return writeError ? `${stateText}: ${writeError}` : stateText;
 }
 
 function setFanStatus(kind, message) {
@@ -1232,7 +1204,7 @@ function renderFan(fan) {
 
   const auto = $("fanAutoToggle");
   if (auto) auto.checked = fan.mode === "auto";
-  const manualDisabled = !fan.available || fan.mode === "auto";
+  const manualDisabled = !fan.available;
   const slider = $("fanPwmSlider");
   if (slider) {
     slider.disabled = manualDisabled;

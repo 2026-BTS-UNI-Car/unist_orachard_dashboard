@@ -169,6 +169,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("Fan Control", html)
         self.assertIn("id=\"lidarDownloadButton\"", html)
         self.assertIn("현재 지도 다운로드", html)
+        self.assertNotIn("lidarScanButton", html)
+        self.assertNotIn("360 스캔 테스트", html)
         self.assertNotIn("lidarScanCanvas3d", html)
         self.assertNotIn("data-lidar-map-mode=\"3d\"", html)
         self.assertFalse((Path(__file__).resolve().parents[1] / "static" / "lidar3d.js").exists())
@@ -178,6 +180,11 @@ class DashboardApiTest(unittest.TestCase):
         app_js = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text()
         self.assertIn("${scheme}://${location.host}/ws/lidar", app_js)
         self.assertNotIn("${scheme}://${location.hostname}:8765/ws/lidar", app_js)
+        self.assertIn("[UBTS:", app_js)
+        compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
+        self.assertIn("ros2-lidar-bridge", compose)
+        self.assertIn("Dockerfile.ros2", compose)
+        self.assertIn("/sys/class/hwmon:/sys/class/hwmon:rw", compose)
 
     def test_lidar_websocket_proxy_graceful_without_bridge(self):
         old_upstream = os.environ.get("LIDAR_WS_UPSTREAM")

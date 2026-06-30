@@ -7,7 +7,7 @@ Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대�
 ## 주요 화면
 
 - Jetson Orin Nano Super 상태: CPU, 메모리, 디스크, 온도, 호스트 정보
-- Connection: LiDAR USB-serial 인식 상태, RPLIDAR 정보 확인, 360도 단발 스캔 지도, ROS2 bridge 연결 상태
+- Connection: LiDAR USB-serial 인식 상태, RPLIDAR 정보 확인, ROS2/serial live bridge 기반 2D LiDAR 지도
 - 로버 상태: 주행 모드, 위치, 속도, 배터리, E-stop, 모터 상태
 - 센서 상태: LiDAR, Camera, IMU, Encoder, MAVLink 준비 상태
 - Vision-LiDAR 융합: 센서별 신뢰도, 동적 가중치, 중심선 오차, 경로추종 오차
@@ -47,7 +47,9 @@ docker compose up -d --build
 curl http://127.0.0.1:8080/api/health
 ```
 
-`docker-compose.yml`은 `restart: unless-stopped`를 사용하므로 Jetson이 재부팅되어도 Docker 서비스가 올라오면 대시보드 컨테이너가 다시 시작됩니다. Cloudflare Tunnel은 `bts.sarihub.com`을 `http://localhost:8080`으로 전달합니다.
+`docker-compose.yml`은 대시보드와 `ros2-lidar-bridge` 컨테이너를 함께 실행합니다. 두 컨테이너 모두 `restart: unless-stopped`를 사용하므로 Jetson이 재부팅되어도 Docker 서비스가 올라오면 자동으로 다시 시작됩니다. Cloudflare Tunnel은 `bts.sarihub.com`을 `http://localhost:8080`으로 전달합니다.
+
+LiDAR bridge는 ROS2 Iron 컨테이너에서 `/scan`을 우선 구독합니다. 아직 ROS2 driver가 준비되지 않았거나 `/scan`이 없으면, `/dev/ttyUSB0` serial live fallback으로 WebSocket 지도 데이터를 제공합니다.
 
 ## 텔레메트리 연결 방식
 

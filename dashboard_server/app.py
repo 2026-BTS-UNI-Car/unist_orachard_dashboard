@@ -9,6 +9,7 @@ import os
 import secrets
 import select
 import socket
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -246,30 +247,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.close_connection = True
 
         upstream_url = os.environ.get("LIDAR_WS_UPSTREAM", "ws://127.0.0.1:8765/ws/lidar")
-        try:
-            upstream, initial_upstream = self._connect_lidar_upstream(upstream_url)
-        except OSError as exc:
-            self._ws_send_json(
-                self.connection,
-                {
-                    "type": "status",
-                    "device_found": False,
-                    "scan_topic_alive": False,
-                    "last_scan_age_sec": None,
-                    "point_count": 0,
-                    "error": f"LiDAR WebSocket bridge unavailable: {exc}",
-                },
-            )
-            self._ws_send_close(self.connection)
-            return
-
-        try:
-            self._relay_websocket(upstream, initial_upstream)
-        finally:
+        while True:
             try:
-                upstream.close()
-            except OSError:
-                pass
+                upstream, initial_upstream = self._connect_lidar_upstream(upstream_url)
+            except OSError as exc:
+                ok = self._ws_send_json(
+                    self.connection,
+                    {
+                        "type": "status",
+                        "device_found": False,
+                        "scan_topic_alive": False,
+                        "last_scan_age_sec": None,
+                        "point_count": 0,
+                        "source": "bridge",
+                        "error": f"LiDAR WebSocket bridge unavailable: {exc}",
+                    },
+                )
+                if not ok:
+                    return
+                time.sleep(2.0)
+                continue
+            try:
+                self._relay_websocket(upstream, initial_upstream)
+            finally:
+                try:
+                    upstream.close()
+                except OSError:
+                    pass
+            return
 
     def _connect_lidar_upstream(self, upstream_url: str) -> tuple[socket.socket, bytes]:
         parsed = urlparse(upstream_url)
@@ -342,13 +347,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 except OSError:
                     return
 
-    def _ws_send_json(self, sock: socket.socket, payload: dict):
-        self._ws_send_frame(sock, 0x1, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    def _ws_send_json(self, sock: socket.socket, payload: dict) -> bool:
+        return self._ws_send_frame(sock, 0x1, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
     def _ws_send_close(self, sock: socket.socket):
         self._ws_send_frame(sock, 0x8, b"\x03\xe8")
 
-    def _ws_send_frame(self, sock: socket.socket, opcode: int, payload: bytes):
+    def _ws_send_frame(self, sock: socket.socket, opcode: int, payload: bytes) -> bool:
         length = len(payload)
         header = bytearray([0x80 | opcode])
         if length < 126:
@@ -361,7 +366,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             sock.sendall(bytes(header) + payload)
         except OSError:
-            pass
+            return False
+        return True
 
 
 def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:

@@ -63,7 +63,7 @@ CPU, 메모리, 디스크, 온도는 서버가 Linux 시스템에서 직접 읽�
 }
 ```
 
-대시보드는 LiDAR 포트를 상시 점유하지 않습니다. 정보 확인 버튼은 `GET_INFO`/`GET_HEALTH`만 수행하고, 360 스캔 버튼은 normal scan을 약 3초만 수집한 뒤 STOP과 DTR/RTS off를 수행하고 즉시 닫습니다. 포트가 ROS2 driver 등 다른 프로세스에 의해 점유 중이면 두 테스트 모두 실행하지 않습니다.
+대시보드는 LiDAR 포트를 직접 상시 점유하지 않습니다. 정보 확인 버튼은 포트가 비어 있을 때만 `GET_INFO`/`GET_HEALTH`를 수행합니다. 실시간 지도는 `ros2-lidar-bridge` 컨테이너가 제공하는 WebSocket을 사용하며, bridge는 ROS2 `/scan`을 우선 사용하고 ROS2가 아직 없을 때만 serial live fallback을 수행합니다.
 
 ## rover
 

@@ -9,11 +9,12 @@ Browser
   -> Cloudflare Tunnel
   -> cloudflared on Jetson
   -> dashboard_server, localhost:8080
+  -> /ws/lidar proxy to ros2-lidar-bridge, localhost:8765
   -> TELEMETRY_FILE JSON
   -> ROS2 telemetry writer, future
 ```
 
-현재 구현은 외부 패키지 없이 Python 표준 라이브러리만 사용합니다. Jetson 운영 환경에서는 Docker Compose로 실행하고, 나중에 ROS2 bridge를 붙일 때도 서버 코드와 시각화 코드를 크게 바꾸지 않는 구조입니다.
+대시보드 서버는 Python 표준 라이브러리 중심으로 동작합니다. Jetson 운영 환경에서는 Docker Compose가 대시보드와 ROS2 Iron 기반 `ros2-lidar-bridge` 컨테이너를 함께 실행합니다.
 
 ## 데이터 흐름
 
@@ -36,11 +37,10 @@ Browser
 - `GET /api/network`: interface, IP, RX/TX throughput
 - `GET /api/docker`: Docker engine, container resource
 - `POST /api/lidar/test`: 수동 RPLIDAR Info/Health 프로브
-- `POST /api/lidar/scan`: 수동 RPLIDAR 360도 단발 스캔
 
 `POST /api/lidar/test`는 예외적으로 수동 테스트 버튼에서만 사용합니다. 이 API는 스캔을 시작하지 않고 RPLIDAR `GET_INFO`/`GET_HEALTH`만 짧게 요청한 뒤 포트를 닫습니다. 포트가 ROS2 driver 등 다른 프로세스에 의해 점유 중이면 실행하지 않습니다.
 
-`POST /api/lidar/scan`도 수동 버튼에서만 사용합니다. 포트 점유 프로세스가 없을 때 DTR motor line을 켜고 RPLIDAR normal scan을 약 3초 수집한 뒤 STOP, DTR/RTS off, serial close 순서로 종료합니다. 반환된 angle/distance point는 Connection 페이지의 360도 지도에만 사용하며, 상시 ROS2 `/scan` 운용을 대체하지 않습니다.
+Connection 페이지의 지도는 `/ws/lidar` WebSocket만 사용합니다. 이 경로는 dashboard server가 `ros2-lidar-bridge`의 `ws://127.0.0.1:8765/ws/lidar`로 프록시합니다.
 
 ## 추후 확장
 

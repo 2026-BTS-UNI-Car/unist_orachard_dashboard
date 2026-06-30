@@ -5,25 +5,35 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import signal
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 @dataclass
 class ScanState:
     frame_id: str = "laser"
+    source: str = "waiting"
     stamp: float | None = None
     points: list[dict[str, float | int]] = field(default_factory=list)
     last_scan_at: float | None = None
     error: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
 
-    def update(self, frame_id: str, stamp: float, points: list[dict[str, float | int]]) -> None:
+    def update(self, frame_id: str, stamp: float, points: list[dict[str, float | int]], source: str) -> None:
         with self.lock:
             self.frame_id = frame_id or "laser"
+            self.source = source
             self.stamp = stamp
             self.points = points
             self.last_scan_at = time.time()
@@ -38,6 +48,7 @@ class ScanState:
             age = None if self.last_scan_at is None else round(time.time() - self.last_scan_at, 3)
             return {
                 "frame_id": self.frame_id,
+                "source": self.source,
                 "stamp": self.stamp,
                 "points": list(self.points),
                 "last_scan_age_sec": age,
@@ -97,7 +108,7 @@ def ros_thread(state: ScanState, topic: str, max_points: int, ready: threading.E
 
         def on_scan(self, msg):
             stamp = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) / 1_000_000_000
-            state.update(msg.header.frame_id or "laser", stamp, scan_to_points(msg, max_points))
+            state.update(msg.header.frame_id or "laser", stamp, scan_to_points(msg, max_points), "ros2")
 
     rclpy.init()
     node = BridgeNode()
@@ -110,6 +121,45 @@ def ros_thread(state: ScanState, topic: str, max_points: int, ready: threading.E
         rclpy.shutdown()
 
 
+def serial_thread(
+    state: ScanState,
+    max_points: int,
+    poll_s: float,
+    ros_fallback_s: float,
+    stop: threading.Event,
+) -> None:
+    try:
+        from dashboard_server.telemetry import TelemetryProvider
+    except ImportError as exc:
+        state.set_error(f"Dashboard telemetry module is required for serial fallback: {exc}")
+        return
+
+    os.environ["LIDAR_SCAN_MAX_POINTS"] = str(max_points)
+    provider = TelemetryProvider()
+    while not stop.is_set():
+        snap = state.snapshot()
+        if (
+            snap["source"] == "ros2"
+            and snap["last_scan_age_sec"] is not None
+            and snap["last_scan_age_sec"] < ros_fallback_s
+        ):
+            stop.wait(poll_s)
+            continue
+        try:
+            result = provider.lidar_scan()
+        except Exception as exc:  # noqa: BLE001 - keep bridge alive and report in WebSocket status.
+            state.set_error(f"serial fallback error: {exc}")
+            stop.wait(max(0.5, poll_s))
+            continue
+        points = result.get("points") or []
+        if result.get("ok") and points:
+            state.update(result.get("frame_id") or "laser", float(result.get("tested_at") or time.time()), points, "serial")
+        else:
+            message = result.get("message") or result.get("state") or "waiting for ROS2 /scan or serial LiDAR points"
+            state.set_error(message)
+        stop.wait(poll_s)
+
+
 async def serve_websocket(state: ScanState, host: str, port: int, path: str, max_hz: float):
     try:
         import websockets
@@ -119,44 +169,50 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
     interval = 1.0 / max(0.1, min(10.0, max_hz))
 
     async def handler(websocket, legacy_path=None):
-        request_path = getattr(websocket, "request", None)
-        if request_path is not None:
-            actual_path = getattr(request_path, "path", path)
-        else:
-            actual_path = legacy_path or getattr(websocket, "path", path)
-        if actual_path != path:
-            await websocket.close(code=1008, reason="unsupported path")
-            return
-        await websocket.send(json.dumps({"type": "socket", "ok": True, "message": "lidar websocket connected"}))
-        while True:
-            snap = state.snapshot()
-            await websocket.send(
-                json.dumps(
-                    {
-                        "type": "status",
-                        "device_found": True,
-                        "scan_topic_alive": snap["last_scan_age_sec"] is not None and snap["last_scan_age_sec"] < 2.0,
-                        "last_scan_age_sec": snap["last_scan_age_sec"],
-                        "point_count": snap["point_count"],
-                        "error": snap["error"],
-                    },
-                    separators=(",", ":"),
-                )
-            )
-            if snap["points"]:
+        try:
+            request_path = getattr(websocket, "request", None)
+            if request_path is not None:
+                actual_path = getattr(request_path, "path", path)
+            else:
+                actual_path = legacy_path or getattr(websocket, "path", path)
+            if actual_path != path:
+                await websocket.close(code=1008, reason="unsupported path")
+                return
+            await websocket.send(json.dumps({"type": "socket", "ok": True, "message": "lidar websocket connected"}))
+            while True:
+                snap = state.snapshot()
                 await websocket.send(
                     json.dumps(
                         {
-                            "type": "scan",
-                            "frame_id": snap["frame_id"],
-                            "stamp": snap["stamp"],
+                            "type": "status",
+                            "device_found": True,
+                            "scan_topic_alive": snap["last_scan_age_sec"] is not None and snap["last_scan_age_sec"] < 2.0,
+                            "last_scan_age_sec": snap["last_scan_age_sec"],
                             "point_count": snap["point_count"],
-                            "points": snap["points"],
+                            "source": snap["source"],
+                            "frame_id": snap["frame_id"],
+                            "error": snap["error"],
                         },
                         separators=(",", ":"),
                     )
                 )
-            await asyncio.sleep(interval)
+                if snap["points"]:
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "type": "scan",
+                                "frame_id": snap["frame_id"],
+                                "source": snap["source"],
+                                "stamp": snap["stamp"],
+                                "point_count": snap["point_count"],
+                                "points": snap["points"],
+                            },
+                            separators=(",", ":"),
+                        )
+                    )
+                await asyncio.sleep(interval)
+        except Exception:
+            return
 
     async with websockets.serve(handler, host, port):
         await asyncio.Future()
@@ -170,17 +226,28 @@ def main() -> int:
     parser.add_argument("--topic", default="/scan")
     parser.add_argument("--max-points", type=int, default=900)
     parser.add_argument("--max-hz", type=float, default=10.0)
+    parser.add_argument("--source", choices=["auto", "ros2", "serial"], default=os.environ.get("LIDAR_BRIDGE_SOURCE", "auto"))
+    parser.add_argument("--serial-poll-s", type=float, default=float(os.environ.get("LIDAR_SERIAL_POLL_S", "0.2")))
+    parser.add_argument("--ros-fallback-s", type=float, default=float(os.environ.get("LIDAR_ROS_FALLBACK_S", "2.5")))
     args = parser.parse_args()
 
     state = ScanState()
     ready = threading.Event()
     stop = threading.Event()
-    thread = threading.Thread(target=ros_thread, args=(state, args.topic, args.max_points, ready, stop), daemon=True)
-    thread.start()
-    ready.wait(timeout=8)
-    if state.snapshot()["error"]:
-        print(state.snapshot()["error"])
-        return 2
+    threads: list[threading.Thread] = []
+    if args.source in {"auto", "ros2"}:
+        thread = threading.Thread(target=ros_thread, args=(state, args.topic, args.max_points, ready, stop), daemon=True)
+        thread.start()
+        threads.append(thread)
+        ready.wait(timeout=8)
+    if args.source in {"auto", "serial"}:
+        thread = threading.Thread(
+            target=serial_thread,
+            args=(state, args.max_points, args.serial_poll_s, args.ros_fallback_s, stop),
+            daemon=True,
+        )
+        thread.start()
+        threads.append(thread)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -193,7 +260,8 @@ def main() -> int:
         loop.run_until_complete(serve_websocket(state, args.host, args.port, args.path, args.max_hz))
     finally:
         stop.set()
-        thread.join(timeout=2)
+        for thread in threads:
+            thread.join(timeout=2)
     return 0
 
 

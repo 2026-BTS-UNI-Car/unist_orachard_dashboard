@@ -223,27 +223,19 @@
                 </div>
                 <div class="panel-actions">
                   <button id="lidarLiveButton" class="action-button secondary" type="button">실시간 연결</button>
-                  <button id="lidarScanButton" class="action-button" type="button">360 스캔 테스트</button>
                   <button id="lidarDownloadButton" class="action-button secondary" type="button" disabled>현재 지도 다운로드</button>
                 </div>
               </div>
               <div class="notice-panel">
-                실시간 모드에서는 ROS2 LiDAR driver가 장치를 소유하고, 대시보드는 /scan 데이터를 구독합니다. 같은 LiDAR를 serial scan과 ROS2 driver가 동시에 열면 충돌할 수 있습니다.
+                실시간 모드에서는 ROS2 /scan을 우선 사용하고, ROS2가 아직 준비되지 않았을 때만 bridge 컨테이너가 serial live fallback으로 지도 데이터를 표시합니다.
               </div>
-              <div id="lidarScanResult" class="test-result">스캔 대기 중</div>
+              <div id="lidarScanResult" class="test-result">실시간 연결 대기 중</div>
               <div class="live-status-grid">
                 <div><span>LiDAR Device</span><b id="lidarLiveDevice">--</b></div>
-                <div><span>ROS2 /scan</span><b id="lidarLiveTopic">대기</b></div>
+                <div><span>Source</span><b id="lidarLiveTopic">대기</b></div>
                 <div><span>WebSocket</span><b id="lidarLiveSocket">disconnected</b></div>
                 <div><span>Last Scan</span><b id="lidarLiveAge">--</b></div>
                 <div><span>Points</span><b id="lidarLivePoints">--</b></div>
-              </div>
-              <div id="lidarScanProgress" class="scan-progress" aria-hidden="true">
-                <div class="scan-progress-meta">
-                  <span id="lidarScanProgressText">대기 중</span>
-                  <b id="lidarScanProgressPercent">0%</b>
-                </div>
-                <div class="progress"><i id="lidarScanProgressBar"></i></div>
               </div>
               <div class="lidar-map-frame">
                 <div class="lidar-map-stage">

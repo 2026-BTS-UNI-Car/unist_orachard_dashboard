@@ -379,6 +379,7 @@ h2 {
 .panel {
   min-width: 0;
   padding: 18px;
+  overflow: hidden;
 }
 
 .panel-head,
@@ -624,8 +625,13 @@ h2 {
 
 .download-mode {
   width: 100%;
+  min-width: 0;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 10px;
+}
+
+.download-mode button {
+  min-width: 0;
 }
 
 .page[data-page="/connection"] .panel-actions {
@@ -1548,6 +1554,10 @@ h2 {
   .lidar-map-frame {
     grid-template-columns: 1fr;
   }
+
+  .page[data-page="/connection"] .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1634,6 +1644,16 @@ h2 {
   .page[data-page="/connection"] .panel-actions .action-button {
     flex: 1 1 100%;
     width: 100%;
+  }
+
+  .status-item {
+    grid-template-columns: 10px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .status-item b {
+    grid-column: 2;
+    text-align: left;
   }
 
   .preset-grid {

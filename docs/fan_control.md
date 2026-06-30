@@ -8,7 +8,7 @@ Fan Control 페이지는 Jetson Orin Nano의 `nvfancontrol` 자동 제어 상태
 
 - Fan RPM feedback
 - 최대 온도
-- 제어 모드: `auto`, `manual`, `unknown`
+- 제어 모드: `auto`, `manual`
 - PWM 값: 0-255
 - PWM/RPM 차트
 - PWM-RPM calibration table
@@ -42,10 +42,12 @@ systemctl start nvfancontrol
 
 ```bash
 systemctl stop nvfancontrol
-echo 1 | sudo tee /sys/class/hwmon/hwmonX/pwm1_enable
+test -e /sys/class/hwmon/hwmonX/pwm1_enable && echo 1 | sudo tee /sys/class/hwmon/hwmonX/pwm1_enable
 ```
 
-수동 PWM API는 자동 모드가 active이면 값을 쓰지 않습니다.
+수동 PWM API는 자동 모드가 active여도 먼저 `nvfancontrol`을 중지한 뒤 PWM을 씁니다. 사용자가 지정한 수동 PWM은 `data/fan_state.json`에 저장되고, Jetson이나 컨테이너가 값을 다시 바꾸면 대시보드가 다음 telemetry 주기에서 저장된 PWM으로 재적용합니다.
+
+자동 모드로 되돌리려면 Fan Control 페이지에서 `자동 제어` 토글을 다시 켭니다. 이때 저장 상태도 `auto`로 바뀌고 호스트 `nvfancontrol`이 다시 시작됩니다.
 
 ## Preset
 
@@ -109,9 +111,9 @@ echo 1 | sudo tee /sys/class/hwmon/hwmonX/pwm1_enable
 cat /sys/class/hwmon/hwmon*/name
 systemctl is-active nvfancontrol
 sudo systemctl stop nvfancontrol
-echo 1 | sudo tee /sys/class/hwmon/hwmonX/pwm1_enable
+test -e /sys/class/hwmon/hwmonX/pwm1_enable && echo 1 | sudo tee /sys/class/hwmon/hwmonX/pwm1_enable
 echo 160 | sudo tee /sys/class/hwmon/hwmonX/pwm1
 cat /sys/class/hwmon/hwmonX/fan1_input
 ```
 
-Docker로 팬 제어까지 테스트하려면 `docker-compose.jetson-fan.yml`의 rw sysfs mount와 권한을 확인합니다.
+Docker Compose는 기본적으로 `/sys/class/hwmon`과 `/sys/devices`를 rw로 마운트하고 privileged mode로 실행합니다. 컨테이너 내부에서 자동 모드를 제어할 때는 `nsenter`로 호스트 `nvfancontrol` systemd 서비스를 호출합니다.

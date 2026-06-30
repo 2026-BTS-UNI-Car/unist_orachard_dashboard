@@ -26,7 +26,10 @@ Cloudflare Tunnel을 통해 `https://bts.sarihub.com`으로 접속합니다. Doc
 
 ## 3. 자동 재시작
 
-`docker-compose.yml`의 `restart: unless-stopped` 설정으로 Docker 서비스 재시작 또는 Jetson 재부팅 후 컨테이너가 자동으로 다시 올라옵니다.
+`docker-compose.yml`의 `restart: unless-stopped` 설정으로 Docker 서비스 재시작 또는 Jetson 재부팅 후 컨테이너가 자동으로 다시 올라옵니다. Compose는 다음 컨테이너를 함께 관리합니다.
+
+- `unist-orachard-dashboard`: HTTP/API/UI, `/ws/lidar` proxy, Fan Control
+- `unist-orachard-ros2-lidar-bridge`: ROS2 Iron `/scan` WebSocket bridge, serial live fallback
 
 로그 확인:
 
@@ -72,29 +75,27 @@ tmp_path.replace(target_path)
 /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_...-if00-port0
 ```
 
-RPLIDAR `GET_INFO` 응답은 `1,000,000 bps`에서 확인했습니다. 실제 운영에서는 ROS2 LiDAR driver만 `/dev/ttyUSB0`를 열고 `/scan`을 publish합니다. Dashboard는 serial을 직접 열지 않고 `scripts/lidar_ws_bridge.py`가 제공하는 `/scan` WebSocket을 구독합니다.
+RPLIDAR `GET_INFO` 응답은 `1,000,000 bps`에서 확인했습니다. 실제 운영에서는 ROS2 LiDAR driver가 `/dev/ttyUSB0`를 열고 `/scan`을 publish합니다. Dashboard는 serial을 직접 열지 않고 `ros2-lidar-bridge` 컨테이너가 제공하는 WebSocket을 구독합니다.
 
 LiDAR bridge는 Jetson 내부에서 `ws://127.0.0.1:8765/ws/lidar`를 열고, 브라우저는 dashboard와 같은 origin의 `/ws/lidar`로 접속합니다. 로컬에서는 `ws://127.0.0.1:8080/ws/lidar`, 공개 주소에서는 `wss://bts.sarihub.com/ws/lidar`입니다.
 
 Silicon Labs CP210x VCP 릴리즈 노트는 구형 Linux용 out-of-tree 드라이버 안내에 가깝습니다. 현재 Jetson은 CP2102N USB-UART를 커널 내장 `cp210x`로 인식하므로, 별도 드라이버 설치 없이 `/dev/ttyUSB0` 장치 접근과 Docker 권한이 핵심입니다.
 
-대시보드는 LiDAR를 상시 읽지 않습니다. ROS2 LiDAR driver와 충돌하지 않도록 Connection 페이지의 serial 테스트 버튼은 ROS2 driver가 꺼져 있을 때 진단용으로만 사용합니다.
+`ros2-lidar-bridge`는 ROS2 `/scan`을 우선 사용합니다. 아직 ROS2 driver가 준비되지 않은 개발 단계에서는 `/dev/ttyUSB0` serial live fallback으로 WebSocket 지도 데이터를 표시합니다. ROS2 `/scan`이 살아나면 ROS2 데이터를 우선합니다. 현재 RPLIDAR S2 serial fallback은 기본 2.5초 scan cycle에서 정상 point 수신을 확인했습니다.
 
 1. `/dev/ttyUSB*`, `/dev/serial/by-id/*` 후보 확인
 2. `/proc/*/fd`를 스캔해 포트 점유 프로세스 확인
 3. 점유 중이면 테스트 중단
 4. 정보 확인은 RPLIDAR `GET_INFO`/`GET_HEALTH`만 요청
-5. 360 스캔 지도는 DTR motor line을 켜고 normal scan을 약 3초 수집
-6. STOP 명령 후 DTR/RTS를 끄고 즉시 포트를 닫아 결과를 화면에 표시
+5. 실시간 지도는 WebSocket bridge를 통해 수신
+6. serial fallback은 짧은 scan cycle마다 STOP 명령 후 포트를 닫음
 
 실시간 LiDAR 지도 실행:
 
 ```bash
-source /opt/ros/iron/setup.bash
-source /home/unist/unist_orachard_ros2/install/setup.bash
-ros2 launch orchard_bringup orchard_full.launch.py mode:=real use_rviz:=false use_lidar_driver:=true
-python3 /home/unist/unist_orachard_dashboard/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan
-python3 -m dashboard_server --host 0.0.0.0 --port 8080
+cd /home/unist/workspace/unist_orachard_dashboard
+docker-compose up -d --build
+docker-compose logs -f ros2-lidar-bridge
 ```
 
 검증:
@@ -107,11 +108,7 @@ curl -i http://127.0.0.1:8080/ws/lidar
 
 ## 7. Fan Control
 
-기본 Docker Compose는 안전을 위해 sysfs write 권한을 열지 않습니다. Jetson에서 팬 제어까지 사용할 때만 override compose를 명시적으로 추가합니다.
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.jetson-fan.yml up -d --build
-```
+기본 Docker Compose는 Jetson 팬 제어를 위해 `/sys/class/hwmon`과 `/sys/devices`를 rw로 마운트하고 privileged mode로 실행합니다. Fan Control 페이지에서 수동 PWM을 조정할 수 있으며, `nvfancontrol` 자동 모드는 컨테이너가 `nsenter`로 호스트 systemd에 접근해 제어합니다.
 
 수동 검증:
 

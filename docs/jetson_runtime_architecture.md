@@ -2,46 +2,40 @@
 
 ## 권장 서비스
 
-Jetson 실제 운영은 세 서비스를 분리합니다.
+Jetson 실제 운영은 Docker Compose가 두 컨테이너를 관리합니다.
 
 ```text
-unist-orachard-ros2.service
-  -> ROS2 real bringup
-  -> RPLIDAR driver owns /dev/ttyUSB0
-  -> publishes /scan
-
-unist-orachard-lidar-bridge.service
-  -> subscribes /scan
+unist-orachard-ros2-lidar-bridge
+  -> ROS2 Iron container
+  -> subscribes /scan when ROS2 driver is running
+  -> uses serial live fallback when /scan is not available yet
   -> serves ws://0.0.0.0:8765/ws/lidar
 
-unist-orachard-dashboard.service
+unist-orachard-dashboard
   -> serves http://0.0.0.0:8080
-  -> proxies /ws/lidar to ws://127.0.0.1:8765/ws/lidar when cloudflared does not route the path directly
+  -> proxies /ws/lidar to ws://127.0.0.1:8765/ws/lidar
+  -> reads Jetson system, Docker, network, fan telemetry
   -> browser receives WebSocket LiDAR points from the same origin
 ```
 
-Dashboard는 LiDAR bridge 없이도 실행됩니다. 이때 시스템/Fan/Docker/Network 정보는 표시되고, Connection 탭의 실시간 LiDAR 상태만 disconnected가 됩니다.
+Dashboard는 LiDAR bridge 없이도 실행됩니다. 이때 시스템/Fan/Docker/Network 정보는 표시되고, Connection 탭의 실시간 LiDAR 상태에는 bridge unavailable 상태가 표시됩니다.
 
 ## 실행 순서
 
-Terminal 1:
+Compose:
+
+```bash
+cd /home/unist/workspace/unist_orachard_dashboard
+docker-compose up -d --build
+docker-compose ps
+```
+
+ROS2 driver가 준비되어 있으면 별도 ROS2 bringup이 `/scan`을 publish합니다.
 
 ```bash
 source /opt/ros/iron/setup.bash
 source /home/unist/unist_orachard_ros2/install/setup.bash
 ros2 launch orchard_bringup orchard_full.launch.py mode:=real use_rviz:=false use_lidar_driver:=true
-```
-
-Terminal 2:
-
-```bash
-python3 /home/unist/unist_orachard_dashboard/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan
-```
-
-Terminal 3:
-
-```bash
-python3 -m dashboard_server --host 0.0.0.0 --port 8080
 ```
 
 ## 검증
@@ -62,6 +56,7 @@ curl http://127.0.0.1:8080/api/health
 curl http://127.0.0.1:8080/api/telemetry
 curl http://127.0.0.1:8080/api/fan/status
 curl -i http://127.0.0.1:8080/ws/lidar
+docker-compose logs --tail=80 ros2-lidar-bridge
 ```
 
 `/ws/lidar`에 일반 HTTP로 접근하면 `426 WebSocket upgrade required`가 정상입니다. 실제 브라우저는 `ws://127.0.0.1:8080/ws/lidar` 또는 `wss://bts.sarihub.com/ws/lidar`로 연결합니다.
