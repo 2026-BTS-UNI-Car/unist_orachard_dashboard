@@ -16,7 +16,8 @@ unist-orachard-lidar-bridge.service
 
 unist-orachard-dashboard.service
   -> serves http://0.0.0.0:8080
-  -> browser receives WebSocket LiDAR points
+  -> proxies /ws/lidar to ws://127.0.0.1:8765/ws/lidar when cloudflared does not route the path directly
+  -> browser receives WebSocket LiDAR points from the same origin
 ```
 
 Dashboard는 LiDAR bridge 없이도 실행됩니다. 이때 시스템/Fan/Docker/Network 정보는 표시되고, Connection 탭의 실시간 LiDAR 상태만 disconnected가 됩니다.
@@ -60,7 +61,10 @@ Dashboard:
 curl http://127.0.0.1:8080/api/health
 curl http://127.0.0.1:8080/api/telemetry
 curl http://127.0.0.1:8080/api/fan/status
+curl -i http://127.0.0.1:8080/ws/lidar
 ```
+
+`/ws/lidar`에 일반 HTTP로 접근하면 `426 WebSocket upgrade required`가 정상입니다. 실제 브라우저는 `ws://127.0.0.1:8080/ws/lidar` 또는 `wss://bts.sarihub.com/ws/lidar`로 연결합니다.
 
 ## 배포 방식
 

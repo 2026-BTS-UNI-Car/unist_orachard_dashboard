@@ -32,6 +32,20 @@ cp cloudflared/config.example.yml /home/unist/.cloudflared/config.yml
 
 `/home/unist/.cloudflared/config.yml`의 `hostname`과 `credentials-file`을 실제 값으로 바꿉니다. 현재 공개 예정 주소는 `bts.sarihub.com`입니다.
 
+LiDAR 실시간 지도는 브라우저에서 같은 origin의 `wss://bts.sarihub.com/ws/lidar`로 접속합니다. 권장 ingress는 `/ws/lidar`만 LiDAR bridge(`127.0.0.1:8765`)로 보내고, 나머지는 dashboard(`127.0.0.1:8080`)로 보내는 구조입니다.
+
+```yaml
+ingress:
+  - hostname: bts.sarihub.com
+    path: /ws/lidar
+    service: http://127.0.0.1:8765
+  - hostname: bts.sarihub.com
+    service: http://127.0.0.1:8080
+  - service: http_status:404
+```
+
+이 path route가 아직 적용되지 않았더라도 dashboard server가 `/ws/lidar`를 받아 내부 `ws://127.0.0.1:8765/ws/lidar` bridge로 프록시합니다. bridge가 꺼져 있으면 화면에는 연결 실패 대신 `bridge unavailable` 상태가 표시됩니다.
+
 ## systemd 등록
 
 ```bash

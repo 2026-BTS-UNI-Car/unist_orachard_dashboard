@@ -383,11 +383,17 @@ h2 {
 
 .panel-head,
 .card-title {
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.panel-head > div,
+.card-title > div {
+  min-width: 0;
 }
 
 .panel-head strong {
@@ -403,6 +409,8 @@ h2 {
 }
 
 .panel-actions {
+  min-width: 0;
+  max-width: 100%;
   display: grid;
   justify-items: end;
   gap: 8px;
@@ -438,6 +446,7 @@ h2 {
 
 .action-button {
   min-height: 34px;
+  max-width: 100%;
   padding: 0 14px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
@@ -446,6 +455,8 @@ h2 {
   font: inherit;
   font-size: 13px;
   font-weight: 900;
+  line-height: 1.25;
+  white-space: normal;
   cursor: pointer;
   box-shadow: 0 10px 24px rgba(17, 85, 230, 0.22);
 }
@@ -483,7 +494,19 @@ h2 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
   gap: 16px;
-  align-items: stretch;
+  align-items: start;
+}
+
+.lidar-map-frame > * {
+  min-width: 0;
+}
+
+.lidar-map-frame .chart-readout {
+  min-height: auto;
+}
+
+.lidar-map-frame .chart-readout:empty {
+  min-height: 76px;
 }
 
 .lidar-map-stage {
@@ -548,11 +571,12 @@ h2 {
   font-size: 13px;
   font-weight: 800;
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .live-status-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -602,6 +626,16 @@ h2 {
   width: 100%;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 10px;
+}
+
+.page[data-page="/connection"] .panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.page[data-page="/connection"] .panel-actions .action-button {
+  flex: 0 1 auto;
 }
 
 .switch-control {
@@ -810,6 +844,7 @@ h2 {
   font-size: 13px;
   font-weight: 800;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .scan-progress {
@@ -1181,10 +1216,11 @@ h2 {
 
 .status-item {
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
+  grid-template-columns: 10px minmax(0, 1fr) minmax(54px, max-content);
   align-items: center;
   gap: 10px;
   min-height: 48px;
+  min-width: 0;
 }
 
 .status-dot {
@@ -1205,7 +1241,9 @@ h2 {
 .container-row strong,
 .disk-row strong {
   display: block;
+  min-width: 0;
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .status-item small,
@@ -1223,8 +1261,10 @@ h2 {
 .status-item b,
 .container-row b,
 .disk-row b {
+  min-width: 0;
   font-size: 13px;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .core-grid {
@@ -1585,6 +1625,15 @@ h2 {
 
   .panel-actions {
     justify-items: start;
+  }
+
+  .page[data-page="/connection"] .panel-actions {
+    justify-content: flex-start;
+  }
+
+  .page[data-page="/connection"] .panel-actions .action-button {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .preset-grid {

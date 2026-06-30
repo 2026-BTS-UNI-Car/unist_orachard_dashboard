@@ -1092,10 +1092,33 @@ class TelemetryProvider:
 
     def _default_sensors(self) -> dict[str, Any]:
         return {
-            "lidar": {"ok": False, "state": "not_connected", "topic": "/scan"},
-            "camera": {"ok": False, "state": "not_connected", "topic": "/camera/color/image_raw"},
-            "imu": {"ok": False, "state": "not_connected", "topic": "/imu/data"},
-            "encoder": {"ok": False, "state": "not_connected", "topic": "/wheel/encoder"},
+            "lidar": {
+                "ok": False,
+                "state": "not_connected",
+                "topic": "/scan",
+                "frame_id": "laser",
+                "link": "laser",
+                "parent_link": "base_link",
+            },
+            "camera": {
+                "ok": False,
+                "state": "not_connected",
+                "topic": "/camera/image_raw",
+                "camera_info_topic": "/camera/camera_info",
+                "frame_id": "camera_link_optical",
+                "link": "camera_link",
+                "optical_link": "camera_link_optical",
+                "parent_link": "base_link",
+            },
+            "imu": {
+                "ok": False,
+                "state": "not_connected",
+                "topic": "/imu/data",
+                "frame_id": "imu_link",
+                "link": "imu_link",
+                "parent_link": "base_link",
+            },
+            "encoder": {"ok": False, "state": "not_connected", "topic": "/wheel/encoder", "frame_id": "base_link"},
             "mavlink": {"ok": False, "state": "not_connected"},
         }
 

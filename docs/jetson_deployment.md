@@ -74,6 +74,8 @@ tmp_path.replace(target_path)
 
 RPLIDAR `GET_INFO` 응답은 `1,000,000 bps`에서 확인했습니다. 실제 운영에서는 ROS2 LiDAR driver만 `/dev/ttyUSB0`를 열고 `/scan`을 publish합니다. Dashboard는 serial을 직접 열지 않고 `scripts/lidar_ws_bridge.py`가 제공하는 `/scan` WebSocket을 구독합니다.
 
+LiDAR bridge는 Jetson 내부에서 `ws://127.0.0.1:8765/ws/lidar`를 열고, 브라우저는 dashboard와 같은 origin의 `/ws/lidar`로 접속합니다. 로컬에서는 `ws://127.0.0.1:8080/ws/lidar`, 공개 주소에서는 `wss://bts.sarihub.com/ws/lidar`입니다.
+
 Silicon Labs CP210x VCP 릴리즈 노트는 구형 Linux용 out-of-tree 드라이버 안내에 가깝습니다. 현재 Jetson은 CP2102N USB-UART를 커널 내장 `cp210x`로 인식하므로, 별도 드라이버 설치 없이 `/dev/ttyUSB0` 장치 접근과 Docker 권한이 핵심입니다.
 
 대시보드는 LiDAR를 상시 읽지 않습니다. ROS2 LiDAR driver와 충돌하지 않도록 Connection 페이지의 serial 테스트 버튼은 ROS2 driver가 꺼져 있을 때 진단용으로만 사용합니다.
@@ -94,6 +96,14 @@ ros2 launch orchard_bringup orchard_full.launch.py mode:=real use_rviz:=false us
 python3 /home/unist/unist_orachard_dashboard/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan
 python3 -m dashboard_server --host 0.0.0.0 --port 8080
 ```
+
+검증:
+
+```bash
+curl -i http://127.0.0.1:8080/ws/lidar
+```
+
+일반 HTTP 요청은 `426 WebSocket upgrade required`가 정상입니다.
 
 ## 7. Fan Control
 

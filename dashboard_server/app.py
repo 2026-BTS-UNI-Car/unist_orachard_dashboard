@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import mimetypes
 import os
+import secrets
+import select
+import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -76,6 +81,7 @@ DOCS_CATALOG = [
 
 class DashboardHandler(BaseHTTPRequestHandler):
     provider: TelemetryProvider
+    protocol_version = "HTTP/1.1"
 
     def do_HEAD(self):
         self.do_GET()
@@ -107,7 +113,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path in APP_ROUTES or path.startswith("/docs/"):
+        if path == "/ws/lidar":
+            self._proxy_lidar_websocket()
+        elif path in APP_ROUTES or path.startswith("/docs/"):
             self._send_file(STATIC_ROOT / "index.html")
         elif path == "/api/health":
             self._send_json(self.provider.health())
@@ -217,6 +225,143 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def _proxy_lidar_websocket(self):
+        if self.headers.get("Upgrade", "").lower() != "websocket":
+            self.send_error(426, "WebSocket upgrade required")
+            return
+        client_key = self.headers.get("Sec-WebSocket-Key", "")
+        if not client_key:
+            self.send_error(400, "Missing Sec-WebSocket-Key")
+            return
+
+        accept = base64.b64encode(
+            hashlib.sha1((client_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
+        ).decode("ascii")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.close_connection = True
+
+        upstream_url = os.environ.get("LIDAR_WS_UPSTREAM", "ws://127.0.0.1:8765/ws/lidar")
+        try:
+            upstream, initial_upstream = self._connect_lidar_upstream(upstream_url)
+        except OSError as exc:
+            self._ws_send_json(
+                self.connection,
+                {
+                    "type": "status",
+                    "device_found": False,
+                    "scan_topic_alive": False,
+                    "last_scan_age_sec": None,
+                    "point_count": 0,
+                    "error": f"LiDAR WebSocket bridge unavailable: {exc}",
+                },
+            )
+            self._ws_send_close(self.connection)
+            return
+
+        try:
+            self._relay_websocket(upstream, initial_upstream)
+        finally:
+            try:
+                upstream.close()
+            except OSError:
+                pass
+
+    def _connect_lidar_upstream(self, upstream_url: str) -> tuple[socket.socket, bytes]:
+        parsed = urlparse(upstream_url)
+        if parsed.scheme != "ws":
+            raise OSError("LIDAR_WS_UPSTREAM must use ws:// for the local bridge")
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 80
+        path = parsed.path or "/ws/lidar"
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+        sock = socket.create_connection((host, port), timeout=3)
+        key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+        host_header = f"{host}:{port}"
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {host_header}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        ).encode("ascii")
+        sock.sendall(request)
+        response = b""
+        while b"\r\n\r\n" not in response and len(response) < 8192:
+            chunk = sock.recv(1024)
+            if not chunk:
+                break
+            response += chunk
+        response_head, _, initial = response.partition(b"\r\n\r\n")
+        if b" 101 " not in response_head.split(b"\r\n", 1)[0]:
+            sock.close()
+            raise OSError("local bridge did not accept WebSocket upgrade")
+        sock.settimeout(None)
+        return sock, initial
+
+    def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b""):
+        if initial_upstream:
+            try:
+                self.connection.sendall(initial_upstream)
+            except OSError:
+                return
+        sockets = [self.connection, upstream]
+        while True:
+            readable, _, errored = select.select(sockets, [], sockets, 30)
+            if errored:
+                break
+            if not readable:
+                self._ws_send_json(
+                    self.connection,
+                    {
+                        "type": "status",
+                        "device_found": False,
+                        "scan_topic_alive": False,
+                        "last_scan_age_sec": None,
+                        "point_count": 0,
+                        "error": "LiDAR WebSocket bridge timeout",
+                    },
+                )
+                continue
+            for sock in readable:
+                try:
+                    data = sock.recv(65536)
+                except OSError:
+                    return
+                if not data:
+                    return
+                target = upstream if sock is self.connection else self.connection
+                try:
+                    target.sendall(data)
+                except OSError:
+                    return
+
+    def _ws_send_json(self, sock: socket.socket, payload: dict):
+        self._ws_send_frame(sock, 0x1, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+    def _ws_send_close(self, sock: socket.socket):
+        self._ws_send_frame(sock, 0x8, b"\x03\xe8")
+
+    def _ws_send_frame(self, sock: socket.socket, opcode: int, payload: bytes):
+        length = len(payload)
+        header = bytearray([0x80 | opcode])
+        if length < 126:
+            header.append(length)
+        elif length <= 0xFFFF:
+            header.extend([126, (length >> 8) & 0xFF, length & 0xFF])
+        else:
+            header.append(127)
+            header.extend(length.to_bytes(8, "big"))
+        try:
+            sock.sendall(bytes(header) + payload)
+        except OSError:
+            pass
 
 
 def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:

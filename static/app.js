@@ -27,6 +27,7 @@ const state = {
     enabled: false,
     socket: null,
     connected: false,
+    scanTopicAlive: false,
     lastMessageAt: null,
     lastScanAgeSec: null,
     pointCount: 0,
@@ -449,6 +450,7 @@ function startLidarLive() {
   state.lidarLive.enabled = true;
   state.lidarLive.error = "";
   state.lidarLive.connected = false;
+  state.lidarLive.scanTopicAlive = false;
   renderLidarLiveState("연결 중");
   try {
     const socket = new WebSocket(url);
@@ -466,11 +468,13 @@ function startLidarLive() {
     socket.addEventListener("close", () => {
       state.lidarLive.socket = null;
       state.lidarLive.connected = false;
+      state.lidarLive.scanTopicAlive = false;
       renderLidarLiveState(state.lidarLive.error || "disconnected");
     });
   } catch (err) {
     state.lidarLive.socket = null;
     state.lidarLive.connected = false;
+    state.lidarLive.scanTopicAlive = false;
     state.lidarLive.error = err.message;
     renderLidarLiveState();
   }
@@ -481,6 +485,7 @@ function stopLidarLive(message = "disconnected") {
   state.lidarLive.enabled = false;
   state.lidarLive.socket = null;
   state.lidarLive.connected = false;
+  state.lidarLive.scanTopicAlive = false;
   state.lidarLive.error = "";
   if (socket && socket.readyState <= 1) socket.close();
   renderLidarLiveState(message);
@@ -489,7 +494,7 @@ function stopLidarLive(message = "disconnected") {
 function lidarWebSocketUrl() {
   if (window.UBTS_LIDAR_WS_URL) return window.UBTS_LIDAR_WS_URL;
   const scheme = location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${location.hostname}:8765/ws/lidar`;
+  return `${scheme}://${location.host}/ws/lidar`;
 }
 
 function handleLidarLiveMessage(raw) {
@@ -505,6 +510,8 @@ function handleLidarLiveMessage(raw) {
   if (payload.type === "status") {
     state.lidarLive.lastScanAgeSec = payload.last_scan_age_sec;
     state.lidarLive.pointCount = payload.point_count || 0;
+    state.lidarLive.scanTopicAlive = Boolean(payload.scan_topic_alive);
+    state.lidarLive.error = payload.error || (payload.scan_topic_alive === false ? "ROS2 /scan 대기" : "");
     renderLidarLiveState();
     return;
   }
@@ -512,6 +519,8 @@ function handleLidarLiveMessage(raw) {
     const result = lidarScanFromLive(payload);
     state.lidarLive.lastScanAgeSec = 0;
     state.lidarLive.pointCount = result.points.length;
+    state.lidarLive.scanTopicAlive = true;
+    state.lidarLive.error = "";
     state.lidarScan = result;
     renderLidarScan(result, "live_websocket");
     renderLidarLiveState();
@@ -561,7 +570,7 @@ function renderLidarLiveState(overrideLabel) {
     scanButton.title = state.lidarLive.connected ? "실시간 ROS2 /scan 사용 중에는 serial 단발 스캔을 실행하지 않습니다." : "";
   }
   text("lidarLiveDevice", state.telemetry?.connection?.lidar?.device || "--");
-  text("lidarLiveTopic", state.lidarLive.connected ? "alive" : "대기");
+  text("lidarLiveTopic", state.lidarLive.scanTopicAlive ? "alive" : "대기");
   text("lidarLiveSocket", overrideLabel || (state.lidarLive.connected ? "connected" : state.lidarLive.error || "disconnected"));
   text("lidarLiveAge", state.lidarLive.lastScanAgeSec === null || state.lidarLive.lastScanAgeSec === undefined ? "--" : `${fmtNumber(state.lidarLive.lastScanAgeSec, 1)}s`);
   text("lidarLivePoints", state.lidarLive.pointCount ? String(state.lidarLive.pointCount) : "--");
@@ -939,7 +948,12 @@ function renderSensors(sensors) {
 function sensorRows(sensors) {
   return Object.entries(sensors).map(([key, item]) => ({
     title: sensorLabel(key),
-    sub: [item.topic, item.state].filter(Boolean).join(" · "),
+    sub: [
+      item.topic,
+      item.frame_id ? `frame ${item.frame_id}` : "",
+      item.link ? `link ${item.link}` : "",
+      item.state,
+    ].filter(Boolean).join(" · "),
     ok: Boolean(item.ok),
     value: item.rate_hz ? `${Number(item.rate_hz).toFixed(1)} Hz` : "연결 전",
   }));
@@ -1871,7 +1885,7 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
     ctx.stroke();
     ctx.fillStyle = cssVar("--dim", "#7480a3");
     ctx.font = "800 10px Inter, Arial, sans-serif";
-    ctx.fillText(`${fmtNumber(meters, 0)}m`, cx + r + 4, cy - 4);
+    ctx.fillText(`${fmtNumber(meters, 0)}m`, cx + 7, cy - r + 13);
   }
   ctx.beginPath();
   ctx.moveTo(cx - radius, cy);
@@ -1882,11 +1896,11 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.fillStyle = cssVar("--muted", "#a9b4d2");
   ctx.font = "900 11px Inter, Arial, sans-serif";
   ctx.fillText("0° / FRONT", cx + 8, cy - radius + 14);
-  ctx.fillText("90°", cx + radius - 34, cy - 8);
+  ctx.fillText("90°", cx + radius - 34, cy + 18);
   ctx.fillText("180°", cx + 8, cy + radius - 8);
   ctx.fillText("270°", cx - radius + 8, cy - 8);
   ctx.fillText("forward", cx + 8, cy - radius * 0.52);
-  ctx.fillText("right", cx + radius * 0.54, cy - 8);
+  ctx.fillText("right", cx + radius * 0.52, cy - 12);
   ctx.fillStyle = cssVar("--text", "#f7f9ff");
   ctx.beginPath();
   ctx.arc(cx, cy, 5, 0, Math.PI * 2);

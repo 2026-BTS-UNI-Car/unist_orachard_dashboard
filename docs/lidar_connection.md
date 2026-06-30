@@ -44,10 +44,12 @@ Connection 탭은 두 가지 경로를 구분합니다.
 
 기본 URL:
 
-- HTTP 페이지: `ws://${location.hostname}:8765/ws/lidar`
-- HTTPS 페이지: `wss://${location.hostname}:8765/ws/lidar`
+- HTTP 페이지: `ws://${location.host}/ws/lidar`
+- HTTPS 페이지: `wss://${location.host}/ws/lidar`
 
 `window.UBTS_LIDAR_WS_URL`이 정의되어 있으면 그 값을 우선 사용합니다.
+
+브라우저는 `:8765` 포트로 직접 접속하지 않습니다. dashboard server가 `/ws/lidar`를 내부 bridge(`ws://127.0.0.1:8765/ws/lidar`)로 프록시하거나, cloudflared ingress가 `/ws/lidar` path를 bridge로 직접 라우팅합니다.
 
 수신 메시지:
 
@@ -113,3 +115,11 @@ WebSocket bridge:
 ```bash
 python3 /home/unist/unist_orachard_dashboard/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan
 ```
+
+브라우저 경로 검증:
+
+```bash
+curl -i http://127.0.0.1:8080/ws/lidar
+```
+
+일반 HTTP 요청이면 `426 WebSocket upgrade required`가 정상입니다. 브라우저에서는 `ws://127.0.0.1:8080/ws/lidar` 또는 `wss://bts.sarihub.com/ws/lidar`로 연결됩니다.
