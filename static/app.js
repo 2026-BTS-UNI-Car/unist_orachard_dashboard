@@ -452,7 +452,6 @@ async function tick() {
     state.telemetryFailures += 1;
     if (state.telemetryFailures >= 3) setConnection("bad", "offline");
     else debugLog("api", `/api/telemetry transient failure ${state.telemetryFailures}`, err);
-    console.error(err);
   } finally {
     window.clearTimeout(timeout);
     state.tickInFlight = false;

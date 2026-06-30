@@ -387,6 +387,9 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                     )
                 await asyncio.sleep(interval)
         except Exception as exc:
+            connection_closed = getattr(getattr(websockets, "exceptions", None), "ConnectionClosed", None)
+            if connection_closed is not None and isinstance(exc, connection_closed):
+                return
             print(f"LiDAR WebSocket handler error: {exc}", file=sys.stderr, flush=True)
             return
 
