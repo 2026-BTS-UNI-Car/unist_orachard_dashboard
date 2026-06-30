@@ -32,6 +32,7 @@
           <a data-route="/network" href="/network">Network</a>
           <a data-route="/docker" href="/docker">Docker</a>
           <a data-route="/research" href="/research">Research</a>
+          <a data-route="/docs" href="/docs">Docs</a>
         </nav>
         <div class="sidebar-footer">
           <button id="themeToggle" class="theme-toggle" type="button" aria-label="테마 변경" aria-pressed="false">
@@ -397,6 +398,42 @@
               <div><p class="eyebrow">Roadmap</p><h2>수행계획 진행도</h2></div>
             </div>
             <div id="milestoneList" class="timeline"></div>
+          </section>
+        </section>
+
+        <section class="page" data-page="/docs">
+          <header class="page-head">
+            <p class="eyebrow">Docs</p>
+            <h1>문서</h1>
+            <p>대시보드 운영, Jetson 배포, LiDAR 연결, telemetry schema를 한 곳에서 확인합니다.</p>
+          </header>
+
+          <section class="docs-layout">
+            <aside class="panel docs-index-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Index</p>
+                  <h2>문서 목록</h2>
+                </div>
+              </div>
+              <div id="docsIndex" class="docs-index">
+                <div class="empty-state">문서 목록을 불러오는 중입니다.</div>
+              </div>
+            </aside>
+
+            <article class="panel docs-reader-panel">
+              <div class="doc-reader-head">
+                <div>
+                  <p id="docCategory" class="eyebrow">Docs</p>
+                  <h2 id="docTitle">문서를 선택하세요</h2>
+                  <small id="docSummary">왼쪽 목록에서 열 문서를 고릅니다.</small>
+                </div>
+                <a id="docPermalink" class="text-link" href="/docs">link</a>
+              </div>
+              <div id="docMarkdown" class="markdown-body">
+                <div class="empty-state">문서가 선택되지 않았습니다.</div>
+              </div>
+            </article>
           </section>
         </section>
       </main>

@@ -27,6 +27,11 @@ class DashboardApiTest(unittest.TestCase):
             self.assertEqual(res.status, 200)
             return json.loads(res.read().decode("utf-8"))
 
+    def get_text(self, path: str) -> str:
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=3) as res:
+            self.assertEqual(res.status, 200)
+            return res.read().decode("utf-8")
+
     def post_json(self, path: str) -> dict:
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method="POST")
         with urllib.request.urlopen(req, timeout=5) as res:
@@ -78,6 +83,18 @@ class DashboardApiTest(unittest.TestCase):
         payload = self.get_json("/api/site-map")
         paths = [item["path"] for item in payload["routes"]]
         self.assertEqual(paths[:3], ["/", "/connection", "/system"])
+        self.assertIn("/docs", paths)
+
+    def test_docs_api_and_route(self):
+        index = self.get_json("/api/docs")
+        self.assertGreaterEqual(len(index["documents"]), 3)
+        slugs = [item["slug"] for item in index["documents"]]
+        self.assertIn("lidar-connection", slugs)
+        doc = self.get_json("/api/docs/lidar-connection")
+        self.assertTrue(doc["ok"])
+        self.assertIn("RPLIDAR", doc["markdown"])
+        html = self.get_text("/docs/lidar-connection")
+        self.assertIn("id=\"docMarkdown\"", html)
 
 
 if __name__ == "__main__":

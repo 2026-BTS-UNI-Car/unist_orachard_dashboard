@@ -771,6 +771,7 @@ class TelemetryProvider:
                 {"path": "/network", "label": "Network", "summary": "IP, interface, RX/TX throughput"},
                 {"path": "/docker", "label": "Docker", "summary": "Docker engine and containers"},
                 {"path": "/research", "label": "Research", "summary": "연구 일정과 ROS2 연결 상태"},
+                {"path": "/docs", "label": "Docs", "summary": "운영 문서와 Markdown viewer"},
             ]
         }
 
