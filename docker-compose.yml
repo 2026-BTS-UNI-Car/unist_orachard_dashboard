@@ -18,13 +18,21 @@ services:
       DASHBOARD_HOSTNAME_FILE: "/host-root/etc/hostname"
       JETSON_RELEASE_FILE: "/etc/nv_tegra_release"
       DOCKER_SOCKET: "/var/run/docker.sock"
+      LIDAR_DEV_ROOT: "/host-dev"
+      LIDAR_BAUDS: "1000000,460800,256000,115200"
     volumes:
       - ./runtime:/app/runtime
       - /:/host-root:ro
+      - /dev:/host-dev
       - /etc/nv_tegra_release:/etc/nv_tegra_release:ro
       - /sys/class/thermal:/sys/class/thermal:ro
       - /sys/devices:/sys/devices:ro
       - /var/run/docker.sock:/var/run/docker.sock
+    device_cgroup_rules:
+      - "c 166:* rwm"
+      - "c 188:* rwm"
+      - "c 204:* rwm"
+      - "c 240:* rwm"
     pid: host
     healthcheck:
       test: ["CMD", "python", "-c", "import json, urllib.request; json.load(urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3))"]

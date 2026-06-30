@@ -62,3 +62,24 @@ tmp_path.replace(target_path)
 - ROS2 node liveliness와 topic rate
 
 현재 프로토타입은 CPU, 메모리, 디스크, 온도처럼 컨테이너/일반 Linux에서도 읽을 수 있는 값부터 표시합니다.
+
+## 6. LiDAR 연결
+
+현재 Jetson에서는 LiDAR가 아래 USB-serial 장치로 인식되었습니다.
+
+```text
+/dev/ttyUSB0
+/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_...-if00-port0
+```
+
+RPLIDAR `GET_INFO` 응답은 `1,000,000 bps`에서 확인했습니다. Docker Compose는 `/dev`를 `/host-dev`로 마운트하고 serial 장치 cgroup rule을 열어 대시보드의 수동 테스트 버튼이 장치를 열 수 있게 합니다.
+
+대시보드는 LiDAR를 상시 읽지 않습니다. ROS2 LiDAR driver와 충돌하지 않도록 Connection 페이지의 테스트 버튼을 눌렀을 때만 다음 순서로 동작합니다.
+
+1. `/dev/ttyUSB*`, `/dev/serial/by-id/*` 후보 확인
+2. `/proc/*/fd`를 스캔해 포트 점유 프로세스 확인
+3. 점유 중이면 테스트 중단
+4. 점유 중이 아니면 RPLIDAR `GET_INFO`/`GET_HEALTH`만 요청
+5. 즉시 포트를 닫고 결과를 화면에 표시
+
+추후 ROS2에서 `/scan`을 실제로 구독하는 세부 LiDAR 대시보드는 별도 ROS2 bridge가 topic rate, scan range 요약, frame id, scan health를 `runtime/telemetry_snapshot.json`으로 써주는 방식이 안전합니다. 이 웹 서버가 직접 scan stream을 계속 읽는 구조는 ROS2 driver와 포트 경쟁을 만들 수 있으므로 사용하지 않습니다.

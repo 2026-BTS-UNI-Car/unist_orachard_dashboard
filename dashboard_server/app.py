@@ -12,7 +12,7 @@ from dashboard_server.telemetry import ROOT, TelemetryProvider
 
 
 STATIC_ROOT = ROOT / "static"
-APP_ROUTES = {"/", "/system", "/network", "/docker", "/research"}
+APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/research"}
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -20,6 +20,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_HEAD(self):
         self.do_GET()
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path == "/api/lidar/test":
+            self._send_json(self.provider.lidar_test())
+        else:
+            self.send_error(404, "Not found")
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -36,6 +44,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.network())
         elif path == "/api/docker":
             self._send_json(self.provider.docker())
+        elif path == "/api/connection":
+            self._send_json(self.provider.connection())
         elif path == "/api/plan":
             self._send_json(self.provider.plan())
         elif path == "/api/site-map":

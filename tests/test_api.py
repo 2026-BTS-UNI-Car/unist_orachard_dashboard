@@ -34,7 +34,7 @@ class DashboardApiTest(unittest.TestCase):
 
     def test_telemetry_shape(self):
         payload = self.get_json("/api/telemetry")
-        for key in ["system", "network", "docker", "rover", "sensors", "fusion", "experiment"]:
+        for key in ["system", "network", "docker", "connection", "rover", "sensors", "fusion", "experiment"]:
             self.assertIn(key, payload)
         self.assertIn("cpu", payload["system"])
         self.assertEqual(payload["system"]["memory"]["display_total"], 8 * 1024 * 1024 * 1024)
@@ -49,11 +49,19 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("primary_ipv4", network)
         self.assertIn("external_ip", network)
         self.assertIn("containers", self.get_json("/api/docker"))
+        connection = self.get_json("/api/connection")
+        self.assertIn("lidar", connection)
+        self.assertIn("test_mode", connection["lidar"])
 
     def test_plan_contains_research_topic(self):
         payload = self.get_json("/api/plan")
         self.assertIn("Vision-LiDAR", payload["research_topic"])
         self.assertEqual(payload["team"], "유니주행차")
+
+    def test_site_map_contains_connection_after_overview(self):
+        payload = self.get_json("/api/site-map")
+        paths = [item["path"] for item in payload["routes"]]
+        self.assertEqual(paths[:3], ["/", "/connection", "/system"])
 
 
 if __name__ == "__main__":

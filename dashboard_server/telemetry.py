@@ -8,6 +8,7 @@ import platform
 import shutil
 import socket
 import struct
+import termios
 import time
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
 DEFAULT_TELEMETRY_FILE = ROOT / "runtime" / "telemetry_snapshot.json"
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
+DEFAULT_LIDAR_BAUDS = [1_000_000, 460_800, 256_000, 115_200]
 
 
 def _read_text(path: str | Path) -> str | None:
@@ -87,6 +89,7 @@ class TelemetryProvider:
         self._external_ip_value: str | None = None
         self._external_ip_error: str | None = None
         self._external_ip_next_refresh = 0.0
+        self._last_lidar_test: dict[str, Any] | None = None
 
     def health(self) -> dict[str, Any]:
         return {
@@ -104,6 +107,7 @@ class TelemetryProvider:
             "system": self.system(),
             "network": self.network(),
             "docker": self.docker(),
+            "connection": self.connection(external),
             "rover": external.get("rover", self._not_connected("rover")),
             "sensors": external.get("sensors", self._default_sensors()),
             "fusion": external.get("fusion", self._not_connected("fusion")),
@@ -113,6 +117,14 @@ class TelemetryProvider:
             "alerts": self._alerts(external),
         }
         return payload
+
+    def connection(self, external: dict[str, Any] | None = None) -> dict[str, Any]:
+        external = external or (_load_json(self.telemetry_file) if self.telemetry_file.exists() else {})
+        return {
+            "lidar": self.lidar_status(),
+            "services": self._services(external),
+            "sensors": external.get("sensors", self._default_sensors()),
+        }
 
     def system(self) -> dict[str, Any]:
         memory = self._memory()
@@ -235,6 +247,254 @@ class TelemetryProvider:
             "containers": rows,
         }
 
+    def lidar_status(self) -> dict[str, Any]:
+        candidates = self._lidar_candidates()
+        present = [item for item in candidates if item["exists"]]
+        selected = present[0] if present else (candidates[0] if candidates else None)
+        holders = self._device_holders(selected["open_path"]) if selected and selected["exists"] else []
+        state = "detected" if present else "not_found"
+        if holders:
+            state = "in_use"
+        return {
+            "present": bool(present),
+            "state": state,
+            "device": selected["display_path"] if selected else None,
+            "open_path": selected["open_path"] if selected else None,
+            "by_id": selected["by_id"] if selected else None,
+            "driver_hint": self._lidar_driver_hint(selected["display_path"] if selected else ""),
+            "holders": holders,
+            "test_supported": bool(present),
+            "test_mode": "manual_short_probe",
+            "conflict_policy": "포트가 점유 중이면 테스트를 실행하지 않고, 버튼 테스트 중에만 잠깐 포트를 엽니다.",
+            "last_test": self._last_lidar_test,
+        }
+
+    def lidar_test(self) -> dict[str, Any]:
+        status = self.lidar_status()
+        if not status["present"]:
+            return {"ok": False, "state": "not_found", "message": "LiDAR serial device was not found.", "status": status}
+        if status["holders"]:
+            return {
+                "ok": False,
+                "state": "in_use",
+                "message": "LiDAR device is currently held by another process; skipped to avoid ROS2/driver conflicts.",
+                "status": status,
+            }
+        lock_path = Path(os.environ.get("LIDAR_TEST_LOCK", "/tmp/ubts-dashboard-lidar-test.lock"))
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("w", encoding="utf-8") as lock_file:
+            import fcntl
+
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {"ok": False, "state": "busy", "message": "Another LiDAR test is already running.", "status": status}
+            result = self._rplidar_probe(status["open_path"])
+        self._last_lidar_test = result
+        return result
+
+    def _lidar_device_root(self) -> Path:
+        root = Path(os.environ.get("LIDAR_DEV_ROOT", "/host-dev"))
+        return root if root.exists() else Path("/dev")
+
+    def _host_device_label(self, path: Path, resolve: bool = True) -> str:
+        root = self._lidar_device_root()
+        try:
+            target = path.resolve() if resolve else path.absolute()
+            relative = target.relative_to(root.resolve())
+            return str(Path("/dev") / relative)
+        except (OSError, ValueError):
+            return str(path)
+
+    def _open_device_path(self, path: str | Path) -> Path:
+        raw = Path(path)
+        root = self._lidar_device_root()
+        if raw.is_absolute() and str(raw).startswith("/dev/") and root != Path("/dev"):
+            return root / raw.relative_to("/dev")
+        return raw
+
+    def _lidar_candidates(self) -> list[dict[str, Any]]:
+        root = self._lidar_device_root()
+        paths: list[Path] = []
+        configured = os.environ.get("LIDAR_DEVICE")
+        if configured:
+            paths.append(self._open_device_path(configured))
+        by_id_root = Path(os.environ.get("LIDAR_BY_ID_ROOT", str(root / "serial/by-id")))
+        if by_id_root.exists():
+            paths.extend(sorted(by_id_root.glob("*")))
+        for pattern in ("ttyUSB*", "ttyACM*"):
+            paths.extend(sorted(root.glob(pattern)))
+
+        rows = []
+        seen: set[str] = set()
+        for path in paths:
+            try:
+                resolved = path.resolve()
+            except OSError:
+                resolved = path
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(
+                {
+                    "display_path": self._host_device_label(resolved),
+                    "open_path": str(resolved),
+                    "by_id": self._host_device_label(path, resolve=False) if "/serial/by-id/" in str(path) else None,
+                    "exists": resolved.exists(),
+                }
+            )
+        return rows
+
+    def _lidar_driver_hint(self, path: str) -> str | None:
+        lower = path.lower()
+        if "cp210" in lower or "ttyusb" in lower:
+            return "USB-UART serial LiDAR candidate, CP210x 계열"
+        if "ttyacm" in lower:
+            return "USB CDC ACM LiDAR candidate"
+        return None
+
+    def _device_holders(self, device_path: str | None) -> list[dict[str, Any]]:
+        if not device_path:
+            return []
+        try:
+            device_name = Path(device_path).resolve().name
+        except OSError:
+            device_name = Path(device_path).name
+        holders = []
+        proc_root = Path("/proc")
+        for pid_dir in proc_root.iterdir():
+            if not pid_dir.name.isdigit():
+                continue
+            fd_dir = pid_dir / "fd"
+            try:
+                fds = list(fd_dir.iterdir())
+            except OSError:
+                continue
+            matched = False
+            for fd in fds:
+                try:
+                    target = os.readlink(fd)
+                except OSError:
+                    continue
+                if target == device_path or target.endswith(f"/{device_name}"):
+                    matched = True
+                    break
+            if not matched:
+                continue
+            cmdline = _read_text(pid_dir / "cmdline") or _read_text(pid_dir / "comm") or ""
+            holders.append({"pid": int(pid_dir.name), "cmd": cmdline.replace("\x00", " ").strip()})
+        return holders
+
+    def _rplidar_probe(self, path: str) -> dict[str, Any]:
+        bauds = self._lidar_bauds()
+        errors = []
+        for baud in bauds:
+            speed = getattr(termios, f"B{baud}", None)
+            if speed is None:
+                errors.append({"baud": baud, "error": "baud_not_supported_by_termios"})
+                continue
+            try:
+                response = self._rplidar_probe_at_baud(path, baud, speed)
+            except OSError as exc:
+                errors.append({"baud": baud, "error": str(exc)})
+                continue
+            if response["ok"]:
+                return response
+            errors.append({"baud": baud, "error": response.get("message", "no_response")})
+        return {
+            "ok": False,
+            "state": "no_protocol_response",
+            "message": "Serial device exists, but RPLIDAR info/health response was not received.",
+            "device": self._host_device_label(Path(path)),
+            "tried_baud": bauds,
+            "errors": errors,
+        }
+
+    def _lidar_bauds(self) -> list[int]:
+        raw = os.environ.get("LIDAR_BAUDS")
+        if not raw:
+            return DEFAULT_LIDAR_BAUDS
+        values = []
+        for item in raw.split(","):
+            try:
+                values.append(int(item.strip()))
+            except ValueError:
+                continue
+        return values or DEFAULT_LIDAR_BAUDS
+
+    def _rplidar_probe_at_baud(self, path: str, baud: int, speed: int) -> dict[str, Any]:
+        fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        try:
+            attrs = termios.tcgetattr(fd)
+            attrs[0] = 0
+            attrs[1] = 0
+            attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+            attrs[3] = 0
+            attrs[4] = speed
+            attrs[5] = speed
+            termios.tcsetattr(fd, termios.TCSANOW, attrs)
+            termios.tcflush(fd, termios.TCIOFLUSH)
+            os.write(fd, bytes([0xA5, 0x25]))
+            time.sleep(0.05)
+            info_raw = self._serial_command(fd, bytes([0xA5, 0x50]), 27, 0.9)
+            health_raw = self._serial_command(fd, bytes([0xA5, 0x52]), 10, 0.7)
+        finally:
+            os.close(fd)
+        if not info_raw.startswith(b"\xA5\x5A"):
+            return {"ok": False, "message": f"no RPLIDAR response at {baud} bps"}
+        info = self._parse_rplidar_info(info_raw)
+        health = self._parse_rplidar_health(health_raw)
+        return {
+            "ok": True,
+            "state": "responding",
+            "message": "RPLIDAR responded to GET_INFO without starting scan.",
+            "device": self._host_device_label(Path(path)),
+            "baud": baud,
+            "protocol": "RPLIDAR",
+            "info": info,
+            "health": health,
+            "raw_info": info_raw.hex(" "),
+            "raw_health": health_raw.hex(" "),
+            "tested_at": int(time.time()),
+            "conflict_policy": "GET_INFO/GET_HEALTH only; no scan command; serial port closed immediately after test.",
+        }
+
+    def _serial_command(self, fd: int, command: bytes, expected: int, timeout_s: float) -> bytes:
+        termios.tcflush(fd, termios.TCIOFLUSH)
+        os.write(fd, command)
+        deadline = time.time() + timeout_s
+        data = bytearray()
+        while time.time() < deadline and len(data) < expected:
+            try:
+                chunk = os.read(fd, expected - len(data))
+            except BlockingIOError:
+                time.sleep(0.02)
+                continue
+            if chunk:
+                data.extend(chunk)
+            else:
+                time.sleep(0.02)
+        return bytes(data)
+
+    def _parse_rplidar_info(self, data: bytes) -> dict[str, Any]:
+        payload = data[7:27]
+        if len(payload) < 20:
+            return {"raw_payload": payload.hex(" ")}
+        return {
+            "model_id": payload[0],
+            "firmware": f"{payload[2]}.{payload[1]}",
+            "hardware": payload[3],
+            "serial": payload[4:20].hex(),
+        }
+
+    def _parse_rplidar_health(self, data: bytes) -> dict[str, Any] | None:
+        if not data.startswith(b"\xA5\x5A") or len(data) < 10:
+            return None
+        payload = data[7:10]
+        status = {0: "good", 1: "warning", 2: "error"}.get(payload[0], f"unknown_{payload[0]}")
+        return {"status": status, "error_code": payload[1] | (payload[2] << 8)}
+
     def plan(self) -> dict[str, Any]:
         return {
             "research_topic": "과수원 환경에서 Vision-LiDAR 센서 기반 신뢰도 동적 조절을 이용한 행간 중심선 추정 및 경로추종 안정화",
@@ -264,6 +524,7 @@ class TelemetryProvider:
         return {
             "routes": [
                 {"path": "/", "label": "Overview", "summary": "핵심 상태"},
+                {"path": "/connection", "label": "Connection", "summary": "LiDAR, ROS2 bridge, sensor links"},
                 {"path": "/system", "label": "System", "summary": "CPU, Memory, GPU, Thermal, Disk"},
                 {"path": "/network", "label": "Network", "summary": "IP, interface, RX/TX throughput"},
                 {"path": "/docker", "label": "Docker", "summary": "Docker engine and containers"},

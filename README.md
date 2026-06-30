@@ -7,6 +7,7 @@ Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대�
 ## 주요 화면
 
 - Jetson Orin Nano Super 상태: CPU, 메모리, 디스크, 온도, 호스트 정보
+- Connection: LiDAR USB-serial 인식 상태, RPLIDAR 수동 테스트, ROS2 bridge 연결 상태
 - 로버 상태: 주행 모드, 위치, 속도, 배터리, E-stop, 모터 상태
 - 센서 상태: LiDAR, Camera, IMU, Encoder, MAVLink 준비 상태
 - Vision-LiDAR 융합: 센서별 신뢰도, 동적 가중치, 중심선 오차, 경로추종 오차
@@ -70,5 +71,6 @@ python3 -m unittest discover -s tests
 - [docs/architecture.md](docs/architecture.md): 서버와 데이터 흐름
 - [docs/jetson_deployment.md](docs/jetson_deployment.md): Jetson 배포 절차
 - [docs/cloudflared.md](docs/cloudflared.md): Cloudflare Tunnel 설정
+- [docs/lidar_connection.md](docs/lidar_connection.md): LiDAR 인식과 테스트 정책
 - [docs/research_metrics.md](docs/research_metrics.md): 연구 성과 지표
 - [docs/telemetry_schema.md](docs/telemetry_schema.md): JSON 텔레메트리 스키마

@@ -1,4 +1,4 @@
-const ROUTES = ["/", "/system", "/network", "/docker", "/research"];
+const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/research"];
 const HISTORY_KEYS = ["cpu", "memory", "gpu", "temp", "rx", "tx", "dockerCpu", "dockerMemory"];
 const CORE_COLORS = ["#55e2b2", "#38d8ff", "#2f76ff", "#8238c9", "#f21b58", "#f4bd4f", "#7dd3fc", "#fb7185"];
 const MAX_POINTS = 90;
@@ -163,6 +163,10 @@ function setCpuMode(mode) {
   requestChartAnimation();
 }
 
+function initLidarTest() {
+  $("lidarTestButton")?.addEventListener("click", runLidarTest);
+}
+
 async function loadPlan() {
   state.plan = await getJson("/api/plan");
   renderPlan(state.plan);
@@ -246,6 +250,7 @@ function renderTelemetry(data) {
   const net = data.network || {};
   const docker = data.docker || {};
   const services = data.services || {};
+  const connection = data.connection || {};
 
   text("updatedAt", new Date((data.meta?.generated_at || Date.now() / 1000) * 1000).toLocaleString("ko-KR"));
   text("overviewCpu", fmtPercent(sys.cpu?.total_percent));
@@ -291,6 +296,7 @@ function renderTelemetry(data) {
   text("experimentState", data.experiment?.state || "연결 전");
 
   renderServices(services);
+  renderConnection(connection);
   renderSensors(data.sensors || {});
   renderCores(sys.cpu?.cores || []);
   renderCoreCharts(sys.cpu?.cores || []);
@@ -299,6 +305,70 @@ function renderTelemetry(data) {
   renderInterfaces(net.interfaces || [], net.primary_interface);
   renderContainers(docker);
   renderChartReadouts(data);
+}
+
+async function runLidarTest() {
+  const button = $("lidarTestButton");
+  if (button) button.disabled = true;
+  setTestResult("testing", "테스트 중: 포트 점유 여부 확인 후 RPLIDAR Info/Health만 요청합니다.");
+  try {
+    const res = await fetch("/api/lidar/test", { method: "POST", cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+    renderLidarTest(payload);
+    await tick();
+  } catch (err) {
+    setTestResult("bad", `테스트 실패: ${err.message}`);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderConnection(connection) {
+  const lidar = connection.lidar || {};
+  const last = lidar.last_test || {};
+  text("connectionLidarState", lidar.present ? lidarStateLabel(lidar.state) : "미인식");
+  text("connectionLidarDevice", lidar.device || "--");
+  text("connectionLidarProtocol", last.protocol || "--");
+  text("connectionLidarBaud", last.baud ? `${last.baud} bps` : "테스트 전");
+  text("connectionLidarHealth", last.health?.status || (lidar.present ? "대기" : "--"));
+  text("connectionLidarHealthText", last.health ? `error ${last.health.error_code}` : "테스트 버튼으로 확인");
+  text("connectionLidarGuard", (lidar.holders || []).length ? "점유 중" : "OK");
+  text("connectionLidarGuardText", (lidar.holders || []).length ? holderLabel(lidar.holders) : "테스트 시에만 포트 사용");
+  text("lidarDeviceDetail", lidar.device || "--");
+  text("lidarByIdDetail", lidar.by_id || "--");
+  text("lidarDriverDetail", lidar.driver_hint || "--");
+  text("lidarLastTestDetail", last.ok ? `${last.protocol} · ${last.baud} bps · ${last.info?.serial || ""}` : last.message || "--");
+  text("lidarPolicyDetail", lidar.conflict_policy || "--");
+  renderStatusRows("connectionServices", serviceRows(connection.services || {}));
+  renderStatusRows("connectionSensors", sensorRows(connection.sensors || {}));
+  if (last.ok || last.message) renderLidarTest(last);
+}
+
+function renderLidarTest(result) {
+  if (!result) return;
+  const state = result.ok ? "ok" : "bad";
+  const info = result.info || {};
+  const health = result.health || {};
+  const message = result.ok
+    ? `응답 확인: ${result.protocol} · ${result.baud} bps · firmware ${info.firmware || "--"} · health ${health.status || "--"}`
+    : result.message || "응답 없음";
+  setTestResult(state, message);
+}
+
+function setTestResult(kind, message) {
+  const target = $("lidarTestResult");
+  if (!target) return;
+  target.className = `test-result ${kind}`;
+  target.textContent = message;
+}
+
+function lidarStateLabel(state) {
+  return { detected: "인식됨", in_use: "점유 중", not_found: "미인식" }[state] || state || "--";
+}
+
+function holderLabel(holders) {
+  return holders.map((item) => `${item.pid} ${item.cmd || ""}`.trim()).join(", ");
 }
 
 function hostIpLabel(network) {
@@ -323,23 +393,29 @@ function setProgressFill(fill, value) {
 }
 
 function renderServices(services) {
-  const rows = Object.entries(services).map(([key, item]) => ({
+  renderStatusRows("overviewServices", serviceRows(services));
+}
+
+function serviceRows(services) {
+  return Object.entries(services).map(([key, item]) => ({
     title: serviceLabel(key),
     sub: [item.host, item.port ? `:${item.port}` : "", item.state].filter(Boolean).join(" "),
     ok: Boolean(item.ok),
     value: item.ok ? "OK" : "대기",
   }));
-  renderStatusRows("overviewServices", rows);
 }
 
 function renderSensors(sensors) {
-  const rows = Object.entries(sensors).map(([key, item]) => ({
+  renderStatusRows("sensorList", sensorRows(sensors));
+}
+
+function sensorRows(sensors) {
+  return Object.entries(sensors).map(([key, item]) => ({
     title: sensorLabel(key),
     sub: [item.topic, item.state].filter(Boolean).join(" · "),
     ok: Boolean(item.ok),
     value: item.rate_hz ? `${Number(item.rate_hz).toFixed(1)} Hz` : "연결 전",
   }));
-  renderStatusRows("sensorList", rows);
 }
 
 function renderStatusRows(targetId, rows) {
@@ -673,6 +749,7 @@ function drawCharts() {
         { values: normalizeBps(state.visualHistory.tx, "tx"), color: colors.rose, max: 100 },
       ]],
     ],
+    "/connection": [],
     "/system": [
       ...(state.cpuMode === "combined" ? [["chartCpu", [{ values: state.visualHistory.cpu, color: colors.good, max: 100 }]]] : []),
       ["chartMemory", [{ values: state.visualHistory.memory, color: colors.cyan, max: 100 }]],
@@ -841,6 +918,7 @@ document.addEventListener("click", (event) => {
 
 initTheme();
 initCpuMode();
+initLidarTest();
 renderRoute();
 loadPlan().catch(console.error);
 tick();

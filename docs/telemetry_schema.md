@@ -7,6 +7,7 @@
 ```json
 {
   "system": {},
+  "connection": {},
   "rover": {},
   "sensors": {},
   "fusion": {},
@@ -25,6 +26,31 @@
 ```
 
 CPU, 메모리, 디스크, 온도는 서버가 Linux 시스템에서 직접 읽습니다. Jetson 전용 값은 추후 ROS2 bridge 또는 tegrastats parser가 넣을 수 있습니다.
+
+## connection
+
+`connection`은 대시보드 서버가 직접 확인한 연결 상태입니다. 현재 LiDAR는 Jetson에서 CP2102N USB-UART 장치로 인식되었고, RPLIDAR `GET_INFO` 응답은 `1,000,000 bps`에서 확인되었습니다.
+
+```json
+{
+  "lidar": {
+    "present": true,
+    "state": "detected",
+    "device": "/dev/ttyUSB0",
+    "by_id": "/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_...",
+    "test_mode": "manual_short_probe",
+    "last_test": {
+      "ok": true,
+      "protocol": "RPLIDAR",
+      "baud": 1000000,
+      "info": {"model_id": 113, "firmware": "1.2", "hardware": 18},
+      "health": {"status": "good", "error_code": 0}
+    }
+  }
+}
+```
+
+대시보드는 LiDAR 포트를 상시 점유하지 않습니다. 테스트 버튼을 눌렀을 때만 포트 점유 프로세스를 확인하고, 점유 중이 아니면 `GET_INFO`/`GET_HEALTH`만 수행한 뒤 즉시 닫습니다.
 
 ## rover
 

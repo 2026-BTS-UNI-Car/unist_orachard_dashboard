@@ -27,6 +27,7 @@
         </a>
         <nav class="nav-list">
           <a data-route="/" href="/">Overview</a>
+          <a data-route="/connection" href="/connection">Connection</a>
           <a data-route="/system" href="/system">System</a>
           <a data-route="/network" href="/network">Network</a>
           <a data-route="/docker" href="/docker">Docker</a>
@@ -128,6 +129,79 @@
                 <div><dt>External IP</dt><dd id="hostExternalIp">--</dd></div>
                 <div><dt>Internal Host</dt><dd id="hostInternalIp">--</dd></div>
               </dl>
+            </article>
+          </section>
+        </section>
+
+        <section class="page" data-page="/connection">
+          <header class="page-head">
+            <div class="hero-copy">
+              <p class="eyebrow">Connection</p>
+              <h1>연결 상태</h1>
+              <p>LiDAR, ROS2 bridge, sensor link를 실제 장치 점유 상태를 고려해서 확인합니다.</p>
+            </div>
+          </header>
+
+          <section class="kpi-grid">
+            <article class="kpi">
+              <span>LiDAR</span>
+              <strong id="connectionLidarState">--</strong>
+              <small id="connectionLidarDevice">--</small>
+            </article>
+            <article class="kpi">
+              <span>Protocol</span>
+              <strong id="connectionLidarProtocol">--</strong>
+              <small id="connectionLidarBaud">--</small>
+            </article>
+            <article class="kpi">
+              <span>Health</span>
+              <strong id="connectionLidarHealth">--</strong>
+              <small id="connectionLidarHealthText">--</small>
+            </article>
+            <article class="kpi">
+              <span>ROS Guard</span>
+              <strong id="connectionLidarGuard">--</strong>
+              <small id="connectionLidarGuardText">--</small>
+            </article>
+          </section>
+
+          <section class="dashboard-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">LiDAR probe</p>
+                  <h2>RPLIDAR 테스트</h2>
+                </div>
+                <button id="lidarTestButton" class="action-button" type="button">테스트</button>
+              </div>
+              <div id="lidarTestResult" class="test-result">대기 중</div>
+              <dl class="detail-list">
+                <div><dt>Device</dt><dd id="lidarDeviceDetail">--</dd></div>
+                <div><dt>By ID</dt><dd id="lidarByIdDetail">--</dd></div>
+                <div><dt>Driver</dt><dd id="lidarDriverDetail">--</dd></div>
+                <div><dt>Last Test</dt><dd id="lidarLastTestDetail">--</dd></div>
+                <div><dt>Policy</dt><dd id="lidarPolicyDetail">--</dd></div>
+              </dl>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Runtime</p>
+                  <h2>서비스 연결</h2>
+                </div>
+              </div>
+              <div id="connectionServices" class="status-list"></div>
+            </article>
+
+            <article class="panel wide">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Sensors</p>
+                  <h2>ROS2 센서 링크</h2>
+                </div>
+              </div>
+              <div id="connectionSensors" class="status-list"></div>
             </article>
           </section>
         </section>
