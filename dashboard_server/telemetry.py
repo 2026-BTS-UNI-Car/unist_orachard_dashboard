@@ -3,6 +3,8 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import fcntl
+import math
 import os
 import platform
 import shutil
@@ -20,6 +22,15 @@ DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
 DEFAULT_TELEMETRY_FILE = ROOT / "runtime" / "telemetry_snapshot.json"
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_LIDAR_BAUDS = [1_000_000, 460_800, 256_000, 115_200]
+DEFAULT_LIDAR_SCAN_DURATION_S = 1.2
+DEFAULT_LIDAR_SCAN_MAX_POINTS = 1800
+RPLIDAR_STOP = bytes([0xA5, 0x25])
+RPLIDAR_SCAN = bytes([0xA5, 0x20])
+RPLIDAR_SCAN_DESCRIPTOR = bytes([0xA5, 0x5A, 0x05, 0x00, 0x00, 0x40, 0x81])
+TIOCMGET = 0x5415
+TIOCMSET = 0x5418
+TIOCM_DTR = 0x002
+TIOCM_RTS = 0x004
 
 
 def _read_text(path: str | Path) -> str | None:
@@ -90,6 +101,7 @@ class TelemetryProvider:
         self._external_ip_error: str | None = None
         self._external_ip_next_refresh = 0.0
         self._last_lidar_test: dict[str, Any] | None = None
+        self._last_lidar_scan: dict[str, Any] | None = None
 
     def health(self) -> dict[str, Any]:
         return {
@@ -267,6 +279,7 @@ class TelemetryProvider:
             "test_mode": "manual_short_probe",
             "conflict_policy": "포트가 점유 중이면 테스트를 실행하지 않고, 버튼 테스트 중에만 잠깐 포트를 엽니다.",
             "last_test": self._last_lidar_test,
+            "last_scan": self._last_lidar_scan,
         }
 
     def lidar_test(self) -> dict[str, Any]:
@@ -283,14 +296,34 @@ class TelemetryProvider:
         lock_path = Path(os.environ.get("LIDAR_TEST_LOCK", "/tmp/ubts-dashboard-lidar-test.lock"))
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("w", encoding="utf-8") as lock_file:
-            import fcntl
-
             try:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 return {"ok": False, "state": "busy", "message": "Another LiDAR test is already running.", "status": status}
             result = self._rplidar_probe(status["open_path"])
         self._last_lidar_test = result
+        return result
+
+    def lidar_scan(self) -> dict[str, Any]:
+        status = self.lidar_status()
+        if not status["present"]:
+            return {"ok": False, "state": "not_found", "message": "LiDAR serial device was not found.", "status": status}
+        if status["holders"]:
+            return {
+                "ok": False,
+                "state": "in_use",
+                "message": "LiDAR device is currently held by another process; skipped to avoid ROS2/driver conflicts.",
+                "status": status,
+            }
+        lock_path = Path(os.environ.get("LIDAR_TEST_LOCK", "/tmp/ubts-dashboard-lidar-test.lock"))
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("w", encoding="utf-8") as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {"ok": False, "state": "busy", "message": "Another LiDAR test is already running.", "status": status}
+            result = self._rplidar_scan(status["open_path"])
+        self._last_lidar_scan = result
         return result
 
     def _lidar_device_root(self) -> Path:
@@ -410,6 +443,208 @@ class TelemetryProvider:
             "tried_baud": bauds,
             "errors": errors,
         }
+
+    def _rplidar_scan(self, path: str) -> dict[str, Any]:
+        bauds = self._lidar_bauds()
+        duration_s = self._lidar_scan_duration()
+        max_points = self._lidar_scan_max_points()
+        errors = []
+        for baud in bauds:
+            speed = getattr(termios, f"B{baud}", None)
+            if speed is None:
+                errors.append({"baud": baud, "error": "baud_not_supported_by_termios"})
+                continue
+            try:
+                response = self._rplidar_normal_scan_at_baud(path, baud, speed, duration_s, max_points)
+            except OSError as exc:
+                errors.append({"baud": baud, "error": str(exc)})
+                continue
+            if response["ok"]:
+                return response
+            errors.append({"baud": baud, "error": response.get("message", "no_scan_data")})
+        return {
+            "ok": False,
+            "state": "no_scan_data",
+            "message": "Serial device exists, but RPLIDAR normal scan points were not received.",
+            "device": self._host_device_label(Path(path)),
+            "tried_baud": bauds,
+            "duration_s": duration_s,
+            "errors": errors,
+            "points": [],
+        }
+
+    def _rplidar_normal_scan_at_baud(
+        self,
+        path: str,
+        baud: int,
+        speed: int,
+        duration_s: float,
+        max_points: int,
+    ) -> dict[str, Any]:
+        fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        raw = bytearray()
+        motor_line = os.environ.get("LIDAR_MOTOR_LINE", "dtr").strip().lower() or "dtr"
+        line_report: dict[str, Any] | None = None
+        try:
+            attrs = termios.tcgetattr(fd)
+            attrs[0] = 0
+            attrs[1] = 0
+            attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+            attrs[3] = 0
+            attrs[4] = speed
+            attrs[5] = speed
+            termios.tcsetattr(fd, termios.TCSANOW, attrs)
+            termios.tcflush(fd, termios.TCIOFLUSH)
+            line_report = self._set_lidar_modem_lines(fd, motor_line)
+            os.write(fd, RPLIDAR_STOP)
+            time.sleep(0.08)
+            termios.tcflush(fd, termios.TCIFLUSH)
+            os.write(fd, RPLIDAR_SCAN)
+            deadline = time.time() + duration_s
+            while time.time() < deadline and len(raw) < 240_000:
+                try:
+                    chunk = os.read(fd, 8192)
+                except BlockingIOError:
+                    time.sleep(0.01)
+                    continue
+                if chunk:
+                    raw.extend(chunk)
+                else:
+                    time.sleep(0.01)
+        finally:
+            try:
+                os.write(fd, RPLIDAR_STOP)
+                time.sleep(0.03)
+            except OSError:
+                pass
+            self._set_lidar_modem_lines(fd, "off")
+            os.close(fd)
+
+        payload = self._scan_payload(bytes(raw))
+        nodes = self._parse_normal_scan_nodes(payload)
+        if not nodes:
+            return {
+                "ok": False,
+                "state": "no_scan_points",
+                "message": f"RPLIDAR scan descriptor or valid points were not received at {baud} bps.",
+                "device": self._host_device_label(Path(path)),
+                "baud": baud,
+                "protocol": "RPLIDAR normal scan",
+                "duration_s": duration_s,
+                "raw_bytes": len(raw),
+                "motor_line": line_report,
+                "points": [],
+            }
+
+        rendered = self._decimate_points(nodes, max_points)
+        distances = [point["distance_m"] for point in nodes]
+        angles = [point["angle_deg"] for point in nodes]
+        metrics = {
+            "points": len(nodes),
+            "rendered_points": len(rendered),
+            "raw_bytes": len(raw),
+            "min_distance_m": round(min(distances), 3),
+            "max_distance_m": round(max(distances), 3),
+            "angle_min_deg": round(min(angles), 2),
+            "angle_max_deg": round(max(angles), 2),
+            "coverage_deg": self._angle_coverage(nodes),
+            "range_limit_m": 30.0,
+        }
+        return {
+            "ok": True,
+            "state": "scan_ready",
+            "message": "RPLIDAR produced normal scan points; port was closed after STOP.",
+            "device": self._host_device_label(Path(path)),
+            "baud": baud,
+            "protocol": "RPLIDAR normal scan",
+            "duration_s": duration_s,
+            "points": rendered,
+            "metrics": metrics,
+            "tested_at": int(time.time()),
+            "motor_line": line_report,
+            "conflict_policy": "Short manual scan only; DTR/RTS motor line is disabled after STOP and the serial port is closed.",
+        }
+
+    def _scan_payload(self, raw: bytes) -> bytes:
+        exact = raw.find(RPLIDAR_SCAN_DESCRIPTOR)
+        if exact >= 0:
+            return raw[exact + len(RPLIDAR_SCAN_DESCRIPTOR) :]
+        marker = raw.find(b"\xA5\x5A")
+        if marker >= 0 and len(raw) >= marker + 7:
+            return raw[marker + 7 :]
+        return raw
+
+    def _parse_normal_scan_nodes(self, data: bytes) -> list[dict[str, Any]]:
+        nodes: list[dict[str, Any]] = []
+        i = 0
+        while i <= len(data) - 5:
+            b0, b1, b2, b3, b4 = data[i : i + 5]
+            start_flag = b0 & 0x01
+            inverse_start_flag = (b0 >> 1) & 0x01
+            check_bit = b1 & 0x01
+            if (start_flag ^ inverse_start_flag) != 1 or check_bit != 1:
+                i += 1
+                continue
+            angle_deg = ((b1 >> 1) | (b2 << 7)) / 64.0
+            distance_m = ((b3 | (b4 << 8)) / 4.0) / 1000.0
+            if 0.05 <= distance_m <= 30.0 and 0.0 <= angle_deg < 360.0:
+                rad = math.radians(angle_deg)
+                nodes.append(
+                    {
+                        "angle_deg": round(angle_deg, 3),
+                        "distance_m": round(distance_m, 3),
+                        "quality": b0 >> 2,
+                        "x_m": round(math.sin(rad) * distance_m, 3),
+                        "y_m": round(math.cos(rad) * distance_m, 3),
+                    }
+                )
+                i += 5
+                continue
+            i += 1
+        return nodes
+
+    def _decimate_points(self, points: list[dict[str, Any]], max_points: int) -> list[dict[str, Any]]:
+        if len(points) <= max_points:
+            return points
+        step = len(points) / max_points
+        return [points[min(len(points) - 1, int(index * step))] for index in range(max_points)]
+
+    def _angle_coverage(self, points: list[dict[str, Any]]) -> float:
+        if not points:
+            return 0.0
+        bins = {int(point["angle_deg"]) % 360 for point in points}
+        return round(float(len(bins)), 1)
+
+    def _set_lidar_modem_lines(self, fd: int, mode: str) -> dict[str, Any]:
+        try:
+            flags = struct.unpack("I", fcntl.ioctl(fd, TIOCMGET, struct.pack("I", 0)))[0]
+            if mode == "dtr_rts":
+                flags |= TIOCM_DTR | TIOCM_RTS
+            elif mode == "rts":
+                flags = (flags | TIOCM_RTS) & ~TIOCM_DTR
+            elif mode == "off":
+                flags &= ~(TIOCM_DTR | TIOCM_RTS)
+            else:
+                mode = "dtr"
+                flags = (flags | TIOCM_DTR) & ~TIOCM_RTS
+            fcntl.ioctl(fd, TIOCMSET, struct.pack("I", flags))
+        except OSError as exc:
+            return {"ok": False, "mode": mode, "error": str(exc)}
+        return {"ok": True, "mode": mode}
+
+    def _lidar_scan_duration(self) -> float:
+        try:
+            value = float(os.environ.get("LIDAR_SCAN_DURATION_S", DEFAULT_LIDAR_SCAN_DURATION_S))
+        except ValueError:
+            value = DEFAULT_LIDAR_SCAN_DURATION_S
+        return round(max(0.3, min(4.0, value)), 2)
+
+    def _lidar_scan_max_points(self) -> int:
+        try:
+            value = int(os.environ.get("LIDAR_SCAN_MAX_POINTS", DEFAULT_LIDAR_SCAN_MAX_POINTS))
+        except ValueError:
+            value = DEFAULT_LIDAR_SCAN_MAX_POINTS
+        return max(120, min(5000, value))
 
     def _lidar_bauds(self) -> list[int]:
         raw = os.environ.get("LIDAR_BAUDS")

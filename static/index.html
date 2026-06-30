@@ -172,7 +172,7 @@
                   <p class="eyebrow">LiDAR probe</p>
                   <h2>RPLIDAR 테스트</h2>
                 </div>
-                <button id="lidarTestButton" class="action-button" type="button">테스트</button>
+                <button id="lidarTestButton" class="action-button" type="button">정보 확인</button>
               </div>
               <div id="lidarTestResult" class="test-result">대기 중</div>
               <dl class="detail-list">
@@ -182,6 +182,21 @@
                 <div><dt>Last Test</dt><dd id="lidarLastTestDetail">--</dd></div>
                 <div><dt>Policy</dt><dd id="lidarPolicyDetail">--</dd></div>
               </dl>
+            </article>
+
+            <article class="panel wide">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">LiDAR scan</p>
+                  <h2>360 스캔 지도</h2>
+                </div>
+                <button id="lidarScanButton" class="action-button" type="button">360 스캔 테스트</button>
+              </div>
+              <div id="lidarScanResult" class="test-result">스캔 대기 중</div>
+              <div class="lidar-map-frame">
+                <canvas id="lidarScanCanvas" class="lidar-map" width="720" height="720"></canvas>
+                <div id="lidarScanStats" class="chart-readout"></div>
+              </div>
             </article>
 
             <article class="panel">

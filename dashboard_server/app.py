@@ -26,6 +26,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = parsed.path
         if path == "/api/lidar/test":
             self._send_json(self.provider.lidar_test())
+        elif path == "/api/lidar/scan":
+            self._send_json(self.provider.lidar_scan())
         else:
             self.send_error(404, "Not found")
 

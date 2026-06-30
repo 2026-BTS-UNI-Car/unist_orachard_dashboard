@@ -27,6 +27,12 @@ class DashboardApiTest(unittest.TestCase):
             self.assertEqual(res.status, 200)
             return json.loads(res.read().decode("utf-8"))
 
+    def post_json(self, path: str) -> dict:
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method="POST")
+        with urllib.request.urlopen(req, timeout=5) as res:
+            self.assertEqual(res.status, 200)
+            return json.loads(res.read().decode("utf-8"))
+
     def test_health(self):
         payload = self.get_json("/api/health")
         self.assertTrue(payload["ok"])
@@ -52,6 +58,16 @@ class DashboardApiTest(unittest.TestCase):
         connection = self.get_json("/api/connection")
         self.assertIn("lidar", connection)
         self.assertIn("test_mode", connection["lidar"])
+
+    def test_lidar_scan_endpoint_shape(self):
+        payload = self.post_json("/api/lidar/scan")
+        self.assertIn("ok", payload)
+        self.assertIn("state", payload)
+        if payload["ok"]:
+            self.assertIn("points", payload)
+            self.assertIn("metrics", payload)
+        else:
+            self.assertIn(payload["state"], {"not_found", "in_use", "busy", "no_scan_data"})
 
     def test_plan_contains_research_topic(self):
         payload = self.get_json("/api/plan")

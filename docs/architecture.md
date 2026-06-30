@@ -36,8 +36,11 @@ Browser
 - `GET /api/network`: interface, IP, RX/TX throughput
 - `GET /api/docker`: Docker engine, container resource
 - `POST /api/lidar/test`: 수동 RPLIDAR Info/Health 프로브
+- `POST /api/lidar/scan`: 수동 RPLIDAR 360도 단발 스캔
 
 `POST /api/lidar/test`는 예외적으로 수동 테스트 버튼에서만 사용합니다. 이 API는 스캔을 시작하지 않고 RPLIDAR `GET_INFO`/`GET_HEALTH`만 짧게 요청한 뒤 포트를 닫습니다. 포트가 ROS2 driver 등 다른 프로세스에 의해 점유 중이면 실행하지 않습니다.
+
+`POST /api/lidar/scan`도 수동 버튼에서만 사용합니다. 포트 점유 프로세스가 없을 때 DTR motor line을 켜고 RPLIDAR normal scan을 약 1.2초 수집한 뒤 STOP, DTR/RTS off, serial close 순서로 종료합니다. 반환된 angle/distance point는 Connection 페이지의 360도 지도에만 사용하며, 상시 ROS2 `/scan` 운용을 대체하지 않습니다.
 
 ## 추후 확장
 

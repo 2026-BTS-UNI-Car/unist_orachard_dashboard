@@ -14,6 +14,7 @@ const state = {
   coreHistory: {},
   visualCoreHistory: {},
   cpuMode: "combined",
+  lidarScan: null,
   chartShift: 0,
   chartShiftStartedAt: 0,
   animationFrame: null,
@@ -49,6 +50,10 @@ function fmtBps(value) {
 
 function fmtTemp(value) {
   return value === null || value === undefined ? "--" : `${Number(value).toFixed(1)}°C`;
+}
+
+function fmtNumber(value, digits = 1) {
+  return value === null || value === undefined || Number.isNaN(Number(value)) ? "--" : Number(value).toFixed(digits);
 }
 
 function fmtDuration(seconds) {
@@ -165,6 +170,7 @@ function setCpuMode(mode) {
 
 function initLidarTest() {
   $("lidarTestButton")?.addEventListener("click", runLidarTest);
+  $("lidarScanButton")?.addEventListener("click", runLidarScan);
 }
 
 async function loadPlan() {
@@ -324,9 +330,29 @@ async function runLidarTest() {
   }
 }
 
+async function runLidarScan() {
+  const button = $("lidarScanButton");
+  if (button) button.disabled = true;
+  setScanResult("testing", "스캔 중: 포트 점유 여부 확인 후 1회전 이상 점군을 캡처합니다.");
+  try {
+    const res = await fetch("/api/lidar/scan", { method: "POST", cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+    state.lidarScan = payload;
+    renderLidarScan(payload);
+    await tick();
+  } catch (err) {
+    setScanResult("bad", `스캔 실패: ${err.message}`);
+    drawLidarMap(state.lidarScan);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function renderConnection(connection) {
   const lidar = connection.lidar || {};
   const last = lidar.last_test || {};
+  const lastScan = lidar.last_scan || {};
   text("connectionLidarState", lidar.present ? lidarStateLabel(lidar.state) : "미인식");
   text("connectionLidarDevice", lidar.device || "--");
   text("connectionLidarProtocol", last.protocol || "--");
@@ -343,6 +369,12 @@ function renderConnection(connection) {
   renderStatusRows("connectionServices", serviceRows(connection.services || {}));
   renderStatusRows("connectionSensors", sensorRows(connection.sensors || {}));
   if (last.ok || last.message) renderLidarTest(last);
+  if (lastScan.ok || lastScan.message) {
+    if (!state.lidarScan || (lastScan.tested_at || 0) >= (state.lidarScan.tested_at || 0)) {
+      state.lidarScan = lastScan;
+      renderLidarScan(lastScan);
+    }
+  }
 }
 
 function renderLidarTest(result) {
@@ -358,6 +390,32 @@ function renderLidarTest(result) {
 
 function setTestResult(kind, message) {
   const target = $("lidarTestResult");
+  if (!target) return;
+  target.className = `test-result ${kind}`;
+  target.textContent = message;
+}
+
+function renderLidarScan(result) {
+  if (!result) return;
+  const metrics = result.metrics || {};
+  const points = result.points || [];
+  const ok = Boolean(result.ok && points.length);
+  const message = ok
+    ? `스캔 확인: ${metrics.points || points.length} points · coverage ${fmtNumber(metrics.coverage_deg, 0)}° · ${fmtNumber(result.duration_s, 1)}s`
+    : result.message || "스캔 데이터 없음";
+  setScanResult(ok ? "ok" : "bad", message);
+  const colors = chartColors();
+  renderReadout("lidarScanStats", [
+    { label: "Points", value: String(metrics.points || points.length || 0), sub: `render ${metrics.rendered_points || points.length || 0}`, color: colors.cyan },
+    { label: "Coverage", value: `${fmtNumber(metrics.coverage_deg, 0)}°`, sub: "1° bins", color: colors.good },
+    { label: "Range", value: `${fmtNumber(metrics.min_distance_m, 2)}-${fmtNumber(metrics.max_distance_m, 2)} m`, sub: "valid points", color: colors.blue },
+    { label: "Baud", value: result.baud ? `${result.baud}` : "--", sub: result.protocol || "RPLIDAR", color: colors.rose },
+  ]);
+  drawLidarMap(result);
+}
+
+function setScanResult(kind, message) {
+  const target = $("lidarScanResult");
   if (!target) return;
   target.className = `test-result ${kind}`;
   target.textContent = message;
@@ -770,6 +828,7 @@ function drawCharts() {
   };
   for (const [id, series] of groups[currentRoute()] || []) drawMultiLine(id, series);
   if (currentRoute() === "/system" && state.cpuMode === "separate") drawCoreCharts();
+  if (currentRoute() === "/connection") drawLidarMap(state.lidarScan);
 }
 
 function normalizeBps(values, key) {
@@ -894,6 +953,95 @@ function strokeSegment(ctx, points) {
   }
   const last = points[points.length - 1];
   ctx.lineTo(last.x, last.y);
+}
+
+function drawLidarMap(result) {
+  const canvas = $("lidarScanCanvas");
+  if (!canvas) return;
+  const prepared = prepareCanvas(canvas);
+  if (!prepared) return;
+  const { ctx, w, h } = prepared;
+  const colors = chartColors();
+  const points = result?.ok ? result.points || [] : [];
+  const metrics = result?.metrics || {};
+  const radius = Math.max(80, Math.min(w, h) * 0.42);
+  const cx = w / 2;
+  const cy = h / 2;
+  const maxPointRange = points.reduce((max, point) => Math.max(max, Number(point.distance_m) || 0), 0);
+  const range = Math.min(30, Math.max(1, (Number(metrics.max_distance_m) || maxPointRange || 1) * 1.15));
+
+  ctx.clearRect(0, 0, w, h);
+  const gradient = ctx.createRadialGradient(cx, cy, radius * 0.12, cx, cy, radius);
+  gradient.addColorStop(0, cssVar("--chart-bg-top", "rgba(255,255,255,0.05)"));
+  gradient.addColorStop(1, cssVar("--chart-bg-bottom", "rgba(255,255,255,0.01)"));
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, w, h);
+  drawLidarGrid(ctx, cx, cy, radius, range);
+
+  if (!points.length) {
+    drawLidarEmpty(ctx, w, h, result?.message || "스캔 대기");
+    return;
+  }
+
+  ctx.save();
+  ctx.fillStyle = colors.cyan;
+  ctx.shadowColor = colors.cyan;
+  ctx.shadowBlur = 7;
+  for (const point of points) {
+    const x = cx + ((Number(point.x_m) || 0) / range) * radius;
+    const y = cy - ((Number(point.y_m) || 0) / range) * radius;
+    const quality = Math.max(0, Math.min(63, Number(point.quality) || 0));
+    ctx.globalAlpha = Math.max(0.35, Math.min(0.92, 0.34 + quality / 90));
+    ctx.beginPath();
+    ctx.arc(x, y, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = cssVar("--text", "#f7f9ff");
+  ctx.font = "800 12px Inter, Arial, sans-serif";
+  ctx.fillText(`${points.length} rendered / ${metrics.points || points.length} points`, 14, 22);
+  ctx.fillText(`${fmtNumber(metrics.coverage_deg, 0)}° coverage`, 14, 40);
+  ctx.restore();
+}
+
+function drawLidarGrid(ctx, cx, cy, radius, range) {
+  ctx.save();
+  ctx.strokeStyle = cssVar("--chart-grid", "rgba(255,255,255,0.1)");
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i += 1) {
+    const r = (radius / 4) * i;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = cssVar("--dim", "#7480a3");
+    ctx.font = "800 10px Inter, Arial, sans-serif";
+    ctx.fillText(`${fmtNumber((range / 4) * i, 1)}m`, cx + r + 4, cy - 4);
+  }
+  ctx.beginPath();
+  ctx.moveTo(cx - radius, cy);
+  ctx.lineTo(cx + radius, cy);
+  ctx.moveTo(cx, cy - radius);
+  ctx.lineTo(cx, cy + radius);
+  ctx.stroke();
+  ctx.fillStyle = cssVar("--muted", "#a9b4d2");
+  ctx.font = "900 11px Inter, Arial, sans-serif";
+  ctx.fillText("0°", cx + 8, cy - radius + 14);
+  ctx.fillText("90°", cx + radius - 34, cy - 8);
+  ctx.fillText("180°", cx + 8, cy + radius - 8);
+  ctx.fillText("270°", cx - radius + 8, cy - 8);
+  ctx.restore();
+}
+
+function drawLidarEmpty(ctx, w, h, message) {
+  ctx.save();
+  ctx.fillStyle = cssVar("--muted", "#a9b4d2");
+  ctx.font = "900 14px Inter, Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(message, w / 2, h / 2);
+  ctx.restore();
 }
 
 function escapeHtml(value) {
