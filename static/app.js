@@ -252,14 +252,15 @@ function renderTelemetry(data) {
   text("overviewLoad", `load ${(sys.loadavg || [0])[0]?.toFixed ? sys.loadavg[0].toFixed(2) : "--"}`);
   text("overviewMemory", fmtPercent(memoryPercent(sys.memory)));
   text("overviewMemoryText", `${fmtBytes(sys.memory?.used)} / ${fmtBytes(memoryTotal(sys.memory))} · ${memoryLabel(sys.memory)}`);
-  text("overviewNetwork", `${fmtBps(net.total_rx_bps)} RX`);
-  text("overviewNetworkText", `${fmtBps(net.total_tx_bps)} TX`);
+  text("overviewNetwork", net.external_ip || "확인 중");
+  text("overviewNetworkText", `host ${net.primary_ipv4 || "--"} · RX ${fmtBps(net.total_rx_bps)} · TX ${fmtBps(net.total_tx_bps)}`);
   text("overviewDocker", docker.available ? `${docker.summary?.running || 0}/${docker.summary?.total || 0}` : "N/A");
   text("overviewDockerText", docker.available ? "running / total" : docker.error || "socket unavailable");
   text("hostName", sys.hostname || "--");
   text("hostUptime", fmtDuration(sys.os_uptime_s));
   text("hostTemp", fmtTemp(sys.temperature_c));
-  text("hostIp", hostIpLabel(net));
+  text("hostExternalIp", net.external_ip || net.external_ip_error || "--");
+  text("hostInternalIp", hostIpLabel(net));
 
   text("systemCpuValue", fmtPercent(sys.cpu?.total_percent));
   text("systemMemoryValue", fmtPercent(memoryPercent(sys.memory)));

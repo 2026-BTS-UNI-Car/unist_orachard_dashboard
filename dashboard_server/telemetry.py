@@ -531,15 +531,16 @@ class TelemetryProvider:
         return _read_text(self.sys_root / "class/net" / name / field)
 
     def _ipv4_for_interface(self, name: str) -> list[str]:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             request = struct.pack("256s", name[:15].encode("utf-8"))
             response = fcntl_ioctl(sock, 0x8915, request)
             return [socket.inet_ntoa(response[20:24])]
         except OSError:
             return []
         finally:
-            sock.close()
+            if "sock" in locals():
+                sock.close()
 
     def _docker_get_json(self, path: str) -> Any:
         conn = DockerSocketHTTPConnection(self.docker_socket)
