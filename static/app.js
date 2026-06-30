@@ -1879,7 +1879,6 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.moveTo(cx, cy - radius);
   ctx.lineTo(cx, cy + radius);
   ctx.stroke();
-  drawLidarFrontArrow(ctx, cx, cy, radius);
   ctx.fillStyle = cssVar("--muted", "#a9b4d2");
   ctx.font = "900 11px Inter, Arial, sans-serif";
   ctx.fillText("0° / FRONT", cx + 8, cy - radius + 14);
@@ -1894,27 +1893,6 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.fill();
   ctx.font = "900 10px Inter, Arial, sans-serif";
   ctx.fillText("LiDAR", cx + 8, cy + 15);
-  ctx.restore();
-}
-
-function drawLidarFrontArrow(ctx, cx, cy, radius) {
-  const color = cssVar("--chart-good", "#55e2b2");
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(cx, cy - radius * 0.72);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - radius * 0.78);
-  ctx.lineTo(cx - 7, cy - radius * 0.66);
-  ctx.lineTo(cx + 7, cy - radius * 0.66);
-  ctx.closePath();
-  ctx.fill();
-  ctx.font = "900 11px Inter, Arial, sans-serif";
-  ctx.fillText("LiDAR FRONT", cx + 10, cy - radius * 0.74);
   ctx.restore();
 }
 
