@@ -60,9 +60,11 @@ Connection 페이지에 들어가면 브라우저가 LiDAR WebSocket bridge에 �
 - `status`: live source, 마지막 scan age, point count
 - `scan`: 2D point 배열
 
-브라우저는 `/ws/lidar?max_points=900`처럼 표시할 최대 point 수를 요청합니다. 기본값은 900개이고, Connection 탭의 point slider와 `+`, `-`, `900` 버튼으로 조절합니다. 이 값은 브라우저 `localStorage`에 저장되므로 같은 대시보드를 여러 사람이 열어도 각자의 화면 설정만 바뀝니다.
+브라우저는 `/ws/lidar?max_points=900`처럼 표시할 최대 point 수를 요청합니다. 기본값은 900개이고, Connection 탭의 point slider와 `+`, `-`, `900` 버튼으로 50-3200개 범위에서 조절합니다. 이 값은 브라우저 `localStorage`에 저장되므로 같은 대시보드를 여러 사람이 열어도 각자의 화면 설정만 바뀝니다.
 
-Bridge 컨테이너는 ROS2 `/scan`에서 받은 source point를 최대 `LIDAR_SCAN_MAX_POINTS`까지 보관하고, 각 WebSocket client 요청에 맞춰 downsample합니다. source point 수 자체가 900개라면 브라우저에서 3600개를 요청해도 900개 이상으로 늘릴 수 없습니다. 더 높은 점 밀도는 ROS2 LiDAR driver의 scan mode, angle compensation, publish 설정에서 결정됩니다.
+Bridge 컨테이너는 ROS2 `/scan`에서 받은 source point를 최대 `LIDAR_SCAN_MAX_POINTS`까지 보관하고, 각 WebSocket client 요청에 맞춰 downsample합니다. 기본 최대값은 RPLIDAR S2 스펙의 32 kHz sampling / 10 Hz scan, 또는 360° / 0.1125° 해상도 기준인 3200 points/scan입니다. source point 수 자체가 900개라면 브라우저에서 3200개를 요청해도 900개 이상으로 늘릴 수 없습니다. 더 높은 점 밀도는 ROS2 LiDAR driver의 scan mode, angle compensation, publish 설정에서 결정됩니다.
+
+브라우저 WebSocket은 Connection 페이지에 있을 때만 연결됩니다. 다른 페이지로 이동하거나 탭을 닫으면 브라우저 구독은 끊기지만, `ros2-lidar-driver`가 실행 중이면 LiDAR motor와 `/scan` publish는 계속 동작합니다. 이는 Dashboard가 LiDAR serial port를 소유하지 않고 ROS2 결과만 구독하기 위한 의도된 구조입니다.
 
 ### 상태 확인
 

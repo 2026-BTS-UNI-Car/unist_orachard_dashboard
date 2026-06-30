@@ -123,7 +123,7 @@ def scan_to_points(msg: Any, max_points: int) -> list[dict[str, float | int]]:
 
 
 def decimate_points(points: list[dict[str, float | int]], max_points: int) -> list[dict[str, float | int]]:
-    max_points = max(100, int(max_points or 900))
+    max_points = max(50, int(max_points or 900))
     if len(points) <= max_points:
         return points
     step = len(points) / max_points
@@ -137,7 +137,7 @@ def client_max_points(actual_path: str, default: int, source_max: int) -> int:
         value = int(raw)
     except (TypeError, ValueError):
         value = default
-    return max(100, min(max(source_max, default), value))
+    return max(50, min(max(source_max, default), value))
 
 
 def ros_thread(state: ScanState, topic: str, max_points: int, ready: threading.Event, stop: threading.Event) -> None:
@@ -403,7 +403,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--path", default="/ws/lidar")
     parser.add_argument("--topic", default="/scan")
-    parser.add_argument("--max-points", type=int, default=3600)
+    parser.add_argument("--max-points", type=int, default=3200)
     parser.add_argument("--max-hz", type=float, default=10.0)
     parser.add_argument("--source", choices=["auto", "ros2", "serial"], default=os.environ.get("LIDAR_BRIDGE_SOURCE", "ros2"))
     parser.add_argument("--serial-poll-s", type=float, default=float(os.environ.get("LIDAR_SERIAL_POLL_S", "0.2")))

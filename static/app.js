@@ -8,6 +8,8 @@ const CPU_MODE_KEY = "ubts-cpu-chart-mode";
 const LIDAR_RANGE_KEY = "ubts-lidar-map-range-v2";
 const LIDAR_RANGE_AUTO_KEY = "ubts-lidar-map-range-auto-v2";
 const LIDAR_POINTS_KEY = "ubts-lidar-points-v1";
+const LIDAR_SPEC_MAX_POINTS = 3200;
+const LIDAR_RECONNECT_DEBOUNCE_MS = 650;
 
 const state = {
   telemetry: null,
@@ -29,9 +31,13 @@ const state = {
     lastMessageAt: null,
     lastScanAgeSec: null,
     pointCount: 0,
+    sourcePointCount: 0,
+    requestedPointCount: 900,
     error: "",
     messageCount: 0,
     userStopped: false,
+    reconnectTimer: null,
+    pendingRestart: false,
   },
   lidarExport: {
     latestScan: null,
@@ -50,9 +56,9 @@ const state = {
   },
   lidarPoints: {
     value: 900,
-    min: 300,
-    max: 3600,
-    step: 100,
+    min: 50,
+    max: LIDAR_SPEC_MAX_POINTS,
+    step: 50,
   },
   selectedContainerId: null,
   containerDetail: null,
@@ -189,6 +195,8 @@ function renderRoute() {
   if (route === "/connection") {
     renderActiveLidarMap();
     if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
+  } else if (state.lidarLive.socket || state.lidarLive.enabled) {
+    closeLidarLive("Connection 페이지 밖에서는 LiDAR WebSocket을 닫습니다.", { userStopped: false });
   }
   requestChartAnimation();
 }
@@ -401,7 +409,7 @@ function setLidarPointLimit(value, options = {}) {
     }
   }
   updateLidarPointControls();
-  if (options.reconnect && state.lidarLive.socket) restartLidarLiveForSettings();
+  if (options.reconnect && (state.lidarLive.socket || state.lidarLive.enabled)) scheduleLidarReconnectForSettings();
 }
 
 function clampLidarPointLimit(value) {
@@ -615,7 +623,12 @@ function toggleLidarLive() {
 }
 
 function startLidarLive() {
+  if (currentRoute() !== "/connection") {
+    debugLog("ws", "skip start outside /connection");
+    return;
+  }
   if (state.lidarLive.socket) return;
+  clearLidarReconnectTimer();
   const url = lidarWebSocketUrl();
   state.lidarLive.enabled = true;
   state.lidarLive.userStopped = false;
@@ -623,6 +636,7 @@ function startLidarLive() {
   state.lidarLive.connected = false;
   state.lidarLive.scanTopicAlive = false;
   state.lidarLive.source = "waiting";
+  state.lidarLive.requestedPointCount = state.lidarPoints.value;
   renderLidarLiveState("연결 중");
   setScanResult("testing", "LiDAR WebSocket 연결 중");
   debugLog("ws", `connecting ${url}`);
@@ -630,26 +644,40 @@ function startLidarLive() {
     const socket = new WebSocket(url);
     state.lidarLive.socket = socket;
     socket.addEventListener("open", () => {
+      if (socket !== state.lidarLive.socket) return;
       state.lidarLive.connected = true;
       state.lidarLive.error = "";
       debugLog("ws", "open");
       renderLidarLiveState();
+      if (state.lidarLive.pendingRestart) {
+        state.lidarLive.pendingRestart = false;
+        scheduleLidarReconnectForSettings(80);
+      }
     });
-    socket.addEventListener("message", (event) => handleLidarLiveMessage(event.data));
+    socket.addEventListener("message", (event) => {
+      if (socket !== state.lidarLive.socket || currentRoute() !== "/connection") return;
+      handleLidarLiveMessage(event.data);
+    });
     socket.addEventListener("error", (event) => {
+      if (socket !== state.lidarLive.socket) return;
       state.lidarLive.error = "WebSocket 연결 오류";
       debugLog("ws", "error", event);
       renderLidarLiveState();
     });
     socket.addEventListener("close", (event) => {
-      const shouldReconnect = state.lidarLive.enabled && !state.lidarLive.userStopped;
+      if (socket !== state.lidarLive.socket) return;
+      const shouldReconnect = state.lidarLive.enabled && !state.lidarLive.userStopped && currentRoute() === "/connection";
       state.lidarLive.socket = null;
       state.lidarLive.connected = false;
       state.lidarLive.scanTopicAlive = false;
       debugLog("ws", `close code=${event.code} reason=${event.reason || "-"}`);
       renderLidarLiveState(state.lidarLive.error || "disconnected");
-      if (shouldReconnect) {
-        window.setTimeout(() => {
+      if (state.lidarLive.pendingRestart && shouldReconnect) {
+        state.lidarLive.pendingRestart = false;
+        scheduleLidarReconnectForSettings(120);
+      } else if (shouldReconnect) {
+        state.lidarLive.reconnectTimer = window.setTimeout(() => {
+          state.lidarLive.reconnectTimer = null;
           if (currentRoute() === "/connection" && !state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
         }, 1500);
       }
@@ -666,30 +694,82 @@ function startLidarLive() {
 }
 
 function stopLidarLive(message = "disconnected") {
+  closeLidarLive(message, { userStopped: true });
+}
+
+function closeLidarLive(message = "disconnected", options = {}) {
+  const userStopped = options.userStopped !== undefined ? Boolean(options.userStopped) : true;
+  if (options.clearReconnect !== false) clearLidarReconnectTimer();
   const socket = state.lidarLive.socket;
   state.lidarLive.enabled = false;
-  state.lidarLive.userStopped = true;
+  state.lidarLive.userStopped = userStopped;
   state.lidarLive.socket = null;
   state.lidarLive.connected = false;
   state.lidarLive.scanTopicAlive = false;
   state.lidarLive.source = "waiting";
   state.lidarLive.error = "";
-  if (socket && socket.readyState <= 1) socket.close();
+  state.lidarLive.pendingRestart = false;
+  if (socket) {
+    closeSocketAfterConnect(socket, message);
+  }
   debugLog("ws", `stopped: ${message}`);
   renderLidarLiveState(message);
 }
 
+function clearLidarReconnectTimer() {
+  if (!state.lidarLive.reconnectTimer) return;
+  window.clearTimeout(state.lidarLive.reconnectTimer);
+  state.lidarLive.reconnectTimer = null;
+}
+
+function closeSocketAfterConnect(socket, reason = "closed") {
+  const closeReason = String(reason || "closed").slice(0, 120);
+  try {
+    if (socket.readyState === WebSocket.CONNECTING) {
+      socket.addEventListener("open", () => socket.close(1000, closeReason), { once: true });
+    } else if (socket.readyState === WebSocket.OPEN) {
+      socket.close(1000, closeReason);
+    } else if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
+      return;
+    }
+  } catch (err) {
+    debugLog("ws", "socket close skipped", err);
+  }
+}
+
+function scheduleLidarReconnectForSettings(delayMs = LIDAR_RECONNECT_DEBOUNCE_MS) {
+  if (currentRoute() !== "/connection") return;
+  if (!state.lidarLive.socket && !state.lidarLive.enabled) return;
+  clearLidarReconnectTimer();
+  state.lidarLive.pendingRestart = true;
+  state.lidarLive.reconnectTimer = window.setTimeout(() => {
+    state.lidarLive.reconnectTimer = null;
+    restartLidarLiveForSettings();
+  }, Math.max(0, delayMs));
+  debugLog("ws", `settings restart scheduled max_points=${state.lidarPoints.value}`);
+}
+
 function restartLidarLiveForSettings() {
+  if (currentRoute() !== "/connection") return;
   const wasEnabled = state.lidarLive.enabled && !state.lidarLive.userStopped;
   const socket = state.lidarLive.socket;
-  state.lidarLive.socket = null;
-  state.lidarLive.connected = false;
-  state.lidarLive.scanTopicAlive = false;
-  if (socket && socket.readyState <= 1) socket.close();
+  if (socket?.readyState === WebSocket.CONNECTING) {
+    state.lidarLive.pendingRestart = true;
+    debugLog("ws", "settings restart deferred until socket opens");
+    return;
+  }
+  clearLidarReconnectTimer();
+  state.lidarLive.pendingRestart = false;
+  if (socket) {
+    state.lidarLive.socket = null;
+    state.lidarLive.connected = false;
+    state.lidarLive.scanTopicAlive = false;
+    closeSocketAfterConnect(socket, "point limit changed");
+  }
   if (wasEnabled) {
     window.setTimeout(() => {
-      if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
-    }, 180);
+      if (currentRoute() === "/connection" && !state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
+    }, 160);
   }
 }
 
@@ -719,6 +799,7 @@ function handleLidarLiveMessage(raw) {
     state.lidarLive.lastScanAgeSec = payload.last_scan_age_sec;
     state.lidarLive.pointCount = payload.point_count || 0;
     state.lidarLive.sourcePointCount = payload.source_point_count || payload.point_count || 0;
+    state.lidarLive.requestedPointCount = payload.requested_max_points || state.lidarPoints.value;
     state.lidarLive.scanTopicAlive = Boolean(payload.scan_topic_alive);
     state.lidarLive.source = payload.source || "waiting";
     state.lidarLive.error = payload.error || (payload.scan_topic_alive === false ? "ROS2 /scan 대기" : "");
@@ -734,7 +815,9 @@ function handleLidarLiveMessage(raw) {
     const result = lidarScanFromLive(payload);
     maybeAutoSetLidarRange(result);
     state.lidarLive.lastScanAgeSec = 0;
-    state.lidarLive.pointCount = result.points.length;
+    state.lidarLive.pointCount = result.metrics.rendered_points || result.points.length;
+    state.lidarLive.sourcePointCount = result.metrics.source_points || state.lidarLive.pointCount;
+    state.lidarLive.requestedPointCount = result.metrics.requested_points || state.lidarPoints.value;
     state.lidarLive.scanTopicAlive = true;
     state.lidarLive.source = payload.source || "ros2";
     state.lidarLive.error = "";
@@ -759,6 +842,7 @@ function lidarScanFromLive(payload) {
   const metrics = {
     points: payload.point_count || points.length,
     source_points: payload.source_point_count || payload.point_count || points.length,
+    requested_points: payload.requested_max_points || state.lidarPoints.value,
     rendered_points: points.length,
     min_distance_m: distances.length ? Math.min(...distances) : null,
     max_distance_m: distances.length ? Math.max(...distances) : null,
@@ -822,7 +906,10 @@ function renderLidarLiveState(overrideLabel) {
   text("lidarLiveTopic", state.lidarLive.scanTopicAlive ? `${lidarSourceLabel(state.lidarLive.source)} live` : lidarSourceLabel(state.lidarLive.source));
   text("lidarLiveSocket", overrideLabel || (state.lidarLive.connected ? "connected" : state.lidarLive.error || "disconnected"));
   text("lidarLiveAge", lidarAgeLabel());
-  text("lidarLivePoints", state.lidarLive.pointCount ? String(state.lidarLive.pointCount) : "--");
+  const pointLabel = state.lidarLive.pointCount
+    ? `${state.lidarLive.pointCount}/${state.lidarLive.requestedPointCount || state.lidarPoints.value}`
+    : "--";
+  text("lidarLivePoints", pointLabel);
 }
 
 function renderLiveSensorLinks() {
@@ -1006,7 +1093,7 @@ function renderConnection(connection) {
   text("connectionLidarProtocol", "ROS2 /scan");
   text("connectionLidarSubtext", "subscribe-only");
   text("connectionLidarHealth", scanLive ? "수신 중" : (lidar.present ? "ROS2 대기" : "--"));
-  text("connectionLidarHealthText", scanLive ? `${bridge.point_count || state.lidarLive.pointCount || 0} points live` : "ROS2 /scan 대기");
+  text("connectionLidarHealthText", scanLive ? "ROS2 /scan live" : "ROS2 /scan 대기");
   text("lidarDeviceDetail", lidar.present ? shortPath(lidar.device) : "장치 미인식");
   text("lidarByIdDetail", lidar.by_id ? shortPath(lidar.by_id, 42) : "stable ID 대기");
   text("lidarDriverDetail", driverLabel(lidar.driver_hint));
@@ -1042,13 +1129,16 @@ function renderLidarScan(result, source = result?.source || "ros2_scan") {
   const metrics = result.metrics || {};
   const points = result.points || [];
   const ok = Boolean(result.ok && points.length);
+  const renderedPoints = metrics.rendered_points || points.length || 0;
+  const requestedPoints = metrics.requested_points || state.lidarPoints.value;
+  const sourcePoints = metrics.source_points || metrics.points || points.length || 0;
   const message = ok
-    ? `실시간 수신: ${metrics.points || points.length}개 점 · ${fmtNumber(metrics.coverage_deg, 0)}도 커버리지 · ${result.protocol || "LiDAR"}`
+    ? `실시간 수신 중 · 최대 ${requestedPoints}개 표시 · ${fmtNumber(metrics.coverage_deg, 0)}도 커버리지`
     : cleanLidarError(result, "실시간 LiDAR 데이터를 기다리는 중입니다.");
   setScanResult(ok ? "ok" : "bad", message);
   const colors = chartColors();
   renderReadout("lidarScanStats", [
-    { label: "Points", value: String(metrics.rendered_points || points.length || 0), sub: `source ${metrics.source_points || metrics.points || points.length || 0}`, color: colors.cyan },
+    { label: "Rendered", value: String(renderedPoints), sub: `limit ${requestedPoints} · source ${sourcePoints}`, color: colors.cyan },
     { label: "Coverage", value: `${fmtNumber(metrics.coverage_deg, 0)}°`, sub: "1° bins", color: colors.good },
     { label: "Range", value: `${fmtNumber(metrics.min_distance_m, 2)}-${fmtNumber(metrics.max_distance_m, 2)} m`, sub: "valid points", color: colors.blue },
   ]);
@@ -2337,6 +2427,11 @@ function escapeHtml(value) {
 
 window.addEventListener("popstate", renderRoute);
 window.addEventListener("resize", requestChartAnimation);
+window.addEventListener("pagehide", () => {
+  if (state.lidarLive.socket || state.lidarLive.enabled) {
+    closeLidarLive("페이지 종료로 LiDAR WebSocket을 닫습니다.", { userStopped: false });
+  }
+});
 document.addEventListener("click", (event) => {
   const docLink = event.target.closest("a[data-doc-link]");
   if (docLink) {

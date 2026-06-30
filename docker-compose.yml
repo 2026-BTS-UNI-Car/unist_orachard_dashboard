@@ -85,7 +85,7 @@ services:
     environment:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       LIDAR_BRIDGE_SOURCE: "${LIDAR_BRIDGE_SOURCE:-ros2}"
-      LIDAR_SCAN_MAX_POINTS: "${LIDAR_SCAN_MAX_POINTS:-3600}"
+      LIDAR_SCAN_MAX_POINTS: "${LIDAR_SCAN_MAX_POINTS:-3200}"
       LIDAR_BRIDGE_STATUS_FILE: "/app/runtime/lidar_bridge_status.json"
     volumes:
       - ./runtime:/app/runtime
