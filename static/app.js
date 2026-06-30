@@ -1,10 +1,11 @@
 const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs"];
-const HISTORY_KEYS = ["cpu", "memory", "gpu", "temp", "rx", "tx", "dockerCpu", "dockerMemory", "fanTemp", "fanRpm", "fanPwm"];
+const HISTORY_KEYS = ["cpu", "memory", "gpu", "temp", "rx", "tx", "dockerCpu", "dockerMemory", "fanTemp", "fanPwm"];
 const CORE_COLORS = ["#55e2b2", "#38d8ff", "#2f76ff", "#8238c9", "#f21b58", "#f4bd4f", "#7dd3fc", "#fb7185"];
 const MAX_POINTS = 90;
 const POLL_INTERVAL_MS = 1000;
 const DPR_LIMIT = 1.5;
 const CPU_MODE_KEY = "ubts-cpu-chart-mode";
+const LIDAR_RANGE_KEY = "ubts-lidar-map-range";
 
 const state = {
   telemetry: null,
@@ -33,11 +34,16 @@ const state = {
     latestScan: null,
     accumulatedPoints: [],
     lastUpdatedAt: null,
-    source: "manual_scan",
+    source: "ros2_scan",
     frameId: "laser",
     maxPoints: 50000,
     accumulate: false,
     format: "json",
+  },
+  lidarMap: {
+    range: 25,
+    minRange: 1,
+    maxRange: 30,
   },
   chartShift: 0,
   chartShiftStartedAt: 0,
@@ -49,7 +55,9 @@ const $ = (id) => document.getElementById(id);
 
 function text(id, value) {
   const el = $(id);
-  if (el) el.textContent = value;
+  if (!el) return;
+  const next = String(value);
+  if (el.textContent !== next) el.textContent = next;
 }
 
 function fmtPercent(value, digits = 1) {
@@ -250,8 +258,52 @@ function initLidarTest() {
   document.querySelectorAll("[data-lidar-download]").forEach((button) => {
     button.addEventListener("click", () => setLidarDownloadFormat(button.dataset.lidarDownload));
   });
+  document.querySelectorAll("[data-lidar-range]").forEach((button) => {
+    button.addEventListener("click", () => changeLidarRange(button.dataset.lidarRange));
+  });
+  initLidarRange();
   setLidarDownloadFormat(state.lidarExport.format);
   renderLidarLiveState();
+}
+
+function initLidarRange() {
+  let stored = null;
+  try {
+    stored = Number(localStorage.getItem(LIDAR_RANGE_KEY));
+  } catch (_) {
+    stored = null;
+  }
+  if (Number.isFinite(stored)) state.lidarMap.range = clampLidarRange(stored);
+  updateLidarRangeControls();
+}
+
+function changeLidarRange(action) {
+  const current = state.lidarMap.range;
+  let next = current;
+  if (action === "in") next = current <= 5 ? current - 1 : current - 5;
+  else if (action === "out") next = current < 5 ? current + 1 : current + 5;
+  else next = 25;
+  state.lidarMap.range = clampLidarRange(next);
+  try {
+    localStorage.setItem(LIDAR_RANGE_KEY, String(state.lidarMap.range));
+  } catch (_) {
+    // Range control remains usable without localStorage.
+  }
+  updateLidarRangeControls();
+  renderActiveLidarMap();
+}
+
+function clampLidarRange(value) {
+  return Math.max(state.lidarMap.minRange, Math.min(state.lidarMap.maxRange, Number(value) || 25));
+}
+
+function updateLidarRangeControls() {
+  text("lidarRangeValue", `${fmtNumber(state.lidarMap.range, state.lidarMap.range % 1 ? 1 : 0)} m`);
+  document.querySelectorAll("[data-lidar-range]").forEach((button) => {
+    const action = button.dataset.lidarRange;
+    button.disabled = (action === "in" && state.lidarMap.range <= state.lidarMap.minRange)
+      || (action === "out" && state.lidarMap.range >= state.lidarMap.maxRange);
+  });
 }
 
 async function loadPlan() {
@@ -296,7 +348,6 @@ function pushHistory(data) {
   addPoint("dockerCpu", dockerCpu);
   addPoint("dockerMemory", dockerMemory);
   addPoint("fanTemp", fan.temperature_c);
-  addPoint("fanRpm", fan.rpm);
   addPoint("fanPwm", fan.pwm);
   for (const core of cores) addCorePoint(coreKey(core), core.percent);
   pruneCoreHistory(cores.map(coreKey));
@@ -410,7 +461,7 @@ function renderTelemetry(data) {
 async function runLidarTest() {
   const button = $("lidarTestButton");
   if (button) button.disabled = true;
-  setTestResult("testing", "장치 점유 여부를 확인한 뒤 Info/Health 요청만 짧게 보냅니다.");
+  setTestResult("testing", "LiDAR serial port를 열지 않고 장치 표시와 ROS2 소유 상태만 확인합니다.");
   try {
     const res = await fetch("/api/lidar/test", { method: "POST", cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -418,7 +469,7 @@ async function runLidarTest() {
     renderLidarTest(payload);
     await tick();
   } catch (err) {
-    setTestResult("bad", `정보 확인 실패: ${err.message}`);
+    setTestResult("bad", `상태 확인 실패: ${err.message}`);
   } finally {
     if (button) button.disabled = false;
   }
@@ -513,6 +564,7 @@ function handleLidarLiveMessage(raw) {
     state.lidarLive.error = payload.error || (payload.scan_topic_alive === false ? "ROS2 /scan 대기" : "");
     if (state.lidarLive.messageCount % 10 === 1 || payload.error) debugLog("ws", "status", payload);
     renderLidarLiveState();
+    renderLiveSensorLinks();
     return;
   }
   if (payload.type === "scan") {
@@ -526,12 +578,14 @@ function handleLidarLiveMessage(raw) {
     if (state.lidarLive.messageCount % 10 === 1) debugLog("ws", "scan", { source: payload.source, points: result.points.length });
     renderLidarScan(result, "live_websocket");
     renderLidarLiveState();
+    renderLiveSensorLinks();
     return;
   }
   if (payload.type === "socket") {
     state.lidarLive.error = payload.ok ? "" : payload.message || "socket status error";
     debugLog("ws", "socket", payload);
     renderLidarLiveState();
+    renderLiveSensorLinks();
   }
 }
 
@@ -549,7 +603,7 @@ function lidarScanFromLive(payload) {
   return {
     ok: true,
     state: "live_scan",
-    protocol: payload.source === "serial" ? "RPLIDAR serial live WebSocket" : "ROS2 /scan WebSocket",
+    protocol: "ROS2 /scan WebSocket",
     frame_id: payload.frame_id || "laser",
     stamp: payload.stamp,
     tested_at: Math.floor(Date.now() / 1000),
@@ -570,12 +624,27 @@ function renderLidarLiveState(overrideLabel) {
   text("lidarLiveDevice", state.telemetry?.connection?.lidar?.device || "--");
   text("lidarLiveTopic", state.lidarLive.scanTopicAlive ? `${lidarSourceLabel(state.lidarLive.source)} live` : lidarSourceLabel(state.lidarLive.source));
   text("lidarLiveSocket", overrideLabel || (state.lidarLive.connected ? "connected" : state.lidarLive.error || "disconnected"));
-  text("lidarLiveAge", state.lidarLive.lastScanAgeSec === null || state.lidarLive.lastScanAgeSec === undefined ? "--" : `${fmtNumber(state.lidarLive.lastScanAgeSec, 1)}s`);
+  text("lidarLiveAge", lidarAgeLabel());
   text("lidarLivePoints", state.lidarLive.pointCount ? String(state.lidarLive.pointCount) : "--");
 }
 
+function renderLiveSensorLinks() {
+  if (state.telemetry?.connection?.sensors) {
+    renderStatusRows("connectionSensors", sensorRows(state.telemetry.connection.sensors));
+  }
+  if (state.telemetry?.sensors) {
+    renderSensors(state.telemetry.sensors);
+  }
+}
+
 function lidarSourceLabel(source) {
-  return { ros2: "ROS2 /scan", serial: "Serial live", bridge: "Bridge", waiting: "대기" }[source] || source || "대기";
+  return { ros2: "ROS2 /scan", serial: "Serial direct", bridge: "Bridge", waiting: "대기" }[source] || source || "대기";
+}
+
+function lidarAgeLabel() {
+  if (state.lidarLive.scanTopicAlive) return "live";
+  const age = state.lidarLive.lastScanAgeSec;
+  return age === null || age === undefined ? "--" : `${fmtNumber(age, 1)}s`;
 }
 
 function setLidarDownloadFormat(format) {
@@ -595,7 +664,7 @@ function updateLidarExport(result, source) {
   const latest = { ...result, points };
   state.lidarExport.latestScan = latest;
   state.lidarExport.lastUpdatedAt = new Date();
-  state.lidarExport.source = source || result.source || "manual_serial_scan";
+  state.lidarExport.source = source || result.source || "ros2_scan";
   state.lidarExport.frameId = result.frame_id || "laser";
   if (state.lidarExport.accumulate) {
     state.lidarExport.accumulatedPoints.push(...points);
@@ -732,12 +801,12 @@ function renderConnection(connection) {
   const lastScan = lidar.last_scan || {};
   text("connectionLidarState", lidar.present ? lidarStateLabel(lidar.state) : "미인식");
   text("connectionLidarDevice", lidar.device || "--");
-  text("connectionLidarProtocol", last.protocol || "--");
-  text("connectionLidarBaud", last.baud ? `${last.baud} bps` : "테스트 전");
-  text("connectionLidarHealth", last.health?.status || (lidar.present ? "대기" : "--"));
-  text("connectionLidarHealthText", last.health ? `error ${last.health.error_code}` : "테스트 버튼으로 확인");
-  text("connectionLidarGuard", (lidar.holders || []).length ? "점유 중" : "OK");
-  text("connectionLidarGuardText", (lidar.holders || []).length ? holderLabel(lidar.holders) : "테스트 시에만 포트 사용");
+  text("connectionLidarProtocol", "ROS2 /scan");
+  text("connectionLidarBaud", "subscribe-only");
+  text("connectionLidarHealth", state.lidarLive.scanTopicAlive ? "수신 중" : (lidar.present ? "ROS2 대기" : "--"));
+  text("connectionLidarHealthText", state.lidarLive.scanTopicAlive ? "WebSocket scan live" : "ROS2 driver가 /scan을 발행하면 표시");
+  text("connectionLidarGuard", (lidar.holders || []).length ? "ROS2 소유" : "포트 비점유");
+  text("connectionLidarGuardText", (lidar.holders || []).length ? holderLabel(lidar.holders) : "Dashboard는 serial을 열지 않음");
   text("lidarDeviceDetail", lidar.present ? shortPath(lidar.device) : "장치 미인식");
   text("lidarByIdDetail", lidar.by_id ? shortPath(lidar.by_id, 42) : "stable ID 대기");
   text("lidarDriverDetail", driverLabel(lidar.driver_hint));
@@ -750,7 +819,7 @@ function renderConnection(connection) {
   if (lastScan.ok || lastScan.message) {
     if (!state.lidarScan || (lastScan.tested_at || 0) >= (state.lidarScan.tested_at || 0)) {
       state.lidarScan = lastScan;
-      renderLidarScan(lastScan, "manual_serial_scan");
+      renderLidarScan(lastScan, "ros2_scan");
     }
   }
 }
@@ -768,7 +837,7 @@ function setTestResult(kind, message) {
   target.textContent = message;
 }
 
-function renderLidarScan(result, source = result?.source || "manual_serial_scan") {
+function renderLidarScan(result, source = result?.source || "ros2_scan") {
   if (!result) return;
   const metrics = result.metrics || {};
   const points = result.points || [];
@@ -824,36 +893,17 @@ function driverLabel(driver) {
 function lidarLastTestLabel(result) {
   if (!result || (!result.ok && !result.message)) return "아직 확인 전";
   if (!result.ok) return cleanLidarError(result, "응답 없음");
-  const info = result.info || {};
-  const health = result.health || {};
-  const parts = [
-    "정상",
-    result.baud ? `${Number(result.baud).toLocaleString()} bps` : "",
-    info.firmware ? `FW ${info.firmware}` : "",
-    info.hardware ? `HW ${info.hardware}` : "",
-    health.status ? `health ${health.status}` : "",
-  ].filter(Boolean);
-  return parts.join(" · ");
+  return result.state === "ros2_owned" ? "ROS2 driver 소유 중" : "장치 확인됨 · subscribe-only";
 }
 
 function policyLabel(policy) {
-  if (!policy) return "버튼 실행 중에만 포트를 열고 바로 닫습니다.";
-  return "ROS2가 포트를 사용 중이면 테스트하지 않고, 수동 테스트 후에는 STOP과 포트 해제를 수행합니다.";
+  return policy || "Dashboard는 LiDAR serial port를 열지 않고 ROS2 /scan만 구독합니다.";
 }
 
 function lidarTestMessage(result) {
   if (!result) return "정보 없음";
-  if (!result.ok) return cleanLidarError(result, "RPLIDAR 응답을 받지 못했습니다.");
-  const info = result.info || {};
-  const health = result.health || {};
-  const parts = [
-    "정상 응답",
-    result.baud ? `${Number(result.baud).toLocaleString()} bps` : "",
-    info.firmware ? `펌웨어 ${info.firmware}` : "",
-    info.hardware ? `하드웨어 ${info.hardware}` : "",
-    health.status ? `상태 ${health.status}` : "",
-  ].filter(Boolean);
-  return parts.join(" · ");
+  if (!result.ok) return cleanLidarError(result, "LiDAR 상태를 확인하지 못했습니다.");
+  return result.message || "LiDAR 장치 상태를 확인했습니다. Dashboard는 serial port를 열지 않습니다.";
 }
 
 function cleanLidarError(result, fallback) {
@@ -862,9 +912,10 @@ function cleanLidarError(result, fallback) {
     not_found: "LiDAR 장치를 찾지 못했습니다. USB 연결과 전원을 확인하세요.",
     in_use: "다른 프로세스가 LiDAR 포트를 사용 중이라 테스트를 건너뛰었습니다.",
     busy: "이미 다른 LiDAR 테스트가 실행 중입니다.",
-    no_protocol_response: "직렬 장치는 보이지만 RPLIDAR Info/Health 응답이 없습니다.",
+    no_protocol_response: "직렬 장치는 보이지만 RPLIDAR 진단 응답이 없습니다.",
     no_scan_data: "스캔 데이터가 들어오지 않았습니다. 모터 전원과 baudrate를 확인하세요.",
     no_scan_points: "스캔 명령 후 유효한 거리 점을 받지 못했습니다.",
+    disabled: "Dashboard serial scan은 비활성화되어 있습니다. ROS2 /scan을 사용하세요.",
   };
   return messages[stateName] || result?.message || fallback || "확인 실패";
 }
@@ -899,6 +950,7 @@ function serviceRows(services) {
     title: serviceLabel(key),
     sub: [item.host, item.port ? `:${item.port}` : "", item.state].filter(Boolean).join(" "),
     ok: Boolean(item.ok),
+    level: item.ok ? "ok" : "warn",
     value: item.ok ? "OK" : "대기",
   }));
 }
@@ -914,22 +966,44 @@ function sensorRows(sensors) {
       item.topic,
       item.frame_id ? `frame ${item.frame_id}` : "",
       item.link ? `link ${item.link}` : "",
+      item.owner ? `owner ${item.owner}` : "",
+      item.dashboard_access ? item.dashboard_access : "",
       item.state,
     ].filter(Boolean).join(" · "),
-    ok: Boolean(item.ok),
-    value: item.rate_hz ? `${Number(item.rate_hz).toFixed(1)} Hz` : "연결 전",
+    ok: Boolean(item.ok || (key === "lidar" && state.lidarLive.scanTopicAlive)),
+    level: sensorLevel(key, item),
+    value: sensorValue(key, item),
   }));
+}
+
+function sensorLevel(key, item) {
+  if (key === "lidar" && state.lidarLive.scanTopicAlive) return "ok";
+  if (item.ok) return "ok";
+  if (item.severity === "waiting" || item.state === "waiting_for_ros2") return "warn";
+  if (key === "lidar" && item.dashboard_access === "subscribe_only") return "warn";
+  return "bad";
+}
+
+function sensorValue(key, item) {
+  if (key === "lidar" && state.lidarLive.scanTopicAlive) return `${lidarSourceLabel(state.lidarLive.source)} live`;
+  if (item.rate_hz) return `${Number(item.rate_hz).toFixed(1)} Hz`;
+  if (key === "lidar" && item.dashboard_access === "subscribe_only") return "ROS2 대기";
+  return "연결 전";
 }
 
 function renderStatusRows(targetId, rows) {
   const target = $(targetId);
   if (!target) return;
+  const renderKey = JSON.stringify(rows.map((row) => [row.title, row.sub, row.value, row.ok, row.level]));
+  if (target.dataset.renderKey === renderKey) return;
+  target.dataset.renderKey = renderKey;
   target.innerHTML = "";
   for (const row of rows) {
+    const level = row.ok ? "ok" : row.level || "bad";
     const div = document.createElement("div");
     div.className = "status-item";
     div.innerHTML = `
-      <i class="status-dot ${row.ok ? "ok" : ""}"></i>
+      <i class="status-dot ${escapeHtml(level)}"></i>
       <span><strong>${escapeHtml(row.title)}</strong><small>${escapeHtml(row.sub || "")}</small></span>
       <b>${escapeHtml(row.value || "")}</b>
     `;
@@ -1144,12 +1218,6 @@ function initFanControls() {
       await postFanJson("/api/fan/preset", { preset: button.dataset.fanPreset });
     });
   });
-  $("fanCalibrateButton")?.addEventListener("click", async () => {
-    await postFanJson("/api/fan/calibrate", {});
-  });
-  $("fanTargetRpmButton")?.addEventListener("click", async () => {
-    await postFanJson("/api/fan/rpm", { target_rpm: Number($("fanTargetRpmInput")?.value || 0) });
-  });
 }
 
 async function postFanJson(path, payload) {
@@ -1174,6 +1242,8 @@ async function postFanJson(path, payload) {
 }
 
 function fanResultMessage(result) {
+  if (result.ok && result.action === "auto") return "자동 제어로 전환했습니다.";
+  if (result.ok && result.action === "manual") return "수동 제어로 전환했습니다.";
   if (result.ok) return result.message || result.state || "적용 완료";
   const writeError = result.write?.error || result.enable?.error || result.systemctl?.error;
   const stateText = result.message || result.state || result.systemctl?.state || "적용 실패";
@@ -1188,23 +1258,19 @@ function setFanStatus(kind, message) {
 }
 
 function renderFan(fan) {
-  text("fanRpmValue", fan.rpm === null || fan.rpm === undefined ? "--" : `${fan.rpm}`);
-  text("fanRpmText", fan.available ? "RPM feedback" : fan.message || "hwmon unavailable");
   text("fanTempValue", fmtTemp(fan.temperature_c));
-  text("fanTempText", fan.safety?.level || "thermal max");
-  text("fanModeValue", fan.mode || "--");
-  text("fanModeText", fan.nvfancontrol?.state || "nvfancontrol");
+  text("fanTempText", fanTemperatureLabel(fan));
   text("fanPwmValue", fan.pwm === null || fan.pwm === undefined ? "--" : `${fan.pwm}`);
-  text("fanPwmText", fan.available ? "manual value" : "0-255");
+  text("fanModeValue", fan.mode === "auto" ? "자동" : fan.mode === "manual" ? "수동" : "--");
+  text("fanModeText", fan.mode === "auto" ? "nvfancontrol 사용" : "PWM 직접 제어");
   text("fanTempChartValue", fmtTemp(fan.temperature_c));
-  text("fanRpmChartValue", fan.rpm === null || fan.rpm === undefined ? "--" : `${fan.rpm} RPM`);
-  text("fanActualRpmDetail", fan.rpm === null || fan.rpm === undefined ? "--" : `${fan.rpm} RPM`);
-  text("fanEnableDetail", fan.pwm_enable === null || fan.pwm_enable === undefined ? "--" : String(fan.pwm_enable));
-  text("fanPathDetail", fan.paths?.pwm || "--");
 
   const auto = $("fanAutoToggle");
-  if (auto) auto.checked = fan.mode === "auto";
-  const manualDisabled = !fan.available;
+  if (auto) {
+    auto.disabled = !fan.available;
+    auto.checked = fan.mode === "auto";
+  }
+  const manualDisabled = !fan.available || fan.mode === "auto";
   const slider = $("fanPwmSlider");
   if (slider) {
     slider.disabled = manualDisabled;
@@ -1212,53 +1278,29 @@ function renderFan(fan) {
   }
   text("fanSliderValue", fan.pwm === null || fan.pwm === undefined ? "0" : String(fan.pwm));
   document.querySelectorAll("[data-fan-preset]").forEach((button) => {
-    button.disabled = manualDisabled || (button.dataset.fanPreset === "off" && Number(fan.temperature_c || 0) >= 50);
+    button.disabled = manualDisabled;
   });
 
-  const calibration = fan.calibration || {};
-  const targetReady = Boolean(calibration.ok && fan.available && fan.mode !== "auto");
-  const targetToggle = $("fanTargetRpmToggle");
-  if (targetToggle) {
-    targetToggle.disabled = !calibration.ok;
-    targetToggle.checked = Boolean(calibration.ok);
-  }
-  const targetInput = $("fanTargetRpmInput");
-  const targetButton = $("fanTargetRpmButton");
-  if (targetInput) targetInput.disabled = !targetReady;
-  if (targetButton) targetButton.disabled = !targetReady;
-  text("fanTargetRpmHelp", calibration.ok ? "보정 테이블 사용 가능" : "팬 보정 후 사용 가능");
-  const calibrationMessage = calibration.ok
-    ? `보정 완료: ${calibration.points?.length || 0} points · max ${calibration.max_rpm || 0} RPM`
-    : "보정 데이터 없음";
-  const calibrationStatus = $("fanCalibrationStatus");
-  if (calibrationStatus) {
-    calibrationStatus.className = `test-result ${calibration.ok ? "ok" : "bad"}`;
-    calibrationStatus.textContent = calibrationMessage;
-  }
-  renderFanCalibrationList(calibration.points || []);
   if ($("fanControlStatus") && !$("fanControlStatus").classList.contains("testing")) {
-    setFanStatus(fan.available ? "ok" : "bad", fan.available ? (fan.safety?.message || "Fan hwmon ready") : (fan.message || "Fan hwmon unavailable"));
+    setFanStatus(fan.available ? "ok" : "bad", fan.available ? fanHoldLabel(fan) : "팬 제어 장치를 찾지 못했습니다.");
   }
 }
 
-function renderFanCalibrationList(points) {
-  const target = $("fanCalibrationList");
-  if (!target) return;
-  if (!points.length) {
-    target.innerHTML = `<div class="empty-state">보정 데이터가 없습니다.</div>`;
-    return;
+function fanTemperatureLabel(fan) {
+  const level = fan.safety?.level;
+  if (level === "critical") return "위험 온도";
+  if (level === "hot") return "높은 온도";
+  if (level === "warm") return "주의 온도";
+  if (level === "unknown") return "온도 확인 불가";
+  return "정상 범위";
+}
+
+function fanHoldLabel(fan) {
+  if (fan.mode === "auto") return "자동 제어 중";
+  if (fan.desired?.mode === "manual" && fan.desired?.pwm !== undefined) {
+    return `수동 PWM ${fan.desired.pwm} 유지 중`;
   }
-  target.innerHTML = "";
-  for (const point of points) {
-    const row = document.createElement("div");
-    row.className = "status-item";
-    row.innerHTML = `
-      <i class="status-dot ok"></i>
-      <span><strong>PWM ${escapeHtml(point.pwm)}</strong><small>calibration point</small></span>
-      <b>${escapeHtml(point.rpm)} RPM</b>
-    `;
-    target.append(row);
-  }
+  return `수동 PWM ${fan.pwm ?? "--"}`;
 }
 
 function renderChartReadouts(data) {
@@ -1308,18 +1350,17 @@ function renderChartReadouts(data) {
     { label: "Memory", value: fmtPercent(dockerMemPercent), sub: `${fmtBytes(docker.summary?.memory_usage)} / ${fmtBytes(docker.summary?.memory_limit)}`, color: colors.cyan },
   ]);
   renderReadout("fanTempReadout", [
-    { label: "Temp", value: fmtTemp(fan.temperature_c), sub: fan.safety?.level || "thermal", color: colors.amber },
-    { label: "Mode", value: fan.mode || "--", sub: fan.nvfancontrol?.state || "nvfancontrol", color: colors.cyan },
-  ]);
-  renderReadout("fanRpmReadout", [
-    { label: "RPM", value: fan.rpm === null || fan.rpm === undefined ? "--" : `${fan.rpm}`, sub: "feedback", color: colors.good },
-    { label: "PWM", value: fan.pwm === null || fan.pwm === undefined ? "--" : `${fan.pwm}`, sub: "0-255", color: colors.rose },
+    { label: "Temp", value: fmtTemp(fan.temperature_c), sub: fanTemperatureLabel(fan), color: colors.amber },
+    { label: "PWM", value: fan.pwm === null || fan.pwm === undefined ? "--" : `${fan.pwm}`, sub: "수동 출력", color: colors.rose },
   ]);
 }
 
 function renderReadout(targetId, rows) {
   const target = $(targetId);
   if (!target) return;
+  const renderKey = JSON.stringify(rows.map((row) => [row.label, row.value, row.sub, row.color]));
+  if (target.dataset.renderKey === renderKey) return;
+  target.dataset.renderKey = renderKey;
   target.innerHTML = "";
   for (const row of rows) {
     const div = document.createElement("div");
@@ -1640,7 +1681,6 @@ function drawCharts() {
     ],
     "/fan": [
       ["chartFanTemp", [{ values: state.visualHistory.fanTemp, color: colors.amber, max: Math.max(90, ...state.history.fanTemp.filter((v) => v !== null)) }]],
-      ["chartFanRpm", [{ values: normalizeSeries(state.visualHistory.fanRpm, state.history.fanRpm), color: colors.good, max: 100 }]],
     ],
     "/research": [],
   };
@@ -1833,17 +1873,13 @@ function drawLidarMap(result) {
 }
 
 function lidarRangeFor(result) {
-  const points = result?.ok ? result.points || [] : [];
-  const metrics = result?.metrics || {};
-  const maxPointRange = points.reduce((max, point) => Math.max(max, Number(point.distance_m) || 0), 0);
-  return Math.min(30, Math.max(1, (Number(metrics.max_distance_m) || maxPointRange || 1) * 1.15));
+  return clampLidarRange(state.lidarMap.range);
 }
 
 function lidarGridStep(range) {
   if (range <= 6) return 1;
   if (range <= 12) return 2;
-  if (range <= 20) return 5;
-  return 10;
+  return 5;
 }
 
 function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
@@ -1867,18 +1903,14 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.stroke();
   ctx.fillStyle = cssVar("--muted", "#a9b4d2");
   ctx.font = "900 11px Inter, Arial, sans-serif";
-  ctx.fillText("0° / FRONT", cx + 8, cy - radius + 14);
+  ctx.fillText("Front 0°", cx + 8, cy - radius + 14);
   ctx.fillText("90°", cx + radius - 34, cy + 18);
   ctx.fillText("180°", cx + 8, cy + radius - 8);
   ctx.fillText("270°", cx - radius + 8, cy - 8);
-  ctx.fillText("forward", cx + 8, cy - radius * 0.52);
-  ctx.fillText("right", cx + radius * 0.52, cy - 12);
   ctx.fillStyle = cssVar("--text", "#f7f9ff");
   ctx.beginPath();
   ctx.arc(cx, cy, 5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.font = "900 10px Inter, Arial, sans-serif";
-  ctx.fillText("LiDAR", cx + 8, cy + 15);
   ctx.restore();
 }
 

@@ -1,0 +1,27 @@
+FROM ros:iron-ros-base
+
+ARG SLLIDAR_ROS2_REPO=https://github.com/Slamtec/sllidar_ros2.git
+ARG SLLIDAR_ROS2_REF=34300099fadfc772965962dec837bf436706188f
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    python3-colcon-common-extensions \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/sllidar_ros2_ws
+
+RUN mkdir -p src/sllidar_ros2 \
+  && git -C src/sllidar_ros2 init \
+  && git -C src/sllidar_ros2 remote add origin "${SLLIDAR_ROS2_REPO}" \
+  && git -C src/sllidar_ros2 fetch --depth=1 origin "${SLLIDAR_ROS2_REF}" \
+  && git -C src/sllidar_ros2 checkout --detach FETCH_HEAD \
+  && . /opt/ros/iron/setup.sh \
+  && colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+CMD ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && source /opt/sllidar_ros2_ws/install/setup.bash && ros2 launch sllidar_ros2 sllidar_s2_launch.py serial_port:=${LIDAR_SERIAL_PORT:-/dev/ttyUSB0} serial_baudrate:=${LIDAR_SERIAL_BAUDRATE:-1000000} frame_id:=${LIDAR_FRAME_ID:-laser} scan_mode:=${LIDAR_SCAN_MODE:-DenseBoost}"]

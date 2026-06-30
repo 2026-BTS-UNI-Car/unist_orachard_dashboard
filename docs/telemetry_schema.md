@@ -29,7 +29,7 @@ CPU, 메모리, 디스크, 온도는 서버가 Linux 시스템에서 직접 읽�
 
 ## connection
 
-`connection`은 대시보드 서버가 직접 확인한 연결 상태입니다. 현재 LiDAR는 Jetson에서 CP2102N USB-UART 장치로 인식되었고, RPLIDAR `GET_INFO` 응답은 `1,000,000 bps`에서 확인되었습니다.
+`connection`은 대시보드 서버가 직접 확인한 연결 상태입니다. 현재 LiDAR는 Jetson에서 CP2102N USB-UART 장치로 인식되며, 운영 모드에서는 ROS2 driver만 serial port를 열고 `/scan`을 publish합니다.
 
 ```json
 {
@@ -38,32 +38,23 @@ CPU, 메모리, 디스크, 온도는 서버가 Linux 시스템에서 직접 읽�
     "state": "detected",
     "device": "/dev/ttyUSB0",
     "by_id": "/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_...",
-    "test_mode": "manual_short_probe",
+    "test_mode": "ros2_subscribe_only",
+    "conflict_policy": "Dashboard does not open the LiDAR serial port; ROS2 driver owns it and publishes /scan",
     "last_test": {
       "ok": true,
-      "protocol": "RPLIDAR",
-      "baud": 1000000,
-      "info": {"model_id": 113, "firmware": "1.2", "hardware": 18},
-      "health": {"status": "good", "error_code": 0}
+      "state": "device_ready",
+      "message": "LiDAR device is visible; waiting for ROS2 /scan"
     },
     "last_scan": {
-      "ok": true,
-      "protocol": "RPLIDAR normal scan",
-      "baud": 1000000,
-      "duration_s": 3.0,
-      "metrics": {
-        "points": 476,
-        "rendered_points": 476,
-        "coverage_deg": 360.0,
-        "min_distance_m": 0.12,
-        "max_distance_m": 4.8
-      }
+      "ok": false,
+      "state": "disabled",
+      "message": "Serial scan is disabled; use ROS2 /scan WebSocket"
     }
   }
 }
 ```
 
-대시보드는 LiDAR 포트를 직접 상시 점유하지 않습니다. 정보 확인 버튼은 포트가 비어 있을 때만 `GET_INFO`/`GET_HEALTH`를 수행합니다. 실시간 지도는 `ros2-lidar-bridge` 컨테이너가 제공하는 WebSocket을 사용하며, bridge는 ROS2 `/scan`을 우선 사용하고 ROS2가 아직 없을 때만 serial live fallback을 수행합니다.
+대시보드는 LiDAR 포트를 열지 않습니다. 상태 새로고침 버튼은 장치 표시와 holder만 확인합니다. 실시간 지도는 `ros2-lidar-bridge` 컨테이너가 제공하는 WebSocket을 사용하며, bridge는 ROS2 `/scan`만 구독합니다.
 
 ## rover
 

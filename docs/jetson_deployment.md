@@ -29,7 +29,7 @@ Cloudflare Tunnel을 통해 `https://bts.sarihub.com`으로 접속합니다. Doc
 `docker-compose.yml`의 `restart: unless-stopped` 설정으로 Docker 서비스 재시작 또는 Jetson 재부팅 후 컨테이너가 자동으로 다시 올라옵니다. Compose는 다음 컨테이너를 함께 관리합니다.
 
 - `unist-orachard-dashboard`: HTTP/API/UI, `/ws/lidar` proxy, Fan Control
-- `unist-orachard-ros2-lidar-bridge`: ROS2 Iron `/scan` WebSocket bridge, serial live fallback
+- `unist-orachard-ros2-lidar-bridge`: ROS2 Iron `/scan` WebSocket bridge, subscribe-only
 
 로그 확인:
 
@@ -81,14 +81,14 @@ LiDAR bridge는 Jetson 내부에서 `ws://127.0.0.1:8765/ws/lidar`를 열고, �
 
 Silicon Labs CP210x VCP 릴리즈 노트는 구형 Linux용 out-of-tree 드라이버 안내에 가깝습니다. 현재 Jetson은 CP2102N USB-UART를 커널 내장 `cp210x`로 인식하므로, 별도 드라이버 설치 없이 `/dev/ttyUSB0` 장치 접근과 Docker 권한이 핵심입니다.
 
-`ros2-lidar-bridge`는 ROS2 `/scan`을 우선 사용합니다. 아직 ROS2 driver가 준비되지 않은 개발 단계에서는 `/dev/ttyUSB0` serial live fallback으로 WebSocket 지도 데이터를 표시합니다. ROS2 `/scan`이 살아나면 ROS2 데이터를 우선합니다. 현재 RPLIDAR S2 serial fallback은 기본 2.5초 scan cycle에서 정상 point 수신을 확인했습니다.
+`ros2-lidar-bridge`는 ROS2 `/scan`만 구독합니다. ROS2 driver가 꺼져 있으면 Dashboard 지도는 대기 상태가 정상이며, bridge나 dashboard가 `/dev/ttyUSB0`을 대신 열지 않습니다.
 
 1. `/dev/ttyUSB*`, `/dev/serial/by-id/*` 후보 확인
 2. `/proc/*/fd`를 스캔해 포트 점유 프로세스 확인
-3. 점유 중이면 테스트 중단
-4. 정보 확인은 RPLIDAR `GET_INFO`/`GET_HEALTH`만 요청
-5. 실시간 지도는 WebSocket bridge를 통해 수신
-6. serial fallback은 짧은 scan cycle마다 STOP 명령 후 포트를 닫음
+3. ROS2 driver가 serial port를 단독 소유
+4. ROS2 driver가 `/scan` publish
+5. bridge가 `/scan`을 WebSocket으로 변환
+6. Dashboard가 같은 origin의 `/ws/lidar`로 수신
 
 실시간 LiDAR 지도 실행:
 

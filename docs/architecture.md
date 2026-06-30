@@ -36,9 +36,9 @@ Browser
 - `GET /api/system`: CPU, Memory, GPU, Thermal, Disk
 - `GET /api/network`: interface, IP, RX/TX throughput
 - `GET /api/docker`: Docker engine, container resource
-- `POST /api/lidar/test`: 수동 RPLIDAR Info/Health 프로브
+- `POST /api/lidar/test`: serial port를 열지 않는 LiDAR 장치/소유 상태 확인
 
-`POST /api/lidar/test`는 예외적으로 수동 테스트 버튼에서만 사용합니다. 이 API는 스캔을 시작하지 않고 RPLIDAR `GET_INFO`/`GET_HEALTH`만 짧게 요청한 뒤 포트를 닫습니다. 포트가 ROS2 driver 등 다른 프로세스에 의해 점유 중이면 실행하지 않습니다.
+`POST /api/lidar/test`는 Dashboard가 LiDAR serial port를 열지 않는다는 운영 원칙을 지킵니다. 이 API는 `/dev/ttyUSB*`, `/dev/serial/by-id/*`, `/proc/*/fd` 기반 holder 정보만 갱신합니다. 실제 scan은 ROS2 driver가 `/scan`으로 publish하고, Dashboard는 WebSocket bridge를 통해 구독합니다.
 
 Connection 페이지의 지도는 `/ws/lidar` WebSocket만 사용합니다. 이 경로는 dashboard server가 `ros2-lidar-bridge`의 `ws://127.0.0.1:8765/ws/lidar`로 프록시합니다.
 

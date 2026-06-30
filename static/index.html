@@ -169,11 +169,6 @@
               <strong id="connectionLidarHealth">--</strong>
               <small id="connectionLidarHealthText">--</small>
             </article>
-            <article class="kpi">
-              <span>ROS Guard</span>
-              <strong id="connectionLidarGuard">--</strong>
-              <small id="connectionLidarGuardText">--</small>
-            </article>
           </section>
 
           <section class="dashboard-grid">
@@ -183,7 +178,7 @@
                   <p class="eyebrow">Serial check</p>
                   <h2>RPLIDAR 상태 확인</h2>
                 </div>
-                <button id="lidarTestButton" class="action-button" type="button">정보 확인</button>
+                <button id="lidarTestButton" class="action-button" type="button">상태 새로고침</button>
               </div>
               <div id="lidarTestResult" class="test-result">대기 중</div>
               <div class="probe-grid">
@@ -205,12 +200,7 @@
                 <article class="probe-card">
                   <span>Last Check</span>
                   <strong id="lidarLastTestDetail">--</strong>
-                  <small>info / health</small>
-                </article>
-                <article class="probe-card wide">
-                  <span>ROS Guard</span>
-                  <strong id="lidarPolicyDetail">--</strong>
-                  <small>port conflict policy</small>
+                  <small>status refresh</small>
                 </article>
               </div>
             </article>
@@ -226,23 +216,23 @@
                   <button id="lidarDownloadButton" class="action-button secondary" type="button" disabled>현재 지도 다운로드</button>
                 </div>
               </div>
-              <div class="notice-panel">
-                실시간 모드에서는 ROS2 /scan을 우선 사용하고, ROS2가 아직 준비되지 않았을 때만 bridge 컨테이너가 serial live fallback으로 지도 데이터를 표시합니다.
-              </div>
               <div id="lidarScanResult" class="test-result">실시간 연결 대기 중</div>
-              <div class="live-status-grid">
-                <div><span>LiDAR Device</span><b id="lidarLiveDevice">--</b></div>
-                <div><span>Source</span><b id="lidarLiveTopic">대기</b></div>
-                <div><span>WebSocket</span><b id="lidarLiveSocket">disconnected</b></div>
-                <div><span>Last Scan</span><b id="lidarLiveAge">--</b></div>
-                <div><span>Points</span><b id="lidarLivePoints">--</b></div>
-              </div>
               <div class="lidar-map-frame">
                 <div class="lidar-map-stage">
                   <canvas id="lidarScanCanvas" class="lidar-map" width="720" height="720"></canvas>
-                  <div id="lidarMapHint" class="map-hint">화면 위쪽이 LiDAR 정면(0°)입니다. 원형 그리드는 거리(m)를 나타냅니다.</div>
                 </div>
                 <div>
+                  <div class="map-control">
+                    <div>
+                      <span>Range</span>
+                      <strong id="lidarRangeValue">25 m</strong>
+                    </div>
+                    <div class="map-zoom-buttons" aria-label="LiDAR 지도 범위">
+                      <button type="button" data-lidar-range="out">−</button>
+                      <button type="button" data-lidar-range="reset">25m</button>
+                      <button type="button" data-lidar-range="in">+</button>
+                    </div>
+                  </div>
                   <div id="lidarScanStats" class="chart-readout"></div>
                   <label class="toggle-row">
                     <input id="lidarAccumulateToggle" type="checkbox" />
@@ -428,85 +418,50 @@
           <header class="page-head">
             <p class="eyebrow">Jetson cooling</p>
             <h1>Fan Control</h1>
-            <p>nvfancontrol 자동 제어와 수동 PWM 제어를 전환하고, 팬 RPM과 온도를 실시간으로 확인합니다.</p>
+            <p>Jetson 온도를 확인하면서 팬 PWM을 직접 조정합니다.</p>
           </header>
 
-          <section class="kpi-grid">
-            <article class="kpi"><span>Fan RPM</span><strong id="fanRpmValue">--</strong><small id="fanRpmText">feedback</small></article>
+          <section class="fan-control-grid">
             <article class="kpi"><span>Temperature</span><strong id="fanTempValue">--</strong><small id="fanTempText">thermal max</small></article>
-            <article class="kpi"><span>Mode</span><strong id="fanModeValue">--</strong><small id="fanModeText">nvfancontrol</small></article>
-            <article class="kpi"><span>PWM</span><strong id="fanPwmValue">--</strong><small id="fanPwmText">0-255</small></article>
+            <article class="panel fan-pwm-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Manual PWM</p>
+                  <h2>팬 출력</h2>
+                </div>
+                <div class="fan-head-actions">
+                  <strong id="fanPwmValue">--</strong>
+                  <label class="fan-mode-toggle" for="fanAutoToggle">
+                    <input id="fanAutoToggle" type="checkbox" />
+                    <span class="fan-toggle-track"><i></i></span>
+                    <span class="fan-toggle-copy">
+                      <b id="fanModeValue">--</b>
+                      <small id="fanModeText">nvfancontrol</small>
+                    </span>
+                  </label>
+                </div>
+              </div>
+              <div id="fanControlStatus" class="test-result">상태 확인 중</div>
+              <label class="slider-row fan-slider-row">
+                <span>PWM</span>
+                <input id="fanPwmSlider" type="range" min="0" max="255" step="1" value="0" />
+                <b id="fanSliderValue">0</b>
+              </label>
+              <div class="preset-grid compact">
+                <button type="button" data-fan-preset="quiet">80</button>
+                <button type="button" data-fan-preset="normal">160</button>
+                <button type="button" data-fan-preset="max">255</button>
+              </div>
+            </article>
           </section>
 
           <section class="dashboard-grid">
-            <article class="panel chart-panel">
+            <article class="panel chart-panel wide">
               <div class="panel-head"><h2>Fan Temperature</h2><strong id="fanTempChartValue">--</strong></div>
               <div class="chart-frame">
                 <canvas id="chartFanTemp" class="resource-chart" width="900" height="260"></canvas>
                 <div id="fanTempReadout" class="chart-readout"></div>
               </div>
-            </article>
-            <article class="panel chart-panel">
-              <div class="panel-head"><h2>Fan RPM</h2><strong id="fanRpmChartValue">--</strong></div>
-              <div class="chart-frame">
-                <canvas id="chartFanRpm" class="resource-chart" width="900" height="260"></canvas>
-                <div id="fanRpmReadout" class="chart-readout"></div>
-              </div>
-            </article>
-          </section>
-
-          <section class="dashboard-grid">
-            <article class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Control</p>
-                  <h2>제어 모드</h2>
-                </div>
-                <label class="switch-control">
-                  <input id="fanAutoToggle" type="checkbox" />
-                  <span>자동 제어</span>
-                  <small>nvfancontrol</small>
-                </label>
-              </div>
-              <div id="fanControlStatus" class="test-result">상태 확인 중</div>
-              <div class="preset-grid">
-                <button type="button" data-fan-preset="off">끄기</button>
-                <button type="button" data-fan-preset="quiet">조용히</button>
-                <button type="button" data-fan-preset="normal">보통</button>
-                <button type="button" data-fan-preset="max">최고 출력</button>
-              </div>
-              <label class="slider-row">
-                <span>Manual PWM</span>
-                <input id="fanPwmSlider" type="range" min="0" max="255" step="1" value="0" />
-                <b id="fanSliderValue">0</b>
-              </label>
-              <dl class="detail-list compact">
-                <div><dt>Actual RPM</dt><dd id="fanActualRpmDetail">--</dd></div>
-                <div><dt>Enable</dt><dd id="fanEnableDetail">--</dd></div>
-                <div><dt>Path</dt><dd id="fanPathDetail">--</dd></div>
-              </dl>
-            </article>
-
-            <article class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Calibration</p>
-                  <h2>PWM-RPM 보정</h2>
-                </div>
-                <button id="fanCalibrateButton" class="action-button" type="button">팬 보정</button>
-              </div>
-              <label class="switch-control inline">
-                <input id="fanTargetRpmToggle" type="checkbox" disabled />
-                <span>목표 RPM 모드</span>
-                <small id="fanTargetRpmHelp">팬 보정 후 사용 가능</small>
-              </label>
-              <label class="slider-row">
-                <span>Target RPM</span>
-                <input id="fanTargetRpmInput" type="number" min="0" step="100" value="3000" disabled />
-                <button id="fanTargetRpmButton" class="action-button secondary" type="button" disabled>적용</button>
-              </label>
-              <div id="fanCalibrationStatus" class="test-result">보정 상태 확인 중</div>
-              <div id="fanCalibrationList" class="status-list"></div>
             </article>
           </section>
         </section>

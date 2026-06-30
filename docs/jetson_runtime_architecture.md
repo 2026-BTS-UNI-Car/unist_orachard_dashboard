@@ -7,8 +7,8 @@ Jetson 실제 운영은 Docker Compose가 두 컨테이너를 관리합니다.
 ```text
 unist-orachard-ros2-lidar-bridge
   -> ROS2 Iron container
-  -> subscribes /scan when ROS2 driver is running
-  -> uses serial live fallback when /scan is not available yet
+  -> subscribes /scan only
+  -> does not mount or open /dev/ttyUSB0
   -> serves ws://0.0.0.0:8765/ws/lidar
 
 unist-orachard-dashboard

@@ -46,6 +46,30 @@ services:
       retries: 3
       start_period: 10s
 
+  ros2-lidar-driver:
+    build:
+      context: .
+      dockerfile: Dockerfile.lidar_driver
+    image: unist-orachard-ros2-lidar-driver:latest
+    container_name: unist-orachard-ros2-lidar-driver
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    privileged: true
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      LIDAR_SERIAL_PORT: "${LIDAR_SERIAL_PORT:-/dev/ttyUSB0}"
+      LIDAR_SERIAL_BAUDRATE: "${LIDAR_SERIAL_BAUDRATE:-1000000}"
+      LIDAR_FRAME_ID: "${LIDAR_FRAME_ID:-laser}"
+      LIDAR_SCAN_MODE: "${LIDAR_SCAN_MODE:-DenseBoost}"
+    volumes:
+      - /dev:/dev
+    device_cgroup_rules:
+      - "c 166:* rwm"
+      - "c 188:* rwm"
+      - "c 204:* rwm"
+      - "c 240:* rwm"
+
   ros2-lidar-bridge:
     build:
       context: .
@@ -54,24 +78,13 @@ services:
     container_name: unist-orachard-ros2-lidar-bridge
     restart: unless-stopped
     network_mode: host
-    privileged: true
+    ipc: host
+    depends_on:
+      - ros2-lidar-driver
     environment:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
-      LIDAR_BRIDGE_SOURCE: "${LIDAR_BRIDGE_SOURCE:-auto}"
-      LIDAR_DEV_ROOT: "/host-dev"
-      LIDAR_BAUDS: "1000000,460800,256000,115200"
-      LIDAR_SCAN_DURATION_S: "${LIDAR_SCAN_DURATION_S:-2.5}"
+      LIDAR_BRIDGE_SOURCE: "${LIDAR_BRIDGE_SOURCE:-ros2}"
       LIDAR_SCAN_MAX_POINTS: "${LIDAR_SCAN_MAX_POINTS:-900}"
-      LIDAR_SERIAL_POLL_S: "${LIDAR_SERIAL_POLL_S:-0.15}"
-      LIDAR_ROS_FALLBACK_S: "${LIDAR_ROS_FALLBACK_S:-2.5}"
-    volumes:
-      - /dev:/host-dev
-    device_cgroup_rules:
-      - "c 166:* rwm"
-      - "c 188:* rwm"
-      - "c 204:* rwm"
-      - "c 240:* rwm"
-    pid: host
     command:
       - /bin/bash
       - -lc
@@ -83,4 +96,4 @@ services:
           --topic /scan \
           --source "$${LIDAR_BRIDGE_SOURCE}" \
           --max-points "$${LIDAR_SCAN_MAX_POINTS}" \
-          --max-hz 8
+          --max-hz 10

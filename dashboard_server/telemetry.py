@@ -27,7 +27,6 @@ DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_LIDAR_BAUDS = [1_000_000, 460_800, 256_000, 115_200]
 DEFAULT_LIDAR_SCAN_DURATION_S = 3.0
 DEFAULT_LIDAR_SCAN_MAX_POINTS = 1800
-DEFAULT_FAN_CALIBRATION_FILE = ROOT / "data" / "fan_calibration.json"
 DEFAULT_FAN_STATE_FILE = ROOT / "data" / "fan_state.json"
 RPLIDAR_STOP = bytes([0xA5, 0x25])
 RPLIDAR_SCAN = bytes([0xA5, 0x20])
@@ -287,9 +286,9 @@ class TelemetryProvider:
             "by_id": selected["by_id"] if selected else None,
             "driver_hint": self._lidar_driver_hint(selected["display_path"] if selected else ""),
             "holders": holders,
-            "test_supported": bool(present),
-            "test_mode": "manual_short_probe",
-            "conflict_policy": "포트가 점유 중이면 테스트를 실행하지 않고, 버튼 테스트 중에만 잠깐 포트를 엽니다.",
+            "test_supported": False,
+            "test_mode": "ros2_subscribe_only",
+            "conflict_policy": "Dashboard는 LiDAR serial port를 열지 않습니다. ROS2 driver가 포트를 단독 소유하고 /scan을 발행합니다.",
             "last_test": self._last_lidar_test,
             "last_scan": self._last_lidar_scan,
         }
@@ -297,44 +296,41 @@ class TelemetryProvider:
     def lidar_test(self) -> dict[str, Any]:
         status = self.lidar_status()
         if not status["present"]:
-            return {"ok": False, "state": "not_found", "message": "LiDAR serial device was not found.", "status": status}
-        if status["holders"]:
-            return {
+            result = {
                 "ok": False,
-                "state": "in_use",
-                "message": "LiDAR device is currently held by another process; skipped to avoid ROS2/driver conflicts.",
+                "state": "not_found",
+                "message": "LiDAR 장치를 찾지 못했습니다. USB 연결과 전원을 확인하세요.",
                 "status": status,
             }
-        lock_path = Path(os.environ.get("LIDAR_TEST_LOCK", "/tmp/ubts-dashboard-lidar-test.lock"))
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("w", encoding="utf-8") as lock_file:
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return {"ok": False, "state": "busy", "message": "Another LiDAR test is already running.", "status": status}
-            result = self._rplidar_probe(status["open_path"])
+            self._last_lidar_test = result
+            return result
+        if status["holders"]:
+            result = {
+                "ok": True,
+                "state": "ros2_owned",
+                "message": "LiDAR 포트가 다른 프로세스에 의해 열려 있습니다. ROS2 driver가 소유 중이면 정상입니다.",
+                "status": status,
+            }
+            self._last_lidar_test = result
+            return result
+        result = {
+            "ok": True,
+            "state": "device_ready",
+            "message": "LiDAR 장치는 보이지만 Dashboard는 포트를 열지 않습니다. ROS2 driver가 /scan을 발행하면 지도가 표시됩니다.",
+            "status": status,
+        }
         self._last_lidar_test = result
         return result
 
     def lidar_scan(self) -> dict[str, Any]:
         status = self.lidar_status()
-        if not status["present"]:
-            return {"ok": False, "state": "not_found", "message": "LiDAR serial device was not found.", "status": status}
-        if status["holders"]:
-            return {
-                "ok": False,
-                "state": "in_use",
-                "message": "LiDAR device is currently held by another process; skipped to avoid ROS2/driver conflicts.",
-                "status": status,
-            }
-        lock_path = Path(os.environ.get("LIDAR_TEST_LOCK", "/tmp/ubts-dashboard-lidar-test.lock"))
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("w", encoding="utf-8") as lock_file:
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return {"ok": False, "state": "busy", "message": "Another LiDAR test is already running.", "status": status}
-            result = self._rplidar_scan(status["open_path"])
+        result = {
+            "ok": False,
+            "state": "disabled",
+            "message": "Dashboard serial scan은 비활성화했습니다. ROS2 driver가 /scan을 발행하고 WebSocket bridge가 이를 구독해야 합니다.",
+            "status": status,
+            "points": [],
+        }
         self._last_lidar_scan = result
         return result
 
@@ -346,14 +342,13 @@ class TelemetryProvider:
         hwmon = self._fan_hwmon()
         nvfancontrol = self._fan_nvfancontrol_status()
         temperature_c = self._max_temperature()
-        calibration = self.fan_calibration()
         desired = self._fan_desired_state()
         if not hwmon:
             return {
                 "ok": False,
                 "available": False,
                 "state": "not_found",
-                "message": "Jetson pwm fan hwmon was not found.",
+                "message": "Jetson 팬 제어 장치를 찾지 못했습니다.",
                 "mode": "auto" if nvfancontrol.get("active") else "unknown",
                 "nvfancontrol": nvfancontrol,
                 "temperature_c": temperature_c,
@@ -361,19 +356,20 @@ class TelemetryProvider:
                 "pwm": None,
                 "pwm_enable": None,
                 "paths": {},
-                "calibration": calibration,
-                "target_rpm_available": bool(calibration.get("ok")),
                 "desired": desired,
             }
         pwm = _safe_int(_read_text(hwmon.get("pwm_path")))
         pwm_enable = _safe_int(_read_text(hwmon.get("enable_path")))
         rpm = _safe_int(_read_text(hwmon.get("rpm_path")))
         mode = "auto" if nvfancontrol.get("active") else "manual"
+        if not desired and mode == "manual" and pwm is not None:
+            self._save_fan_desired_state({"mode": "manual", "pwm": pwm, "adopted": True})
+            desired = self._fan_desired_state()
         return {
             "ok": True,
             "available": True,
             "state": "ready",
-            "message": "Fan hwmon is available.",
+            "message": "팬 제어 장치를 확인했습니다.",
             "mode": mode,
             "nvfancontrol": nvfancontrol,
             "temperature_c": temperature_c,
@@ -390,8 +386,6 @@ class TelemetryProvider:
             },
             "presets": self._fan_presets(),
             "safety": self._fan_safety(temperature_c),
-            "calibration": calibration,
-            "target_rpm_available": bool(calibration.get("ok")),
             "desired": desired,
         }
 
@@ -403,7 +397,7 @@ class TelemetryProvider:
             return {"ok": bool(result.get("ok")), "action": "auto", "systemctl": result, "status": status}
         hwmon = self._fan_hwmon()
         if not hwmon:
-            return {"ok": False, "state": "not_found", "message": "Fan hwmon was not found.", "status": self.fan_status()}
+            return {"ok": False, "state": "not_found", "message": "팬 제어 장치를 찾지 못했습니다.", "status": self.fan_status()}
         stop = self._fan_systemctl("stop")
         enable = self._write_fan_value(hwmon.get("enable_path"), "1")
         current = self._fan_status_snapshot()
@@ -415,7 +409,7 @@ class TelemetryProvider:
     def set_fan_pwm(self, pwm: Any, preset: str | None = None) -> dict[str, Any]:
         hwmon = self._fan_hwmon()
         if not hwmon:
-            return {"ok": False, "state": "not_found", "message": "Fan hwmon was not found.", "status": self.fan_status()}
+            return {"ok": False, "state": "not_found", "message": "팬 제어 장치를 찾지 못했습니다.", "status": self.fan_status()}
         try:
             value = int(pwm)
         except (TypeError, ValueError):
@@ -447,108 +441,6 @@ class TelemetryProvider:
         result = self.set_fan_pwm(presets[preset], preset=preset)
         result["preset"] = preset
         return result
-
-    def fan_calibration(self) -> dict[str, Any]:
-        path = self._fan_calibration_path()
-        data = _load_json(path)
-        if not data:
-            return {"ok": False, "state": "missing", "path": str(path), "points": []}
-        points = data.get("points") or []
-        return {"ok": bool(points), "state": "ready" if points else "empty", "path": str(path), **data}
-
-    def fan_calibration_status(self) -> dict[str, Any]:
-        calibration = self.fan_calibration()
-        status = self.fan_status()
-        return {
-            "ok": calibration.get("ok", False),
-            "calibration": calibration,
-            "target_rpm_available": bool(calibration.get("ok")),
-            "fan_available": status.get("available", False),
-        }
-
-    def calibrate_fan(self) -> dict[str, Any]:
-        status = self.fan_status()
-        if not status.get("available"):
-            return {"ok": False, "state": "not_found", "message": "Fan hwmon is required for calibration.", "status": status}
-        if status.get("mode") == "auto":
-            return {"ok": False, "state": "auto_active", "message": "Switch to manual mode before calibration.", "status": status}
-        hwmon = self._fan_hwmon()
-        steps = [0, 40, 60, 80, 100, 128, 160, 192, 224, 255]
-        settle_s = max(0.0, float(os.environ.get("FAN_CALIBRATION_SETTLE_S", "2.0")))
-        sample_s = max(0.1, float(os.environ.get("FAN_CALIBRATION_SAMPLE_S", "1.0")))
-        points = []
-        for pwm in steps:
-            safety = self._fan_pwm_safety(pwm, self._max_temperature())
-            if not safety["ok"]:
-                return {"ok": False, **safety, "points": points}
-            self._write_fan_value(hwmon.get("enable_path"), "1")
-            write = self._write_fan_value(hwmon.get("pwm_path"), str(pwm))
-            if not write.get("ok"):
-                return {"ok": False, "state": "write_failed", "write": write, "points": points}
-            time.sleep(settle_s)
-            samples = []
-            deadline = time.time() + sample_s
-            while time.time() < deadline:
-                rpm = _safe_int(_read_text(hwmon.get("rpm_path")))
-                if rpm is not None:
-                    samples.append(rpm)
-                time.sleep(0.2)
-            rpm_avg = round(sum(samples) / len(samples)) if samples else 0
-            points.append({"pwm": pwm, "rpm": rpm_avg})
-        max_rpm = max((row["rpm"] for row in points), default=0)
-        spinning = [row["pwm"] for row in points if row["rpm"] > 0]
-        payload = {
-            "created_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
-            "board": "jetson",
-            "fan_hwmon_name": hwmon.get("name") or "pwmfan",
-            "points": points,
-            "min_spin_pwm": min(spinning) if spinning else None,
-            "max_rpm": max_rpm,
-        }
-        path = self._fan_calibration_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        return {"ok": True, "state": "calibrated", "calibration": payload, "status": self.fan_status()}
-
-    def set_fan_target_rpm(self, target_rpm: Any) -> dict[str, Any]:
-        calibration = self.fan_calibration()
-        if not calibration.get("ok"):
-            return {"ok": False, "state": "calibration_missing", "message": "Run fan calibration before target RPM mode."}
-        try:
-            target = int(target_rpm)
-        except (TypeError, ValueError):
-            target = 0
-        pwm = self.estimate_pwm_from_rpm(target, calibration)
-        result = self.set_fan_pwm(pwm)
-        result["target_rpm"] = target
-        result["estimated_pwm"] = pwm
-        return result
-
-    def estimate_rpm_from_pwm(self, pwm: int, calibration: dict[str, Any] | None = None) -> int | None:
-        table = sorted((calibration or self.fan_calibration()).get("points") or [], key=lambda row: row.get("pwm", 0))
-        if not table:
-            return None
-        pwm = max(0, min(255, int(pwm)))
-        return int(round(self._interpolate(table, "pwm", "rpm", pwm)))
-
-    def estimate_pwm_from_rpm(self, target_rpm: int, calibration: dict[str, Any] | None = None) -> int:
-        table = sorted((calibration or self.fan_calibration()).get("points") or [], key=lambda row: row.get("rpm", 0))
-        if not table:
-            return 255
-        max_rpm = max(row.get("rpm", 0) for row in table)
-        rpm = max(0, min(max_rpm, int(target_rpm)))
-        return max(0, min(255, int(round(self._interpolate(table, "rpm", "pwm", rpm)))))
-
-    def _interpolate(self, rows: list[dict[str, Any]], x_key: str, y_key: str, x_value: float) -> float:
-        if x_value <= rows[0].get(x_key, 0):
-            return float(rows[0].get(y_key, 0))
-        for left, right in zip(rows, rows[1:]):
-            lx = float(left.get(x_key, 0))
-            rx = float(right.get(x_key, 0))
-            if lx <= x_value <= rx and rx > lx:
-                ratio = (x_value - lx) / (rx - lx)
-                return float(left.get(y_key, 0)) + ratio * (float(right.get(y_key, 0)) - float(left.get(y_key, 0)))
-        return float(rows[-1].get(y_key, 0))
 
     def _fan_hwmon(self) -> dict[str, Any] | None:
         if self._fan_hwmon_cache:
@@ -665,7 +557,7 @@ class TelemetryProvider:
             return {"level": "hot", "message": "75°C 이상에서는 낮은 PWM 설정을 제한합니다."}
         if temperature_c >= 50:
             return {"level": "warm", "message": "50°C 이상에서는 fan off preset을 제한합니다."}
-        return {"level": "normal", "message": "Fan control is within normal safety bounds."}
+        return {"level": "normal", "message": "현재 온도는 정상 범위입니다."}
 
     def _fan_pwm_safety(self, pwm: int, temperature_c: float | None) -> dict[str, Any]:
         if temperature_c is None:
@@ -675,11 +567,6 @@ class TelemetryProvider:
         if temperature_c >= 50 and pwm == 0:
             return {"ok": False, "state": "temperature_guard", "message": "50°C 이상에서는 팬 끄기를 적용하지 않습니다."}
         return {"ok": True, "state": "safe"}
-
-    def _fan_calibration_path(self) -> Path:
-        raw = os.environ.get("FAN_CALIBRATION_FILE", str(DEFAULT_FAN_CALIBRATION_FILE))
-        path = Path(raw)
-        return path if path.is_absolute() else ROOT / path
 
     def _fan_state_path(self) -> Path:
         raw = os.environ.get("FAN_STATE_FILE", str(DEFAULT_FAN_STATE_FILE))
@@ -1188,7 +1075,7 @@ class TelemetryProvider:
                 {"path": "/system", "label": "System", "summary": "CPU, Memory, GPU, Thermal, Disk"},
                 {"path": "/network", "label": "Network", "summary": "IP, interface, RX/TX throughput"},
                 {"path": "/docker", "label": "Docker", "summary": "Docker engine and containers"},
-                {"path": "/fan", "label": "Fan Control", "summary": "Jetson cooling, nvfancontrol, PWM/RPM"},
+                {"path": "/fan", "label": "Fan Control", "summary": "Jetson 온도와 수동 PWM"},
                 {"path": "/research", "label": "Research", "summary": "연구 일정과 ROS2 연결 상태"},
                 {"path": "/docs", "label": "Docs", "summary": "운영 문서와 Markdown viewer"},
             ]
@@ -1209,11 +1096,14 @@ class TelemetryProvider:
         return {
             "lidar": {
                 "ok": False,
-                "state": "not_connected",
+                "state": "waiting_for_ros2",
+                "severity": "waiting",
                 "topic": "/scan",
                 "frame_id": "laser",
                 "link": "laser",
                 "parent_link": "base_link",
+                "owner": "ros2_driver",
+                "dashboard_access": "subscribe_only",
             },
             "camera": {
                 "ok": False,

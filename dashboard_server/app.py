@@ -53,7 +53,7 @@ DOCS_CATALOG = [
         "slug": "fan-control",
         "title": "Fan Control",
         "category": "Hardware",
-        "summary": "nvfancontrol 자동 제어, 수동 PWM, RPM 보정, 목표 RPM 모드",
+        "summary": "Jetson 온도 확인과 수동 PWM 유지",
         "file": "fan_control.md",
     },
     {
@@ -103,11 +103,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/fan/preset":
             payload = self._read_json_body()
             self._send_json(self.provider.set_fan_preset(str(payload.get("preset", ""))))
-        elif path == "/api/fan/calibrate":
-            self._send_json(self.provider.calibrate_fan())
-        elif path == "/api/fan/rpm":
-            payload = self._read_json_body()
-            self._send_json(self.provider.set_fan_target_rpm(payload.get("target_rpm")))
         else:
             self.send_error(404, "Not found")
 
@@ -136,10 +131,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.site_map())
         elif path == "/api/fan/status":
             self._send_json(self.provider.fan_status())
-        elif path == "/api/fan/calibration":
-            self._send_json(self.provider.fan_calibration())
-        elif path == "/api/fan/calibration/status":
-            self._send_json(self.provider.fan_calibration_status())
         elif path == "/api/docs":
             self._send_json(self._docs_index())
         elif path.startswith("/api/docs/"):

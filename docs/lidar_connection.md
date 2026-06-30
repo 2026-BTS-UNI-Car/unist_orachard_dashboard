@@ -2,9 +2,9 @@
 
 ## 운영 원칙
 
-Jetson 실제 운영에서는 ROS2 LiDAR driver가 RPLIDAR S2 serial device(`/dev/ttyUSB0`)를 소유하고 `/scan`을 publish하는 구조를 우선합니다. Dashboard backend는 serial device를 직접 열지 않고, ROS2/serial bridge가 제공하는 WebSocket을 받아 2D 지도에 표시합니다.
+Jetson 실제 운영에서는 ROS2 LiDAR driver가 RPLIDAR S2 serial device(`/dev/ttyUSB0`)를 소유하고 `/scan`을 publish합니다. Dashboard backend와 `ros2-lidar-bridge`는 serial device를 열지 않고, ROS2 `/scan`을 WebSocket으로 변환한 데이터만 받아 2D 지도에 표시합니다.
 
-현재 개발 단계에서는 ROS2 driver가 아직 올라오지 않은 경우가 있으므로, `ros2-lidar-bridge` 컨테이너가 `/scan`을 먼저 기다린 뒤 scan이 없을 때만 serial live fallback을 사용합니다. ROS2 `/scan`이 살아나면 bridge는 ROS2 데이터를 우선 표시합니다. Serial fallback은 RPLIDAR S2가 안정적으로 scan descriptor와 point를 내보내도록 기본 2.5초 scan cycle을 사용합니다.
+ROS2 driver가 꺼져 있거나 `/scan`이 없으면 Dashboard 지도는 대기 상태가 정상입니다. Dashboard가 대신 LiDAR port를 열어 scan하지 않습니다.
 
 금지 구조:
 
@@ -19,15 +19,6 @@ RPLIDAR S2 /dev/ttyUSB0
   -> ROS2 RPLIDAR driver -> /scan
   -> ros2-lidar-bridge container
   -> scripts/lidar_ws_bridge.py
-  -> ws://0.0.0.0:8765/ws/lidar
-  -> Dashboard browser 2D LiDAR 지도
-```
-
-ROS2 driver가 아직 없는 개발 단계에서는 다음 fallback 경로가 임시로 동작합니다.
-
-```text
-RPLIDAR S2 /dev/ttyUSB0
-  -> ros2-lidar-bridge serial live fallback
   -> ws://0.0.0.0:8765/ws/lidar
   -> Dashboard browser 2D LiDAR 지도
 ```
@@ -70,7 +61,7 @@ Connection 탭은 두 가지 경로를 구분합니다.
 
 ### 상태 확인
 
-`정보 확인` 버튼은 ROS2 driver가 포트를 점유 중일 때는 serial을 열지 않습니다. 포트가 비어 있을 때만 RPLIDAR `GET_INFO`/`GET_HEALTH` 요청을 짧게 보내고 즉시 닫습니다.
+`상태 새로고침` 버튼은 serial port를 열지 않습니다. Dashboard가 볼 수 있는 `/dev/ttyUSB*` 표시, 안정적인 by-id 경로, 현재 포트 holder만 확인합니다.
 
 ## 2D LiDAR 지도
 

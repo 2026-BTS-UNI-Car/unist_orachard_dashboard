@@ -8,6 +8,7 @@ import math
 import os
 import signal
 import sys
+import termios
 import threading
 import time
 from dataclasses import dataclass, field
@@ -128,10 +129,16 @@ def serial_thread(
     ros_fallback_s: float,
     stop: threading.Event,
 ) -> None:
+    if os.environ.get("UBTS_ALLOW_DIRECT_LIDAR", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+        state.set_error("Serial direct mode is disabled. Start the ROS2 LiDAR driver and publish /scan.")
+        while not stop.is_set():
+            stop.wait(max(0.5, poll_s))
+        return
+
     try:
-        from dashboard_server.telemetry import TelemetryProvider
+        from dashboard_server.telemetry import RPLIDAR_SCAN, RPLIDAR_STOP, TelemetryProvider
     except ImportError as exc:
-        state.set_error(f"Dashboard telemetry module is required for serial fallback: {exc}")
+        state.set_error(f"Dashboard telemetry module is required for explicit direct serial mode: {exc}")
         return
 
     os.environ["LIDAR_SCAN_MAX_POINTS"] = str(max_points)
@@ -145,19 +152,128 @@ def serial_thread(
         ):
             stop.wait(poll_s)
             continue
-        try:
-            result = provider.lidar_scan()
-        except Exception as exc:  # noqa: BLE001 - keep bridge alive and report in WebSocket status.
-            state.set_error(f"serial fallback error: {exc}")
+        status = provider.lidar_status()
+        if not status.get("present"):
+            state.set_error("LiDAR 장치를 찾지 못했습니다.")
             stop.wait(max(0.5, poll_s))
             continue
-        points = result.get("points") or []
-        if result.get("ok") and points:
-            state.update(result.get("frame_id") or "laser", float(result.get("tested_at") or time.time()), points, "serial")
-        else:
-            message = result.get("message") or result.get("state") or "waiting for ROS2 /scan or serial LiDAR points"
-            state.set_error(message)
-        stop.wait(poll_s)
+        if status.get("holders"):
+            state.set_error("다른 프로세스가 LiDAR 포트를 사용 중입니다.")
+            stop.wait(max(0.5, poll_s))
+            continue
+
+        opened = False
+        for baud in provider._lidar_bauds():
+            if stop.is_set():
+                break
+            speed = getattr(termios, f"B{baud}", None)
+            if speed is None:
+                continue
+            try:
+                opened = _serial_stream_at_baud(
+                    provider,
+                    state,
+                    status["open_path"],
+                    baud,
+                    speed,
+                    max_points,
+                    poll_s,
+                    RPLIDAR_STOP,
+                    RPLIDAR_SCAN,
+                    stop,
+                )
+            except OSError as exc:
+                state.set_error(f"serial stream error at {baud} bps: {exc}")
+                opened = False
+            if opened:
+                break
+        if not opened:
+            stop.wait(max(0.5, poll_s))
+
+
+def _serial_stream_at_baud(
+    provider: Any,
+    state: ScanState,
+    path: str,
+    baud: int,
+    speed: int,
+    max_points: int,
+    update_interval_s: float,
+    stop_command: bytes,
+    scan_command: bytes,
+    stop: threading.Event,
+) -> bool:
+    fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+    raw = bytearray()
+    stream = bytearray()
+    nodes: list[dict[str, Any]] = []
+    descriptor_seen = False
+    last_update = 0.0
+    first_point_deadline = time.time() + 5.0
+    motor_line = os.environ.get("LIDAR_MOTOR_LINE", "dtr").strip().lower() or "dtr"
+    try:
+        attrs = termios.tcgetattr(fd)
+        attrs[0] = 0
+        attrs[1] = 0
+        attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+        attrs[3] = 0
+        attrs[4] = speed
+        attrs[5] = speed
+        termios.tcsetattr(fd, termios.TCSANOW, attrs)
+        termios.tcflush(fd, termios.TCIOFLUSH)
+        provider._set_lidar_modem_lines(fd, motor_line)
+        os.write(fd, stop_command)
+        time.sleep(0.08)
+        termios.tcflush(fd, termios.TCIFLUSH)
+        os.write(fd, scan_command)
+
+        while not stop.is_set():
+            try:
+                chunk = os.read(fd, 8192)
+            except BlockingIOError:
+                chunk = b""
+            if chunk:
+                if descriptor_seen:
+                    stream.extend(chunk)
+                else:
+                    raw.extend(chunk)
+                    marker = raw.find(b"\xA5\x5A")
+                    if marker >= 0 and len(raw) >= marker + 7:
+                        descriptor_seen = True
+                        stream.extend(raw[marker + 7 :])
+                        raw.clear()
+                    elif len(raw) > 8192:
+                        del raw[:-8192]
+
+            if descriptor_seen and len(stream) >= 10:
+                parse_len = len(stream) - 4
+                payload = bytes(stream[:parse_len])
+                del stream[:parse_len]
+                parsed = provider._parse_normal_scan_nodes(payload)
+                if parsed:
+                    nodes.extend(parsed)
+                    max_keep = max(max_points * 4, max_points)
+                    if len(nodes) > max_keep:
+                        del nodes[: len(nodes) - max_keep]
+
+            now = time.time()
+            if nodes and now - last_update >= update_interval_s:
+                state.update("laser", now, provider._decimate_points(nodes, max_points), "serial")
+                last_update = now
+            elif not nodes and now > first_point_deadline:
+                state.set_error(f"LiDAR stream did not produce points at {baud} bps.")
+                return False
+
+            time.sleep(0.004)
+    finally:
+        try:
+            os.write(fd, stop_command)
+            time.sleep(0.03)
+        except OSError:
+            pass
+        provider._set_lidar_modem_lines(fd, "off")
+        os.close(fd)
+    return True
 
 
 async def serve_websocket(state: ScanState, host: str, port: int, path: str, max_hz: float):
@@ -191,7 +307,11 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                             "point_count": snap["point_count"],
                             "source": snap["source"],
                             "frame_id": snap["frame_id"],
-                            "error": snap["error"],
+                            "error": snap["error"] or (
+                                None
+                                if snap["last_scan_age_sec"] is not None and snap["last_scan_age_sec"] < 2.0
+                                else "ROS2 /scan is not being received yet. Dashboard is subscribe-only and does not open the LiDAR serial port."
+                            ),
                         },
                         separators=(",", ":"),
                     )
@@ -226,12 +346,15 @@ def main() -> int:
     parser.add_argument("--topic", default="/scan")
     parser.add_argument("--max-points", type=int, default=900)
     parser.add_argument("--max-hz", type=float, default=10.0)
-    parser.add_argument("--source", choices=["auto", "ros2", "serial"], default=os.environ.get("LIDAR_BRIDGE_SOURCE", "auto"))
+    parser.add_argument("--source", choices=["auto", "ros2", "serial"], default=os.environ.get("LIDAR_BRIDGE_SOURCE", "ros2"))
     parser.add_argument("--serial-poll-s", type=float, default=float(os.environ.get("LIDAR_SERIAL_POLL_S", "0.2")))
     parser.add_argument("--ros-fallback-s", type=float, default=float(os.environ.get("LIDAR_ROS_FALLBACK_S", "2.5")))
     args = parser.parse_args()
+    if args.source == "auto":
+        args.source = "ros2"
 
     state = ScanState()
+    state.source = "ros2" if args.source == "ros2" else args.source
     ready = threading.Event()
     stop = threading.Event()
     threads: list[threading.Thread] = []
