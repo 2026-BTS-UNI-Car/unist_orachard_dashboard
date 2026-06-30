@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import threading
 import unittest
+import urllib.error
 import urllib.request
 
 from dashboard_server.app import create_server
@@ -45,7 +47,7 @@ class DashboardApiTest(unittest.TestCase):
 
     def test_telemetry_shape(self):
         payload = self.get_json("/api/telemetry")
-        for key in ["system", "network", "docker", "connection", "rover", "sensors", "fusion", "experiment"]:
+        for key in ["system", "network", "docker", "fan", "connection", "rover", "sensors", "fusion", "experiment"]:
             self.assertIn(key, payload)
         self.assertIn("cpu", payload["system"])
         self.assertEqual(payload["system"]["memory"]["display_total"], 8 * 1024 * 1024 * 1024)
@@ -60,6 +62,12 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("primary_ipv4", network)
         self.assertIn("external_ip", network)
         self.assertIn("containers", self.get_json("/api/docker"))
+        fan = self.get_json("/api/fan/status")
+        self.assertIn("available", fan)
+        self.assertIn("mode", fan)
+        self.assertIn("calibration", fan)
+        self.assertIn("target_rpm_available", fan)
+        self.assertIn("calibration", self.get_json("/api/fan/calibration/status"))
         connection = self.get_json("/api/connection")
         self.assertIn("lidar", connection)
         self.assertIn("test_mode", connection["lidar"])
@@ -83,6 +91,7 @@ class DashboardApiTest(unittest.TestCase):
         payload = self.get_json("/api/site-map")
         paths = [item["path"] for item in payload["routes"]]
         self.assertEqual(paths[:3], ["/", "/connection", "/system"])
+        self.assertIn("/fan", paths)
         self.assertIn("/docs", paths)
 
     def test_docs_api_and_route(self):
@@ -95,6 +104,24 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("RPLIDAR", doc["markdown"])
         html = self.get_text("/docs/lidar-connection")
         self.assertIn("id=\"docMarkdown\"", html)
+
+    def test_fan_route_and_static_contract(self):
+        html = self.get_text("/fan")
+        self.assertIn("Fan Control", html)
+        self.assertIn("id=\"lidarDownloadButton\"", html)
+        self.assertIn("현재 지도 다운로드", html)
+        self.assertNotIn("lidarScanCanvas3d", html)
+        self.assertNotIn("data-lidar-map-mode=\"3d\"", html)
+        self.assertFalse((Path(__file__).resolve().parents[1] / "static" / "lidar3d.js").exists())
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.port}/static/lidar3d.js", timeout=3)
+        self.assertEqual(ctx.exception.code, 404)
+
+    def test_docs_catalog_contains_runtime_and_fan_docs(self):
+        index = self.get_json("/api/docs")
+        slugs = {item["slug"] for item in index["documents"]}
+        self.assertIn("jetson-runtime-architecture", slugs)
+        self.assertIn("fan-control", slugs)
 
 
 if __name__ == "__main__":

@@ -40,6 +40,7 @@
           <a data-route="/system" href="/system">System</a>
           <a data-route="/network" href="/network">Network</a>
           <a data-route="/docker" href="/docker">Docker</a>
+          <a data-route="/fan" href="/fan">Fan Control</a>
           <a data-route="/research" href="/research">Research</a>
           <a data-route="/docs" href="/docs">Docs</a>
         </nav>
@@ -217,18 +218,26 @@
             <article class="panel wide">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">LiDAR scan</p>
-                  <h2>360 스캔 지도</h2>
+                  <p class="eyebrow">ROS2 /scan</p>
+                  <h2>2D LiDAR 지도</h2>
                 </div>
                 <div class="panel-actions">
-                  <div class="segmented-control map-mode-toggle" aria-label="LiDAR 지도 표시 방식">
-                    <button type="button" data-lidar-map-mode="2d">2D</button>
-                    <button type="button" data-lidar-map-mode="3d">3D</button>
-                  </div>
+                  <button id="lidarLiveButton" class="action-button secondary" type="button">실시간 연결</button>
                   <button id="lidarScanButton" class="action-button" type="button">360 스캔 테스트</button>
+                  <button id="lidarDownloadButton" class="action-button secondary" type="button" disabled>현재 지도 다운로드</button>
                 </div>
               </div>
+              <div class="notice-panel">
+                실시간 모드에서는 ROS2 LiDAR driver가 장치를 소유하고, 대시보드는 /scan 데이터를 구독합니다. 같은 LiDAR를 serial scan과 ROS2 driver가 동시에 열면 충돌할 수 있습니다.
+              </div>
               <div id="lidarScanResult" class="test-result">스캔 대기 중</div>
+              <div class="live-status-grid">
+                <div><span>LiDAR Device</span><b id="lidarLiveDevice">--</b></div>
+                <div><span>ROS2 /scan</span><b id="lidarLiveTopic">대기</b></div>
+                <div><span>WebSocket</span><b id="lidarLiveSocket">disconnected</b></div>
+                <div><span>Last Scan</span><b id="lidarLiveAge">--</b></div>
+                <div><span>Points</span><b id="lidarLivePoints">--</b></div>
+              </div>
               <div id="lidarScanProgress" class="scan-progress" aria-hidden="true">
                 <div class="scan-progress-meta">
                   <span id="lidarScanProgressText">대기 중</span>
@@ -239,10 +248,20 @@
               <div class="lidar-map-frame">
                 <div class="lidar-map-stage">
                   <canvas id="lidarScanCanvas" class="lidar-map" width="720" height="720"></canvas>
-                  <canvas id="lidarScanCanvas3d" class="lidar-map lidar-map-3d" width="720" height="720" hidden></canvas>
-                  <div id="lidarMapHint" class="map-hint">2D 지도는 위에서 본 점군입니다.</div>
+                  <div id="lidarMapHint" class="map-hint">위쪽 화살표가 LiDAR 정면(0°)입니다. 원형 그리드는 거리(m)를 나타냅니다.</div>
                 </div>
-                <div id="lidarScanStats" class="chart-readout"></div>
+                <div>
+                  <div id="lidarScanStats" class="chart-readout"></div>
+                  <label class="toggle-row">
+                    <input id="lidarAccumulateToggle" type="checkbox" />
+                    <span>점 누적</span>
+                  </label>
+                  <div class="segmented-control download-mode" aria-label="LiDAR 다운로드 형식">
+                    <button type="button" data-lidar-download="json">JSON</button>
+                    <button type="button" data-lidar-download="csv">CSV</button>
+                    <button type="button" data-lidar-download="png">PNG</button>
+                  </div>
+                </div>
               </div>
             </article>
 
@@ -413,6 +432,93 @@
           </section>
         </section>
 
+        <section class="page" data-page="/fan">
+          <header class="page-head">
+            <p class="eyebrow">Jetson cooling</p>
+            <h1>Fan Control</h1>
+            <p>nvfancontrol 자동 제어와 수동 PWM 제어를 전환하고, 팬 RPM과 온도를 실시간으로 확인합니다.</p>
+          </header>
+
+          <section class="kpi-grid">
+            <article class="kpi"><span>Fan RPM</span><strong id="fanRpmValue">--</strong><small id="fanRpmText">feedback</small></article>
+            <article class="kpi"><span>Temperature</span><strong id="fanTempValue">--</strong><small id="fanTempText">thermal max</small></article>
+            <article class="kpi"><span>Mode</span><strong id="fanModeValue">--</strong><small id="fanModeText">nvfancontrol</small></article>
+            <article class="kpi"><span>PWM</span><strong id="fanPwmValue">--</strong><small id="fanPwmText">0-255</small></article>
+          </section>
+
+          <section class="dashboard-grid">
+            <article class="panel chart-panel">
+              <div class="panel-head"><h2>Fan Temperature</h2><strong id="fanTempChartValue">--</strong></div>
+              <div class="chart-frame">
+                <canvas id="chartFanTemp" class="resource-chart" width="900" height="260"></canvas>
+                <div id="fanTempReadout" class="chart-readout"></div>
+              </div>
+            </article>
+            <article class="panel chart-panel">
+              <div class="panel-head"><h2>Fan RPM</h2><strong id="fanRpmChartValue">--</strong></div>
+              <div class="chart-frame">
+                <canvas id="chartFanRpm" class="resource-chart" width="900" height="260"></canvas>
+                <div id="fanRpmReadout" class="chart-readout"></div>
+              </div>
+            </article>
+          </section>
+
+          <section class="dashboard-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Control</p>
+                  <h2>제어 모드</h2>
+                </div>
+                <label class="switch-control">
+                  <input id="fanAutoToggle" type="checkbox" />
+                  <span>자동 제어</span>
+                  <small>nvfancontrol</small>
+                </label>
+              </div>
+              <div id="fanControlStatus" class="test-result">상태 확인 중</div>
+              <div class="preset-grid">
+                <button type="button" data-fan-preset="off">끄기</button>
+                <button type="button" data-fan-preset="quiet">조용히</button>
+                <button type="button" data-fan-preset="normal">보통</button>
+                <button type="button" data-fan-preset="max">최고 출력</button>
+              </div>
+              <label class="slider-row">
+                <span>Manual PWM</span>
+                <input id="fanPwmSlider" type="range" min="0" max="255" step="1" value="0" />
+                <b id="fanSliderValue">0</b>
+              </label>
+              <dl class="detail-list compact">
+                <div><dt>Actual RPM</dt><dd id="fanActualRpmDetail">--</dd></div>
+                <div><dt>Enable</dt><dd id="fanEnableDetail">--</dd></div>
+                <div><dt>Path</dt><dd id="fanPathDetail">--</dd></div>
+              </dl>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Calibration</p>
+                  <h2>PWM-RPM 보정</h2>
+                </div>
+                <button id="fanCalibrateButton" class="action-button" type="button">팬 보정</button>
+              </div>
+              <label class="switch-control inline">
+                <input id="fanTargetRpmToggle" type="checkbox" disabled />
+                <span>목표 RPM 모드</span>
+                <small id="fanTargetRpmHelp">팬 보정 후 사용 가능</small>
+              </label>
+              <label class="slider-row">
+                <span>Target RPM</span>
+                <input id="fanTargetRpmInput" type="number" min="0" step="100" value="3000" disabled />
+                <button id="fanTargetRpmButton" class="action-button secondary" type="button" disabled>적용</button>
+              </label>
+              <div id="fanCalibrationStatus" class="test-result">보정 상태 확인 중</div>
+              <div id="fanCalibrationList" class="status-list"></div>
+            </article>
+          </section>
+        </section>
+
         <section class="page" data-page="/research">
           <header class="page-head">
             <p class="eyebrow">Research</p>
@@ -485,7 +591,6 @@
       </main>
     </div>
 
-    <script type="module" src="/static/lidar3d.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>

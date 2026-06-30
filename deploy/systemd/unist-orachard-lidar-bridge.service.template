@@ -1,0 +1,17 @@
+[Unit]
+Description=UBTS ROS2 /scan LiDAR WebSocket Bridge
+After=network-online.target unist-orachard-ros2.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=unist
+Group=unist
+WorkingDirectory=/home/unist/unist_orachard_dashboard
+Environment=ROS_DISTRO=iron
+ExecStart=/bin/bash -lc 'source /opt/ros/iron/setup.bash && source /home/unist/unist_orachard_ros2/install/setup.bash && python3 /home/unist/unist_orachard_dashboard/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan'
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -13,7 +13,7 @@ from dashboard_server.telemetry import ROOT, TelemetryProvider
 
 STATIC_ROOT = ROOT / "static"
 DOCS_ROOT = ROOT / "docs"
-APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/research", "/docs"}
+APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs"}
 DOCS_CATALOG = [
     {
         "slug": "architecture",
@@ -33,8 +33,22 @@ DOCS_CATALOG = [
         "slug": "lidar-connection",
         "title": "LiDAR 연결과 테스트",
         "category": "Hardware",
-        "summary": "CP2102N, RPLIDAR S2, 수동 정보 확인, 360 스캔 테스트 정책",
+        "summary": "RPLIDAR S2, ROS2 /scan owner 구조, WebSocket live map, serial 충돌 방지",
         "file": "lidar_connection.md",
+    },
+    {
+        "slug": "jetson-runtime-architecture",
+        "title": "Jetson 런타임 아키텍처",
+        "category": "Deployment",
+        "summary": "ROS2 real bringup, LiDAR bridge, dashboard, fan control 서비스 구성",
+        "file": "jetson_runtime_architecture.md",
+    },
+    {
+        "slug": "fan-control",
+        "title": "Fan Control",
+        "category": "Hardware",
+        "summary": "nvfancontrol 자동 제어, 수동 PWM, RPM 보정, 목표 RPM 모드",
+        "file": "fan_control.md",
     },
     {
         "slug": "cloudflared",
@@ -73,6 +87,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.lidar_test())
         elif path == "/api/lidar/scan":
             self._send_json(self.provider.lidar_scan())
+        elif path == "/api/fan/mode":
+            payload = self._read_json_body()
+            self._send_json(self.provider.set_fan_mode(bool(payload.get("auto"))))
+        elif path == "/api/fan/pwm":
+            payload = self._read_json_body()
+            self._send_json(self.provider.set_fan_pwm(payload.get("pwm")))
+        elif path == "/api/fan/preset":
+            payload = self._read_json_body()
+            self._send_json(self.provider.set_fan_preset(str(payload.get("preset", ""))))
+        elif path == "/api/fan/calibrate":
+            self._send_json(self.provider.calibrate_fan())
+        elif path == "/api/fan/rpm":
+            payload = self._read_json_body()
+            self._send_json(self.provider.set_fan_target_rpm(payload.get("target_rpm")))
         else:
             self.send_error(404, "Not found")
 
@@ -97,6 +125,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.plan())
         elif path == "/api/site-map":
             self._send_json(self.provider.site_map())
+        elif path == "/api/fan/status":
+            self._send_json(self.provider.fan_status())
+        elif path == "/api/fan/calibration":
+            self._send_json(self.provider.fan_calibration())
+        elif path == "/api/fan/calibration/status":
+            self._send_json(self.provider.fan_calibration_status())
         elif path == "/api/docs":
             self._send_json(self._docs_index())
         elif path.startswith("/api/docs/"):
@@ -119,6 +153,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def _read_json_body(self):
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length <= 0:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return {}
 
     def _docs_index(self):
         return {"documents": [self._doc_meta(item) for item in DOCS_CATALOG]}

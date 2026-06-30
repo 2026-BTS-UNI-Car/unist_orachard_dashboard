@@ -10,8 +10,10 @@ import platform
 import shutil
 import socket
 import struct
+import subprocess
 import termios
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import urllib.request
@@ -24,6 +26,7 @@ DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_LIDAR_BAUDS = [1_000_000, 460_800, 256_000, 115_200]
 DEFAULT_LIDAR_SCAN_DURATION_S = 3.0
 DEFAULT_LIDAR_SCAN_MAX_POINTS = 1800
+DEFAULT_FAN_CALIBRATION_FILE = ROOT / "data" / "fan_calibration.json"
 RPLIDAR_STOP = bytes([0xA5, 0x25])
 RPLIDAR_SCAN = bytes([0xA5, 0x20])
 RPLIDAR_SCAN_DESCRIPTOR = bytes([0xA5, 0x5A, 0x05, 0x00, 0x00, 0x40, 0x81])
@@ -119,6 +122,7 @@ class TelemetryProvider:
             "system": self.system(),
             "network": self.network(),
             "docker": self.docker(),
+            "fan": self.fan_status(),
             "connection": self.connection(external),
             "rover": external.get("rover", self._not_connected("rover")),
             "sensors": external.get("sensors", self._default_sensors()),
@@ -325,6 +329,305 @@ class TelemetryProvider:
             result = self._rplidar_scan(status["open_path"])
         self._last_lidar_scan = result
         return result
+
+    def fan_status(self) -> dict[str, Any]:
+        hwmon = self._fan_hwmon()
+        nvfancontrol = self._fan_nvfancontrol_status()
+        temperature_c = self._max_temperature()
+        calibration = self.fan_calibration()
+        if not hwmon:
+            return {
+                "ok": False,
+                "available": False,
+                "state": "not_found",
+                "message": "Jetson pwm fan hwmon was not found.",
+                "mode": "auto" if nvfancontrol.get("active") else "unknown",
+                "nvfancontrol": nvfancontrol,
+                "temperature_c": temperature_c,
+                "rpm": None,
+                "pwm": None,
+                "pwm_enable": None,
+                "paths": {},
+                "calibration": calibration,
+                "target_rpm_available": bool(calibration.get("ok")),
+            }
+        pwm = _safe_int(_read_text(hwmon.get("pwm_path")))
+        pwm_enable = _safe_int(_read_text(hwmon.get("enable_path")))
+        rpm = _safe_int(_read_text(hwmon.get("rpm_path")))
+        mode = "auto" if nvfancontrol.get("active") else "manual"
+        if pwm_enable is None and not nvfancontrol.get("known"):
+            mode = "unknown"
+        return {
+            "ok": True,
+            "available": True,
+            "state": "ready",
+            "message": "Fan hwmon is available.",
+            "mode": mode,
+            "nvfancontrol": nvfancontrol,
+            "temperature_c": temperature_c,
+            "rpm": rpm,
+            "pwm": pwm,
+            "pwm_enable": pwm_enable,
+            "paths": {
+                "name": str(hwmon.get("name_path") or ""),
+                "pwm": str(hwmon.get("pwm_path") or ""),
+                "enable": str(hwmon.get("enable_path") or ""),
+                "rpm": str(hwmon.get("rpm_path") or ""),
+                "hwmon": str(hwmon.get("root") or ""),
+                "name_value": hwmon.get("name"),
+            },
+            "presets": self._fan_presets(),
+            "safety": self._fan_safety(temperature_c),
+            "calibration": calibration,
+            "target_rpm_available": bool(calibration.get("ok")),
+        }
+
+    def set_fan_mode(self, auto: bool) -> dict[str, Any]:
+        if auto:
+            result = self._fan_systemctl("start")
+            status = self.fan_status()
+            return {"ok": bool(result.get("ok")), "action": "auto", "systemctl": result, "status": status}
+        hwmon = self._fan_hwmon()
+        if not hwmon:
+            return {"ok": False, "state": "not_found", "message": "Fan hwmon was not found.", "status": self.fan_status()}
+        stop = self._fan_systemctl("stop")
+        enable = self._write_fan_value(hwmon.get("enable_path"), "1")
+        ok = bool(enable.get("ok"))
+        return {"ok": ok, "action": "manual", "systemctl": stop, "enable": enable, "status": self.fan_status()}
+
+    def set_fan_pwm(self, pwm: Any) -> dict[str, Any]:
+        hwmon = self._fan_hwmon()
+        if not hwmon:
+            return {"ok": False, "state": "not_found", "message": "Fan hwmon was not found.", "status": self.fan_status()}
+        try:
+            value = int(pwm)
+        except (TypeError, ValueError):
+            value = 0
+        value = max(0, min(255, value))
+        status = self.fan_status()
+        if status.get("mode") == "auto":
+            return {"ok": False, "state": "auto_active", "message": "Disable nvfancontrol before manual PWM writes.", "status": status}
+        safety = self._fan_pwm_safety(value, status.get("temperature_c"))
+        if not safety["ok"]:
+            return {"ok": False, **safety, "status": status}
+        enable = self._write_fan_value(hwmon.get("enable_path"), "1")
+        write = self._write_fan_value(hwmon.get("pwm_path"), str(value))
+        return {"ok": bool(write.get("ok")), "pwm": value, "enable": enable, "write": write, "status": self.fan_status()}
+
+    def set_fan_preset(self, preset: str) -> dict[str, Any]:
+        presets = self._fan_presets()
+        if preset not in presets:
+            return {"ok": False, "state": "bad_preset", "message": f"Unknown fan preset: {preset}", "presets": presets}
+        result = self.set_fan_pwm(presets[preset])
+        result["preset"] = preset
+        return result
+
+    def fan_calibration(self) -> dict[str, Any]:
+        path = self._fan_calibration_path()
+        data = _load_json(path)
+        if not data:
+            return {"ok": False, "state": "missing", "path": str(path), "points": []}
+        points = data.get("points") or []
+        return {"ok": bool(points), "state": "ready" if points else "empty", "path": str(path), **data}
+
+    def fan_calibration_status(self) -> dict[str, Any]:
+        calibration = self.fan_calibration()
+        status = self.fan_status()
+        return {
+            "ok": calibration.get("ok", False),
+            "calibration": calibration,
+            "target_rpm_available": bool(calibration.get("ok")),
+            "fan_available": status.get("available", False),
+        }
+
+    def calibrate_fan(self) -> dict[str, Any]:
+        status = self.fan_status()
+        if not status.get("available"):
+            return {"ok": False, "state": "not_found", "message": "Fan hwmon is required for calibration.", "status": status}
+        if status.get("mode") == "auto":
+            return {"ok": False, "state": "auto_active", "message": "Switch to manual mode before calibration.", "status": status}
+        hwmon = self._fan_hwmon()
+        steps = [0, 40, 60, 80, 100, 128, 160, 192, 224, 255]
+        settle_s = max(0.0, float(os.environ.get("FAN_CALIBRATION_SETTLE_S", "2.0")))
+        sample_s = max(0.1, float(os.environ.get("FAN_CALIBRATION_SAMPLE_S", "1.0")))
+        points = []
+        for pwm in steps:
+            safety = self._fan_pwm_safety(pwm, self._max_temperature())
+            if not safety["ok"]:
+                return {"ok": False, **safety, "points": points}
+            self._write_fan_value(hwmon.get("enable_path"), "1")
+            write = self._write_fan_value(hwmon.get("pwm_path"), str(pwm))
+            if not write.get("ok"):
+                return {"ok": False, "state": "write_failed", "write": write, "points": points}
+            time.sleep(settle_s)
+            samples = []
+            deadline = time.time() + sample_s
+            while time.time() < deadline:
+                rpm = _safe_int(_read_text(hwmon.get("rpm_path")))
+                if rpm is not None:
+                    samples.append(rpm)
+                time.sleep(0.2)
+            rpm_avg = round(sum(samples) / len(samples)) if samples else 0
+            points.append({"pwm": pwm, "rpm": rpm_avg})
+        max_rpm = max((row["rpm"] for row in points), default=0)
+        spinning = [row["pwm"] for row in points if row["rpm"] > 0]
+        payload = {
+            "created_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+            "board": "jetson",
+            "fan_hwmon_name": hwmon.get("name") or "pwmfan",
+            "points": points,
+            "min_spin_pwm": min(spinning) if spinning else None,
+            "max_rpm": max_rpm,
+        }
+        path = self._fan_calibration_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"ok": True, "state": "calibrated", "calibration": payload, "status": self.fan_status()}
+
+    def set_fan_target_rpm(self, target_rpm: Any) -> dict[str, Any]:
+        calibration = self.fan_calibration()
+        if not calibration.get("ok"):
+            return {"ok": False, "state": "calibration_missing", "message": "Run fan calibration before target RPM mode."}
+        try:
+            target = int(target_rpm)
+        except (TypeError, ValueError):
+            target = 0
+        pwm = self.estimate_pwm_from_rpm(target, calibration)
+        result = self.set_fan_pwm(pwm)
+        result["target_rpm"] = target
+        result["estimated_pwm"] = pwm
+        return result
+
+    def estimate_rpm_from_pwm(self, pwm: int, calibration: dict[str, Any] | None = None) -> int | None:
+        table = sorted((calibration or self.fan_calibration()).get("points") or [], key=lambda row: row.get("pwm", 0))
+        if not table:
+            return None
+        pwm = max(0, min(255, int(pwm)))
+        return int(round(self._interpolate(table, "pwm", "rpm", pwm)))
+
+    def estimate_pwm_from_rpm(self, target_rpm: int, calibration: dict[str, Any] | None = None) -> int:
+        table = sorted((calibration or self.fan_calibration()).get("points") or [], key=lambda row: row.get("rpm", 0))
+        if not table:
+            return 255
+        max_rpm = max(row.get("rpm", 0) for row in table)
+        rpm = max(0, min(max_rpm, int(target_rpm)))
+        return max(0, min(255, int(round(self._interpolate(table, "rpm", "pwm", rpm)))))
+
+    def _interpolate(self, rows: list[dict[str, Any]], x_key: str, y_key: str, x_value: float) -> float:
+        if x_value <= rows[0].get(x_key, 0):
+            return float(rows[0].get(y_key, 0))
+        for left, right in zip(rows, rows[1:]):
+            lx = float(left.get(x_key, 0))
+            rx = float(right.get(x_key, 0))
+            if lx <= x_value <= rx and rx > lx:
+                ratio = (x_value - lx) / (rx - lx)
+                return float(left.get(y_key, 0)) + ratio * (float(right.get(y_key, 0)) - float(left.get(y_key, 0)))
+        return float(rows[-1].get(y_key, 0))
+
+    def _fan_hwmon(self) -> dict[str, Any] | None:
+        hwmon_root = self.sys_root / "class/hwmon"
+        candidates = []
+        if hwmon_root.exists():
+            candidates.extend(sorted(hwmon_root.glob("hwmon*")))
+        candidates.extend(sorted(self.sys_root.glob("devices/platform/**/pwm-fan/hwmon/hwmon*")))
+        for root in candidates:
+            name_path = root / "name"
+            name = _read_text(name_path)
+            pwm_path = root / "pwm1"
+            if not pwm_path.exists():
+                continue
+            if name not in {"pwmfan", "pwm-fan"} and "pwm" not in (name or ""):
+                continue
+            rpm_path = root / "fan1_input"
+            if not rpm_path.exists():
+                fallback = root / "rpm"
+                rpm_path = fallback if fallback.exists() else rpm_path
+            return {
+                "root": root,
+                "name": name,
+                "name_path": name_path,
+                "pwm_path": pwm_path,
+                "enable_path": root / "pwm1_enable",
+                "rpm_path": rpm_path,
+            }
+        return None
+
+    def _fan_nvfancontrol_status(self) -> dict[str, Any]:
+        return self._fan_systemctl("is-active")
+
+    def _fan_systemctl(self, action: str) -> dict[str, Any]:
+        if action not in {"start", "stop", "is-active"}:
+            return {"ok": False, "state": "bad_action", "action": action}
+        systemctl = shutil.which("systemctl")
+        if not systemctl:
+            return {"ok": False, "known": False, "active": False, "state": "systemctl_missing", "action": action}
+        try:
+            proc = subprocess.run(
+                [systemctl, action, "nvfancontrol"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=4,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {"ok": False, "known": False, "active": False, "state": "systemctl_error", "error": str(exc), "action": action}
+        output = (proc.stdout or proc.stderr or "").strip()
+        active = action == "is-active" and output == "active" and proc.returncode == 0
+        return {
+            "ok": proc.returncode == 0,
+            "known": True,
+            "active": active or (action == "start" and proc.returncode == 0),
+            "state": output or ("ok" if proc.returncode == 0 else "failed"),
+            "returncode": proc.returncode,
+            "action": action,
+        }
+
+    def _write_fan_value(self, path: Path | None, value: str) -> dict[str, Any]:
+        hwmon = self._fan_hwmon()
+        allowed = {str(hwmon.get("pwm_path")), str(hwmon.get("enable_path"))} if hwmon else set()
+        if not path or str(path) not in allowed:
+            return {"ok": False, "state": "path_not_allowed", "path": str(path or "")}
+        try:
+            Path(path).write_text(str(value), encoding="utf-8")
+        except OSError as exc:
+            return {"ok": False, "state": "write_error", "path": str(path), "error": str(exc)}
+        return {"ok": True, "path": str(path), "value": str(value)}
+
+    def _fan_presets(self) -> dict[str, int]:
+        defaults = {"off": 0, "quiet": 80, "normal": 160, "max": 255}
+        result = {}
+        for key, default in defaults.items():
+            env_key = f"FAN_PWM_{key.upper()}"
+            try:
+                result[key] = max(0, min(255, int(os.environ.get(env_key, default))))
+            except ValueError:
+                result[key] = default
+        return result
+
+    def _fan_safety(self, temperature_c: float | None) -> dict[str, Any]:
+        if temperature_c is None:
+            return {"level": "unknown", "message": "Temperature sensor unavailable."}
+        if temperature_c >= 80:
+            return {"level": "critical", "message": "80°C 이상입니다. 자동 제어 또는 PWM 255를 권장합니다."}
+        if temperature_c >= 75:
+            return {"level": "hot", "message": "75°C 이상에서는 낮은 PWM 설정을 제한합니다."}
+        if temperature_c >= 50:
+            return {"level": "warm", "message": "50°C 이상에서는 fan off preset을 제한합니다."}
+        return {"level": "normal", "message": "Fan control is within normal safety bounds."}
+
+    def _fan_pwm_safety(self, pwm: int, temperature_c: float | None) -> dict[str, Any]:
+        if temperature_c is None:
+            return {"ok": True, "state": "temperature_unknown"}
+        if temperature_c >= 75 and pwm < 160:
+            return {"ok": False, "state": "temperature_guard", "message": "75°C 이상에서는 PWM 160 미만을 적용하지 않습니다."}
+        if temperature_c >= 50 and pwm == 0:
+            return {"ok": False, "state": "temperature_guard", "message": "50°C 이상에서는 팬 끄기를 적용하지 않습니다."}
+        return {"ok": True, "state": "safe"}
+
+    def _fan_calibration_path(self) -> Path:
+        raw = os.environ.get("FAN_CALIBRATION_FILE", str(DEFAULT_FAN_CALIBRATION_FILE))
+        path = Path(raw)
+        return path if path.is_absolute() else ROOT / path
 
     def _lidar_device_root(self) -> Path:
         root = Path(os.environ.get("LIDAR_DEV_ROOT", "/host-dev"))
@@ -770,6 +1073,7 @@ class TelemetryProvider:
                 {"path": "/system", "label": "System", "summary": "CPU, Memory, GPU, Thermal, Disk"},
                 {"path": "/network", "label": "Network", "summary": "IP, interface, RX/TX throughput"},
                 {"path": "/docker", "label": "Docker", "summary": "Docker engine and containers"},
+                {"path": "/fan", "label": "Fan Control", "summary": "Jetson cooling, nvfancontrol, PWM/RPM"},
                 {"path": "/research", "label": "Research", "summary": "연구 일정과 ROS2 연결 상태"},
                 {"path": "/docs", "label": "Docs", "summary": "운영 문서와 Markdown viewer"},
             ]

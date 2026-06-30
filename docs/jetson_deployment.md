@@ -72,11 +72,11 @@ tmp_path.replace(target_path)
 /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_...-if00-port0
 ```
 
-RPLIDAR `GET_INFO` 응답은 `1,000,000 bps`에서 확인했습니다. Docker Compose는 `/dev`를 `/host-dev`로 마운트하고 serial 장치 cgroup rule을 열어 대시보드의 수동 테스트 버튼이 장치를 열 수 있게 합니다.
+RPLIDAR `GET_INFO` 응답은 `1,000,000 bps`에서 확인했습니다. 실제 운영에서는 ROS2 LiDAR driver만 `/dev/ttyUSB0`를 열고 `/scan`을 publish합니다. Dashboard는 serial을 직접 열지 않고 `scripts/lidar_ws_bridge.py`가 제공하는 `/scan` WebSocket을 구독합니다.
 
 Silicon Labs CP210x VCP 릴리즈 노트는 구형 Linux용 out-of-tree 드라이버 안내에 가깝습니다. 현재 Jetson은 CP2102N USB-UART를 커널 내장 `cp210x`로 인식하므로, 별도 드라이버 설치 없이 `/dev/ttyUSB0` 장치 접근과 Docker 권한이 핵심입니다.
 
-대시보드는 LiDAR를 상시 읽지 않습니다. ROS2 LiDAR driver와 충돌하지 않도록 Connection 페이지의 테스트 버튼을 눌렀을 때만 다음 순서로 동작합니다.
+대시보드는 LiDAR를 상시 읽지 않습니다. ROS2 LiDAR driver와 충돌하지 않도록 Connection 페이지의 serial 테스트 버튼은 ROS2 driver가 꺼져 있을 때 진단용으로만 사용합니다.
 
 1. `/dev/ttyUSB*`, `/dev/serial/by-id/*` 후보 확인
 2. `/proc/*/fd`를 스캔해 포트 점유 프로세스 확인
@@ -85,4 +85,31 @@ Silicon Labs CP210x VCP 릴리즈 노트는 구형 Linux용 out-of-tree 드라�
 5. 360 스캔 지도는 DTR motor line을 켜고 normal scan을 약 3초 수집
 6. STOP 명령 후 DTR/RTS를 끄고 즉시 포트를 닫아 결과를 화면에 표시
 
-추후 ROS2에서 `/scan`을 실제로 구독하는 세부 LiDAR 대시보드는 별도 ROS2 bridge가 topic rate, scan range 요약, frame id, scan health를 `runtime/telemetry_snapshot.json`으로 써주는 방식이 안전합니다. 이 웹 서버가 직접 scan stream을 계속 읽는 구조는 ROS2 driver와 포트 경쟁을 만들 수 있으므로 사용하지 않습니다.
+실시간 LiDAR 지도 실행:
+
+```bash
+source /opt/ros/iron/setup.bash
+source /home/unist/unist_orachard_ros2/install/setup.bash
+ros2 launch orchard_bringup orchard_full.launch.py mode:=real use_rviz:=false use_lidar_driver:=true
+python3 /home/unist/unist_orachard_dashboard/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan
+python3 -m dashboard_server --host 0.0.0.0 --port 8080
+```
+
+## 7. Fan Control
+
+기본 Docker Compose는 안전을 위해 sysfs write 권한을 열지 않습니다. Jetson에서 팬 제어까지 사용할 때만 override compose를 명시적으로 추가합니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.jetson-fan.yml up -d --build
+```
+
+수동 검증:
+
+```bash
+cat /sys/class/hwmon/hwmon*/name
+systemctl is-active nvfancontrol
+sudo systemctl stop nvfancontrol
+echo 1 | sudo tee /sys/class/hwmon/hwmonX/pwm1_enable
+echo 160 | sudo tee /sys/class/hwmon/hwmonX/pwm1
+cat /sys/class/hwmon/hwmonX/fan1_input
+```

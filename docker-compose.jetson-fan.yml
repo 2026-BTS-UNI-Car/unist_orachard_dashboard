@@ -1,0 +1,8 @@
+services:
+  dashboard:
+    privileged: true
+    environment:
+      HOST_SYS: "/sys"
+    volumes:
+      - /sys/class/hwmon:/sys/class/hwmon:rw
+      - /sys/devices:/sys/devices:rw
