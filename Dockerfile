@@ -12,6 +12,7 @@ COPY requirements.txt ./
 COPY dashboard_server ./dashboard_server
 COPY static ./static
 COPY config ./config
+COPY docs ./docs
 
 RUN mkdir -p /app/runtime
 
