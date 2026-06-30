@@ -54,6 +54,21 @@ CPU, 메모리, 디스크, 온도는 서버가 Linux 시스템에서 직접 읽�
 }
 ```
 
+`ros2-lidar-bridge`는 `/scan` 수신 상태를 `runtime/lidar_bridge_status.json`에 씁니다. 대시보드 서버는 이 파일을 읽어서 `connection.lidar_bridge`, `services.ros2_bridge`, `sensors.lidar` 상태를 갱신합니다.
+
+```json
+{
+  "lidar_bridge": {
+    "alive": true,
+    "scan_topic_alive": true,
+    "last_scan_age_sec": 0.08,
+    "point_count": 900,
+    "source": "ros2",
+    "frame_id": "laser"
+  }
+}
+```
+
 대시보드는 LiDAR 포트를 열지 않습니다. 상태 새로고침 버튼은 장치 표시와 holder만 확인합니다. 실시간 지도는 `ros2-lidar-bridge` 컨테이너가 제공하는 WebSocket을 사용하며, bridge는 ROS2 `/scan`만 구독합니다.
 
 ## rover

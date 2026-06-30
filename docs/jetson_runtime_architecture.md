@@ -2,18 +2,25 @@
 
 ## 권장 서비스
 
-Jetson 실제 운영은 Docker Compose가 두 컨테이너를 관리합니다.
+Jetson 실제 운영은 Docker Compose가 주요 런타임 컨테이너를 관리합니다.
 
 ```text
+unist-orachard-ros2-lidar-driver
+  -> ROS2 Iron container
+  -> owns /dev/ttyUSB0
+  -> publishes /scan
+
 unist-orachard-ros2-lidar-bridge
   -> ROS2 Iron container
   -> subscribes /scan only
   -> does not mount or open /dev/ttyUSB0
   -> serves ws://0.0.0.0:8765/ws/lidar
+  -> writes runtime/lidar_bridge_status.json
 
 unist-orachard-dashboard
   -> serves http://0.0.0.0:8080
   -> proxies /ws/lidar to ws://127.0.0.1:8765/ws/lidar
+  -> reads runtime/lidar_bridge_status.json for API sensor/service state
   -> reads Jetson system, Docker, network, fan telemetry
   -> browser receives WebSocket LiDAR points from the same origin
 ```
@@ -30,7 +37,7 @@ docker-compose up -d --build
 docker-compose ps
 ```
 
-ROS2 driver가 준비되어 있으면 별도 ROS2 bringup이 `/scan`을 publish합니다.
+Compose 기본 구성에서는 `ros2-lidar-driver`가 `/scan`을 publish합니다. 추후 전체 로버 bringup이 LiDAR driver를 포함해서 실행되는 구조로 바뀌면 동일 serial device를 여는 driver는 하나만 남겨야 합니다.
 
 ```bash
 source /opt/ros/iron/setup.bash
@@ -57,6 +64,7 @@ curl http://127.0.0.1:8080/api/telemetry
 curl http://127.0.0.1:8080/api/fan/status
 curl -i http://127.0.0.1:8080/ws/lidar
 docker-compose logs --tail=80 ros2-lidar-bridge
+cat runtime/lidar_bridge_status.json
 ```
 
 `/ws/lidar`에 일반 HTTP로 접근하면 `426 WebSocket upgrade required`가 정상입니다. 실제 브라우저는 `ws://127.0.0.1:8080/ws/lidar` 또는 `wss://bts.sarihub.com/ws/lidar`로 연결합니다.

@@ -47,9 +47,9 @@ docker compose up -d --build
 curl http://127.0.0.1:8080/api/health
 ```
 
-`docker-compose.yml`은 대시보드와 `ros2-lidar-bridge` 컨테이너를 함께 실행합니다. 두 컨테이너 모두 `restart: unless-stopped`를 사용하므로 Jetson이 재부팅되어도 Docker 서비스가 올라오면 자동으로 다시 시작됩니다. Cloudflare Tunnel은 `bts.sarihub.com`을 `http://localhost:8080`으로 전달합니다.
+`docker-compose.yml`은 대시보드, `ros2-lidar-driver`, `ros2-lidar-bridge` 컨테이너를 함께 실행합니다. 컨테이너들은 `restart: unless-stopped`를 사용하므로 Jetson이 재부팅되어도 Docker 서비스가 올라오면 자동으로 다시 시작됩니다. Cloudflare Tunnel은 `bts.sarihub.com`을 `http://localhost:8080`으로 전달합니다.
 
-LiDAR bridge는 ROS2 Iron 컨테이너에서 `/scan`만 구독합니다. RPLIDAR serial device는 ROS2 driver가 단독 소유하고, Dashboard는 WebSocket으로 변환된 `/scan` point data만 표시합니다.
+LiDAR driver는 RPLIDAR serial device를 단독 소유하고 `/scan`을 publish합니다. LiDAR bridge는 ROS2 Iron 컨테이너에서 `/scan`만 구독하며, Dashboard는 WebSocket으로 변환된 `/scan` point data와 `runtime/lidar_bridge_status.json` 상태만 표시합니다.
 
 ## 텔레메트리 연결 방식
 

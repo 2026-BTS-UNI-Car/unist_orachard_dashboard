@@ -23,6 +23,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
 DEFAULT_TELEMETRY_FILE = ROOT / "runtime" / "telemetry_snapshot.json"
+DEFAULT_LIDAR_BRIDGE_STATUS_FILE = ROOT / "runtime" / "lidar_bridge_status.json"
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_LIDAR_BAUDS = [1_000_000, 460_800, 256_000, 115_200]
 DEFAULT_LIDAR_SCAN_DURATION_S = 3.0
@@ -92,6 +93,10 @@ class TelemetryProvider:
             os.environ.get("TELEMETRY_FILE", self.config.get("telemetry_file", str(DEFAULT_TELEMETRY_FILE)))
         )
         self.telemetry_file = telemetry_file if telemetry_file.is_absolute() else ROOT / telemetry_file
+        lidar_bridge_file = Path(
+            os.environ.get("LIDAR_BRIDGE_STATUS_FILE", str(DEFAULT_LIDAR_BRIDGE_STATUS_FILE))
+        )
+        self.lidar_bridge_status_file = lidar_bridge_file if lidar_bridge_file.is_absolute() else ROOT / lidar_bridge_file
         self.host_root = Path(os.environ.get("HOST_ROOT", "/host-root"))
         if not self.host_root.exists():
             self.host_root = Path("/")
@@ -124,29 +129,32 @@ class TelemetryProvider:
 
     def telemetry(self) -> dict[str, Any]:
         external = _load_json(self.telemetry_file) if self.telemetry_file.exists() else {}
+        connection = self.connection(external)
         payload = {
             "meta": self._meta(),
             "system": self.system(),
             "network": self.network(),
             "docker": self.docker(),
             "fan": self.fan_status(),
-            "connection": self.connection(external),
+            "connection": connection,
             "rover": external.get("rover", self._not_connected("rover")),
-            "sensors": external.get("sensors", self._default_sensors()),
+            "sensors": connection["sensors"],
             "fusion": external.get("fusion", self._not_connected("fusion")),
             "experiment": external.get("experiment", self._not_connected("experiment")),
             "mission": external.get("mission", self._mission_status()),
-            "services": self._services(external),
+            "services": connection["services"],
             "alerts": self._alerts(external),
         }
         return payload
 
     def connection(self, external: dict[str, Any] | None = None) -> dict[str, Any]:
         external = external or (_load_json(self.telemetry_file) if self.telemetry_file.exists() else {})
+        lidar_bridge = self._lidar_bridge_status()
         return {
             "lidar": self.lidar_status(),
-            "services": self._services(external),
-            "sensors": external.get("sensors", self._default_sensors()),
+            "lidar_bridge": lidar_bridge,
+            "services": self._services(external, lidar_bridge),
+            "sensors": self._sensors(external, lidar_bridge),
         }
 
     def system(self) -> dict[str, Any]:
@@ -1127,6 +1135,44 @@ class TelemetryProvider:
             "mavlink": {"ok": False, "state": "not_connected"},
         }
 
+    def _sensors(self, external: dict[str, Any], lidar_bridge: dict[str, Any] | None = None) -> dict[str, Any]:
+        sensors = self._default_sensors()
+        for key, value in external.get("sensors", {}).items():
+            if isinstance(value, dict) and isinstance(sensors.get(key), dict):
+                sensors[key] = {**sensors[key], **value}
+            else:
+                sensors[key] = value
+
+        bridge = lidar_bridge or self._lidar_bridge_status()
+        lidar = dict(sensors.get("lidar", {}))
+        if bridge.get("scan_topic_alive"):
+            lidar.update(
+                {
+                    "ok": True,
+                    "connected": True,
+                    "state": "scan_live",
+                    "severity": "ok",
+                    "source": bridge.get("source", "ros2"),
+                    "point_count": bridge.get("point_count", 0),
+                    "last_scan_age_sec": bridge.get("last_scan_age_sec"),
+                    "frame_id": bridge.get("frame_id") or lidar.get("frame_id") or "laser",
+                }
+            )
+        elif bridge.get("alive"):
+            lidar.update(
+                {
+                    "ok": False,
+                    "connected": False,
+                    "state": "waiting_for_scan",
+                    "severity": "waiting",
+                    "source": bridge.get("source", "ros2"),
+                    "point_count": bridge.get("point_count", 0),
+                    "last_scan_age_sec": bridge.get("last_scan_age_sec"),
+                }
+            )
+        sensors["lidar"] = lidar
+        return sensors
+
     def _mission_status(self) -> dict[str, Any]:
         return {
             "name": "Orchard rover dashboard",
@@ -1135,7 +1181,7 @@ class TelemetryProvider:
             "connected": False,
         }
 
-    def _services(self, external: dict[str, Any]) -> dict[str, Any]:
+    def _services(self, external: dict[str, Any], lidar_bridge: dict[str, Any] | None = None) -> dict[str, Any]:
         services = {
             "dashboard": {"ok": True, "state": "serving", "port": 8080},
             "cloudflared": {"ok": True, "state": "tunnel_configured", "host": "bts.sarihub.com"},
@@ -1143,7 +1189,45 @@ class TelemetryProvider:
             "data_recorder": {"ok": False, "state": "not_connected"},
         }
         services.update(external.get("services", {}))
+        bridge = lidar_bridge or self._lidar_bridge_status()
+        if bridge.get("alive"):
+            services["ros2_bridge"] = {
+                "ok": bool(bridge.get("scan_topic_alive")),
+                "state": "scan_live" if bridge.get("scan_topic_alive") else "bridge_online",
+                "topic": "/scan",
+                "source": bridge.get("source", "ros2"),
+                "point_count": bridge.get("point_count", 0),
+                "last_scan_age_sec": bridge.get("last_scan_age_sec"),
+            }
         return services
+
+    def _lidar_bridge_status(self) -> dict[str, Any]:
+        data = _load_json(self.lidar_bridge_status_file)
+        now = time.time()
+        try:
+            updated_at = float(data.get("updated_at", 0.0))
+        except (TypeError, ValueError):
+            updated_at = 0.0
+        status_age = round(now - updated_at, 3) if updated_at else None
+        alive = status_age is not None and status_age <= 3.0
+        last_scan_age = data.get("last_scan_age_sec")
+        try:
+            last_scan_age = None if last_scan_age is None else float(last_scan_age)
+        except (TypeError, ValueError):
+            last_scan_age = None
+        scan_alive = bool(alive and last_scan_age is not None and last_scan_age < 2.0)
+        return {
+            "alive": alive,
+            "scan_topic_alive": scan_alive,
+            "status_age_sec": status_age,
+            "last_scan_age_sec": round(last_scan_age, 3) if last_scan_age is not None else None,
+            "point_count": int(data.get("point_count") or 0),
+            "source": data.get("source") or "ros2",
+            "frame_id": data.get("frame_id") or "laser",
+            "error": None if scan_alive else data.get("error"),
+            "updated_at": updated_at or None,
+            "status_file": str(self.lidar_bridge_status_file),
+        }
 
     def _alerts(self, external: dict[str, Any]) -> list[dict[str, str]]:
         alerts = list(external.get("alerts", []))

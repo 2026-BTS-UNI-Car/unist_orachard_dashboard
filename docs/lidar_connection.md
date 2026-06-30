@@ -20,6 +20,7 @@ RPLIDAR S2 /dev/ttyUSB0
   -> ros2-lidar-bridge container
   -> scripts/lidar_ws_bridge.py
   -> ws://0.0.0.0:8765/ws/lidar
+  -> runtime/lidar_bridge_status.json
   -> Dashboard browser 2D LiDAR 지도
 ```
 
@@ -42,7 +43,7 @@ Connection 탭은 두 가지 경로를 구분합니다.
 
 ### 실시간 연결
 
-`실시간 연결` 버튼은 브라우저가 LiDAR WebSocket bridge에 접속합니다.
+Connection 페이지에 들어가면 브라우저가 LiDAR WebSocket bridge에 자동 접속합니다. `실시간 연결` 버튼은 사용자가 직접 중지하거나 다시 연결할 때 사용합니다.
 
 기본 URL:
 
@@ -68,12 +69,14 @@ Connection 탭은 두 가지 경로를 구분합니다.
 Dashboard 지도 좌표계:
 
 - 중앙: LiDAR 위치
-- 화면 위쪽: `0° / FRONT / +y_m`
+- 화면 위쪽: `0° / +y_m`
 - 화면 오른쪽: `90° / +x_m`
 - 화면 아래쪽: `180°`
 - 화면 왼쪽: `270°`
 
-원형 grid는 거리(m)를 나타냅니다. 점은 glow 없이 일반 원으로 표시하며, 화면 위쪽이 LiDAR 0° 방향입니다.
+원형 grid는 거리(m)를 나타냅니다. Dashboard 표시는 현재 장착 방향에 맞춰 ROS2 `/scan` point를 180° 회전한 좌표를 사용합니다. ROS2 원본 `/scan`과 TF는 변경하지 않습니다.
+
+지도 range는 기본적으로 첫 live scan의 point 밀도와 외곽 분포를 보고 자동으로 정수 m 단위로 맞춥니다. 사용자가 확대/축소 버튼이나 range slider를 조작하면 수동 range로 전환되며, slider는 0.1 m 단위로 조정할 수 있습니다. `Auto` 버튼을 누르면 다음 live scan 기준으로 다시 자동 산정합니다.
 
 ## 현재 지도 다운로드
 

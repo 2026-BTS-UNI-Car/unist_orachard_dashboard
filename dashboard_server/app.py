@@ -149,10 +149,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+        self.close_connection = True
 
     def _read_json_body(self):
         length = int(self.headers.get("Content-Length", "0") or 0)
@@ -213,10 +215,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+        self.close_connection = True
 
     def _proxy_lidar_websocket(self):
         if self.headers.get("Upgrade", "").lower() != "websocket":
@@ -361,9 +365,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return True
 
 
+class DashboardServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
 def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:
     DashboardHandler.provider = TelemetryProvider(config)
-    return ThreadingHTTPServer((host, port), DashboardHandler)
+    return DashboardServer((host, port), DashboardHandler)
 
 
 def main():

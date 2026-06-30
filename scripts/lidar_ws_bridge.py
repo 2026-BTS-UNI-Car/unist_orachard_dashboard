@@ -58,6 +58,38 @@ class ScanState:
             }
 
 
+def bridge_status_payload(state: ScanState) -> dict[str, Any]:
+    snap = state.snapshot()
+    alive = snap["last_scan_age_sec"] is not None and snap["last_scan_age_sec"] < 2.0
+    return {
+        "type": "lidar_bridge_status",
+        "updated_at": time.time(),
+        "scan_topic_alive": alive,
+        "last_scan_age_sec": snap["last_scan_age_sec"],
+        "point_count": snap["point_count"],
+        "source": snap["source"],
+        "frame_id": snap["frame_id"],
+        "error": snap["error"] or (None if alive else "ROS2 /scan 대기 중"),
+    }
+
+
+def write_bridge_status(path: Path, payload: dict[str, Any]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f"{path.suffix}.tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass
+
+
+def status_writer_thread(state: ScanState, path: Path, interval_s: float, stop: threading.Event) -> None:
+    while not stop.is_set():
+        write_bridge_status(path, bridge_status_payload(state))
+        stop.wait(max(0.2, interval_s))
+    write_bridge_status(path, bridge_status_payload(state))
+
+
 def scan_to_points(msg: Any, max_points: int) -> list[dict[str, float | int]]:
     ranges = list(getattr(msg, "ranges", []) or [])
     intensities = list(getattr(msg, "intensities", []) or [])
@@ -349,6 +381,8 @@ def main() -> int:
     parser.add_argument("--source", choices=["auto", "ros2", "serial"], default=os.environ.get("LIDAR_BRIDGE_SOURCE", "ros2"))
     parser.add_argument("--serial-poll-s", type=float, default=float(os.environ.get("LIDAR_SERIAL_POLL_S", "0.2")))
     parser.add_argument("--ros-fallback-s", type=float, default=float(os.environ.get("LIDAR_ROS_FALLBACK_S", "2.5")))
+    parser.add_argument("--status-file", default=os.environ.get("LIDAR_BRIDGE_STATUS_FILE", "/app/runtime/lidar_bridge_status.json"))
+    parser.add_argument("--status-interval-s", type=float, default=float(os.environ.get("LIDAR_BRIDGE_STATUS_INTERVAL_S", "0.5")))
     args = parser.parse_args()
     if args.source == "auto":
         args.source = "ros2"
@@ -358,6 +392,13 @@ def main() -> int:
     ready = threading.Event()
     stop = threading.Event()
     threads: list[threading.Thread] = []
+    status_thread = threading.Thread(
+        target=status_writer_thread,
+        args=(state, Path(args.status_file), args.status_interval_s, stop),
+        daemon=True,
+    )
+    status_thread.start()
+    threads.append(status_thread)
     if args.source in {"auto", "ros2"}:
         thread = threading.Thread(target=ros_thread, args=(state, args.topic, args.max_points, ready, stop), daemon=True)
         thread.start()

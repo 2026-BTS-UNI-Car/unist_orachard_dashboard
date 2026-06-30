@@ -145,6 +145,35 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(payload["state"], "disabled")
         self.assertEqual(payload["points"], [])
 
+    def test_lidar_bridge_status_file_marks_scan_live(self):
+        status_file = Path(__file__).resolve().parents[1] / "runtime" / "lidar_bridge_status.json"
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        old = status_file.read_text(encoding="utf-8") if status_file.exists() else None
+        try:
+            status_file.write_text(
+                json.dumps(
+                    {
+                        "updated_at": time.time(),
+                        "scan_topic_alive": True,
+                        "last_scan_age_sec": 0.1,
+                        "point_count": 900,
+                        "source": "ros2",
+                        "frame_id": "laser",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            payload = self.get_json("/api/connection")
+            self.assertTrue(payload["lidar_bridge"]["scan_topic_alive"])
+            self.assertTrue(payload["services"]["ros2_bridge"]["ok"])
+            self.assertTrue(payload["sensors"]["lidar"]["ok"])
+            self.assertEqual(payload["sensors"]["lidar"]["state"], "scan_live")
+        finally:
+            if old is None:
+                status_file.unlink(missing_ok=True)
+            else:
+                status_file.write_text(old, encoding="utf-8")
+
     def test_plan_contains_research_topic(self):
         payload = self.get_json("/api/plan")
         self.assertIn("Vision-LiDAR", payload["research_topic"])
@@ -176,7 +205,9 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("Manual PWM", html)
         self.assertIn("id=\"fanAutoToggle\"", html)
         self.assertIn("id=\"lidarRangeValue\"", html)
+        self.assertIn("id=\"lidarRangeSlider\"", html)
         self.assertIn("data-lidar-range=\"reset\"", html)
+        self.assertIn(">Auto</button>", html)
         self.assertNotIn("Fan RPM", html)
         self.assertNotIn("PWM-RPM", html)
         self.assertNotIn("fanCalibrateButton", html)
@@ -197,6 +228,9 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("${scheme}://${location.host}/ws/lidar", app_js)
         self.assertNotIn("${scheme}://${location.hostname}:8765/ws/lidar", app_js)
         self.assertIn("[UBTS:", app_js)
+        self.assertIn("LIDAR_RANGE_AUTO_KEY", app_js)
+        self.assertIn("displayAngle", app_js)
+        self.assertNotIn("Front 0°", app_js)
         compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
         lidar_driver_dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile.lidar_driver").read_text()
         self.assertIn("ros2-lidar-driver", compose)
@@ -204,6 +238,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("Dockerfile.lidar_driver", compose)
         self.assertIn("Dockerfile.ros2", compose)
         self.assertIn("LIDAR_BRIDGE_SOURCE:-ros2", compose)
+        self.assertIn("./runtime:/app/runtime", compose)
         self.assertNotIn("LIDAR_BRIDGE_SOURCE:-auto", compose)
         self.assertIn("sllidar_s2_launch.py", lidar_driver_dockerfile)
         self.assertIn("/sys/class/hwmon:/sys/class/hwmon:rw", compose)
@@ -270,6 +305,70 @@ class DashboardApiTest(unittest.TestCase):
                 self.assertTrue(payload["ok"])
                 self.assertEqual(payload["message"], "fake bridge connected")
         finally:
+            if old_upstream is None:
+                os.environ.pop("LIDAR_WS_UPSTREAM", None)
+            else:
+                os.environ["LIDAR_WS_UPSTREAM"] = old_upstream
+            thread.join(timeout=2)
+
+    def test_lidar_websocket_proxy_handles_two_clients(self):
+        upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        upstream.bind(("127.0.0.1", 0))
+        upstream.listen(2)
+        upstream_port = upstream.getsockname()[1]
+        accepted = []
+
+        def serve_two():
+            try:
+                for index in range(2):
+                    conn, _ = upstream.accept()
+                    accepted.append(conn)
+                    request = b""
+                    while b"\r\n\r\n" not in request:
+                        request += conn.recv(1024)
+                    key_line = next(
+                        line for line in request.decode("iso-8859-1").split("\r\n")
+                        if line.lower().startswith("sec-websocket-key:")
+                    )
+                    upstream_key = key_line.split(":", 1)[1].strip()
+                    accept = base64.b64encode(
+                        hashlib.sha1(
+                            (upstream_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+                        ).digest()
+                    ).decode("ascii")
+                    conn.sendall(
+                        (
+                            "HTTP/1.1 101 Switching Protocols\r\n"
+                            "Upgrade: websocket\r\n"
+                            "Connection: Upgrade\r\n"
+                            f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+                        ).encode("ascii")
+                        + self.ws_frame({"type": "socket", "ok": True, "client": index})
+                    )
+                time.sleep(0.2)
+            finally:
+                for conn in accepted:
+                    conn.close()
+                upstream.close()
+
+        thread = threading.Thread(target=serve_two, daemon=True)
+        thread.start()
+        old_upstream = os.environ.get("LIDAR_WS_UPSTREAM")
+        os.environ["LIDAR_WS_UPSTREAM"] = f"ws://127.0.0.1:{upstream_port}/ws/lidar"
+        sockets = []
+        try:
+            first, first_leftover = self.open_dashboard_ws()
+            second, second_leftover = self.open_dashboard_ws()
+            sockets.extend([first, second])
+            payloads = [
+                json.loads(self.read_ws_text(first, first_leftover)),
+                json.loads(self.read_ws_text(second, second_leftover)),
+            ]
+            self.assertEqual({payload["client"] for payload in payloads}, {0, 1})
+            self.assertTrue(all(payload["ok"] for payload in payloads))
+        finally:
+            for sock in sockets:
+                sock.close()
             if old_upstream is None:
                 os.environ.pop("LIDAR_WS_UPSTREAM", None)
             else:

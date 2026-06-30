@@ -5,7 +5,8 @@ const MAX_POINTS = 90;
 const POLL_INTERVAL_MS = 1000;
 const DPR_LIMIT = 1.5;
 const CPU_MODE_KEY = "ubts-cpu-chart-mode";
-const LIDAR_RANGE_KEY = "ubts-lidar-map-range";
+const LIDAR_RANGE_KEY = "ubts-lidar-map-range-v2";
+const LIDAR_RANGE_AUTO_KEY = "ubts-lidar-map-range-auto-v2";
 
 const state = {
   telemetry: null,
@@ -29,6 +30,7 @@ const state = {
     pointCount: 0,
     error: "",
     messageCount: 0,
+    userStopped: false,
   },
   lidarExport: {
     latestScan: null,
@@ -42,6 +44,9 @@ const state = {
   },
   lidarMap: {
     range: 25,
+    displayRange: 25,
+    auto: true,
+    autoPending: true,
     minRange: 1,
     maxRange: 30,
   },
@@ -49,6 +54,8 @@ const state = {
   chartShiftStartedAt: 0,
   animationFrame: null,
   apiLogCounter: 0,
+  tickInFlight: false,
+  telemetryFailures: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -130,10 +137,10 @@ function debugLog(scope, message, detail) {
   }
 }
 
-async function getJson(path) {
+async function getJson(path, options = {}) {
   const started = performance.now();
   try {
-    const res = await fetch(path, { cache: "no-store" });
+    const res = await fetch(path, { cache: "no-store", signal: options.signal });
     const ms = Math.round(performance.now() - started);
     state.apiLogCounter += 1;
     if (path !== "/api/telemetry" || state.apiLogCounter % 10 === 0) {
@@ -161,7 +168,10 @@ function renderRoute() {
     link.classList.toggle("active", link.dataset.route === route);
   });
   if (route === "/docs") renderDocsRoute();
-  if (route === "/connection") renderActiveLidarMap();
+  if (route === "/connection") {
+    renderActiveLidarMap();
+    if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
+  }
   requestChartAnimation();
 }
 
@@ -261,6 +271,10 @@ function initLidarTest() {
   document.querySelectorAll("[data-lidar-range]").forEach((button) => {
     button.addEventListener("click", () => changeLidarRange(button.dataset.lidarRange));
   });
+  $("lidarRangeSlider")?.addEventListener("input", (event) => {
+    setLidarRange(Number(event.target.value), { auto: false, persist: true });
+    requestChartAnimation();
+  });
   initLidarRange();
   setLidarDownloadFormat(state.lidarExport.format);
   renderLidarLiveState();
@@ -269,28 +283,54 @@ function initLidarTest() {
 function initLidarRange() {
   let stored = null;
   try {
-    stored = Number(localStorage.getItem(LIDAR_RANGE_KEY));
+    const rawRange = localStorage.getItem(LIDAR_RANGE_KEY);
+    stored = rawRange === null ? null : Number(rawRange);
+    const storedAuto = localStorage.getItem(LIDAR_RANGE_AUTO_KEY);
+    state.lidarMap.auto = storedAuto === null ? true : storedAuto !== "0";
+    state.lidarMap.autoPending = state.lidarMap.auto;
   } catch (_) {
     stored = null;
   }
-  if (Number.isFinite(stored)) state.lidarMap.range = clampLidarRange(stored);
+  if (Number.isFinite(stored) && !state.lidarMap.auto) {
+    state.lidarMap.range = clampLidarRange(stored);
+    state.lidarMap.displayRange = state.lidarMap.range;
+  }
   updateLidarRangeControls();
 }
 
 function changeLidarRange(action) {
   const current = state.lidarMap.range;
   let next = current;
-  if (action === "in") next = current <= 5 ? current - 1 : current - 5;
-  else if (action === "out") next = current < 5 ? current + 1 : current + 5;
-  else next = 25;
-  state.lidarMap.range = clampLidarRange(next);
+  if (action === "in") next = current <= 5 ? current - 0.5 : current - 1;
+  else if (action === "out") next = current < 5 ? current + 0.5 : current + 1;
+  else {
+    state.lidarMap.auto = true;
+    state.lidarMap.autoPending = true;
+    persistLidarRange();
+    maybeAutoSetLidarRange(state.lidarScan, { force: true });
+    updateLidarRangeControls();
+    requestChartAnimation();
+    return;
+  }
+  setLidarRange(next, { auto: false, persist: true });
+  requestChartAnimation();
+}
+
+function setLidarRange(value, options = {}) {
+  state.lidarMap.range = clampLidarRange(value);
+  state.lidarMap.auto = Boolean(options.auto);
+  state.lidarMap.autoPending = Boolean(options.autoPending);
+  if (options.persist) persistLidarRange();
+  updateLidarRangeControls();
+}
+
+function persistLidarRange() {
   try {
     localStorage.setItem(LIDAR_RANGE_KEY, String(state.lidarMap.range));
+    localStorage.setItem(LIDAR_RANGE_AUTO_KEY, state.lidarMap.auto ? "1" : "0");
   } catch (_) {
     // Range control remains usable without localStorage.
   }
-  updateLidarRangeControls();
-  renderActiveLidarMap();
 }
 
 function clampLidarRange(value) {
@@ -298,11 +338,15 @@ function clampLidarRange(value) {
 }
 
 function updateLidarRangeControls() {
-  text("lidarRangeValue", `${fmtNumber(state.lidarMap.range, state.lidarMap.range % 1 ? 1 : 0)} m`);
+  const rangeLabel = `${fmtNumber(state.lidarMap.range, state.lidarMap.range % 1 ? 1 : 0)} m`;
+  text("lidarRangeValue", state.lidarMap.auto ? `${rangeLabel} auto` : rangeLabel);
+  const slider = $("lidarRangeSlider");
+  if (slider && document.activeElement !== slider) slider.value = String(state.lidarMap.range);
   document.querySelectorAll("[data-lidar-range]").forEach((button) => {
     const action = button.dataset.lidarRange;
     button.disabled = (action === "in" && state.lidarMap.range <= state.lidarMap.minRange)
       || (action === "out" && state.lidarMap.range >= state.lidarMap.maxRange);
+    if (action === "reset") button.textContent = state.lidarMap.auto ? "Auto" : "Auto";
   });
 }
 
@@ -319,15 +363,28 @@ async function loadDocs() {
 }
 
 async function tick() {
+  if (state.tickInFlight) {
+    debugLog("api", "/api/telemetry skipped: previous request still running");
+    return;
+  }
+  state.tickInFlight = true;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 6000);
   try {
-    state.telemetry = await getJson("/api/telemetry");
+    state.telemetry = await getJson("/api/telemetry", { signal: controller.signal });
     pushHistory(state.telemetry);
     renderTelemetry(state.telemetry);
+    state.telemetryFailures = 0;
     setConnection("ok", "online");
     requestChartAnimation();
   } catch (err) {
-    setConnection("bad", "offline");
+    state.telemetryFailures += 1;
+    if (state.telemetryFailures >= 3) setConnection("bad", "offline");
+    else debugLog("api", `/api/telemetry transient failure ${state.telemetryFailures}`, err);
     console.error(err);
+  } finally {
+    window.clearTimeout(timeout);
+    state.tickInFlight = false;
   }
 }
 
@@ -484,13 +541,16 @@ function toggleLidarLive() {
 }
 
 function startLidarLive() {
+  if (state.lidarLive.socket) return;
   const url = lidarWebSocketUrl();
   state.lidarLive.enabled = true;
+  state.lidarLive.userStopped = false;
   state.lidarLive.error = "";
   state.lidarLive.connected = false;
   state.lidarLive.scanTopicAlive = false;
   state.lidarLive.source = "waiting";
   renderLidarLiveState("연결 중");
+  setScanResult("testing", "LiDAR WebSocket 연결 중");
   debugLog("ws", `connecting ${url}`);
   try {
     const socket = new WebSocket(url);
@@ -508,11 +568,17 @@ function startLidarLive() {
       renderLidarLiveState();
     });
     socket.addEventListener("close", (event) => {
+      const shouldReconnect = state.lidarLive.enabled && !state.lidarLive.userStopped;
       state.lidarLive.socket = null;
       state.lidarLive.connected = false;
       state.lidarLive.scanTopicAlive = false;
       debugLog("ws", `close code=${event.code} reason=${event.reason || "-"}`);
       renderLidarLiveState(state.lidarLive.error || "disconnected");
+      if (shouldReconnect) {
+        window.setTimeout(() => {
+          if (currentRoute() === "/connection" && !state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
+        }, 1500);
+      }
     });
   } catch (err) {
     state.lidarLive.socket = null;
@@ -528,6 +594,7 @@ function startLidarLive() {
 function stopLidarLive(message = "disconnected") {
   const socket = state.lidarLive.socket;
   state.lidarLive.enabled = false;
+  state.lidarLive.userStopped = true;
   state.lidarLive.socket = null;
   state.lidarLive.connected = false;
   state.lidarLive.scanTopicAlive = false;
@@ -563,12 +630,16 @@ function handleLidarLiveMessage(raw) {
     state.lidarLive.source = payload.source || "waiting";
     state.lidarLive.error = payload.error || (payload.scan_topic_alive === false ? "ROS2 /scan 대기" : "");
     if (state.lidarLive.messageCount % 10 === 1 || payload.error) debugLog("ws", "status", payload);
+    if (!state.lidarScan || !payload.scan_topic_alive) {
+      setScanResult("testing", payload.error || "ROS2 /scan 수신 대기");
+    }
     renderLidarLiveState();
     renderLiveSensorLinks();
     return;
   }
   if (payload.type === "scan") {
     const result = lidarScanFromLive(payload);
+    maybeAutoSetLidarRange(result);
     state.lidarLive.lastScanAgeSec = 0;
     state.lidarLive.pointCount = result.points.length;
     state.lidarLive.scanTopicAlive = true;
@@ -611,6 +682,38 @@ function lidarScanFromLive(payload) {
     metrics,
     source: "live_websocket",
   };
+}
+
+function maybeAutoSetLidarRange(result, options = {}) {
+  if (!result?.ok || !result.points?.length) return;
+  if (!state.lidarMap.auto && !options.force) return;
+  if (!state.lidarMap.autoPending && !options.force) return;
+  const suggested = suggestedLidarRange(result.points);
+  if (!Number.isFinite(suggested)) return;
+  state.lidarMap.range = clampLidarRange(suggested);
+  state.lidarMap.auto = true;
+  state.lidarMap.autoPending = false;
+  persistLidarRange();
+  updateLidarRangeControls();
+  debugLog("lidar", "auto range selected", { range: state.lidarMap.range, points: result.points.length });
+}
+
+function suggestedLidarRange(points) {
+  const extents = points
+    .map((point) => Math.max(Math.abs(Number(point.x_m) || 0), Math.abs(Number(point.y_m) || 0)))
+    .filter((value) => Number.isFinite(value) && value > 0.05)
+    .sort((a, b) => a - b);
+  if (!extents.length) return null;
+  const p85 = quantile(extents, 0.85);
+  const p95 = quantile(extents, 0.95);
+  const denseFit = Math.max(p85 * 1.28, p95 * 1.12, 1);
+  return Math.ceil(clampLidarRange(denseFit));
+}
+
+function quantile(sortedValues, q) {
+  if (!sortedValues.length) return null;
+  const index = Math.min(sortedValues.length - 1, Math.max(0, Math.floor((sortedValues.length - 1) * q)));
+  return sortedValues[index];
 }
 
 function renderLidarLiveState(overrideLabel) {
@@ -715,7 +818,7 @@ function lidarExportPayload(points) {
     coordinate_system: {
       x_m: "right",
       y_m: "front",
-      angle_zero_deg: "front/up on dashboard",
+      angle_zero_deg: "front/up on dashboard after 180deg display correction",
       angle_direction: "clockwise on dashboard if using x=sin(theta), y=cos(theta)",
     },
     scan: {
@@ -778,12 +881,15 @@ function normalizeLidarExportPoint(point) {
   const xM = Number(point.x_m);
   const yM = Number(point.y_m);
   if (!Number.isFinite(distanceM) || !Number.isFinite(xM) || !Number.isFinite(yM)) return null;
+  const displayAngle = Number.isFinite(angleDeg) ? (angleDeg + 180) % 360 : null;
+  const displayX = -xM;
+  const displayY = -yM;
   return {
-    angle_deg: Number.isFinite(angleDeg) ? Number(angleDeg.toFixed(3)) : null,
+    angle_deg: displayAngle === null ? null : Number(displayAngle.toFixed(3)),
     distance_m: Number(distanceM.toFixed(3)),
     quality: Number.isFinite(Number(point.quality)) ? Number(point.quality) : 0,
-    x_m: Number(xM.toFixed(3)),
-    y_m: Number(yM.toFixed(3)),
+    x_m: Number(displayX.toFixed(3)),
+    y_m: Number(displayY.toFixed(3)),
   };
 }
 
@@ -797,14 +903,16 @@ function angleCoverage(points) {
 
 function renderConnection(connection) {
   const lidar = connection.lidar || {};
+  const bridge = connection.lidar_bridge || {};
   const last = lidar.last_test || {};
   const lastScan = lidar.last_scan || {};
-  text("connectionLidarState", lidar.present ? lidarStateLabel(lidar.state) : "미인식");
+  const scanLive = Boolean(state.lidarLive.scanTopicAlive || bridge.scan_topic_alive);
+  text("connectionLidarState", scanLive ? "수신 중" : (lidar.present ? lidarStateLabel(lidar.state) : "미인식"));
   text("connectionLidarDevice", lidar.device || "--");
   text("connectionLidarProtocol", "ROS2 /scan");
   text("connectionLidarBaud", "subscribe-only");
-  text("connectionLidarHealth", state.lidarLive.scanTopicAlive ? "수신 중" : (lidar.present ? "ROS2 대기" : "--"));
-  text("connectionLidarHealthText", state.lidarLive.scanTopicAlive ? "WebSocket scan live" : "ROS2 driver가 /scan을 발행하면 표시");
+  text("connectionLidarHealth", scanLive ? "수신 중" : (lidar.present ? "ROS2 대기" : "--"));
+  text("connectionLidarHealthText", scanLive ? `${bridge.point_count || state.lidarLive.pointCount || 0} points live` : "ROS2 /scan 대기");
   text("connectionLidarGuard", (lidar.holders || []).length ? "ROS2 소유" : "포트 비점유");
   text("connectionLidarGuardText", (lidar.holders || []).length ? holderLabel(lidar.holders) : "Dashboard는 serial을 열지 않음");
   text("lidarDeviceDetail", lidar.present ? shortPath(lidar.device) : "장치 미인식");
@@ -865,7 +973,14 @@ function setScanResult(kind, message) {
 }
 
 function lidarStateLabel(state) {
-  return { detected: "인식됨", in_use: "점유 중", not_found: "미인식" }[state] || state || "--";
+  return {
+    detected: "인식됨",
+    in_use: "점유 중",
+    scan_live: "수신 중",
+    waiting_for_scan: "스캔 대기",
+    waiting_for_ros2: "ROS2 대기",
+    not_found: "미인식",
+  }[state] || state || "--";
 }
 
 function holderLabel(holders) {
@@ -970,14 +1085,14 @@ function sensorRows(sensors) {
       item.dashboard_access ? item.dashboard_access : "",
       item.state,
     ].filter(Boolean).join(" · "),
-    ok: Boolean(item.ok || (key === "lidar" && state.lidarLive.scanTopicAlive)),
+    ok: Boolean(item.ok || (key === "lidar" && lidarBridgeLive())),
     level: sensorLevel(key, item),
     value: sensorValue(key, item),
   }));
 }
 
 function sensorLevel(key, item) {
-  if (key === "lidar" && state.lidarLive.scanTopicAlive) return "ok";
+  if (key === "lidar" && lidarBridgeLive()) return "ok";
   if (item.ok) return "ok";
   if (item.severity === "waiting" || item.state === "waiting_for_ros2") return "warn";
   if (key === "lidar" && item.dashboard_access === "subscribe_only") return "warn";
@@ -985,10 +1100,14 @@ function sensorLevel(key, item) {
 }
 
 function sensorValue(key, item) {
-  if (key === "lidar" && state.lidarLive.scanTopicAlive) return `${lidarSourceLabel(state.lidarLive.source)} live`;
+  if (key === "lidar" && lidarBridgeLive()) return `${lidarSourceLabel(item.source || state.lidarLive.source)} live`;
   if (item.rate_hz) return `${Number(item.rate_hz).toFixed(1)} Hz`;
   if (key === "lidar" && item.dashboard_access === "subscribe_only") return "ROS2 대기";
   return "연결 전";
+}
+
+function lidarBridgeLive() {
+  return Boolean(state.lidarLive.scanTopicAlive || state.telemetry?.connection?.lidar_bridge?.scan_topic_alive);
 }
 
 function renderStatusRows(targetId, rows) {
@@ -1636,9 +1755,10 @@ function requestChartAnimation() {
 
 function animateCharts(timestamp) {
   state.animationFrame = null;
-  const active = stepVisualHistory(timestamp);
+  const historyActive = stepVisualHistory(timestamp);
+  const lidarActive = stepLidarMapRange();
   drawCharts();
-  if (active) state.animationFrame = requestAnimationFrame(animateCharts);
+  if (historyActive || lidarActive) state.animationFrame = requestAnimationFrame(animateCharts);
 }
 
 function stepVisualHistory(timestamp) {
@@ -1646,6 +1766,21 @@ function stepVisualHistory(timestamp) {
   const elapsed = Math.max(0, timestamp - state.chartShiftStartedAt);
   state.chartShift = Math.max(0, 1 - elapsed / 720);
   return state.chartShift > 0;
+}
+
+function stepLidarMapRange() {
+  const target = clampLidarRange(state.lidarMap.range);
+  if (!Number.isFinite(state.lidarMap.displayRange)) {
+    state.lidarMap.displayRange = target;
+    return false;
+  }
+  const diff = target - state.lidarMap.displayRange;
+  if (Math.abs(diff) < 0.025) {
+    state.lidarMap.displayRange = target;
+    return false;
+  }
+  state.lidarMap.displayRange += diff * 0.22;
+  return true;
 }
 
 function drawCharts() {
@@ -1830,10 +1965,10 @@ function drawLidarMap(result) {
   const { ctx, w, h } = prepared;
   const colors = chartColors();
   const points = result?.ok ? result.points || [] : [];
-  const radius = Math.max(80, Math.min(w, h) * 0.42);
+  const radius = Math.max(80, Math.min(w, h) * 0.39);
   const cx = w / 2;
   const cy = h / 2;
-  const range = lidarRangeFor(result);
+  const range = lidarDrawRange();
   const gridStep = lidarGridStep(range);
 
   ctx.clearRect(0, 0, w, h);
@@ -1876,6 +2011,10 @@ function lidarRangeFor(result) {
   return clampLidarRange(state.lidarMap.range);
 }
 
+function lidarDrawRange() {
+  return clampLidarRange(state.lidarMap.displayRange || state.lidarMap.range);
+}
+
 function lidarGridStep(range) {
   if (range <= 6) return 1;
   if (range <= 12) return 2;
@@ -1903,10 +2042,13 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.stroke();
   ctx.fillStyle = cssVar("--muted", "#a9b4d2");
   ctx.font = "900 11px Inter, Arial, sans-serif";
-  ctx.fillText("Front 0°", cx + 8, cy - radius + 14);
-  ctx.fillText("90°", cx + radius - 34, cy + 18);
-  ctx.fillText("180°", cx + 8, cy + radius - 8);
-  ctx.fillText("270°", cx - radius + 8, cy - 8);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const labelOffset = 20;
+  ctx.fillText("0°", cx, cy - radius - labelOffset);
+  ctx.fillText("90°", cx + radius + labelOffset, cy);
+  ctx.fillText("180°", cx, cy + radius + labelOffset);
+  ctx.fillText("270°", cx - radius - labelOffset, cy);
   ctx.fillStyle = cssVar("--text", "#f7f9ff");
   ctx.beginPath();
   ctx.arc(cx, cy, 5, 0, Math.PI * 2);

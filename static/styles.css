@@ -695,6 +695,16 @@ h2 {
   cursor: default;
 }
 
+.map-range-slider {
+  display: grid;
+  gap: 8px;
+}
+
+.map-range-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--cyan);
+}
+
 .map-hint {
   position: absolute;
   left: 12px;

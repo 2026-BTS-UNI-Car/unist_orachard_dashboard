@@ -22,6 +22,7 @@ services:
       LIDAR_DEV_ROOT: "/host-dev"
       LIDAR_BAUDS: "1000000,460800,256000,115200"
       LIDAR_WS_UPSTREAM: "ws://127.0.0.1:8765/ws/lidar"
+      LIDAR_BRIDGE_STATUS_FILE: "/app/runtime/lidar_bridge_status.json"
     volumes:
       - ./runtime:/app/runtime
       - ./data:/app/data
@@ -85,6 +86,9 @@ services:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       LIDAR_BRIDGE_SOURCE: "${LIDAR_BRIDGE_SOURCE:-ros2}"
       LIDAR_SCAN_MAX_POINTS: "${LIDAR_SCAN_MAX_POINTS:-900}"
+      LIDAR_BRIDGE_STATUS_FILE: "/app/runtime/lidar_bridge_status.json"
+    volumes:
+      - ./runtime:/app/runtime
     command:
       - /bin/bash
       - -lc
