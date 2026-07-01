@@ -2,6 +2,7 @@ const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/
 const HISTORY_KEYS = ["cpu", "memory", "swap", "power", "temp", "rx", "tx", "dockerCpu", "dockerMemory", "fanTemp", "fanPwm"];
 const CORE_COLORS = ["#55e2b2", "#38d8ff", "#2f76ff", "#8238c9", "#f21b58", "#f4bd4f", "#7dd3fc", "#fb7185"];
 const MAX_POINTS = 90;
+const CHART_BUFFER_POINTS = MAX_POINTS + 1;
 const POLL_INTERVAL_MS = 1000;
 const DPR_LIMIT = 1.5;
 const CPU_MODE_KEY = "ubts-cpu-chart-mode";
@@ -507,7 +508,7 @@ function addPointTo(historyStore, visualStore, key, value) {
   historyStore[key] = target;
   visualStore[key] = visual;
   const numeric = value === null || value === undefined ? null : Number(value);
-  if (target.length >= MAX_POINTS) {
+  if (target.length >= CHART_BUFFER_POINTS) {
     target.shift();
     visual.shift();
   }
@@ -1395,7 +1396,7 @@ function renderTemperatures(rows) {
 
 function renderDisks(disks) {
   const primary = disks[0];
-  text("diskSummary", primary ? `${fmtBytes(primary.used)} / ${fmtBytes(primary.total)} · ${fmtPercent(primary.percent)}` : "--");
+  text("diskSummary", primary ? `${primary.mount} · ${fmtBytes(primary.used)} / ${fmtBytes(primary.total)} · ${fmtPercent(primary.percent)}` : "--");
   syncItems("diskList", disks, (disk) => disk.mount, createDiskRow, updateDiskRow);
 }
 
@@ -1412,7 +1413,8 @@ function createDiskRow() {
 
 function updateDiskRow(el, disk) {
   el.querySelector('[data-role="mount"]').textContent = disk.mount;
-  el.querySelector('[data-role="usage"]').textContent = `${fmtBytes(disk.used)} used · ${fmtBytes(disk.free)} free · ${fmtBytes(disk.total)} total`;
+  const source = [disk.source, disk.fstype].filter(Boolean).join(" · ");
+  el.querySelector('[data-role="usage"]').textContent = `${source ? `${source} · ` : ""}${fmtBytes(disk.used)} used · ${fmtBytes(disk.free)} free · ${fmtBytes(disk.total)} total`;
   el.querySelector('[data-role="percent"]').textContent = fmtPercent(disk.percent);
   setProgressFill(el.querySelector(".progress i"), disk.percent);
 }
@@ -2282,7 +2284,12 @@ function drawMultiLine(target, series) {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, w, h);
   drawGrid(ctx, w, h);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.clip();
   for (const item of series) drawLine(ctx, item.values, item.color, item.max || 100, w, h);
+  ctx.restore();
 }
 
 function prepareCanvas(canvas) {
@@ -2315,10 +2322,12 @@ function drawGrid(ctx, w, h) {
 }
 
 function drawLine(ctx, values, color, max, w, h) {
-  const points = values.map((value, index) => {
+  const buffered = values.slice(-CHART_BUFFER_POINTS);
+  const scrollProgress = buffered.length > MAX_POINTS ? 1 - state.chartShift : 0;
+  const points = buffered.map((value, index) => {
     if (value === null || Number.isNaN(value)) return null;
-    const offset = Math.max(0, MAX_POINTS - values.length);
-    const x = values.length <= 1 ? w : ((offset + index + state.chartShift - 1) / (MAX_POINTS - 1)) * w;
+    const offset = Math.max(0, MAX_POINTS - buffered.length);
+    const x = buffered.length <= 1 ? w : ((offset + index - scrollProgress) / (MAX_POINTS - 1)) * w;
     const safe = Math.max(0, Math.min(max, value));
     const y = h - (safe / max) * (h - 18) - 9;
     return { x, y };
@@ -2340,12 +2349,12 @@ function drawLine(ctx, values, color, max, w, h) {
     strokeSegment(ctx, segment);
     segment = [];
   }
-  strokeSegment(ctx, segment, w);
+  strokeSegment(ctx, segment);
   ctx.stroke();
   ctx.restore();
 }
 
-function strokeSegment(ctx, points, w) {
+function strokeSegment(ctx, points) {
   if (!points.length) return;
   ctx.moveTo(points[0].x, points[0].y);
   if (points.length === 1) {
@@ -2361,7 +2370,6 @@ function strokeSegment(ctx, points, w) {
   }
   const last = points[points.length - 1];
   ctx.lineTo(last.x, last.y);
-  if (Number.isFinite(w) && last.x < w) ctx.lineTo(w, last.y);
 }
 
 function drawLidarMap(result) {

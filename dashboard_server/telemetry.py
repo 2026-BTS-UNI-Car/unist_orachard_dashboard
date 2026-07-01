@@ -1427,12 +1427,18 @@ class TelemetryProvider:
         return values
 
     def _disks(self) -> list[dict[str, Any]]:
-        targets = [("/", self.host_root)]
+        mounted = self._host_mounted_partitions()
+        if mounted:
+            return mounted
+        return self._fallback_disks()
+
+    def _fallback_disks(self) -> list[dict[str, Any]]:
+        targets = [("/", self.host_root, None, None)]
         workspace = self.host_root / "home/unist/workspace"
         if workspace.exists():
-            targets.append(("/home/unist/workspace", workspace))
+            targets.append(("/home/unist/workspace", workspace, None, None))
         disks = []
-        for label, path in targets:
+        for label, path, source, fstype in targets:
             try:
                 usage = shutil.disk_usage(path)
             except OSError:
@@ -1440,6 +1446,8 @@ class TelemetryProvider:
             disks.append(
                 {
                     "mount": label,
+                    "source": source,
+                    "fstype": fstype,
                     "total": usage.total,
                     "used": usage.used,
                     "free": usage.free,
@@ -1447,6 +1455,122 @@ class TelemetryProvider:
                 }
             )
         return disks
+
+    def _host_mounted_partitions(self) -> list[dict[str, Any]]:
+        findmnt = shutil.which("findmnt")
+        if not findmnt:
+            return []
+        command = [findmnt, "-b", "-J", "-o", "TARGET,SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%"]
+        nsenter = shutil.which("nsenter")
+        if nsenter:
+            command = [nsenter, "-t", "1", "-m", "--", *command]
+        try:
+            proc = subprocess.run(command, check=False, capture_output=True, text=True, timeout=4)
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        if proc.returncode != 0:
+            return []
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return []
+
+        rows: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for item in self._flatten_findmnt(payload.get("filesystems", [])):
+            target = str(item.get("target") or "")
+            source = str(item.get("source") or "")
+            fstype = str(item.get("fstype") or "")
+            total = _safe_int(str(item.get("size"))) or 0
+            used = _safe_int(str(item.get("used"))) or 0
+            free = _safe_int(str(item.get("avail"))) or 0
+            if not self._is_storage_mount(target, source, fstype, total):
+                continue
+            key = (target, source)
+            if key in seen:
+                continue
+            seen.add(key)
+            if total <= 0:
+                host_path = self.host_root / target.lstrip("/")
+                if target == "/":
+                    host_path = self.host_root
+                try:
+                    usage = shutil.disk_usage(host_path)
+                except OSError:
+                    continue
+                total, used, free = usage.total, usage.used, usage.free
+            rows.append(
+                {
+                    "mount": target,
+                    "source": source or None,
+                    "fstype": fstype or None,
+                    "total": total,
+                    "used": used,
+                    "free": free,
+                    "percent": _pct(used, total),
+                }
+            )
+        rows.sort(key=lambda row: (0 if row["mount"] == "/" else 1, row["mount"]))
+        return rows
+
+    def _flatten_findmnt(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for item in items:
+            rows.append(item)
+            children = item.get("children")
+            if isinstance(children, list):
+                rows.extend(self._flatten_findmnt(children))
+        return rows
+
+    def _is_storage_mount(self, target: str, source: str, fstype: str, total: int) -> bool:
+        if not target or total <= 0:
+            return False
+        ignored_fs = {
+            "autofs",
+            "binfmt_misc",
+            "bpf",
+            "cgroup",
+            "cgroup2",
+            "configfs",
+            "debugfs",
+            "devpts",
+            "devtmpfs",
+            "fusectl",
+            "mqueue",
+            "nsfs",
+            "overlay",
+            "proc",
+            "pstore",
+            "securityfs",
+            "squashfs",
+            "sysfs",
+            "tmpfs",
+            "tracefs",
+        }
+        if fstype in ignored_fs:
+            return False
+        ignored_targets = (
+            "/dev",
+            "/etc/hostname",
+            "/etc/hosts",
+            "/etc/resolv.conf",
+            "/mnt/host",
+            "/proc",
+            "/run",
+            "/sys",
+            "/var/lib/docker/overlay2",
+            "/var/lib/docker/containers",
+            "/snap",
+        )
+        if target != "/" and target.startswith(ignored_targets):
+            return False
+        if "/docker/containers/" in source:
+            return False
+        if source.startswith("/dev/loop"):
+            return False
+        if source.startswith("/dev/"):
+            return True
+        return target in {"/", "/boot", "/boot/efi"} or target.startswith(("/media/", "/mnt/", "/home/"))
 
     def _os_uptime_s(self) -> float | None:
         text = _read_text(self.proc_root / "uptime")

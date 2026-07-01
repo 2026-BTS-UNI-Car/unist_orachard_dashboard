@@ -84,6 +84,11 @@ def write_bridge_status(path: Path, payload: dict[str, Any]) -> None:
         pass
 
 
+def bridge_log(event: str, **fields: Any) -> None:
+    payload = {"ts": round(time.time(), 3), "event": f"lidar_bridge.{event}", **fields}
+    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
+
+
 def status_writer_thread(state: ScanState, path: Path, interval_s: float, stop: threading.Event) -> None:
     while not stop.is_set():
         write_bridge_status(path, bridge_status_payload(state))
@@ -147,6 +152,7 @@ def ros_thread(state: ScanState, topic: str, max_points: int, ready: threading.E
         from sensor_msgs.msg import LaserScan
     except ImportError as exc:
         state.set_error(f"ROS2 Python packages are required on Jetson: {exc}")
+        bridge_log("ros_import_error", error=str(exc))
         ready.set()
         return
 
@@ -154,10 +160,26 @@ def ros_thread(state: ScanState, topic: str, max_points: int, ready: threading.E
         def __init__(self):
             super().__init__("ubts_lidar_ws_bridge")
             self.create_subscription(LaserScan, topic, self.on_scan, 10)
+            self.scan_count = 0
+            self.last_log_at = 0.0
+            bridge_log("ros_subscribed", topic=topic, max_points=max_points)
 
         def on_scan(self, msg):
             stamp = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) / 1_000_000_000
-            state.update(msg.header.frame_id or "laser", stamp, scan_to_points(msg, max_points), "ros2")
+            points = scan_to_points(msg, max_points)
+            state.update(msg.header.frame_id or "laser", stamp, points, "ros2")
+            self.scan_count += 1
+            now = time.time()
+            if self.scan_count == 1 or now - self.last_log_at >= 10:
+                self.last_log_at = now
+                bridge_log(
+                    "scan_received",
+                    topic=topic,
+                    frame_id=msg.header.frame_id or "laser",
+                    raw_ranges=len(getattr(msg, "ranges", []) or []),
+                    points=len(points),
+                    count=self.scan_count,
+                )
 
     rclpy.init()
     node = BridgeNode()
@@ -344,6 +366,7 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                 await websocket.close(code=1008, reason="unsupported path")
                 return
             requested_max_points = client_max_points(actual_path, default=900, source_max=source_max_points)
+            bridge_log("client_open", path=actual_path, max_points=requested_max_points)
             await websocket.send(json.dumps({"type": "socket", "ok": True, "message": "lidar websocket connected"}))
             while True:
                 snap = state.snapshot()
@@ -389,10 +412,12 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
         except Exception as exc:
             connection_closed = getattr(getattr(websockets, "exceptions", None), "ConnectionClosed", None)
             if connection_closed is not None and isinstance(exc, connection_closed):
+                bridge_log("client_closed")
                 return
-            print(f"LiDAR WebSocket handler error: {exc}", file=sys.stderr, flush=True)
+            bridge_log("handler_error", error=str(exc))
             return
 
+    bridge_log("ws_listen", host=host, port=port, path=path, max_hz=max_hz, source_max_points=source_max_points)
     async with websockets.serve(handler, host, port):
         await asyncio.Future()
 
@@ -413,6 +438,13 @@ def main() -> int:
     args = parser.parse_args()
     if args.source == "auto":
         args.source = "ros2"
+    bridge_log(
+        "start",
+        source=args.source,
+        topic=args.topic,
+        max_points=args.max_points,
+        status_file=args.status_file,
+    )
 
     state = ScanState()
     state.source = "ros2" if args.source == "ros2" else args.source

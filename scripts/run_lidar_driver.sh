@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source /opt/ros/iron/setup.bash
-source /opt/sllidar_ros2_ws/install/setup.bash
+source_setup() {
+  local setup_file="$1"
+  if [ ! -r "$setup_file" ]; then
+    log setup_missing "ROS setup file not found: $setup_file"
+    return 1
+  fi
+  set +u
+  # shellcheck disable=SC1090
+  source "$setup_file"
+  set -u
+}
 
 DEFAULT_PORT="${LIDAR_SERIAL_PORT:-/dev/ttyUSB0}"
 RESTART_DELAY="${LIDAR_DRIVER_RESTART_DELAY_S:-2}"
@@ -13,6 +22,9 @@ log() {
   printf '{"ts":%s,"event":"lidar_driver.%s","message":%s}\n' \
     "$(date +%s)" "$event" "$(python3 -c 'import json,sys; print(json.dumps(" ".join(sys.argv[1:])))' "$@")"
 }
+
+source_setup /opt/ros/iron/setup.bash
+source_setup /opt/sllidar_ros2_ws/install/setup.bash
 
 resolve_port() {
   if [ -n "${LIDAR_SERIAL_PORT:-}" ] && [ -e "$LIDAR_SERIAL_PORT" ]; then
