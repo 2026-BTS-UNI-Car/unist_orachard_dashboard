@@ -9,7 +9,9 @@ import os
 import secrets
 import select
 import socket
+import threading
 import time
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -20,6 +22,49 @@ from dashboard_server.telemetry import ROOT, TelemetryProvider
 STATIC_ROOT = ROOT / "static"
 DOCS_ROOT = ROOT / "docs"
 APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs"}
+SESSION_COOKIE_NAME = "ubts_session"
+SESSION_TTL_S = int(os.environ.get("DASHBOARD_SESSION_TTL_S", "3600"))
+_SESSION_LOCK = threading.Lock()
+_SESSIONS: dict[str, dict[str, float]] = {}
+_ACTIVE_LIDAR_WS: dict[str, dict[str, float | str]] = {}
+
+
+def dashboard_log(event: str, **fields):
+    payload = {"ts": round(time.time(), 3), "event": event, **fields}
+    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
+
+
+def _prune_sessions(now: float | None = None):
+    now = now or time.time()
+    expired = [token for token, item in _SESSIONS.items() if item.get("expires_at", 0.0) <= now]
+    for token in expired:
+        _SESSIONS.pop(token, None)
+    for connection_id, item in list(_ACTIVE_LIDAR_WS.items()):
+        if item.get("session") in expired:
+            _ACTIVE_LIDAR_WS.pop(connection_id, None)
+
+
+def lidar_websocket_stats() -> dict[str, object]:
+    now = time.time()
+    with _SESSION_LOCK:
+        _prune_sessions(now)
+        sessions = [
+            {
+                "id": token[:8],
+                "age_sec": round(now - float(item.get("connected_at", now)), 1),
+                "remote": item.get("remote", ""),
+                "session": str(item.get("session", ""))[:8],
+            }
+            for token, item in _ACTIVE_LIDAR_WS.items()
+        ]
+        return {
+            "active": len(sessions),
+            "sessions": sessions,
+            "session_ttl_s": SESSION_TTL_S,
+            "known_sessions": len(_SESSIONS),
+        }
+
+
 DOCS_CATALOG = [
     {
         "slug": "architecture",
@@ -83,6 +128,7 @@ DOCS_CATALOG = [
 class DashboardHandler(BaseHTTPRequestHandler):
     provider: TelemetryProvider
     protocol_version = "HTTP/1.1"
+    _last_telemetry_log_at = 0.0
 
     def do_HEAD(self):
         self.do_GET()
@@ -103,6 +149,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/fan/preset":
             payload = self._read_json_body()
             self._send_json(self.provider.set_fan_preset(str(payload.get("preset", ""))))
+        elif path.startswith("/api/docker/container/"):
+            self._post_docker_container_action(path)
         else:
             self.send_error(404, "Not found")
 
@@ -116,7 +164,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/health":
             self._send_json(self.provider.health())
         elif path == "/api/telemetry":
-            self._send_json(self.provider.telemetry())
+            payload = self.provider.telemetry()
+            payload["connection"]["lidar_websocket"] = lidar_websocket_stats()
+            self._send_json(payload)
         elif path == "/api/system":
             self._send_json(self.provider.system())
         elif path == "/api/network":
@@ -126,7 +176,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/docker/container/"):
             self._send_docker_container_payload(path, parsed.query)
         elif path == "/api/connection":
-            self._send_json(self.provider.connection())
+            payload = self.provider.connection()
+            payload["lidar_websocket"] = lidar_websocket_stats()
+            self._send_json(payload)
         elif path == "/api/plan":
             self._send_json(self.provider.plan())
         elif path == "/api/site-map":
@@ -147,16 +199,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             super().log_message(fmt, *args)
 
     def _send_json(self, payload):
+        session_token = self._ensure_session(create=True)
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "close")
+        self._send_session_cookie(session_token)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
         self.close_connection = True
+        self._log_served_json()
 
     def _read_json_body(self):
         length = int(self.headers.get("Content-Length", "0") or 0)
@@ -198,6 +253,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         }
 
     def _send_file(self, path: Path):
+        session_token = self._ensure_session(create=True)
         try:
             resolved = path.resolve()
             if STATIC_ROOT.resolve() not in resolved.parents and resolved != (STATIC_ROOT / "index.html").resolve():
@@ -218,11 +274,50 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "close")
+        self._send_session_cookie(session_token)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
         self.close_connection = True
+
+    def _ensure_session(self, create: bool) -> str | None:
+        now = time.time()
+        try:
+            cookie = SimpleCookie(self.headers.get("Cookie", ""))
+        except CookieError:
+            cookie = SimpleCookie()
+        token = cookie.get(SESSION_COOKIE_NAME).value if SESSION_COOKIE_NAME in cookie else None
+        with _SESSION_LOCK:
+            _prune_sessions(now)
+            if token and token in _SESSIONS:
+                return token
+            if not create:
+                return None
+            token = secrets.token_urlsafe(24)
+            _SESSIONS[token] = {"created_at": now, "expires_at": now + SESSION_TTL_S}
+        dashboard_log("session.created", session=token[:8], remote=self.client_address[0])
+        return token
+
+    def _send_session_cookie(self, token: str | None):
+        if not token:
+            return
+        self.send_header(
+            "Set-Cookie",
+            f"{SESSION_COOKIE_NAME}={token}; Path=/; Max-Age={SESSION_TTL_S}; HttpOnly; SameSite=Lax",
+        )
+
+    def _log_served_json(self):
+        path = urlparse(self.path).path
+        now = time.time()
+        if path == "/api/telemetry":
+            if now - DashboardHandler._last_telemetry_log_at < 30:
+                return
+            DashboardHandler._last_telemetry_log_at = now
+            dashboard_log("api.telemetry", active_lidar_ws=lidar_websocket_stats()["active"])
+            return
+        if path not in {"/api/health"}:
+            dashboard_log("api.request", path=path, active_lidar_ws=lidar_websocket_stats()["active"])
 
     def _send_docker_container_payload(self, path: str, query: str):
         raw = path.removeprefix("/api/docker/container/").strip("/")
@@ -237,6 +332,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send_json(self.provider.docker_container_detail(unquote(raw)))
 
+    def _post_docker_container_action(self, path: str):
+        raw = path.removeprefix("/api/docker/container/").strip("/")
+        parts = [unquote(item) for item in raw.split("/") if item]
+        if len(parts) != 2 or parts[1] not in {"start", "stop", "restart"}:
+            self.send_error(404, "Unknown container action")
+            return
+        container_id, action = parts
+        result = self.provider.docker_container_action(container_id, action)
+        dashboard_log("docker.action", action=action, container=container_id[:12], ok=bool(result.get("ok")), state=result.get("state"))
+        self._send_json(result)
+
     def _proxy_lidar_websocket(self):
         if self.headers.get("Upgrade", "").lower() != "websocket":
             self.send_error(426, "WebSocket upgrade required")
@@ -245,6 +351,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not client_key:
             self.send_error(400, "Missing Sec-WebSocket-Key")
             return
+        session_token = self._ensure_session(create=False)
+        if not session_token:
+            dashboard_log("ws.lidar.rejected", reason="missing_session", remote=self.client_address[0])
+            self.send_error(403, "LiDAR WebSocket session required")
+            return
+        now = time.time()
+        with _SESSION_LOCK:
+            session = _SESSIONS.get(session_token)
+            session_deadline = float(session.get("expires_at", now + SESSION_TTL_S)) if session else now
+            connection_id = secrets.token_urlsafe(8)
+            _ACTIVE_LIDAR_WS[connection_id] = {"session": session_token, "connected_at": now, "remote": self.client_address[0]}
 
         accept = base64.b64encode(
             hashlib.sha1((client_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
@@ -255,38 +372,53 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Sec-WebSocket-Accept", accept)
         self.end_headers()
         self.close_connection = True
+        dashboard_log("ws.lidar.open", session=session_token[:8], connection=connection_id[:8], active=lidar_websocket_stats()["active"])
 
         upstream_url = self._lidar_upstream_with_client_query(
             os.environ.get("LIDAR_WS_UPSTREAM", "ws://127.0.0.1:8765/ws/lidar")
         )
-        while True:
-            try:
-                upstream, initial_upstream = self._connect_lidar_upstream(upstream_url)
-            except OSError as exc:
-                ok = self._ws_send_json(
-                    self.connection,
-                    {
-                        "type": "status",
-                        "device_found": False,
-                        "scan_topic_alive": False,
-                        "last_scan_age_sec": None,
-                        "point_count": 0,
-                        "source": "bridge",
-                        "error": f"LiDAR WebSocket bridge unavailable: {exc}",
-                    },
-                )
-                if not ok:
-                    return
-                time.sleep(2.0)
-                continue
-            try:
-                self._relay_websocket(upstream, initial_upstream)
-            finally:
+        try:
+            unavailable_logged = False
+            while time.time() < session_deadline:
                 try:
-                    upstream.close()
-                except OSError:
-                    pass
-            return
+                    upstream, initial_upstream = self._connect_lidar_upstream(upstream_url)
+                except OSError as exc:
+                    if not unavailable_logged:
+                        dashboard_log("ws.lidar.upstream_unavailable", session=session_token[:8], error=str(exc))
+                        unavailable_logged = True
+                    ok = self._ws_send_json(
+                        self.connection,
+                        {
+                            "type": "status",
+                            "device_found": False,
+                            "scan_topic_alive": False,
+                            "last_scan_age_sec": None,
+                            "point_count": 0,
+                            "source": "bridge",
+                            "error": f"LiDAR WebSocket bridge unavailable: {exc}",
+                        },
+                    )
+                    if not ok:
+                        return
+                    time.sleep(min(2.0, max(0.1, session_deadline - time.time())))
+                    continue
+                try:
+                    self._relay_websocket(upstream, initial_upstream, session_deadline)
+                finally:
+                    try:
+                        upstream.close()
+                    except OSError:
+                        pass
+                return
+            self._ws_send_json(
+                self.connection,
+                {"type": "status", "scan_topic_alive": False, "error": "LiDAR WebSocket session expired."},
+            )
+            self._ws_send_close(self.connection)
+        finally:
+            with _SESSION_LOCK:
+                _ACTIVE_LIDAR_WS.pop(connection_id, None)
+            dashboard_log("ws.lidar.close", session=session_token[:8], connection=connection_id[:8], active=lidar_websocket_stats()["active"])
 
     def _connect_lidar_upstream(self, upstream_url: str) -> tuple[socket.socket, bytes]:
         parsed = urlparse(upstream_url)
@@ -329,7 +461,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         separator = "&" if urlparse(upstream_url).query else "?"
         return f"{upstream_url}{separator}{client_query}"
 
-    def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b""):
+    def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b"", deadline: float | None = None):
         if initial_upstream:
             try:
                 self.connection.sendall(initial_upstream)
@@ -337,10 +469,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
         sockets = [self.connection, upstream]
         while True:
-            readable, _, errored = select.select(sockets, [], sockets, 30)
+            timeout = 30.0
+            if deadline is not None:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    self._ws_send_close(self.connection)
+                    return
+                timeout = min(timeout, max(0.1, remaining))
+            readable, _, errored = select.select(sockets, [], sockets, timeout)
             if errored:
                 break
             if not readable:
+                if deadline is not None and time.time() >= deadline:
+                    self._ws_send_close(self.connection)
+                    return
                 self._ws_send_json(
                     self.connection,
                     {
@@ -396,6 +538,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:
     DashboardHandler.provider = TelemetryProvider(config)
+    dashboard_log("server.create", host=host, port=port, session_ttl_s=SESSION_TTL_S)
     return DashboardServer((host, port), DashboardHandler)
 
 
@@ -406,7 +549,7 @@ def main():
     parser.add_argument("--config", default=os.environ.get("DASHBOARD_CONFIG"))
     args = parser.parse_args()
     server = create_server(args.host, args.port, args.config)
-    print(f"dashboard listening on http://{args.host}:{args.port}")
+    dashboard_log("server.listen", url=f"http://{args.host}:{args.port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

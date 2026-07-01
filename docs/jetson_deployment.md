@@ -92,6 +92,8 @@ Silicon Labs CP210x VCP 릴리즈 노트는 구형 Linux용 out-of-tree 드라�
 5. bridge가 `/scan`을 WebSocket으로 변환
 6. Dashboard가 같은 origin의 `/ws/lidar`로 수신
 
+Dashboard의 Docker 탭에서는 선택한 컨테이너의 시작, 중지, 재시작을 실행할 수 있습니다. Dashboard 자신이 실행 중인 컨테이너는 cgroup/hostname 기반으로 식별해 제어 버튼을 숨깁니다. 컨테이너 action 결과와 LiDAR WebSocket 세션 상태는 dashboard 컨테이너 로그에 JSON 한 줄 로그로 남습니다.
+
 실시간 LiDAR 지도 실행:
 
 ```bash

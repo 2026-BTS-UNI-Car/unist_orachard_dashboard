@@ -66,6 +66,10 @@ Bridge 컨테이너는 ROS2 `/scan`에서 받은 source point를 최대 `LIDAR_S
 
 브라우저 WebSocket은 Connection 페이지에 있을 때만 연결됩니다. 다른 페이지로 이동하거나 탭을 닫으면 브라우저 구독은 끊기지만, `ros2-lidar-driver`가 실행 중이면 LiDAR motor와 `/scan` publish는 계속 동작합니다. 이는 Dashboard가 LiDAR serial port를 소유하지 않고 ROS2 결과만 구독하기 위한 의도된 구조입니다.
 
+Dashboard server는 앱을 먼저 연 브라우저에 `ubts_session` 쿠키를 발급하고, 이 세션이 있는 요청만 `/ws/lidar` 접속을 허용합니다. 세션은 서버 메모리에만 저장되며 기본 유효 시간은 1시간입니다. 컨테이너가 재시작되면 세션은 초기화되고, 브라우저가 페이지를 다시 열면 새 세션을 받습니다.
+
+Connection 화면의 LiDAR 상태에는 활성 WebSocket 수가 `WS N` 형태로 표시됩니다. `WS 0`이어도 `ros2-lidar-driver`가 켜져 있으면 LiDAR motor는 계속 돌 수 있습니다. 이 값은 브라우저 구독 수이고, motor 전원이나 ROS2 driver 실행 여부와는 별개입니다.
+
 ### 상태 확인
 
 `상태 새로고침` 버튼은 serial port를 열지 않습니다. Dashboard가 볼 수 있는 `/dev/ttyUSB*` 표시, 안정적인 by-id 경로, 현재 포트 holder만 확인합니다.
@@ -122,6 +126,20 @@ cd /home/unist/workspace/unist_orachard_dashboard
 docker-compose up -d --build
 docker-compose logs -f ros2-lidar-bridge
 ```
+
+## USB 재삽입 동작
+
+`ros2-lidar-driver` 컨테이너는 `scripts/run_lidar_driver.sh` wrapper로 실행됩니다. 이 wrapper는 `/dev/serial/by-id/*CP210*`, `/dev/serial/by-id/*Silicon*`, `/dev/serial/by-id/*Slamtec*`, `/dev/ttyUSB*` 순서로 LiDAR serial 장치를 찾고, 장치가 없으면 대기합니다. ROS2 driver launch가 종료되면 장치를 다시 스캔한 뒤 재시작합니다.
+
+LiDAR를 뺐다가 다시 꽂은 뒤 자동 복구가 되지 않으면 다음 순서로 확인합니다.
+
+```bash
+docker compose logs -f ros2-lidar-driver
+ls -l /dev/serial/by-id /dev/ttyUSB*
+docker compose restart ros2-lidar-driver ros2-lidar-bridge
+```
+
+driver 프로세스가 종료되지 않고 내부에서 멈춘 경우에는 위 restart가 가장 빠른 복구 절차입니다. 추후 ROS2 bringup이 전체 로버 launch로 통합되면 동일한 wrapper 또는 lifecycle supervisor가 LiDAR driver를 감시해야 합니다.
 
 브라우저 경로 검증:
 

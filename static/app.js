@@ -68,6 +68,7 @@ const state = {
   containerLogsUpdatedAt: null,
   chartShift: 0,
   chartShiftStartedAt: 0,
+  chartShiftDurationMs: POLL_INTERVAL_MS,
   animationFrame: null,
   apiLogCounter: 0,
   tickInFlight: false,
@@ -489,6 +490,7 @@ function pushHistory(data) {
   pruneCoreHistory(cores.map(coreKey));
   state.chartShift = 1;
   state.chartShiftStartedAt = performance.now();
+  state.chartShiftDurationMs = Math.max(500, POLL_INTERVAL_MS * 1.08);
 }
 
 function addPoint(key, value) {
@@ -1062,8 +1064,9 @@ function normalizeLidarExportPoint(point) {
   const xM = Number(point.x_m);
   const yM = Number(point.y_m);
   if (!Number.isFinite(distanceM) || !Number.isFinite(xM) || !Number.isFinite(yM)) return null;
-  const displayAngle = Number.isFinite(angleDeg) ? (angleDeg + 180) % 360 : null;
-  const displayX = -xM;
+  const rotatedAngle = Number.isFinite(angleDeg) ? (angleDeg + 180) % 360 : null;
+  const displayAngle = rotatedAngle === null ? null : (360 - rotatedAngle) % 360;
+  const displayX = xM;
   const displayY = -yM;
   return {
     angle_deg: displayAngle === null ? null : Number(displayAngle.toFixed(3)),
@@ -1085,15 +1088,17 @@ function angleCoverage(points) {
 function renderConnection(connection) {
   const lidar = connection.lidar || {};
   const bridge = connection.lidar_bridge || {};
+  const ws = connection.lidar_websocket || {};
   const last = lidar.last_test || {};
   const lastScan = lidar.last_scan || {};
   const scanLive = Boolean(state.lidarLive.scanTopicAlive || bridge.scan_topic_alive);
+  const wsText = `WS ${ws.active || 0}`;
   text("connectionLidarState", scanLive ? "수신 중" : (lidar.present ? lidarStateLabel(lidar.state) : "미인식"));
   text("connectionLidarDevice", lidar.device || "--");
   text("connectionLidarProtocol", "ROS2 /scan");
   text("connectionLidarSubtext", "subscribe-only");
   text("connectionLidarHealth", scanLive ? "수신 중" : (lidar.present ? "ROS2 대기" : "--"));
-  text("connectionLidarHealthText", scanLive ? "ROS2 /scan live" : "ROS2 /scan 대기");
+  text("connectionLidarHealthText", scanLive ? `ROS2 /scan live · ${wsText}` : `ROS2 /scan 대기 · ${wsText}`);
   text("lidarDeviceDetail", lidar.present ? shortPath(lidar.device) : "장치 미인식");
   text("lidarByIdDetail", lidar.by_id ? shortPath(lidar.by_id, 42) : "stable ID 대기");
   text("lidarDriverDetail", driverLabel(lidar.driver_hint));
@@ -1583,6 +1588,7 @@ function renderContainerDetailLoading(containerId) {
   text("containerDetailTitle", containerId ? `컨테이너 상세 · ${containerId}` : "컨테이너 상세");
   const detail = $("containerDetail");
   const logs = $("containerLogs");
+  renderContainerActions(null);
   if (detail) detail.innerHTML = `<div class="empty-state">컨테이너 정보를 불러오는 중입니다.</div>`;
   if (logs) logs.textContent = "로그를 불러오는 중입니다.";
 }
@@ -1591,6 +1597,7 @@ function renderContainerDetailError(message) {
   text("containerDetailTitle", "컨테이너 상세");
   const detail = $("containerDetail");
   const logs = $("containerLogs");
+  renderContainerActions(null);
   if (detail) detail.innerHTML = `<div class="empty-state">${escapeHtml(message || "컨테이너를 선택하세요.")}</div>`;
   if (logs) logs.textContent = "로그 대기 중";
 }
@@ -1606,6 +1613,7 @@ function renderContainerDetail(detailPayload, logsPayload) {
   const stats = detailPayload.stats || {};
   const stateInfo = detailPayload.state || {};
   const restartPolicy = detailPayload.restart_policy || {};
+  renderContainerActions(detailPayload);
   if (detail) {
     detail.innerHTML = `
       <div class="container-detail-grid">
@@ -1627,6 +1635,26 @@ function renderContainerDetail(detailPayload, logsPayload) {
       logs.textContent = "로그가 없습니다.";
     }
   }
+}
+
+function renderContainerActions(detailPayload) {
+  const target = $("containerActions");
+  if (!target) return;
+  if (!detailPayload?.ok) {
+    target.innerHTML = "";
+    return;
+  }
+  if (detailPayload.self) {
+    target.innerHTML = `<span class="container-self-lock">Dashboard self</span>`;
+    return;
+  }
+  const running = Boolean(detailPayload.state?.Running);
+  const id = escapeHtml(detailPayload.id || detailPayload.full_id || "");
+  target.innerHTML = `
+    <button type="button" data-container-action="start" data-container-id="${id}" ${running ? "disabled" : ""}>시작</button>
+    <button type="button" data-container-action="stop" data-container-id="${id}" ${running ? "" : "disabled"}>중지</button>
+    <button type="button" data-container-action="restart" data-container-id="${id}" ${running ? "" : "disabled"}>재시작</button>
+  `;
 }
 
 function containerDetailCell(label, value, sub = "") {
@@ -1676,6 +1704,35 @@ function initFanControls() {
 
 function initDockerControls() {
   $("containerRefreshButton")?.addEventListener("click", () => maybeRefreshContainerDetail(true));
+  $("containerActions")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-container-action]");
+    if (!button || button.disabled) return;
+    await postContainerAction(button.dataset.containerId, button.dataset.containerAction);
+  });
+}
+
+async function postContainerAction(containerId, action) {
+  if (!containerId || !action) return;
+  const target = $("containerActions");
+  if (target) target.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  debugLog("docker", `POST ${action}`, { containerId });
+  try {
+    const res = await fetch(`/api/docker/container/${encodeURIComponent(containerId)}/${encodeURIComponent(action)}`, {
+      method: "POST",
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+    debugLog("docker", `${action} result`, payload);
+    state.containerDetail = null;
+    state.containerLogs = null;
+    state.containerLogsUpdatedAt = null;
+    await tick();
+    await loadSelectedContainer(true);
+  } catch (err) {
+    debugLog("docker", `${action} failed`, err);
+    renderContainerDetailError(`컨테이너 ${action} 실패: ${err.message}`);
+  }
 }
 
 async function postFanJson(path, payload) {
@@ -2109,7 +2166,7 @@ function animateCharts(timestamp) {
 function stepVisualHistory(timestamp) {
   if (state.chartShift <= 0) return false;
   const elapsed = Math.max(0, timestamp - state.chartShiftStartedAt);
-  state.chartShift = Math.max(0, 1 - elapsed / 720);
+  state.chartShift = Math.max(0, 1 - elapsed / Math.max(300, state.chartShiftDurationMs || POLL_INTERVAL_MS));
   return state.chartShift > 0;
 }
 
@@ -2261,7 +2318,7 @@ function drawLine(ctx, values, color, max, w, h) {
   const points = values.map((value, index) => {
     if (value === null || Number.isNaN(value)) return null;
     const offset = Math.max(0, MAX_POINTS - values.length);
-    const x = values.length <= 1 ? w : ((offset + index + state.chartShift) / (MAX_POINTS - 1)) * w;
+    const x = values.length <= 1 ? w : ((offset + index + state.chartShift - 1) / (MAX_POINTS - 1)) * w;
     const safe = Math.max(0, Math.min(max, value));
     const y = h - (safe / max) * (h - 18) - 9;
     return { x, y };
@@ -2283,12 +2340,12 @@ function drawLine(ctx, values, color, max, w, h) {
     strokeSegment(ctx, segment);
     segment = [];
   }
-  strokeSegment(ctx, segment);
+  strokeSegment(ctx, segment, w);
   ctx.stroke();
   ctx.restore();
 }
 
-function strokeSegment(ctx, points) {
+function strokeSegment(ctx, points, w) {
   if (!points.length) return;
   ctx.moveTo(points[0].x, points[0].y);
   if (points.length === 1) {
@@ -2304,6 +2361,7 @@ function strokeSegment(ctx, points) {
   }
   const last = points[points.length - 1];
   ctx.lineTo(last.x, last.y);
+  if (Number.isFinite(w) && last.x < w) ctx.lineTo(w, last.y);
 }
 
 function drawLidarMap(result) {

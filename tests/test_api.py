@@ -46,6 +46,12 @@ class DashboardApiTest(unittest.TestCase):
             self.assertEqual(res.status, 200)
             return json.loads(res.read().decode("utf-8"))
 
+    def session_cookie(self) -> str:
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/health", timeout=3) as res:
+            cookie = res.headers.get("Set-Cookie", "")
+        self.assertIn("ubts_session=", cookie)
+        return cookie.split(";", 1)[0]
+
     def read_ws_text(self, sock: socket.socket, initial: bytes = b"") -> str:
         data = bytearray(initial)
         while len(data) < 2:
@@ -70,8 +76,9 @@ class DashboardApiTest(unittest.TestCase):
             data.extend(sock.recv(length - len(data)))
         return bytes(data[:length]).decode("utf-8")
 
-    def open_dashboard_ws(self, path: str = "/ws/lidar") -> tuple[socket.socket, bytes]:
+    def open_dashboard_ws(self, path: str = "/ws/lidar", include_session: bool = True) -> tuple[socket.socket, bytes]:
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+        cookie_header = f"Cookie: {self.session_cookie()}\r\n" if include_session else ""
         sock = socket.create_connection(("127.0.0.1", self.port), timeout=3)
         sock.sendall(
             (
@@ -79,6 +86,7 @@ class DashboardApiTest(unittest.TestCase):
                 f"Host: 127.0.0.1:{self.port}\r\n"
                 "Upgrade: websocket\r\n"
                 "Connection: Upgrade\r\n"
+                f"{cookie_header}"
                 f"Sec-WebSocket-Key: {key}\r\n"
                 "Sec-WebSocket-Version: 13\r\n\r\n"
             ).encode("ascii")
@@ -223,6 +231,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("id=\"hostPower\"", html)
         self.assertIn("id=\"containerDetail\"", html)
         self.assertIn("id=\"containerLogs\"", html)
+        self.assertIn("id=\"containerActions\"", html)
         self.assertIn("id=\"containerRefreshButton\"", html)
         self.assertIn("data-lidar-range=\"reset\"", html)
         self.assertIn(">Auto</button>", html)
@@ -261,6 +270,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("max_points", app_js)
         self.assertIn("downloadLidarPng", app_js)
         self.assertIn("/api/docker/container/", app_js)
+        self.assertIn("data-container-action=\"restart\"", app_js)
+        self.assertIn("chartShiftDurationMs", app_js)
         self.assertNotIn("downloadCanvasPng", app_js)
         self.assertNotIn("lidarAccumulate", app_js)
         self.assertNotIn("gpuReadout", app_js)
@@ -270,6 +281,7 @@ class DashboardApiTest(unittest.TestCase):
         telemetry_py = (Path(__file__).resolve().parents[1] / "dashboard_server" / "telemetry.py").read_text()
         lidar_bridge_py = (Path(__file__).resolve().parents[1] / "scripts" / "lidar_ws_bridge.py").read_text()
         lidar_driver_dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile.lidar_driver").read_text()
+        lidar_driver_script = (Path(__file__).resolve().parents[1] / "scripts" / "run_lidar_driver.sh").read_text()
         self.assertIn("ros2-lidar-driver", compose)
         self.assertIn("ros2-lidar-bridge", compose)
         self.assertIn("Dockerfile.lidar_driver", compose)
@@ -280,14 +292,37 @@ class DashboardApiTest(unittest.TestCase):
         self.assertNotIn("LIDAR_BRIDGE_SOURCE:-auto", compose)
         self.assertIn("stats?stream=false&one-shot=true", telemetry_py)
         self.assertIn("def docker_container_logs", telemetry_py)
+        self.assertIn("def docker_container_action", telemetry_py)
+        self.assertIn("def _detect_self_container_id", telemetry_py)
         self.assertIn("ina3221", telemetry_py)
         self.assertNotIn("def _gpu_percent", telemetry_py)
         self.assertIn("source_max_points", lidar_bridge_py)
         self.assertIn("max(50, int(max_points or 900))", lidar_bridge_py)
         self.assertIn("max(50, min(max(source_max, default), value))", lidar_bridge_py)
         self.assertNotIn("source_max=max_points", lidar_bridge_py)
-        self.assertIn("sllidar_s2_launch.py", lidar_driver_dockerfile)
+        self.assertIn("sllidar_s2_launch.py", lidar_driver_script)
+        self.assertIn("/dev/serial/by-id/*CP210*", lidar_driver_script)
+        self.assertIn("run_lidar_driver.sh", lidar_driver_dockerfile)
         self.assertIn("/sys/class/hwmon:/sys/class/hwmon:rw", compose)
+
+    def test_lidar_websocket_requires_browser_session(self):
+        key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+        sock = socket.create_connection(("127.0.0.1", self.port), timeout=3)
+        with sock:
+            sock.sendall(
+                (
+                    "GET /ws/lidar HTTP/1.1\r\n"
+                    f"Host: 127.0.0.1:{self.port}\r\n"
+                    "Upgrade: websocket\r\n"
+                    "Connection: Upgrade\r\n"
+                    f"Sec-WebSocket-Key: {key}\r\n"
+                    "Sec-WebSocket-Version: 13\r\n\r\n"
+                ).encode("ascii")
+            )
+            raw = b""
+            while b"\r\n\r\n" not in raw:
+                raw += sock.recv(1024)
+            self.assertIn("403", raw.decode("iso-8859-1"))
 
     def test_lidar_websocket_proxy_graceful_without_bridge(self):
         old_upstream = os.environ.get("LIDAR_WS_UPSTREAM")

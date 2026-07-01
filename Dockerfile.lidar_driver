@@ -24,4 +24,7 @@ RUN mkdir -p src/sllidar_ros2 \
   && . /opt/ros/iron/setup.sh \
   && colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
-CMD ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && source /opt/sllidar_ros2_ws/install/setup.bash && ros2 launch sllidar_ros2 sllidar_s2_launch.py serial_port:=${LIDAR_SERIAL_PORT:-/dev/ttyUSB0} serial_baudrate:=${LIDAR_SERIAL_BAUDRATE:-1000000} frame_id:=${LIDAR_FRAME_ID:-laser} scan_mode:=${LIDAR_SCAN_MODE:-DenseBoost}"]
+COPY scripts/run_lidar_driver.sh /usr/local/bin/run_lidar_driver.sh
+RUN chmod +x /usr/local/bin/run_lidar_driver.sh
+
+CMD ["/usr/local/bin/run_lidar_driver.sh"]

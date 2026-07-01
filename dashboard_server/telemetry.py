@@ -7,6 +7,7 @@ import fcntl
 import math
 import os
 import platform
+import re
 import shutil
 import socket
 import struct
@@ -103,6 +104,7 @@ class TelemetryProvider:
         self.proc_root = Path(os.environ.get("HOST_PROC", "/proc"))
         self.sys_root = Path(os.environ.get("HOST_SYS", "/sys"))
         self.docker_socket = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
+        self._self_container_id = self._detect_self_container_id()
         self._last_cpu = self._read_cpu_times()
         self._last_net = self._read_net_counters()
         self._last_sample_at = time.time()
@@ -240,6 +242,7 @@ class TelemetryProvider:
             rows.append(
                 {
                     "id": container_id[:12],
+                    "full_id": container_id,
                     "name": (container.get("Names") or [""])[0].lstrip("/"),
                     "image": container.get("Image"),
                     "state": container.get("State"),
@@ -251,6 +254,7 @@ class TelemetryProvider:
                     "memory_limit": stats.get("memory_limit"),
                     "rx_bytes": stats.get("rx_bytes"),
                     "tx_bytes": stats.get("tx_bytes"),
+                    "self": self._is_self_container(container_id),
                 }
             )
         running = [row for row in rows if row.get("state") == "running"]
@@ -307,6 +311,43 @@ class TelemetryProvider:
             "mounts": detail.get("Mounts", []),
             "ports": network_settings.get("Ports") or {},
             "stats": stats,
+            "self": self._is_self_container(detail.get("Id") or safe_id),
+        }
+
+    def docker_container_action(self, container_id: str, action: str) -> dict[str, Any]:
+        safe_id = str(container_id or "").strip().lstrip("/")
+        if action not in {"start", "stop", "restart"}:
+            return {"ok": False, "error": "bad_action", "action": action}
+        if not safe_id:
+            return {"ok": False, "error": "container_id_required", "action": action}
+        if not Path(self.docker_socket).exists():
+            return {"ok": False, "error": "docker socket not mounted", "action": action}
+        try:
+            detail = self._docker_get_json(f"/containers/{safe_id}/json")
+        except (OSError, json.JSONDecodeError) as exc:
+            return {"ok": False, "id": safe_id, "action": action, "error": str(exc)}
+        full_id = detail.get("Id") or safe_id
+        if self._is_self_container(full_id):
+            return {
+                "ok": False,
+                "id": full_id[:12],
+                "action": action,
+                "state": "self_container_blocked",
+                "error": "Dashboard container cannot control itself from the dashboard UI.",
+            }
+        suffix = {"start": "/start", "stop": "/stop?t=10", "restart": "/restart?t=10"}[action]
+        try:
+            status, body = self._docker_post_raw(f"/containers/{safe_id}{suffix}")
+        except OSError as exc:
+            return {"ok": False, "id": full_id[:12], "action": action, "error": str(exc)}
+        ok = status in {204, 304}
+        return {
+            "ok": ok,
+            "id": full_id[:12],
+            "action": action,
+            "status": status,
+            "state": "applied" if ok else "docker_api_error",
+            "message": body.decode("utf-8", errors="replace")[:500] if body else "",
         }
 
     def docker_container_logs(self, container_id: str, tail: int = 160) -> dict[str, Any]:
@@ -1580,6 +1621,39 @@ class TelemetryProvider:
             return body
         finally:
             conn.close()
+
+    def _docker_post_raw(self, path: str) -> tuple[int, bytes]:
+        conn = DockerSocketHTTPConnection(self.docker_socket)
+        try:
+            conn.request("POST", path, body=b"")
+            response = conn.getresponse()
+            body = response.read()
+            if response.status >= 400:
+                raise OSError(f"Docker API {path} returned {response.status}: {body.decode('utf-8', errors='replace')[:300]}")
+            return response.status, body
+        finally:
+            conn.close()
+
+    def _detect_self_container_id(self) -> str | None:
+        candidates: list[str] = []
+        hostname = os.environ.get("HOSTNAME") or socket.gethostname()
+        if re.fullmatch(r"[0-9a-f]{12,64}", hostname or ""):
+            candidates.append(hostname)
+        for path in ("/proc/self/cgroup", "/proc/self/mountinfo"):
+            text = _read_text(path) or ""
+            candidates.extend(re.findall(r"[0-9a-f]{64}", text))
+            candidates.extend(re.findall(r"docker-([0-9a-f]{64})\\.scope", text))
+        for candidate in candidates:
+            if len(candidate) >= 12:
+                return candidate
+        return None
+
+    def _is_self_container(self, container_id: str | None) -> bool:
+        if not container_id or not self._self_container_id:
+            return False
+        full = str(container_id)
+        own = self._self_container_id
+        return full.startswith(own) or own.startswith(full) or full.startswith(own[:12])
 
     def _decode_docker_log_stream(self, raw: bytes) -> str:
         chunks: list[bytes] = []

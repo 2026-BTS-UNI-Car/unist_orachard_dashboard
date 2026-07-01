@@ -69,6 +69,26 @@ CPU, 메모리, swap, 네트워크, 디스크, 온도, Jetson `ina3221` 전력 �
 }
 ```
 
+브라우저 LiDAR WebSocket은 dashboard session cookie가 있는 경우만 허용됩니다. 현재 활성 연결 수는 `connection.lidar_websocket`에 표시됩니다.
+
+```json
+{
+  "lidar_websocket": {
+    "active": 1,
+    "session_ttl_s": 3600,
+    "known_sessions": 2,
+    "sessions": [
+      {
+        "id": "a1b2c3d4",
+        "session": "u9v8w7x6",
+        "age_sec": 12.4,
+        "remote": "127.0.0.1"
+      }
+    ]
+  }
+}
+```
+
 대시보드는 LiDAR 포트를 열지 않습니다. 상태 새로고침 버튼은 장치 표시와 holder만 확인합니다. 실시간 지도는 `ros2-lidar-bridge` 컨테이너가 제공하는 WebSocket을 사용하며, bridge는 ROS2 `/scan`만 구독합니다.
 
 ## rover
