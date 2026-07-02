@@ -68,8 +68,8 @@ jobs:
           ssh jetson-dashboard 'bash -s' <<'REMOTE'
           set -euo pipefail
           APP_DIR=/home/unist/workspace/unist_orachard_dashboard
-          mkdir -p "$APP_DIR/runtime"
-          find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name runtime -exec rm -rf {} +
+          mkdir -p "$APP_DIR/runtime" "$APP_DIR/data"
+          find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name runtime ! -name data -exec rm -rf {} +
           tar -xzf /tmp/unist_orachard_dashboard.tar.gz -C "$APP_DIR"
           chown -R unist:unist "$APP_DIR"
           cd "$APP_DIR"
@@ -79,7 +79,7 @@ jobs:
             COMPOSE="docker-compose"
           fi
           $COMPOSE down --remove-orphans >/dev/null 2>&1 || true
-          docker ps -aq --filter "name=unist-orachard-dashboard" | xargs -r docker rm -f >/dev/null 2>&1 || true
+          docker ps -aq --filter "name=unist-orachard-" | xargs -r docker rm -f >/dev/null 2>&1 || true
           $COMPOSE up -d --build
           $COMPOSE ps
           curl -fsS http://127.0.0.1:8080/api/health
