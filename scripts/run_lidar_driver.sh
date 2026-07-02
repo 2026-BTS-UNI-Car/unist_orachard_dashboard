@@ -13,7 +13,8 @@ source_setup() {
   set -u
 }
 
-DEFAULT_PORT="${LIDAR_SERIAL_PORT:-/dev/ttyUSB0}"
+DEFAULT_PORT="/dev/ttyUSB0"
+CONFIGURED_PORT="${LIDAR_SERIAL_PORT:-}"
 RESTART_DELAY="${LIDAR_DRIVER_RESTART_DELAY_S:-2}"
 
 log() {
@@ -27,8 +28,8 @@ source_setup /opt/ros/iron/setup.bash
 source_setup /opt/sllidar_ros2_ws/install/setup.bash
 
 resolve_port() {
-  if [ -n "${LIDAR_SERIAL_PORT:-}" ] && [ -e "$LIDAR_SERIAL_PORT" ]; then
-    printf '%s\n' "$LIDAR_SERIAL_PORT"
+  if [ -n "$CONFIGURED_PORT" ] && [ "$CONFIGURED_PORT" != "$DEFAULT_PORT" ] && [ -e "$CONFIGURED_PORT" ]; then
+    printf '%s\n' "$CONFIGURED_PORT"
     return 0
   fi
   for pattern in \
@@ -43,6 +44,10 @@ resolve_port() {
       fi
     done
   done
+  if [ -n "$CONFIGURED_PORT" ] && [ -e "$CONFIGURED_PORT" ]; then
+    printf '%s\n' "$CONFIGURED_PORT"
+    return 0
+  fi
   if [ -e "$DEFAULT_PORT" ]; then
     printf '%s\n' "$DEFAULT_PORT"
     return 0
@@ -59,11 +64,44 @@ while true; do
 
   log starting "Starting SLLIDAR driver on $PORT"
   set +e
-  ros2 launch sllidar_ros2 sllidar_s2_launch.py \
-    serial_port:="$PORT" \
-    serial_baudrate:="${LIDAR_SERIAL_BAUDRATE:-1000000}" \
-    frame_id:="${LIDAR_FRAME_ID:-laser}" \
-    scan_mode:="${LIDAR_SCAN_MODE:-DenseBoost}"
+  if command -v setsid >/dev/null 2>&1; then
+    setsid ros2 launch sllidar_ros2 sllidar_s2_launch.py \
+      serial_port:="$PORT" \
+      serial_baudrate:="${LIDAR_SERIAL_BAUDRATE:-1000000}" \
+      frame_id:="${LIDAR_FRAME_ID:-laser}" \
+      scan_mode:="${LIDAR_SCAN_MODE:-DenseBoost}" &
+    driver_pid=$!
+    driver_pgid=$driver_pid
+  else
+    ros2 launch sllidar_ros2 sllidar_s2_launch.py \
+      serial_port:="$PORT" \
+      serial_baudrate:="${LIDAR_SERIAL_BAUDRATE:-1000000}" \
+      frame_id:="${LIDAR_FRAME_ID:-laser}" \
+      scan_mode:="${LIDAR_SCAN_MODE:-DenseBoost}" &
+    driver_pid=$!
+    driver_pgid=""
+  fi
+  while kill -0 "$driver_pid" 2>/dev/null; do
+    if [ ! -e "$PORT" ]; then
+      log unplugged "LiDAR serial device disappeared: $PORT; stopping driver and rescanning"
+      if [ -n "$driver_pgid" ]; then
+        kill -TERM "-$driver_pgid" 2>/dev/null || true
+      else
+        kill -TERM "$driver_pid" 2>/dev/null || true
+      fi
+      sleep 1
+      if kill -0 "$driver_pid" 2>/dev/null; then
+        if [ -n "$driver_pgid" ]; then
+          kill -KILL "-$driver_pgid" 2>/dev/null || true
+        else
+          kill -KILL "$driver_pid" 2>/dev/null || true
+        fi
+      fi
+      break
+    fi
+    sleep 1
+  done
+  wait "$driver_pid"
   code=$?
   set -e
   log exited "SLLIDAR driver exited with code $code; rescanning device"

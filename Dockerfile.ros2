@@ -6,13 +6,16 @@ ENV LIDAR_BRIDGE_SOURCE=ros2
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3-pip \
+  && apt-get install -y --no-install-recommends python3-pip python3-opencv v4l-utils \
   && python3 -m pip install --no-cache-dir "websockets>=12,<13" \
   && rm -rf /var/lib/apt/lists/*
 
 COPY dashboard_server ./dashboard_server
 COPY scripts/lidar_ws_bridge.py ./scripts/lidar_ws_bridge.py
+COPY scripts/camera_ros2_driver.py ./scripts/camera_ros2_driver.py
+COPY scripts/camera_ws_bridge.py ./scripts/camera_ws_bridge.py
+COPY scripts/wave_rover_bridge.py ./scripts/wave_rover_bridge.py
 
-EXPOSE 8765
+EXPOSE 8765 8770
 
 CMD ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && python3 /app/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan --source ${LIDAR_BRIDGE_SOURCE}"]

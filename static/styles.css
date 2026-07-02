@@ -601,6 +601,68 @@ h2 {
   align-items: start;
 }
 
+.camera-live-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(178px, 238px);
+  gap: 16px;
+  align-items: start;
+}
+
+.camera-frame {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--chart-bg-top), var(--chart-bg-bottom));
+  aspect-ratio: 16 / 9;
+}
+
+.camera-frame img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #050816;
+}
+
+.camera-frame img:not([src]),
+.camera-frame img[src=""] {
+  opacity: 0;
+}
+
+.camera-frame figcaption {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  max-width: calc(100% - 24px);
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+  backdrop-filter: blur(12px);
+}
+
+.camera-controls {
+  min-width: 0;
+}
+
+.camera-controls select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-2);
+  font: inherit;
+  font-weight: 900;
+}
+
 .lidar-map-frame > * {
   min-width: 0;
 }
@@ -796,6 +858,19 @@ h2 {
 
 .download-mode button {
   min-width: 0;
+}
+
+.rover-frame-panel {
+  min-height: 620px;
+}
+
+.rover-proxy-frame {
+  width: 100%;
+  min-height: 540px;
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
 }
 
 .page[data-page="/connection"] .panel-actions {
@@ -1864,7 +1939,8 @@ h2 {
   }
 
   .chart-frame,
-  .lidar-map-frame {
+  .lidar-map-frame,
+  .camera-live-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1928,6 +2004,18 @@ h2 {
   .lidar-map {
     width: 100%;
     max-width: 420px;
+  }
+
+  .camera-frame {
+    aspect-ratio: 4 / 3;
+  }
+
+  .rover-frame-panel {
+    min-height: 460px;
+  }
+
+  .rover-proxy-frame {
+    min-height: 390px;
   }
 
   .map-hint {

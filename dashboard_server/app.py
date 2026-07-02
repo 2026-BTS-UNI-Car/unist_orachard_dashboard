@@ -14,19 +14,22 @@ import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.error import URLError
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
+from urllib.request import Request, urlopen
 
 from dashboard_server.telemetry import ROOT, TelemetryProvider
 
 
 STATIC_ROOT = ROOT / "static"
 DOCS_ROOT = ROOT / "docs"
-APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs"}
+APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/docs"}
 SESSION_COOKIE_NAME = "ubts_session"
 SESSION_TTL_S = int(os.environ.get("DASHBOARD_SESSION_TTL_S", "3600"))
 _SESSION_LOCK = threading.Lock()
 _SESSIONS: dict[str, dict[str, float]] = {}
 _ACTIVE_LIDAR_WS: dict[str, dict[str, float | str]] = {}
+_ACTIVE_CAMERA_WS: dict[str, dict[str, float | str]] = {}
 
 
 def dashboard_log(event: str, **fields):
@@ -42,9 +45,20 @@ def _prune_sessions(now: float | None = None):
     for connection_id, item in list(_ACTIVE_LIDAR_WS.items()):
         if item.get("session") in expired:
             _ACTIVE_LIDAR_WS.pop(connection_id, None)
+    for connection_id, item in list(_ACTIVE_CAMERA_WS.items()):
+        if item.get("session") in expired:
+            _ACTIVE_CAMERA_WS.pop(connection_id, None)
 
 
 def lidar_websocket_stats() -> dict[str, object]:
+    return websocket_stats(_ACTIVE_LIDAR_WS)
+
+
+def camera_websocket_stats() -> dict[str, object]:
+    return websocket_stats(_ACTIVE_CAMERA_WS)
+
+
+def websocket_stats(registry: dict[str, dict[str, float | str]]) -> dict[str, object]:
     now = time.time()
     with _SESSION_LOCK:
         _prune_sessions(now)
@@ -55,7 +69,7 @@ def lidar_websocket_stats() -> dict[str, object]:
                 "remote": item.get("remote", ""),
                 "session": str(item.get("session", ""))[:8],
             }
-            for token, item in _ACTIVE_LIDAR_WS.items()
+            for token, item in registry.items()
         ]
         return {
             "active": len(sessions),
@@ -86,6 +100,20 @@ DOCS_CATALOG = [
         "category": "Hardware",
         "summary": "RPLIDAR S2, ROS2 /scan owner 구조, WebSocket live map, serial 충돌 방지",
         "file": "lidar_connection.md",
+    },
+    {
+        "slug": "usb-camera-connection",
+        "title": "USB 카메라 연결",
+        "category": "Hardware",
+        "summary": "UVC USB 카메라 인식, ROS2 image topic, dashboard live view 설정",
+        "file": "usb_camera_connection.md",
+    },
+    {
+        "slug": "wave-rover-control",
+        "title": "WAVE ROVER 연동",
+        "category": "Hardware",
+        "summary": "Waveshare WAVE ROVER WiFi, Web UI proxy, ROS2 cmd_vel bridge 기준",
+        "file": "wave_rover_control.md",
     },
     {
         "slug": "jetson-runtime-architecture",
@@ -140,6 +168,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.lidar_test())
         elif path == "/api/lidar/scan":
             self._send_json(self.provider.lidar_scan())
+        elif path.startswith("/rover-proxy/") or path == "/rover-proxy":
+            self._proxy_rover_request(parsed)
         elif path == "/api/fan/mode":
             payload = self._read_json_body()
             self._send_json(self.provider.set_fan_mode(bool(payload.get("auto"))))
@@ -159,6 +189,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = parsed.path
         if path == "/ws/lidar":
             self._proxy_lidar_websocket()
+        elif path == "/ws/camera":
+            self._proxy_camera_websocket()
         elif path in APP_ROUTES or path.startswith("/docs/"):
             self._send_file(STATIC_ROOT / "index.html")
         elif path == "/api/health":
@@ -166,6 +198,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/telemetry":
             payload = self.provider.telemetry()
             payload["connection"]["lidar_websocket"] = lidar_websocket_stats()
+            payload["connection"]["camera_websocket"] = camera_websocket_stats()
             self._send_json(payload)
         elif path == "/api/system":
             self._send_json(self.provider.system())
@@ -178,7 +211,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/connection":
             payload = self.provider.connection()
             payload["lidar_websocket"] = lidar_websocket_stats()
+            payload["camera_websocket"] = camera_websocket_stats()
             self._send_json(payload)
+        elif path == "/api/rover/status":
+            self._send_json(self.provider.rover_status())
         elif path == "/api/plan":
             self._send_json(self.provider.plan())
         elif path == "/api/site-map":
@@ -189,6 +225,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self._docs_index())
         elif path.startswith("/api/docs/"):
             self._send_json(self._doc_payload(path.removeprefix("/api/docs/")))
+        elif path.startswith("/rover-proxy/") or path == "/rover-proxy":
+            self._proxy_rover_request(parsed)
         elif path.startswith("/static/"):
             self._send_file(STATIC_ROOT / path.removeprefix("/static/"))
         else:
@@ -314,10 +352,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if now - DashboardHandler._last_telemetry_log_at < 30:
                 return
             DashboardHandler._last_telemetry_log_at = now
-            dashboard_log("api.telemetry", active_lidar_ws=lidar_websocket_stats()["active"])
+            dashboard_log(
+                "api.telemetry",
+                active_lidar_ws=lidar_websocket_stats()["active"],
+                active_camera_ws=camera_websocket_stats()["active"],
+            )
             return
         if path not in {"/api/health"}:
-            dashboard_log("api.request", path=path, active_lidar_ws=lidar_websocket_stats()["active"])
+            dashboard_log(
+                "api.request",
+                path=path,
+                active_lidar_ws=lidar_websocket_stats()["active"],
+                active_camera_ws=camera_websocket_stats()["active"],
+            )
 
     def _send_docker_container_payload(self, path: str, query: str):
         raw = path.removeprefix("/api/docker/container/").strip("/")
@@ -344,6 +391,40 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_json(result)
 
     def _proxy_lidar_websocket(self):
+        self._proxy_local_websocket(
+            label="lidar",
+            registry=_ACTIVE_LIDAR_WS,
+            default_upstream=os.environ.get("LIDAR_WS_UPSTREAM", "ws://127.0.0.1:8765/ws/lidar"),
+            unavailable_payload={
+                "type": "status",
+                "device_found": False,
+                "scan_topic_alive": False,
+                "last_scan_age_sec": None,
+                "point_count": 0,
+                "source": "bridge",
+            },
+        )
+
+    def _proxy_camera_websocket(self):
+        self._proxy_local_websocket(
+            label="camera",
+            registry=_ACTIVE_CAMERA_WS,
+            default_upstream=os.environ.get("CAMERA_WS_UPSTREAM", "ws://127.0.0.1:8770/ws/camera"),
+            unavailable_payload={
+                "type": "status",
+                "frame_topic_alive": False,
+                "last_frame_age_sec": None,
+                "frame_count": 0,
+            },
+        )
+
+    def _proxy_local_websocket(
+        self,
+        label: str,
+        registry: dict[str, dict[str, float | str]],
+        default_upstream: str,
+        unavailable_payload: dict,
+    ):
         if self.headers.get("Upgrade", "").lower() != "websocket":
             self.send_error(426, "WebSocket upgrade required")
             return
@@ -353,15 +434,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         session_token = self._ensure_session(create=False)
         if not session_token:
-            dashboard_log("ws.lidar.rejected", reason="missing_session", remote=self.client_address[0])
-            self.send_error(403, "LiDAR WebSocket session required")
+            dashboard_log(f"ws.{label}.rejected", reason="missing_session", remote=self.client_address[0])
+            self.send_error(403, f"{label} WebSocket session required")
             return
         now = time.time()
         with _SESSION_LOCK:
             session = _SESSIONS.get(session_token)
             session_deadline = float(session.get("expires_at", now + SESSION_TTL_S)) if session else now
             connection_id = secrets.token_urlsafe(8)
-            _ACTIVE_LIDAR_WS[connection_id] = {"session": session_token, "connected_at": now, "remote": self.client_address[0]}
+            registry[connection_id] = {"session": session_token, "connected_at": now, "remote": self.client_address[0]}
 
         accept = base64.b64encode(
             hashlib.sha1((client_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
@@ -372,31 +453,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Sec-WebSocket-Accept", accept)
         self.end_headers()
         self.close_connection = True
-        dashboard_log("ws.lidar.open", session=session_token[:8], connection=connection_id[:8], active=lidar_websocket_stats()["active"])
+        dashboard_log(f"ws.{label}.open", session=session_token[:8], connection=connection_id[:8], active=websocket_stats(registry)["active"])
 
-        upstream_url = self._lidar_upstream_with_client_query(
-            os.environ.get("LIDAR_WS_UPSTREAM", "ws://127.0.0.1:8765/ws/lidar")
-        )
+        upstream_url = self._upstream_with_client_query(default_upstream)
         try:
             unavailable_logged = False
             while time.time() < session_deadline:
                 try:
-                    upstream, initial_upstream = self._connect_lidar_upstream(upstream_url)
+                    upstream, initial_upstream = self._connect_ws_upstream(upstream_url, label.upper())
                 except OSError as exc:
                     if not unavailable_logged:
-                        dashboard_log("ws.lidar.upstream_unavailable", session=session_token[:8], error=str(exc))
+                        dashboard_log(f"ws.{label}.upstream_unavailable", session=session_token[:8], error=str(exc))
                         unavailable_logged = True
+                    payload = dict(unavailable_payload)
+                    payload["error"] = f"{label} WebSocket bridge unavailable: {exc}"
                     ok = self._ws_send_json(
                         self.connection,
-                        {
-                            "type": "status",
-                            "device_found": False,
-                            "scan_topic_alive": False,
-                            "last_scan_age_sec": None,
-                            "point_count": 0,
-                            "source": "bridge",
-                            "error": f"LiDAR WebSocket bridge unavailable: {exc}",
-                        },
+                        payload,
                     )
                     if not ok:
                         return
@@ -412,18 +485,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             self._ws_send_json(
                 self.connection,
-                {"type": "status", "scan_topic_alive": False, "error": "LiDAR WebSocket session expired."},
+                {"type": "status", "error": f"{label} WebSocket session expired."},
             )
             self._ws_send_close(self.connection)
         finally:
             with _SESSION_LOCK:
-                _ACTIVE_LIDAR_WS.pop(connection_id, None)
-            dashboard_log("ws.lidar.close", session=session_token[:8], connection=connection_id[:8], active=lidar_websocket_stats()["active"])
+                registry.pop(connection_id, None)
+            dashboard_log(f"ws.{label}.close", session=session_token[:8], connection=connection_id[:8], active=websocket_stats(registry)["active"])
 
-    def _connect_lidar_upstream(self, upstream_url: str) -> tuple[socket.socket, bytes]:
+    def _connect_ws_upstream(self, upstream_url: str, env_prefix: str = "LOCAL") -> tuple[socket.socket, bytes]:
         parsed = urlparse(upstream_url)
         if parsed.scheme != "ws":
-            raise OSError("LIDAR_WS_UPSTREAM must use ws:// for the local bridge")
+            raise OSError(f"{env_prefix}_WS_UPSTREAM must use ws:// for the local bridge")
         host = parsed.hostname or "127.0.0.1"
         port = parsed.port or 80
         path = parsed.path or "/ws/lidar"
@@ -454,12 +527,53 @@ class DashboardHandler(BaseHTTPRequestHandler):
         sock.settimeout(None)
         return sock, initial
 
-    def _lidar_upstream_with_client_query(self, upstream_url: str) -> str:
+    def _upstream_with_client_query(self, upstream_url: str) -> str:
         client_query = urlparse(self.path).query
         if not client_query:
             return upstream_url
         separator = "&" if urlparse(upstream_url).query else "?"
         return f"{upstream_url}{separator}{client_query}"
+
+    def _proxy_rover_request(self, parsed):
+        base_url = os.environ.get("ROVER_DASHBOARD_URL", os.environ.get("ROVER_BASE_URL", "http://192.168.4.1")).rstrip("/") + "/"
+        suffix = parsed.path.removeprefix("/rover-proxy").lstrip("/")
+        target_url = urljoin(base_url, suffix)
+        if parsed.query:
+            target_url = f"{target_url}?{parsed.query}"
+        body = None
+        headers = {"User-Agent": "UBTS-Dashboard-Rover-Proxy/1.0"}
+        if self.command == "POST":
+            body = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
+            content_type = self.headers.get("Content-Type")
+            if content_type:
+                headers["Content-Type"] = content_type
+        try:
+            req = Request(target_url, data=body, headers=headers, method=self.command)
+            with urlopen(req, timeout=4) as res:
+                payload = res.read()
+                content_type = res.headers.get("Content-Type", "application/octet-stream")
+                if "text/html" in content_type.lower():
+                    payload = self._rewrite_rover_html(payload, base_url)
+                self.send_response(res.status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Connection", "close")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(payload)
+        except (OSError, URLError) as exc:
+            self._send_json({"ok": False, "state": "unreachable", "target": base_url, "error": str(exc)})
+
+    def _rewrite_rover_html(self, payload: bytes, base_url: str) -> bytes:
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return payload
+        if "<head" in text.lower() and "<base " not in text.lower():
+            text = text.replace("<head>", '<head><base href="/rover-proxy/">', 1)
+            text = text.replace("<HEAD>", '<HEAD><base href="/rover-proxy/">', 1)
+        return text.encode("utf-8")
 
     def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b"", deadline: float | None = None):
         if initial_upstream:

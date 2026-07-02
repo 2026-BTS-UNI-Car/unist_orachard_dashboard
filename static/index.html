@@ -42,6 +42,7 @@
           <a data-route="/docker" href="/docker">Docker</a>
           <a data-route="/fan" href="/fan">Fan Control</a>
           <a data-route="/research" href="/research">Research</a>
+          <a data-route="/rover-control" href="/rover-control">Rover Control</a>
           <a data-route="/docs" href="/docs">Docs</a>
         </nav>
         <div class="sidebar-footer">
@@ -170,6 +171,11 @@
               <strong id="connectionLidarHealth">--</strong>
               <small id="connectionLidarHealthText">--</small>
             </article>
+            <article class="kpi">
+              <span>Camera</span>
+              <strong id="connectionCameraState">--</strong>
+              <small id="connectionCameraDevice">--</small>
+            </article>
           </section>
 
           <section class="dashboard-grid">
@@ -259,6 +265,51 @@
                     <button type="button" data-lidar-download="csv">CSV</button>
                     <button type="button" data-lidar-download="png">PNG</button>
                   </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel wide">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">ROS2 /camera/image_raw</p>
+                  <h2>카메라 실시간 화면</h2>
+                </div>
+                <div class="panel-actions">
+                  <button id="cameraLiveButton" class="action-button secondary" type="button">실시간 연결</button>
+                </div>
+              </div>
+              <div id="cameraLiveResult" class="test-result">실시간 연결 대기 중</div>
+              <div class="camera-live-layout">
+                <figure class="camera-frame">
+                  <img id="cameraLiveImage" alt="ROS2 camera live frame" />
+                  <figcaption id="cameraFrameCaption">ROS2 프레임 대기 중</figcaption>
+                </figure>
+                <div class="camera-controls">
+                  <div class="map-control">
+                    <div>
+                      <span>Resolution</span>
+                      <strong id="cameraResolutionValue">1280x720</strong>
+                    </div>
+                    <select id="cameraResolutionSelect" aria-label="카메라 표시 해상도">
+                      <option value="640x480">640x480</option>
+                      <option value="1280x720" selected>1280x720</option>
+                      <option value="1920x1080">1920x1080</option>
+                    </select>
+                  </div>
+                  <div class="map-control">
+                    <div>
+                      <span>Frame rate</span>
+                      <strong id="cameraFpsValue">15 fps</strong>
+                    </div>
+                    <select id="cameraFpsSelect" aria-label="카메라 표시 FPS">
+                      <option value="5">5 fps</option>
+                      <option value="10">10 fps</option>
+                      <option value="15" selected>15 fps</option>
+                      <option value="30">30 fps</option>
+                    </select>
+                  </div>
+                  <div id="cameraLiveStats" class="chart-readout"></div>
                 </div>
               </div>
             </article>
@@ -533,6 +584,42 @@
               <div><p class="eyebrow">Roadmap</p><h2>수행계획 진행도</h2></div>
             </div>
             <div id="milestoneList" class="timeline"></div>
+          </section>
+        </section>
+
+        <section class="page" data-page="/rover-control">
+          <header class="page-head">
+            <p class="eyebrow">WAVE ROVER</p>
+            <h1>Rover Control</h1>
+            <p>Jetson이 WAVE ROVER 네트워크에 닿으면 원본 Web UI를 프록시로 열고, ROS2 bridge 상태를 함께 확인합니다.</p>
+          </header>
+
+          <section class="kpi-grid">
+            <article class="kpi"><span>Rover</span><strong id="roverControlState">--</strong><small id="roverControlBase">--</small></article>
+            <article class="kpi"><span>Proxy</span><strong id="roverProxyState">--</strong><small>/rover-proxy/</small></article>
+            <article class="kpi"><span>ROS2</span><strong id="roverRosState">--</strong><small>/cmd_vel bridge</small></article>
+          </section>
+
+          <section class="dashboard-grid">
+            <article class="panel wide rover-frame-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Original UI</p>
+                  <h2>Waveshare Web Dashboard</h2>
+                </div>
+                <a class="action-button secondary" href="/rover-proxy/" target="roverDashboard">새로고침</a>
+              </div>
+              <iframe id="roverProxyFrame" name="roverDashboard" class="rover-proxy-frame" src="/rover-proxy/" title="WAVE ROVER dashboard"></iframe>
+            </article>
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Runtime</p>
+                  <h2>연동 상태</h2>
+                </div>
+              </div>
+              <div id="roverControlDetails" class="status-list"></div>
+            </article>
           </section>
         </section>
 

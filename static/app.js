@@ -1,4 +1,4 @@
-const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs"];
+const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/docs"];
 const HISTORY_KEYS = ["cpu", "memory", "swap", "power", "temp", "rx", "tx", "dockerCpu", "dockerMemory", "fanTemp", "fanPwm"];
 const CORE_COLORS = ["#55e2b2", "#38d8ff", "#2f76ff", "#8238c9", "#f21b58", "#f4bd4f", "#7dd3fc", "#fb7185"];
 const MAX_POINTS = 90;
@@ -11,6 +11,14 @@ const LIDAR_RANGE_AUTO_KEY = "ubts-lidar-map-range-auto-v2";
 const LIDAR_POINTS_KEY = "ubts-lidar-points-v1";
 const LIDAR_SPEC_MAX_POINTS = 3200;
 const LIDAR_RECONNECT_DEBOUNCE_MS = 650;
+const CAMERA_RESOLUTION_KEY = "ubts-camera-resolution-v1";
+const CAMERA_FPS_KEY = "ubts-camera-fps-v1";
+const CAMERA_RECONNECT_DEBOUNCE_MS = 500;
+const DEFAULT_CAMERA_MODES = [
+  { resolution: "640x480", width: 640, height: 480, fps: [30] },
+  { resolution: "1280x720", width: 1280, height: 720, fps: [15, 30] },
+  { resolution: "1920x1080", width: 1920, height: 1080, fps: [5, 10, 15, 30] },
+];
 
 const state = {
   telemetry: null,
@@ -61,6 +69,27 @@ const state = {
     max: LIDAR_SPEC_MAX_POINTS,
     step: 50,
   },
+  cameraLive: {
+    enabled: false,
+    socket: null,
+    connected: false,
+    frameTopicAlive: false,
+    lastFrameAgeSec: null,
+    frameCount: 0,
+    sourceWidth: null,
+    sourceHeight: null,
+    frameId: "camera_link_optical",
+    error: "",
+    userStopped: false,
+    reconnectTimer: null,
+    pendingRestart: false,
+    resolution: "1280x720",
+    fps: 15,
+    lastFrameAt: null,
+  },
+  cameraModes: DEFAULT_CAMERA_MODES,
+  cameraModesSignature: JSON.stringify(DEFAULT_CAMERA_MODES),
+  cameraModesSource: "fallback",
   selectedContainerId: null,
   containerDetail: null,
   containerLogs: null,
@@ -197,8 +226,12 @@ function renderRoute() {
   if (route === "/connection") {
     renderActiveLidarMap();
     if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
+    if (!state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
   } else if (state.lidarLive.socket || state.lidarLive.enabled) {
     closeLidarLive("Connection 페이지 밖에서는 LiDAR WebSocket을 닫습니다.", { userStopped: false });
+  }
+  if (route !== "/connection" && (state.cameraLive.socket || state.cameraLive.enabled)) {
+    closeCameraLive("Connection 페이지 밖에서는 Camera WebSocket을 닫습니다.", { userStopped: false });
   }
   requestChartAnimation();
 }
@@ -308,6 +341,138 @@ function initLidarTest() {
   initLidarPointLimit();
   setLidarDownloadFormat(state.lidarExport.format);
   renderLidarLiveState();
+}
+
+function initCameraLive() {
+  try {
+    state.cameraLive.resolution = localStorage.getItem(CAMERA_RESOLUTION_KEY) || state.cameraLive.resolution;
+    state.cameraLive.fps = Number(localStorage.getItem(CAMERA_FPS_KEY) || state.cameraLive.fps);
+  } catch (_) {
+    // Camera controls remain usable without localStorage.
+  }
+  enforceCameraSelection();
+  const resolution = $("cameraResolutionSelect");
+  if (resolution) {
+    resolution.value = state.cameraLive.resolution;
+    resolution.addEventListener("change", () => setCameraSettings({ resolution: resolution.value }));
+  }
+  const fps = $("cameraFpsSelect");
+  if (fps) {
+    fps.value = String(state.cameraLive.fps);
+    fps.addEventListener("change", () => setCameraSettings({ fps: Number(fps.value) }));
+  }
+  $("cameraLiveButton")?.addEventListener("click", toggleCameraLive);
+  updateCameraControls();
+  renderCameraLiveState();
+}
+
+function normalizeCameraModes(rawModes) {
+  const source = Array.isArray(rawModes) && rawModes.length ? rawModes : DEFAULT_CAMERA_MODES;
+  const rows = [];
+  const seen = new Set();
+  source.forEach((item) => {
+    if (!item) return;
+    let resolution = String(item.resolution || "");
+    if (!resolution.includes("x") && item.width && item.height) resolution = `${item.width}x${item.height}`;
+    const [widthText, heightText] = resolution.toLowerCase().split("x");
+    const width = Number(widthText);
+    const height = Number(heightText);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || seen.has(resolution)) return;
+    const fps = [...new Set((Array.isArray(item.fps) ? item.fps : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value >= 1)
+      .map((value) => Math.abs(value - Math.round(value)) < 0.05 ? Math.round(value) : Number(value.toFixed(2))))].sort((a, b) => a - b);
+    rows.push({ resolution, width, height, fps: fps.length ? fps : [15] });
+    seen.add(resolution);
+  });
+  return rows.length
+    ? rows.sort((a, b) => (a.width * a.height) - (b.width * b.height) || a.width - b.width)
+    : DEFAULT_CAMERA_MODES;
+}
+
+function applyCameraModeCatalog(rawModes, source = "fallback") {
+  const modes = normalizeCameraModes(rawModes);
+  const signature = JSON.stringify(modes);
+  if (signature === state.cameraModesSignature && source === state.cameraModesSource) return;
+  const before = `${state.cameraLive.resolution}@${state.cameraLive.fps}`;
+  state.cameraModes = modes;
+  state.cameraModesSignature = signature;
+  state.cameraModesSource = source || "fallback";
+  enforceCameraSelection();
+  updateCameraControls();
+  const after = `${state.cameraLive.resolution}@${state.cameraLive.fps}`;
+  if (before !== after && (state.cameraLive.socket || state.cameraLive.enabled)) {
+    scheduleCameraReconnectForSettings();
+  }
+}
+
+function cameraResolutionOptions() {
+  return state.cameraModes.map((mode) => mode.resolution);
+}
+
+function cameraFpsOptions(resolution = state.cameraLive.resolution) {
+  const mode = state.cameraModes.find((item) => item.resolution === resolution);
+  return mode?.fps?.length ? mode.fps : [15];
+}
+
+function chooseCameraFps(allowed, preferred) {
+  const current = Number(preferred);
+  if (allowed.includes(current)) return current;
+  const lower = allowed.filter((value) => value <= current).pop();
+  return lower || allowed[allowed.length - 1] || 15;
+}
+
+function enforceCameraSelection() {
+  const resolutions = cameraResolutionOptions();
+  if (!resolutions.includes(state.cameraLive.resolution)) {
+    state.cameraLive.resolution = resolutions.includes("1280x720") ? "1280x720" : resolutions[0] || "1280x720";
+  }
+  const fps = cameraFpsOptions(state.cameraLive.resolution);
+  state.cameraLive.fps = chooseCameraFps(fps, state.cameraLive.fps);
+}
+
+function setCameraSettings(next) {
+  if (next.resolution) {
+    const resolutions = cameraResolutionOptions();
+    state.cameraLive.resolution = resolutions.includes(next.resolution) ? next.resolution : (resolutions[0] || "1280x720");
+  }
+  if (next.fps) state.cameraLive.fps = Number(next.fps);
+  enforceCameraSelection();
+  try {
+    localStorage.setItem(CAMERA_RESOLUTION_KEY, state.cameraLive.resolution);
+    localStorage.setItem(CAMERA_FPS_KEY, String(state.cameraLive.fps));
+  } catch (_) {
+    // Ignore storage failures.
+  }
+  updateCameraControls();
+  if (state.cameraLive.socket || state.cameraLive.enabled) scheduleCameraReconnectForSettings();
+}
+
+function updateCameraControls() {
+  text("cameraResolutionValue", state.cameraLive.resolution);
+  text("cameraFpsValue", `${state.cameraLive.fps} fps`);
+  const resolution = $("cameraResolutionSelect");
+  if (resolution) {
+    syncSelectOptions(resolution, cameraResolutionOptions().map((value) => ({ value, label: value })));
+    if (document.activeElement !== resolution) resolution.value = state.cameraLive.resolution;
+  }
+  const fps = $("cameraFpsSelect");
+  if (fps) {
+    syncSelectOptions(fps, cameraFpsOptions().map((value) => ({ value: String(value), label: `${value} fps` })));
+    if (document.activeElement !== fps) fps.value = String(state.cameraLive.fps);
+  }
+}
+
+function syncSelectOptions(select, options) {
+  const signature = JSON.stringify(options);
+  if (select.dataset.optionsSignature === signature) return;
+  select.dataset.optionsSignature = signature;
+  select.replaceChildren(...options.map((option) => {
+    const node = document.createElement("option");
+    node.value = option.value;
+    node.textContent = option.label;
+    return node;
+  }));
 }
 
 function initLidarRange() {
@@ -589,6 +754,7 @@ function renderTelemetry(data) {
 
   renderServices(services);
   renderConnection(connection);
+  renderRoverControl(data);
   renderSensors(data.sensors || {});
   renderCores(sys.cpu?.cores || []);
   renderCoreCharts(sys.cpu?.cores || []);
@@ -774,6 +940,230 @@ function restartLidarLiveForSettings() {
       if (currentRoute() === "/connection" && !state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
     }, 160);
   }
+}
+
+function toggleCameraLive() {
+  if (state.cameraLive.connected || state.cameraLive.socket) {
+    stopCameraLive("사용자가 카메라 실시간 연결을 중지했습니다.");
+    return;
+  }
+  startCameraLive();
+}
+
+function cameraWebSocketUrl() {
+  const params = new URLSearchParams({
+    resolution: state.cameraLive.resolution,
+    fps: String(state.cameraLive.fps),
+  });
+  if (window.UBTS_CAMERA_WS_URL) {
+    const separator = String(window.UBTS_CAMERA_WS_URL).includes("?") ? "&" : "?";
+    return `${window.UBTS_CAMERA_WS_URL}${separator}${params.toString()}`;
+  }
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  return `${scheme}://${location.host}/ws/camera?${params.toString()}`;
+}
+
+function startCameraLive() {
+  if (currentRoute() !== "/connection") {
+    debugLog("camera", "skip start outside /connection");
+    return;
+  }
+  if (state.cameraLive.socket) return;
+  clearCameraReconnectTimer();
+  const url = cameraWebSocketUrl();
+  state.cameraLive.enabled = true;
+  state.cameraLive.userStopped = false;
+  state.cameraLive.connected = false;
+  state.cameraLive.frameTopicAlive = false;
+  state.cameraLive.error = "";
+  renderCameraLiveState("연결 중");
+  setCameraResult("testing", "Camera WebSocket 연결 중");
+  debugLog("camera", `connecting ${url}`);
+  try {
+    const socket = new WebSocket(url);
+    state.cameraLive.socket = socket;
+    socket.addEventListener("open", () => {
+      if (socket !== state.cameraLive.socket) return;
+      state.cameraLive.connected = true;
+      state.cameraLive.error = "";
+      debugLog("camera", "open");
+      renderCameraLiveState();
+      if (state.cameraLive.pendingRestart) {
+        state.cameraLive.pendingRestart = false;
+        scheduleCameraReconnectForSettings(80);
+      }
+    });
+    socket.addEventListener("message", (event) => {
+      if (socket !== state.cameraLive.socket || currentRoute() !== "/connection") return;
+      handleCameraLiveMessage(event.data);
+    });
+    socket.addEventListener("error", (event) => {
+      if (socket !== state.cameraLive.socket) return;
+      state.cameraLive.error = "Camera WebSocket 연결 오류";
+      debugLog("camera", "error", event);
+      renderCameraLiveState();
+    });
+    socket.addEventListener("close", (event) => {
+      if (socket !== state.cameraLive.socket) return;
+      const shouldReconnect = state.cameraLive.enabled && !state.cameraLive.userStopped && currentRoute() === "/connection";
+      state.cameraLive.socket = null;
+      state.cameraLive.connected = false;
+      state.cameraLive.frameTopicAlive = false;
+      debugLog("camera", `close code=${event.code} reason=${event.reason || "-"}`);
+      renderCameraLiveState(state.cameraLive.error || "disconnected");
+      if (state.cameraLive.pendingRestart && shouldReconnect) {
+        state.cameraLive.pendingRestart = false;
+        scheduleCameraReconnectForSettings(120);
+      } else if (shouldReconnect) {
+        state.cameraLive.reconnectTimer = window.setTimeout(() => {
+          state.cameraLive.reconnectTimer = null;
+          if (currentRoute() === "/connection" && !state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
+        }, 1500);
+      }
+    });
+  } catch (err) {
+    state.cameraLive.socket = null;
+    state.cameraLive.connected = false;
+    state.cameraLive.frameTopicAlive = false;
+    state.cameraLive.error = err.message;
+    debugLog("camera", "create failed", err);
+    renderCameraLiveState();
+  }
+}
+
+function stopCameraLive(message = "disconnected") {
+  closeCameraLive(message, { userStopped: true });
+}
+
+function closeCameraLive(message = "disconnected", options = {}) {
+  const userStopped = options.userStopped !== undefined ? Boolean(options.userStopped) : true;
+  if (options.clearReconnect !== false) clearCameraReconnectTimer();
+  const socket = state.cameraLive.socket;
+  state.cameraLive.enabled = false;
+  state.cameraLive.userStopped = userStopped;
+  state.cameraLive.socket = null;
+  state.cameraLive.connected = false;
+  state.cameraLive.frameTopicAlive = false;
+  state.cameraLive.error = "";
+  state.cameraLive.pendingRestart = false;
+  if (socket) closeSocketAfterConnect(socket, message);
+  debugLog("camera", `stopped: ${message}`);
+  renderCameraLiveState(message);
+}
+
+function clearCameraReconnectTimer() {
+  if (!state.cameraLive.reconnectTimer) return;
+  window.clearTimeout(state.cameraLive.reconnectTimer);
+  state.cameraLive.reconnectTimer = null;
+}
+
+function scheduleCameraReconnectForSettings(delayMs = CAMERA_RECONNECT_DEBOUNCE_MS) {
+  if (currentRoute() !== "/connection") return;
+  if (!state.cameraLive.socket && !state.cameraLive.enabled) return;
+  clearCameraReconnectTimer();
+  state.cameraLive.pendingRestart = true;
+  state.cameraLive.reconnectTimer = window.setTimeout(() => {
+    state.cameraLive.reconnectTimer = null;
+    restartCameraLiveForSettings();
+  }, Math.max(0, delayMs));
+  debugLog("camera", `settings restart scheduled ${state.cameraLive.resolution}@${state.cameraLive.fps}`);
+}
+
+function restartCameraLiveForSettings() {
+  if (currentRoute() !== "/connection") return;
+  const wasEnabled = state.cameraLive.enabled && !state.cameraLive.userStopped;
+  const socket = state.cameraLive.socket;
+  if (socket?.readyState === WebSocket.CONNECTING) {
+    state.cameraLive.pendingRestart = true;
+    return;
+  }
+  clearCameraReconnectTimer();
+  state.cameraLive.pendingRestart = false;
+  if (socket) {
+    state.cameraLive.socket = null;
+    state.cameraLive.connected = false;
+    closeSocketAfterConnect(socket, "camera settings changed");
+  }
+  if (wasEnabled) {
+    window.setTimeout(() => {
+      if (currentRoute() === "/connection" && !state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
+    }, 160);
+  }
+}
+
+function handleCameraLiveMessage(raw) {
+  let payload = null;
+  try {
+    payload = JSON.parse(raw);
+  } catch (err) {
+    state.cameraLive.error = "잘못된 Camera WebSocket 메시지";
+    debugLog("camera", "invalid message", raw);
+    renderCameraLiveState();
+    return;
+  }
+  if (payload.type === "status") {
+    state.cameraLive.frameTopicAlive = Boolean(payload.frame_topic_alive);
+    state.cameraLive.lastFrameAgeSec = payload.last_frame_age_sec;
+    state.cameraLive.frameCount = payload.frame_count || state.cameraLive.frameCount || 0;
+    state.cameraLive.sourceWidth = payload.source_width;
+    state.cameraLive.sourceHeight = payload.source_height;
+    state.cameraLive.frameId = payload.frame_id || state.cameraLive.frameId;
+    state.cameraLive.error = payload.error || (payload.frame_topic_alive === false ? "ROS2 /camera/image_raw 대기" : "");
+    if (payload.error) debugLog("camera", "status", payload);
+    if (!payload.frame_topic_alive) setCameraResult("testing", payload.error || "ROS2 카메라 프레임 수신 대기");
+    renderCameraLiveState();
+    renderLiveSensorLinks();
+    return;
+  }
+  if (payload.type === "frame") {
+    state.cameraLive.frameTopicAlive = true;
+    state.cameraLive.lastFrameAgeSec = 0;
+    state.cameraLive.frameCount = payload.frame_count || state.cameraLive.frameCount + 1;
+    state.cameraLive.sourceWidth = payload.source_width;
+    state.cameraLive.sourceHeight = payload.source_height;
+    state.cameraLive.frameId = payload.frame_id || state.cameraLive.frameId;
+    state.cameraLive.lastFrameAt = Date.now();
+    state.cameraLive.error = "";
+    const image = $("cameraLiveImage");
+    if (image && payload.data) image.src = `data:${payload.mime || "image/jpeg"};base64,${payload.data}`;
+    setCameraResult("ok", `실시간 수신 중 · ${payload.width}x${payload.height} · ${state.cameraLive.fps} fps 표시`);
+    renderCameraLiveState();
+    renderLiveSensorLinks();
+    return;
+  }
+  if (payload.type === "socket") {
+    state.cameraLive.error = payload.ok ? "" : payload.message || "socket status error";
+    debugLog("camera", "socket", payload);
+    renderCameraLiveState();
+  }
+}
+
+function renderCameraLiveState(overrideLabel) {
+  const button = $("cameraLiveButton");
+  if (button) {
+    button.textContent = state.cameraLive.socket && !state.cameraLive.connected
+      ? "연결 중"
+      : state.cameraLive.connected ? "실시간 중지" : "실시간 연결";
+    button.classList.toggle("active", state.cameraLive.connected);
+  }
+  const source = state.cameraLive.sourceWidth && state.cameraLive.sourceHeight
+    ? `${state.cameraLive.sourceWidth}x${state.cameraLive.sourceHeight}`
+    : "--";
+  const socketText = overrideLabel || (state.cameraLive.connected ? "connected" : state.cameraLive.error || "disconnected");
+  text("cameraFrameCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · source ${source}` : socketText);
+  const colors = chartColors();
+  renderReadout("cameraLiveStats", [
+    { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
+    { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
+    { label: "Frames", value: String(state.cameraLive.frameCount || 0), sub: state.cameraLive.lastFrameAgeSec === null || state.cameraLive.lastFrameAgeSec === undefined ? "--" : `${fmtNumber(state.cameraLive.lastFrameAgeSec, 1)}s ago`, color: colors.blue },
+  ]);
+}
+
+function setCameraResult(kind, message) {
+  const target = $("cameraLiveResult");
+  if (!target) return;
+  target.className = `test-result ${kind}`;
+  target.textContent = message;
 }
 
 function lidarWebSocketUrl() {
@@ -1088,18 +1478,26 @@ function angleCoverage(points) {
 
 function renderConnection(connection) {
   const lidar = connection.lidar || {};
+  const camera = connection.camera || {};
   const bridge = connection.lidar_bridge || {};
+  const cameraBridge = connection.camera_bridge || {};
   const ws = connection.lidar_websocket || {};
+  const cameraWs = connection.camera_websocket || {};
   const last = lidar.last_test || {};
   const lastScan = lidar.last_scan || {};
   const scanLive = Boolean(state.lidarLive.scanTopicAlive || bridge.scan_topic_alive);
+  const cameraLive = Boolean(state.cameraLive.frameTopicAlive || cameraBridge.frame_topic_alive);
   const wsText = `WS ${ws.active || 0}`;
+  const cameraWsText = `WS ${cameraWs.active || 0}`;
+  applyCameraModeCatalog(camera.supported_view_modes, camera.supported_view_modes_source || "fallback");
   text("connectionLidarState", scanLive ? "수신 중" : (lidar.present ? lidarStateLabel(lidar.state) : "미인식"));
   text("connectionLidarDevice", lidar.device || "--");
   text("connectionLidarProtocol", "ROS2 /scan");
   text("connectionLidarSubtext", "subscribe-only");
   text("connectionLidarHealth", scanLive ? "수신 중" : (lidar.present ? "ROS2 대기" : "--"));
   text("connectionLidarHealthText", scanLive ? `ROS2 /scan live · ${wsText}` : `ROS2 /scan 대기 · ${wsText}`);
+  text("connectionCameraState", cameraLive ? "수신 중" : cameraStateLabel(camera));
+  text("connectionCameraDevice", cameraLive ? `${cameraResolutionLabel(cameraBridge)} · ${cameraWsText}` : cameraDeviceLabel(camera));
   text("lidarDeviceDetail", lidar.present ? shortPath(lidar.device) : "장치 미인식");
   text("lidarByIdDetail", lidar.by_id ? shortPath(lidar.by_id, 42) : "stable ID 대기");
   text("lidarDriverDetail", driverLabel(lidar.driver_hint));
@@ -1108,6 +1506,7 @@ function renderConnection(connection) {
   renderStatusRows("connectionServices", serviceRows(connection.services || {}));
   renderStatusRows("connectionSensors", sensorRows(connection.sensors || {}));
   renderLidarLiveState();
+  renderCameraLiveState();
   if (last.ok || last.message) renderLidarTest(last);
   if (lastScan.ok || lastScan.message) {
     if (!state.lidarScan || (lastScan.tested_at || 0) >= (state.lidarScan.tested_at || 0)) {
@@ -1115,6 +1514,29 @@ function renderConnection(connection) {
       renderLidarScan(lastScan, "ros2_scan");
     }
   }
+}
+
+function cameraResolutionLabel(cameraBridge) {
+  const width = cameraBridge?.source_width || state.cameraLive.sourceWidth;
+  const height = cameraBridge?.source_height || state.cameraLive.sourceHeight;
+  return width && height ? `${width}x${height}` : "ROS2 /camera";
+}
+
+function cameraStateLabel(camera) {
+  if (camera.present) return lidarStateLabel(camera.state);
+  if (camera.usb_present || camera.state === "usb_detected_video_node_missing") return "USB 감지";
+  return "미인식";
+}
+
+function cameraDeviceLabel(camera) {
+  if (camera.device) return camera.device;
+  if (camera.usb_present || camera.state === "usb_detected_video_node_missing") {
+    const devices = Array.isArray(camera.usb_devices) ? camera.usb_devices : [];
+    const first = devices[0] || {};
+    const product = [first.manufacturer, first.product].filter(Boolean).join(" ");
+    return product ? `${product} · 비디오 노드 대기` : "USB camera · 비디오 노드 대기";
+  }
+  return "--";
 }
 
 function renderLidarTest(result) {
@@ -1166,6 +1588,10 @@ function lidarStateLabel(state) {
     scan_live: "수신 중",
     waiting_for_scan: "스캔 대기",
     waiting_for_ros2: "ROS2 대기",
+    waiting_for_frame: "프레임 대기",
+    waiting_for_open: "장치 열기 대기",
+    video_node_missing: "비디오 노드 대기",
+    usb_detected_video_node_missing: "비디오 노드 대기",
     not_found: "미인식",
   }[state] || state || "--";
 }
@@ -1270,9 +1696,9 @@ function sensorRows(sensors) {
       item.link ? `link ${item.link}` : "",
       item.owner ? `owner ${item.owner}` : "",
       item.dashboard_access ? item.dashboard_access : "",
-      item.state,
+      lidarStateLabel(item.state),
     ].filter(Boolean).join(" · "),
-    ok: Boolean(item.ok || (key === "lidar" && lidarBridgeLive())),
+    ok: Boolean(item.ok || (key === "lidar" && lidarBridgeLive()) || (key === "camera" && cameraBridgeLive())),
     level: sensorLevel(key, item),
     value: sensorValue(key, item),
   }));
@@ -1280,21 +1706,30 @@ function sensorRows(sensors) {
 
 function sensorLevel(key, item) {
   if (key === "lidar" && lidarBridgeLive()) return "ok";
+  if (key === "camera" && cameraBridgeLive()) return "ok";
   if (item.ok) return "ok";
+  if (item.severity === "error" || item.state === "video_node_missing") return "bad";
   if (item.severity === "waiting" || item.state === "waiting_for_ros2") return "warn";
-  if (key === "lidar" && item.dashboard_access === "subscribe_only") return "warn";
+  if ((key === "lidar" || key === "camera") && item.dashboard_access === "subscribe_only") return "warn";
   return "bad";
 }
 
 function sensorValue(key, item) {
   if (key === "lidar" && lidarBridgeLive()) return `${lidarSourceLabel(item.source || state.lidarLive.source)} live`;
+  if (key === "camera" && cameraBridgeLive()) return `${cameraResolutionLabel(item)} live`;
   if (item.rate_hz) return `${Number(item.rate_hz).toFixed(1)} Hz`;
   if (key === "lidar" && item.dashboard_access === "subscribe_only") return "ROS2 대기";
+  if (key === "camera" && item.state === "video_node_missing") return "비디오 노드 대기";
+  if (key === "camera" && item.dashboard_access === "subscribe_only") return "ROS2 대기";
   return "연결 전";
 }
 
 function lidarBridgeLive() {
   return Boolean(state.lidarLive.scanTopicAlive || state.telemetry?.connection?.lidar_bridge?.scan_topic_alive);
+}
+
+function cameraBridgeLive() {
+  return Boolean(state.cameraLive.frameTopicAlive || state.telemetry?.connection?.camera_bridge?.frame_topic_alive);
 }
 
 function renderStatusRows(targetId, rows) {
@@ -2149,7 +2584,48 @@ function sensorLabel(key) {
 }
 
 function serviceLabel(key) {
-  return { dashboard: "Dashboard", cloudflared: "Cloudflare", ros2_bridge: "ROS2 Bridge", data_recorder: "Data Recorder" }[key] || key;
+  return {
+    dashboard: "Dashboard",
+    cloudflared: "Cloudflare",
+    ros2_bridge: "ROS2 Bridge",
+    lidar_bridge: "LiDAR Bridge",
+    camera_bridge: "Camera Bridge",
+    rover_bridge: "Rover Bridge",
+    data_recorder: "Data Recorder",
+  }[key] || key;
+}
+
+function renderRoverControl(data) {
+  const rover = data.rover || data.connection?.rover || {};
+  const services = data.services || data.connection?.services || {};
+  const roverBridge = services.rover_bridge || {};
+  text("roverControlState", rover.connected || rover.ok ? "reachable" : rover.state || "unreachable");
+  text("roverControlBase", rover.base_url || "--");
+  text("roverProxyState", rover.proxy_url ? rover.proxy_url : "/rover-proxy/");
+  text("roverRosState", roverBridge.ok ? "ready" : roverBridge.state || "대기");
+  renderStatusRows("roverControlDetails", [
+    {
+      title: "UART ROS2 Bridge",
+      sub: "ROS2 /cmd_vel -> WAVE ROVER JSON",
+      ok: Boolean(roverBridge.ok),
+      level: roverBridge.ok ? "ok" : "warn",
+      value: roverBridge.state || "대기",
+    },
+    {
+      title: "Original Web UI",
+      sub: rover.base_url || "http://192.168.4.1",
+      ok: Boolean(rover.connected || rover.ok),
+      level: rover.connected || rover.ok ? "ok" : "warn",
+      value: rover.connected || rover.ok ? "접속 가능" : "대기",
+    },
+    {
+      title: "Dashboard Proxy",
+      sub: "/rover-proxy/",
+      ok: true,
+      level: "ok",
+      value: "준비",
+    },
+  ]);
 }
 
 function requestChartAnimation() {
@@ -2497,6 +2973,9 @@ window.addEventListener("pagehide", () => {
   if (state.lidarLive.socket || state.lidarLive.enabled) {
     closeLidarLive("페이지 종료로 LiDAR WebSocket을 닫습니다.", { userStopped: false });
   }
+  if (state.cameraLive.socket || state.cameraLive.enabled) {
+    closeCameraLive("페이지 종료로 Camera WebSocket을 닫습니다.", { userStopped: false });
+  }
 });
 document.addEventListener("click", (event) => {
   const docLink = event.target.closest("a[data-doc-link]");
@@ -2519,6 +2998,7 @@ initMobileNav();
 initTheme();
 initCpuMode();
 initLidarTest();
+initCameraLive();
 initFanControls();
 initDockerControls();
 renderRoute();

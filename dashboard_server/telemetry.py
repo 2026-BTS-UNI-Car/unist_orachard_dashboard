@@ -25,7 +25,15 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
 DEFAULT_TELEMETRY_FILE = ROOT / "runtime" / "telemetry_snapshot.json"
 DEFAULT_LIDAR_BRIDGE_STATUS_FILE = ROOT / "runtime" / "lidar_bridge_status.json"
+DEFAULT_CAMERA_DRIVER_STATUS_FILE = ROOT / "runtime" / "camera_driver_status.json"
+DEFAULT_CAMERA_BRIDGE_STATUS_FILE = ROOT / "runtime" / "camera_bridge_status.json"
+DEFAULT_ROVER_BRIDGE_STATUS_FILE = ROOT / "runtime" / "rover_bridge_status.json"
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
+DEFAULT_CAMERA_VIEW_MODES = [
+    {"resolution": "640x480", "width": 640, "height": 480, "fps": [30]},
+    {"resolution": "1280x720", "width": 1280, "height": 720, "fps": [15, 30]},
+    {"resolution": "1920x1080", "width": 1920, "height": 1080, "fps": [5, 10, 15, 30]},
+]
 DEFAULT_LIDAR_BAUDS = [1_000_000, 460_800, 256_000, 115_200]
 DEFAULT_LIDAR_SCAN_DURATION_S = 3.0
 DEFAULT_LIDAR_SCAN_MAX_POINTS = 1800
@@ -98,6 +106,18 @@ class TelemetryProvider:
             os.environ.get("LIDAR_BRIDGE_STATUS_FILE", str(DEFAULT_LIDAR_BRIDGE_STATUS_FILE))
         )
         self.lidar_bridge_status_file = lidar_bridge_file if lidar_bridge_file.is_absolute() else ROOT / lidar_bridge_file
+        camera_driver_file = Path(
+            os.environ.get("CAMERA_DRIVER_STATUS_FILE", str(DEFAULT_CAMERA_DRIVER_STATUS_FILE))
+        )
+        self.camera_driver_status_file = camera_driver_file if camera_driver_file.is_absolute() else ROOT / camera_driver_file
+        camera_bridge_file = Path(
+            os.environ.get("CAMERA_BRIDGE_STATUS_FILE", str(DEFAULT_CAMERA_BRIDGE_STATUS_FILE))
+        )
+        self.camera_bridge_status_file = camera_bridge_file if camera_bridge_file.is_absolute() else ROOT / camera_bridge_file
+        rover_bridge_file = Path(
+            os.environ.get("ROVER_BRIDGE_STATUS_FILE", str(DEFAULT_ROVER_BRIDGE_STATUS_FILE))
+        )
+        self.rover_bridge_status_file = rover_bridge_file if rover_bridge_file.is_absolute() else ROOT / rover_bridge_file
         self.host_root = Path(os.environ.get("HOST_ROOT", "/host-root"))
         if not self.host_root.exists():
             self.host_root = Path("/")
@@ -113,6 +133,10 @@ class TelemetryProvider:
         self._external_ip_next_refresh = 0.0
         self._last_lidar_test: dict[str, Any] | None = None
         self._last_lidar_scan: dict[str, Any] | None = None
+        self._rover_status_cache: dict[str, Any] | None = None
+        self._rover_status_next_refresh = 0.0
+        self._rover_status_timeout_s = max(0.1, float(os.environ.get("ROVER_STATUS_TIMEOUT_S", "0.35")))
+        self._rover_status_refresh_s = max(1.0, float(os.environ.get("ROVER_STATUS_REFRESH_S", "5.0")))
         self._fan_hwmon_cache: dict[str, Any] | None = None
         self._power_hwmon_cache: Path | None = None
         self._fan_hold_interval_s = max(0.0, float(os.environ.get("FAN_HOLD_INTERVAL_S", "1.5")))
@@ -140,7 +164,7 @@ class TelemetryProvider:
             "docker": self.docker(),
             "fan": self.fan_status(),
             "connection": connection,
-            "rover": external.get("rover", self._not_connected("rover")),
+            "rover": external.get("rover", self.rover_status()),
             "sensors": connection["sensors"],
             "fusion": external.get("fusion", self._not_connected("fusion")),
             "experiment": external.get("experiment", self._not_connected("experiment")),
@@ -153,11 +177,17 @@ class TelemetryProvider:
     def connection(self, external: dict[str, Any] | None = None) -> dict[str, Any]:
         external = external or (_load_json(self.telemetry_file) if self.telemetry_file.exists() else {})
         lidar_bridge = self._lidar_bridge_status()
+        camera_bridge = self._camera_bridge_status()
+        rover_bridge = self._rover_bridge_status()
         return {
             "lidar": self.lidar_status(),
+            "camera": self.camera_status(),
             "lidar_bridge": lidar_bridge,
-            "services": self._services(external, lidar_bridge),
-            "sensors": self._sensors(external, lidar_bridge),
+            "camera_bridge": camera_bridge,
+            "rover_bridge": rover_bridge,
+            "rover": self.rover_status(),
+            "services": self._services(external, lidar_bridge, camera_bridge, rover_bridge),
+            "sensors": self._sensors(external, lidar_bridge, camera_bridge),
         }
 
     def system(self) -> dict[str, Any]:
@@ -432,6 +462,80 @@ class TelemetryProvider:
             "points": [],
         }
         self._last_lidar_scan = result
+        return result
+
+    def camera_status(self) -> dict[str, Any]:
+        driver_status = self._camera_driver_status()
+        candidates = self._camera_candidates()
+        present = [item for item in candidates if item["exists"]]
+        selected = present[0] if present else (candidates[0] if candidates else None)
+        holders = self._device_holders(selected["open_path"]) if selected and selected["exists"] else []
+        state = "detected" if present else "not_found"
+        if holders:
+            state = "in_use"
+        elif not present and driver_status.get("usb_present"):
+            state = "usb_detected_video_node_missing"
+        supported_modes = self._camera_supported_view_modes(driver_status)
+        return {
+            "present": bool(present),
+            "usb_present": bool(driver_status.get("usb_present")),
+            "state": state,
+            "device": selected["display_path"] if selected else None,
+            "open_path": selected["open_path"] if selected else None,
+            "by_id": selected["by_id"] if selected else None,
+            "driver_hint": "UVC USB camera",
+            "holders": holders,
+            "driver_state": driver_status.get("state"),
+            "driver_status_alive": driver_status.get("alive", False),
+            "driver_status_age_sec": driver_status.get("age_sec"),
+            "driver_last_error": driver_status.get("last_error"),
+            "driver_last_recovery": driver_status.get("last_recovery"),
+            "driver_actual": driver_status.get("actual", {}),
+            "usb_devices": driver_status.get("usb_devices", []),
+            "video_nodes": driver_status.get("video_nodes", []),
+            "test_supported": False,
+            "test_mode": "ros2_subscribe_only",
+            "topic": "/camera/image_raw",
+            "camera_info_topic": "/camera/camera_info",
+            "supported_view_modes": supported_modes,
+            "supported_view_modes_source": "v4l2" if driver_status.get("supported_view_modes") else "fallback",
+            "conflict_policy": "Dashboard는 /dev/video 장치를 열지 않습니다. ROS2 camera driver가 장치를 소유하고 /camera/image_raw를 발행합니다.",
+        }
+
+    def rover_status(self) -> dict[str, Any]:
+        now = time.time()
+        if self._rover_status_cache is not None and now < self._rover_status_next_refresh:
+            return dict(self._rover_status_cache)
+        base = os.environ.get("ROVER_BASE_URL", "http://192.168.4.1").rstrip("/")
+        result = {
+            "ok": False,
+            "connected": False,
+            "state": "unreachable",
+            "base_url": base,
+            "proxy_url": "/rover-proxy/",
+            "control_page": "/rover-control",
+            "mode": "web_proxy_and_ros_bridge",
+        }
+        try:
+            req = urllib.request.Request(base + "/", headers={"User-Agent": "UBTS-Dashboard/1.0"})
+            with urllib.request.urlopen(req, timeout=self._rover_status_timeout_s) as res:
+                body = res.read(256)
+                result.update(
+                    {
+                        "ok": 200 <= int(res.status) < 500,
+                        "connected": True,
+                        "state": "reachable",
+                        "http_status": res.status,
+                        "content_type": res.headers.get("Content-Type"),
+                        "sample": body.decode("utf-8", errors="replace")[:120],
+                    }
+                )
+        except Exception as exc:
+            result["error"] = str(exc)
+        result["checked_at"] = now
+        result["cache_ttl_s"] = self._rover_status_refresh_s
+        self._rover_status_cache = dict(result)
+        self._rover_status_next_refresh = now + self._rover_status_refresh_s
         return result
 
     def fan_status(self) -> dict[str, Any]:
@@ -748,6 +852,10 @@ class TelemetryProvider:
         root = Path(os.environ.get("LIDAR_DEV_ROOT", "/host-dev"))
         return root if root.exists() else Path("/dev")
 
+    def _camera_device_root(self) -> Path:
+        root = Path(os.environ.get("CAMERA_DEV_ROOT", os.environ.get("LIDAR_DEV_ROOT", "/host-dev")))
+        return root if root.exists() else Path("/dev")
+
     def _host_device_label(self, path: Path, resolve: bool = True) -> str:
         root = self._lidar_device_root()
         try:
@@ -760,6 +868,13 @@ class TelemetryProvider:
     def _open_device_path(self, path: str | Path) -> Path:
         raw = Path(path)
         root = self._lidar_device_root()
+        if raw.is_absolute() and str(raw).startswith("/dev/") and root != Path("/dev"):
+            return root / raw.relative_to("/dev")
+        return raw
+
+    def _open_camera_device_path(self, path: str | Path) -> Path:
+        raw = Path(path)
+        root = self._camera_device_root()
         if raw.is_absolute() and str(raw).startswith("/dev/") and root != Path("/dev"):
             return root / raw.relative_to("/dev")
         return raw
@@ -804,6 +919,98 @@ class TelemetryProvider:
         if "ttyacm" in lower:
             return "USB CDC ACM LiDAR candidate"
         return None
+
+    def _camera_candidates(self) -> list[dict[str, Any]]:
+        root = self._camera_device_root()
+        paths: list[Path] = []
+        configured = os.environ.get("CAMERA_DEVICE")
+        if configured and configured != "auto":
+            paths.append(self._open_camera_device_path(configured))
+        by_id_root = Path(os.environ.get("CAMERA_BY_ID_ROOT", str(root / "v4l/by-id")))
+        if by_id_root.exists():
+            paths.extend(sorted(by_id_root.glob("*Camera*")))
+            paths.extend(sorted(by_id_root.glob("*camera*")))
+            paths.extend(sorted(by_id_root.glob("*USB*")))
+        paths.extend(sorted(root.glob("video*")))
+
+        rows = []
+        seen: set[str] = set()
+        for path in paths:
+            try:
+                resolved = path.resolve()
+            except OSError:
+                resolved = path
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(
+                {
+                    "display_path": self._host_device_label_for_root(resolved, root),
+                    "open_path": str(resolved),
+                    "by_id": self._host_device_label_for_root(path, root, resolve=False) if "/v4l/by-id/" in str(path) else None,
+                    "exists": resolved.exists(),
+                }
+            )
+        return rows
+
+    def _camera_driver_status(self) -> dict[str, Any]:
+        data = _load_json(self.camera_driver_status_file)
+        updated_at = data.get("updated_at")
+        if isinstance(updated_at, (int, float)):
+            age = max(0.0, time.time() - float(updated_at))
+            data["age_sec"] = round(age, 2)
+            data["alive"] = age < 5.0
+        else:
+            data["age_sec"] = None
+            data["alive"] = False
+        return data
+
+    def _camera_supported_view_modes(self, driver_status: dict[str, Any]) -> list[dict[str, Any]]:
+        raw_modes = driver_status.get("supported_view_modes")
+        if not raw_modes:
+            raw_modes = driver_status.get("default_view_modes") or DEFAULT_CAMERA_VIEW_MODES
+        rows = []
+        seen: set[str] = set()
+        for item in raw_modes:
+            if not isinstance(item, dict):
+                continue
+            resolution = str(item.get("resolution") or "")
+            if "x" not in resolution:
+                width = item.get("width")
+                height = item.get("height")
+                if isinstance(width, int) and isinstance(height, int):
+                    resolution = f"{width}x{height}"
+            try:
+                width_text, height_text = resolution.lower().split("x", 1)
+                width = int(width_text)
+                height = int(height_text)
+            except (ValueError, TypeError):
+                continue
+            if resolution in seen:
+                continue
+            seen.add(resolution)
+            fps_values = []
+            for fps in item.get("fps", []):
+                try:
+                    value = float(fps)
+                except (TypeError, ValueError):
+                    continue
+                if value >= 1:
+                    fps_values.append(int(round(value)) if abs(value - round(value)) < 0.05 else round(value, 2))
+            fps_values = sorted({value for value in fps_values if value >= 1})
+            if not fps_values:
+                fps_values = [15]
+            rows.append({"resolution": resolution, "width": width, "height": height, "fps": fps_values})
+        return sorted(rows, key=lambda item: (item["width"] * item["height"], item["width"]))
+
+    def _host_device_label_for_root(self, path: Path, root: Path, resolve: bool = True) -> str:
+        try:
+            target = path.resolve() if resolve else path.absolute()
+            relative = target.relative_to(root.resolve())
+            return str(Path("/dev") / relative)
+        except (OSError, ValueError):
+            return str(path)
 
     def _device_holders(self, device_path: str | None) -> list[dict[str, Any]]:
         if not device_path:
@@ -1190,6 +1397,7 @@ class TelemetryProvider:
                 {"path": "/docker", "label": "Docker", "summary": "Docker engine and containers"},
                 {"path": "/fan", "label": "Fan Control", "summary": "Jetson 온도와 수동 PWM"},
                 {"path": "/research", "label": "Research", "summary": "연구 일정과 ROS2 연결 상태"},
+                {"path": "/rover-control", "label": "Rover Control", "summary": "WAVE ROVER 원본 UI proxy와 ROS bridge 준비 상태"},
                 {"path": "/docs", "label": "Docs", "summary": "운영 문서와 Markdown viewer"},
             ]
         }
@@ -1227,6 +1435,8 @@ class TelemetryProvider:
                 "link": "camera_link",
                 "optical_link": "camera_link_optical",
                 "parent_link": "base_link",
+                "owner": "ros2_camera_driver",
+                "dashboard_access": "subscribe_only",
             },
             "imu": {
                 "ok": False,
@@ -1240,7 +1450,12 @@ class TelemetryProvider:
             "mavlink": {"ok": False, "state": "not_connected"},
         }
 
-    def _sensors(self, external: dict[str, Any], lidar_bridge: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _sensors(
+        self,
+        external: dict[str, Any],
+        lidar_bridge: dict[str, Any] | None = None,
+        camera_bridge: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         sensors = self._default_sensors()
         for key, value in external.get("sensors", {}).items():
             if isinstance(value, dict) and isinstance(sensors.get(key), dict):
@@ -1276,6 +1491,58 @@ class TelemetryProvider:
                 }
             )
         sensors["lidar"] = lidar
+        camera_status = self.camera_status()
+        bridge_camera = camera_bridge or self._camera_bridge_status()
+        camera = dict(sensors.get("camera", {}))
+        camera.update(
+            {
+                "present": camera_status.get("present"),
+                "usb_present": camera_status.get("usb_present"),
+                "device": camera_status.get("device"),
+                "by_id": camera_status.get("by_id"),
+                "holders": camera_status.get("holders", []),
+                "driver_state": camera_status.get("driver_state"),
+                "driver_last_error": camera_status.get("driver_last_error"),
+            }
+        )
+        if bridge_camera.get("frame_topic_alive"):
+            camera.update(
+                {
+                    "ok": True,
+                    "connected": True,
+                    "state": "frame_live",
+                    "severity": "ok",
+                    "frame_id": bridge_camera.get("frame_id") or camera.get("frame_id") or "camera_link_optical",
+                    "source_width": bridge_camera.get("source_width"),
+                    "source_height": bridge_camera.get("source_height"),
+                    "last_frame_age_sec": bridge_camera.get("last_frame_age_sec"),
+                    "frame_count": bridge_camera.get("frame_count", 0),
+                }
+            )
+        elif camera_status.get("state") == "usb_detected_video_node_missing":
+            camera.update(
+                {
+                    "ok": False,
+                    "connected": False,
+                    "state": "video_node_missing",
+                    "severity": "error",
+                    "error": camera_status.get("driver_last_error") or "USB camera detected, but /dev/video node is missing",
+                }
+            )
+        elif bridge_camera.get("alive"):
+            camera.update(
+                {
+                    "ok": False,
+                    "connected": False,
+                    "state": "waiting_for_frame",
+                    "severity": "waiting",
+                    "last_frame_age_sec": bridge_camera.get("last_frame_age_sec"),
+                    "frame_count": bridge_camera.get("frame_count", 0),
+                }
+            )
+        elif camera_status.get("present"):
+            camera.update({"state": "waiting_for_ros2", "severity": "waiting"})
+        sensors["camera"] = camera
         return sensors
 
     def _mission_status(self) -> dict[str, Any]:
@@ -1286,17 +1553,26 @@ class TelemetryProvider:
             "connected": False,
         }
 
-    def _services(self, external: dict[str, Any], lidar_bridge: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _services(
+        self,
+        external: dict[str, Any],
+        lidar_bridge: dict[str, Any] | None = None,
+        camera_bridge: dict[str, Any] | None = None,
+        rover_bridge: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         services = {
             "dashboard": {"ok": True, "state": "serving", "port": 8080},
             "cloudflared": {"ok": True, "state": "tunnel_configured", "host": "bts.sarihub.com"},
             "ros2_bridge": {"ok": False, "state": "not_connected"},
+            "lidar_bridge": {"ok": False, "state": "not_connected", "topic": "/scan"},
+            "camera_bridge": {"ok": False, "state": "not_connected", "topic": "/camera/image_raw"},
+            "rover_bridge": {"ok": False, "state": "not_connected", "host": os.environ.get("ROVER_BASE_URL", "http://192.168.4.1")},
             "data_recorder": {"ok": False, "state": "not_connected"},
         }
         services.update(external.get("services", {}))
         bridge = lidar_bridge or self._lidar_bridge_status()
         if bridge.get("alive"):
-            services["ros2_bridge"] = {
+            lidar_service = {
                 "ok": bool(bridge.get("scan_topic_alive")),
                 "state": "scan_live" if bridge.get("scan_topic_alive") else "bridge_online",
                 "topic": "/scan",
@@ -1304,6 +1580,30 @@ class TelemetryProvider:
                 "point_count": bridge.get("point_count", 0),
                 "last_scan_age_sec": bridge.get("last_scan_age_sec"),
             }
+            services["ros2_bridge"] = lidar_service
+            services["lidar_bridge"] = lidar_service
+        camera = camera_bridge or self._camera_bridge_status()
+        if camera.get("alive"):
+            services["camera_bridge"] = {
+                "ok": bool(camera.get("frame_topic_alive")),
+                "state": "frame_live" if camera.get("frame_topic_alive") else "bridge_online",
+                "topic": "/camera/image_raw",
+                "frame_count": camera.get("frame_count", 0),
+                "last_frame_age_sec": camera.get("last_frame_age_sec"),
+                "resolution": self._resolution_text(camera.get("source_width"), camera.get("source_height")),
+            }
+        rover = self.rover_status()
+        rover_bridge = rover_bridge or self._rover_bridge_status()
+        services["rover_bridge"] = {
+            "ok": bool(rover_bridge.get("alive")),
+            "state": rover_bridge.get("state", "not_connected"),
+            "host": rover.get("base_url"),
+            "proxy": rover.get("proxy_url"),
+            "transport": rover_bridge.get("transport"),
+            "serial_port": rover_bridge.get("serial_port"),
+            "status_topic": rover_bridge.get("status_topic"),
+            "last_error": rover_bridge.get("last_error"),
+        }
         return services
 
     def _lidar_bridge_status(self) -> dict[str, Any]:
@@ -1333,6 +1633,70 @@ class TelemetryProvider:
             "updated_at": updated_at or None,
             "status_file": str(self.lidar_bridge_status_file),
         }
+
+    def _camera_bridge_status(self) -> dict[str, Any]:
+        data = _load_json(self.camera_bridge_status_file)
+        now = time.time()
+        try:
+            updated_at = float(data.get("updated_at", 0.0))
+        except (TypeError, ValueError):
+            updated_at = 0.0
+        status_age = round(now - updated_at, 3) if updated_at else None
+        alive = status_age is not None and status_age <= 3.0
+        last_frame_age = data.get("last_frame_age_sec")
+        try:
+            last_frame_age = None if last_frame_age is None else float(last_frame_age)
+        except (TypeError, ValueError):
+            last_frame_age = None
+        frame_alive = bool(alive and last_frame_age is not None and last_frame_age < 2.0)
+        return {
+            "alive": alive,
+            "frame_topic_alive": frame_alive,
+            "status_age_sec": status_age,
+            "last_frame_age_sec": round(last_frame_age, 3) if last_frame_age is not None else None,
+            "frame_count": int(data.get("frame_count") or 0),
+            "source_width": data.get("source_width"),
+            "source_height": data.get("source_height"),
+            "encoding": data.get("encoding"),
+            "frame_id": data.get("frame_id") or "camera_link_optical",
+            "error": None if frame_alive else data.get("error"),
+            "updated_at": updated_at or None,
+            "status_file": str(self.camera_bridge_status_file),
+        }
+
+    def _rover_bridge_status(self) -> dict[str, Any]:
+        data = _load_json(self.rover_bridge_status_file)
+        now = time.time()
+        try:
+            updated_at = float(data.get("updated_at", 0.0))
+        except (TypeError, ValueError):
+            updated_at = 0.0
+        status_age = round(now - updated_at, 3) if updated_at else None
+        alive = status_age is not None and status_age <= 3.0
+        return {
+            "alive": alive,
+            "connected": bool(alive and data.get("connected")),
+            "state": data.get("state") if alive else "not_connected",
+            "status_age_sec": status_age,
+            "transport": data.get("transport") or os.environ.get("ROVER_TRANSPORT", "serial"),
+            "serial_port": data.get("serial_port") or os.environ.get("ROVER_SERIAL_PORT", "/dev/ttyTHS1"),
+            "serial_baudrate": data.get("serial_baudrate") or int(os.environ.get("ROVER_SERIAL_BAUDRATE", "115200")),
+            "base_url": data.get("base_url") or os.environ.get("ROVER_BASE_URL", "http://192.168.4.1"),
+            "cmd_topic": data.get("cmd_topic") or "/cmd_vel",
+            "status_topic": data.get("status_topic") or "/rover/status",
+            "last_command": data.get("last_command"),
+            "last_error": data.get("last_error") if alive else None,
+            "updated_at": updated_at or None,
+            "status_file": str(self.rover_bridge_status_file),
+        }
+
+    def _resolution_text(self, width: Any, height: Any) -> str | None:
+        try:
+            if int(width) > 0 and int(height) > 0:
+                return f"{int(width)}x{int(height)}"
+        except (TypeError, ValueError):
+            return None
+        return None
 
     def _alerts(self, external: dict[str, Any]) -> list[dict[str, str]]:
         alerts = list(external.get("alerts", []))

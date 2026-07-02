@@ -23,6 +23,13 @@ services:
       LIDAR_BAUDS: "1000000,460800,256000,115200"
       LIDAR_WS_UPSTREAM: "ws://127.0.0.1:8765/ws/lidar"
       LIDAR_BRIDGE_STATUS_FILE: "/app/runtime/lidar_bridge_status.json"
+      CAMERA_DEV_ROOT: "/host-dev"
+      CAMERA_WS_UPSTREAM: "ws://127.0.0.1:8770/ws/camera"
+      CAMERA_DRIVER_STATUS_FILE: "/app/runtime/camera_driver_status.json"
+      CAMERA_BRIDGE_STATUS_FILE: "/app/runtime/camera_bridge_status.json"
+      ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
+      ROVER_BASE_URL: "${ROVER_BASE_URL:-http://192.168.4.1}"
+      ROVER_DASHBOARD_URL: "${ROVER_DASHBOARD_URL:-http://192.168.4.1}"
     volumes:
       - ./runtime:/app/runtime
       - ./data:/app/data
@@ -35,6 +42,7 @@ services:
       - /run/systemd:/run/systemd:rw
       - /var/run/docker.sock:/var/run/docker.sock
     device_cgroup_rules:
+      - "c 81:* rwm"
       - "c 166:* rwm"
       - "c 188:* rwm"
       - "c 204:* rwm"
@@ -71,6 +79,56 @@ services:
       - "c 204:* rwm"
       - "c 240:* rwm"
 
+  ros2-camera-driver:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-camera-driver:latest
+    container_name: unist-orachard-ros2-camera-driver
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    privileged: true
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      CAMERA_DEVICE: "${CAMERA_DEVICE:-auto}"
+      CAMERA_IMAGE_TOPIC: "${CAMERA_IMAGE_TOPIC:-/camera/image_raw}"
+      CAMERA_INFO_TOPIC: "${CAMERA_INFO_TOPIC:-/camera/camera_info}"
+      CAMERA_FRAME_ID: "${CAMERA_FRAME_ID:-camera_link_optical}"
+      CAMERA_WIDTH: "${CAMERA_WIDTH:-1280}"
+      CAMERA_HEIGHT: "${CAMERA_HEIGHT:-720}"
+      CAMERA_FPS: "${CAMERA_FPS:-30}"
+      CAMERA_FOURCC: "${CAMERA_FOURCC:-MJPG}"
+      CAMERA_FOV_DEG: "${CAMERA_FOV_DEG:-70}"
+      CAMERA_DRIVER_STATUS_FILE: "/app/runtime/camera_driver_status.json"
+      CAMERA_AUTO_USB_RECOVER: "${CAMERA_AUTO_USB_RECOVER:-1}"
+      CAMERA_USB_RECOVER_INTERVAL_S: "${CAMERA_USB_RECOVER_INTERVAL_S:-12}"
+      CAMERA_USB_RECOVER_MAX_INTERVAL_S: "${CAMERA_USB_RECOVER_MAX_INTERVAL_S:-120}"
+      CAMERA_AUTHORIZED_CYCLE_EVERY: "${CAMERA_AUTHORIZED_CYCLE_EVERY:-3}"
+      HOST_USB_SYS: "/host-sys/bus/usb/devices"
+    volumes:
+      - /dev:/dev
+      - /sys:/host-sys:rw
+      - ./runtime:/app/runtime
+    device_cgroup_rules:
+      - "c 81:* rwm"
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        source /opt/ros/iron/setup.bash
+        python3 /app/scripts/camera_ros2_driver.py \
+          --device "$${CAMERA_DEVICE}" \
+          --image-topic "$${CAMERA_IMAGE_TOPIC}" \
+          --camera-info-topic "$${CAMERA_INFO_TOPIC}" \
+          --frame-id "$${CAMERA_FRAME_ID}" \
+          --width "$${CAMERA_WIDTH}" \
+          --height "$${CAMERA_HEIGHT}" \
+          --fps "$${CAMERA_FPS}" \
+          --fourcc "$${CAMERA_FOURCC}" \
+          --fov-deg "$${CAMERA_FOV_DEG}" \
+          --status-file "$${CAMERA_DRIVER_STATUS_FILE}"
+
   ros2-lidar-bridge:
     build:
       context: .
@@ -101,3 +159,71 @@ services:
           --source "$${LIDAR_BRIDGE_SOURCE}" \
           --max-points "$${LIDAR_SCAN_MAX_POINTS}" \
           --max-hz 10
+
+  ros2-camera-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-camera-bridge:latest
+    container_name: unist-orachard-ros2-camera-bridge
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    depends_on:
+      - ros2-camera-driver
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      CAMERA_IMAGE_TOPIC: "${CAMERA_IMAGE_TOPIC:-/camera/image_raw}"
+      CAMERA_BRIDGE_STATUS_FILE: "/app/runtime/camera_bridge_status.json"
+    volumes:
+      - ./runtime:/app/runtime
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        source /opt/ros/iron/setup.bash
+        python3 /app/scripts/camera_ws_bridge.py \
+          --host 0.0.0.0 \
+          --port 8770 \
+          --topic "$${CAMERA_IMAGE_TOPIC}" \
+          --status-file "$${CAMERA_BRIDGE_STATUS_FILE}"
+
+  ros2-rover-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-rover-bridge:latest
+    container_name: unist-orachard-ros2-rover-bridge
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    privileged: true
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      ROVER_TRANSPORT: "${ROVER_TRANSPORT:-serial}"
+      ROVER_SERIAL_PORT: "${ROVER_SERIAL_PORT:-/dev/ttyTHS1}"
+      ROVER_SERIAL_BAUDRATE: "${ROVER_SERIAL_BAUDRATE:-115200}"
+      ROVER_BASE_URL: "${ROVER_BASE_URL:-http://192.168.4.1}"
+      ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
+      ROVER_CMD_TOPIC: "${ROVER_CMD_TOPIC:-/cmd_vel}"
+      ROVER_STATUS_TOPIC: "${ROVER_STATUS_TOPIC:-/rover/status}"
+    volumes:
+      - ./runtime:/app/runtime
+      - /dev:/dev
+    device_cgroup_rules:
+      - "c 204:* rwm"
+      - "c 240:* rwm"
+      - "c 4:* rwm"
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        source /opt/ros/iron/setup.bash
+        python3 /app/scripts/wave_rover_bridge.py \
+          --transport "$${ROVER_TRANSPORT}" \
+          --serial-port "$${ROVER_SERIAL_PORT}" \
+          --serial-baudrate "$${ROVER_SERIAL_BAUDRATE}" \
+          --base-url "$${ROVER_BASE_URL}" \
+          --cmd-topic "$${ROVER_CMD_TOPIC}" \
+          --status-topic "$${ROVER_STATUS_TOPIC}" \
+          --status-file "$${ROVER_BRIDGE_STATUS_FILE}"

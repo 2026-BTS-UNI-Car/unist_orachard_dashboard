@@ -7,7 +7,7 @@ Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대�
 ## 주요 화면
 
 - Jetson Orin Nano Super 상태: CPU, 메모리, 디스크, 온도, 호스트 정보
-- Connection: LiDAR USB-serial 인식 상태, ROS2 `/scan` WebSocket 기반 2D LiDAR 지도
+- Connection: LiDAR USB-serial 인식 상태, ROS2 `/scan` WebSocket 기반 2D LiDAR 지도, ROS2 카메라 실시간 화면
 - 로버 상태: 주행 모드, 위치, 속도, 배터리, E-stop, 모터 상태
 - 센서 상태: LiDAR, Camera, IMU, Encoder, MAVLink 준비 상태
 - Vision-LiDAR 융합: 센서별 신뢰도, 동적 가중치, 중심선 오차, 경로추종 오차
@@ -15,6 +15,7 @@ Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대�
 - Docker 상태: engine 정보, 컨테이너 목록, 컨테이너 CPU/메모리 그래프
 - 실험 통계: 주행 시간, 누적 거리, 완료 행간, 지도 커버리지
 - 수행계획 진행도: 월별 연구 일정 기반 진행 상태
+- Rover Control: WAVE ROVER 원본 Web UI proxy와 ROS2 `/cmd_vel` bridge 상태
 - Docs: 운영 문서 목록과 Markdown viewer
 
 ## 빠른 실행
@@ -47,9 +48,13 @@ docker compose up -d --build
 curl http://127.0.0.1:8080/api/health
 ```
 
-`docker-compose.yml`은 대시보드, `ros2-lidar-driver`, `ros2-lidar-bridge` 컨테이너를 함께 실행합니다. 컨테이너들은 `restart: unless-stopped`를 사용하므로 Jetson이 재부팅되어도 Docker 서비스가 올라오면 자동으로 다시 시작됩니다. Cloudflare Tunnel은 `bts.sarihub.com`을 `http://localhost:8080`으로 전달합니다.
+`docker-compose.yml`은 대시보드, `ros2-lidar-driver`, `ros2-lidar-bridge`, `ros2-camera-driver`, `ros2-camera-bridge`, `ros2-rover-bridge` 컨테이너를 함께 실행합니다. 컨테이너들은 `restart: unless-stopped`를 사용하므로 Jetson이 재부팅되어도 Docker 서비스가 올라오면 자동으로 다시 시작됩니다. Cloudflare Tunnel은 `bts.sarihub.com`을 `http://localhost:8080`으로 전달합니다.
 
 LiDAR driver는 RPLIDAR serial device를 단독 소유하고 `/scan`을 publish합니다. LiDAR bridge는 ROS2 Iron 컨테이너에서 `/scan`만 구독하며, Dashboard는 WebSocket으로 변환된 `/scan` point data와 `runtime/lidar_bridge_status.json` 상태만 표시합니다.
+
+Camera driver는 UVC `/dev/video*` 장치를 단독 소유하고 `/camera/image_raw`, `/camera/camera_info`를 publish합니다. Camera bridge는 `/camera/image_raw`를 WebSocket JPEG stream으로 변환하고, Dashboard는 `/connection` 페이지에 있을 때만 `/ws/camera`를 열어 표시합니다.
+
+WAVE ROVER는 Dashboard가 직접 UART를 열지 않고 `ros2-rover-bridge`가 `/cmd_vel`을 WAVE ROVER JSON 명령으로 변환하는 구조를 기준으로 합니다. `/rover-control`은 원본 Web UI proxy와 ROS2 rover bridge 상태 확인용입니다.
 
 ## 텔레메트리 연결 방식
 
@@ -75,5 +80,7 @@ python3 -m unittest discover -s tests
 - [docs/jetson_deployment.md](docs/jetson_deployment.md): Jetson 배포 절차
 - [docs/cloudflared.md](docs/cloudflared.md): Cloudflare Tunnel 설정
 - [docs/lidar_connection.md](docs/lidar_connection.md): LiDAR 인식과 테스트 정책
+- [docs/usb_camera_connection.md](docs/usb_camera_connection.md): USB 카메라 ROS2 연결
+- [docs/wave_rover_control.md](docs/wave_rover_control.md): WAVE ROVER UART/웹 proxy 연동
 - [docs/research_metrics.md](docs/research_metrics.md): 연구 성과 지표
 - [docs/telemetry_schema.md](docs/telemetry_schema.md): JSON 텔레메트리 스키마

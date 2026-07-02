@@ -152,8 +152,13 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 404)
         connection = self.get_json("/api/connection")
         self.assertIn("lidar", connection)
+        self.assertIn("camera", connection)
+        self.assertIn("camera_bridge", connection)
+        self.assertIn("rover_bridge", connection)
+        self.assertIn("rover", connection)
         self.assertIn("test_mode", connection["lidar"])
         self.assertEqual(connection["lidar"]["test_mode"], "ros2_subscribe_only")
+        self.assertEqual(connection["camera"]["test_mode"], "ros2_subscribe_only")
 
         lidar_test = self.post_json("/api/lidar/test")
         self.assertIn("status", lidar_test)
@@ -195,6 +200,51 @@ class DashboardApiTest(unittest.TestCase):
             else:
                 status_file.write_text(old, encoding="utf-8")
 
+    def test_camera_driver_status_file_exposes_actual_modes(self):
+        status_file = Path(__file__).resolve().parents[1] / "runtime" / "camera_driver_status.json"
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        old = status_file.read_text(encoding="utf-8") if status_file.exists() else None
+        try:
+            status_file.write_text(
+                json.dumps(
+                    {
+                        "updated_at": time.time(),
+                        "state": "usb_detected_video_node_missing",
+                        "present": False,
+                        "usb_present": True,
+                        "video_nodes": [],
+                        "usb_devices": [
+                            {
+                                "vendor_id": "0c45",
+                                "product_id": "6362",
+                                "manufacturer": "Sonix Technology Co., Ltd.",
+                                "product": "USB 2.0 Camera",
+                            }
+                        ],
+                        "last_error": "USB camera video node not found",
+                        "supported_view_modes": [
+                            {"resolution": "640x480", "width": 640, "height": 480, "fps": [30]},
+                            {"resolution": "1280x720", "width": 1280, "height": 720, "fps": [15, 30]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            payload = self.get_json("/api/connection")
+            camera = payload["camera"]
+            self.assertFalse(camera["present"])
+            self.assertTrue(camera["usb_present"])
+            self.assertEqual(camera["state"], "usb_detected_video_node_missing")
+            self.assertEqual(camera["supported_view_modes_source"], "v4l2")
+            self.assertEqual(camera["supported_view_modes"][0]["fps"], [30])
+            self.assertEqual(payload["sensors"]["camera"]["state"], "video_node_missing")
+            self.assertEqual(payload["sensors"]["camera"]["severity"], "error")
+        finally:
+            if old is None:
+                status_file.unlink(missing_ok=True)
+            else:
+                status_file.write_text(old, encoding="utf-8")
+
     def test_plan_contains_research_topic(self):
         payload = self.get_json("/api/plan")
         self.assertIn("Vision-LiDAR", payload["research_topic"])
@@ -212,9 +262,17 @@ class DashboardApiTest(unittest.TestCase):
         self.assertGreaterEqual(len(index["documents"]), 3)
         slugs = [item["slug"] for item in index["documents"]]
         self.assertIn("lidar-connection", slugs)
+        self.assertIn("usb-camera-connection", slugs)
+        self.assertIn("wave-rover-control", slugs)
         doc = self.get_json("/api/docs/lidar-connection")
         self.assertTrue(doc["ok"])
         self.assertIn("RPLIDAR", doc["markdown"])
+        camera_doc = self.get_json("/api/docs/usb-camera-connection")
+        self.assertTrue(camera_doc["ok"])
+        self.assertIn("/camera/image_raw", camera_doc["markdown"])
+        rover_doc = self.get_json("/api/docs/wave-rover-control")
+        self.assertTrue(rover_doc["ok"])
+        self.assertIn("WAVE ROVER", rover_doc["markdown"])
         html = self.get_text("/docs/lidar-connection")
         self.assertIn("id=\"docMarkdown\"", html)
 
@@ -238,6 +296,12 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("id=\"containerLogs\"", html)
         self.assertIn("id=\"containerActions\"", html)
         self.assertIn("id=\"containerRefreshButton\"", html)
+        self.assertIn("id=\"cameraLiveButton\"", html)
+        self.assertIn("id=\"cameraLiveImage\"", html)
+        self.assertIn("id=\"cameraResolutionSelect\"", html)
+        self.assertIn("id=\"cameraFpsSelect\"", html)
+        self.assertIn("data-route=\"/rover-control\"", html)
+        self.assertIn("id=\"roverProxyFrame\"", html)
         self.assertIn("data-lidar-range=\"reset\"", html)
         self.assertIn(">Auto</button>", html)
         self.assertNotIn("chartGpu", html)
@@ -276,6 +340,14 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("downloadLidarPng", app_js)
         self.assertIn("/api/docker/container/", app_js)
         self.assertIn("data-container-action=\"restart\"", app_js)
+        self.assertIn("${scheme}://${location.host}/ws/camera", app_js)
+        self.assertIn("CAMERA_RESOLUTION_KEY", app_js)
+        self.assertIn("DEFAULT_CAMERA_MODES", app_js)
+        self.assertIn("applyCameraModeCatalog", app_js)
+        self.assertIn("syncSelectOptions", app_js)
+        self.assertIn("initCameraLive();", app_js)
+        self.assertIn("Connection 페이지 밖에서는 Camera WebSocket을 닫습니다.", app_js)
+        self.assertIn("renderRoverControl", app_js)
         self.assertIn("chartShiftDurationMs", app_js)
         self.assertIn("CHART_BUFFER_POINTS = MAX_POINTS + 1", app_js)
         self.assertNotIn("downloadCanvasPng", app_js)
@@ -290,6 +362,15 @@ class DashboardApiTest(unittest.TestCase):
         lidar_driver_script = (Path(__file__).resolve().parents[1] / "scripts" / "run_lidar_driver.sh").read_text()
         self.assertIn("ros2-lidar-driver", compose)
         self.assertIn("ros2-lidar-bridge", compose)
+        self.assertIn("ros2-camera-driver", compose)
+        self.assertIn("ros2-camera-bridge", compose)
+        self.assertIn("ros2-rover-bridge", compose)
+        self.assertIn("CAMERA_WS_UPSTREAM", compose)
+        self.assertIn("CAMERA_DRIVER_STATUS_FILE", compose)
+        self.assertIn("CAMERA_AUTO_USB_RECOVER", compose)
+        self.assertIn("/sys:/host-sys:rw", compose)
+        self.assertIn("ROVER_BRIDGE_STATUS_FILE", compose)
+        self.assertIn("ROVER_BASE_URL", compose)
         self.assertIn("Dockerfile.lidar_driver", compose)
         self.assertIn("Dockerfile.ros2", compose)
         self.assertIn("LIDAR_BRIDGE_SOURCE:-ros2", compose)
@@ -303,6 +384,13 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("ina3221", telemetry_py)
         self.assertIn("findmnt", telemetry_py)
         self.assertIn("def _host_mounted_partitions", telemetry_py)
+        self.assertIn("DEFAULT_CAMERA_VIEW_MODES", telemetry_py)
+        self.assertIn("def _camera_driver_status", telemetry_py)
+        camera_driver_py = (Path(__file__).resolve().parents[1] / "scripts" / "camera_ros2_driver.py").read_text()
+        self.assertIn("v4l2-ctl", camera_driver_py)
+        self.assertIn("USBDEVFS_RESET", camera_driver_py)
+        self.assertIn("usb_recover_attempt", camera_driver_py)
+        self.assertIn("supported_view_modes", camera_driver_py)
         self.assertNotIn("def _gpu_percent", telemetry_py)
         self.assertIn("source_max_points", lidar_bridge_py)
         self.assertIn("\"scan_received\"", lidar_bridge_py)
@@ -311,10 +399,13 @@ class DashboardApiTest(unittest.TestCase):
         self.assertNotIn("source_max=max_points", lidar_bridge_py)
         self.assertIn("sllidar_s2_launch.py", lidar_driver_script)
         self.assertIn("/dev/serial/by-id/*CP210*", lidar_driver_script)
+        self.assertIn("driver_pid", lidar_driver_script)
+        self.assertIn("log unplugged", lidar_driver_script)
         self.assertIn("source_setup /opt/ros/iron/setup.bash", lidar_driver_script)
         self.assertIn("set +u", lidar_driver_script)
         self.assertIn("run_lidar_driver.sh", lidar_driver_dockerfile)
         self.assertIn("/sys/class/hwmon:/sys/class/hwmon:rw", compose)
+        self.assertTrue((Path(__file__).resolve().parents[1] / "scripts" / "wave_rover_bridge.py").exists())
 
     def test_lidar_websocket_requires_browser_session(self):
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
@@ -350,6 +441,22 @@ class DashboardApiTest(unittest.TestCase):
                 os.environ.pop("LIDAR_WS_UPSTREAM", None)
             else:
                 os.environ["LIDAR_WS_UPSTREAM"] = old_upstream
+
+    def test_camera_websocket_proxy_graceful_without_bridge(self):
+        old_upstream = os.environ.get("CAMERA_WS_UPSTREAM")
+        os.environ["CAMERA_WS_UPSTREAM"] = "ws://127.0.0.1:1/ws/camera"
+        try:
+            sock, leftover = self.open_dashboard_ws("/ws/camera?resolution=640x480&fps=5")
+            with sock:
+                payload = json.loads(self.read_ws_text(sock, leftover))
+                self.assertEqual(payload["type"], "status")
+                self.assertFalse(payload["frame_topic_alive"])
+                self.assertIn("bridge unavailable", payload["error"])
+        finally:
+            if old_upstream is None:
+                os.environ.pop("CAMERA_WS_UPSTREAM", None)
+            else:
+                os.environ["CAMERA_WS_UPSTREAM"] = old_upstream
 
     def test_lidar_websocket_proxy_relays_upstream_frame(self):
         upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
