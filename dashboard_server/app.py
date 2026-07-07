@@ -95,6 +95,13 @@ DOCS_CATALOG = [
         "file": "jetson_deployment.md",
     },
     {
+        "slug": "simulation-run",
+        "title": "ROS2 시뮬레이션 실행",
+        "category": "ROS2",
+        "summary": "orchard_full.launch.py 기반 SIM mode, RViz, mapping, autonomy 실행 절차",
+        "file": "simulation_run.md",
+    },
+    {
         "slug": "lidar-connection",
         "title": "LiDAR 연결과 테스트",
         "category": "Hardware",

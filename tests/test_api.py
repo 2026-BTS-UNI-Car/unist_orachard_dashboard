@@ -261,9 +261,14 @@ class DashboardApiTest(unittest.TestCase):
         index = self.get_json("/api/docs")
         self.assertGreaterEqual(len(index["documents"]), 3)
         slugs = [item["slug"] for item in index["documents"]]
+        self.assertIn("simulation-run", slugs)
         self.assertIn("lidar-connection", slugs)
         self.assertIn("usb-camera-connection", slugs)
         self.assertIn("wave-rover-control", slugs)
+        sim_doc = self.get_json("/api/docs/simulation-run")
+        self.assertTrue(sim_doc["ok"])
+        self.assertIn("orchard_full.launch.py", sim_doc["markdown"])
+        self.assertIn("mode:=sim", sim_doc["markdown"])
         doc = self.get_json("/api/docs/lidar-connection")
         self.assertTrue(doc["ok"])
         self.assertIn("RPLIDAR", doc["markdown"])
@@ -583,6 +588,7 @@ class DashboardApiTest(unittest.TestCase):
         slugs = {item["slug"] for item in index["documents"]}
         self.assertIn("jetson-runtime-architecture", slugs)
         self.assertIn("fan-control", slugs)
+        self.assertIn("simulation-run", slugs)
 
 
 if __name__ == "__main__":
