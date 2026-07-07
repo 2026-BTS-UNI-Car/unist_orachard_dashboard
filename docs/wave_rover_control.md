@@ -57,6 +57,8 @@ ros2 launch orchard_bringup orchard_full.launch.py \
 - UART open 여부: `serial_open`
 - command topic: `/cmd_vel`
 - status topic: `/rover/status`
+- dashboard 수동 조종: `/api/rover/command`가 `runtime/rover_command.json`에 TTL 명령을 쓰고 `wave_rover_bridge`가 serial로만 전달한다.
+- speed slider, W/A/S/D, 화면 방향 버튼은 모두 command file 경로를 사용한다.
 
 `serial_open`이 false면 먼저 Jetson 장치명, 권한, TX/RX 교차 연결, 공통 GND를 확인한다. bridge 프로세스가 살아 있어도 UART fd가 열리지 않으면 실제 핀 제어는 준비되지 않은 상태다.
 

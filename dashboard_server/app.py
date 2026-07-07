@@ -9,6 +9,8 @@ import os
 import secrets
 import select
 import socket
+import tarfile
+import tempfile
 import threading
 import time
 from http.cookies import CookieError, SimpleCookie
@@ -130,6 +132,20 @@ DOCS_CATALOG = [
         "file": "wave_rover_control.md",
     },
     {
+        "slug": "rover-control-dashboard",
+        "title": "Rover Control Dashboard",
+        "category": "Data",
+        "summary": "주행 제어, live 센서, LiDAR/카메라 기록, archive 조회와 다운로드",
+        "file": "rover_control_dashboard.md",
+    },
+    {
+        "slug": "lidar-archive-analysis",
+        "title": "LiDAR Archive 분석",
+        "category": "Data",
+        "summary": "LiDAR scan clustering, wall line fitting, object tracking overlay 알고리즘",
+        "file": "lidar_archive_analysis.md",
+    },
+    {
         "slug": "jetson-runtime-architecture",
         "title": "Jetson 런타임 아키텍처",
         "category": "Deployment",
@@ -185,6 +201,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/camera/settings":
             payload = self._read_json_body()
             self._send_json(self.provider.set_camera_settings(payload))
+        elif path == "/api/rover/command":
+            payload = self._read_json_body()
+            self._send_json(self.provider.set_rover_command(payload))
+        elif path == "/api/rover/stop":
+            payload = self._read_json_body()
+            self._send_json(self.provider.stop_rover(payload))
+        elif path == "/api/recordings/start":
+            payload = self._read_json_body()
+            self._send_json(self.provider.start_recording(payload))
+        elif path == "/api/recordings/stop":
+            self._send_json(self.provider.stop_recording())
         elif path.startswith("/rover-proxy/") or path == "/rover-proxy":
             self._proxy_rover_request(parsed)
         elif path == "/api/fan/mode":
@@ -232,6 +259,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(payload)
         elif path == "/api/rover/status":
             self._send_json(self.provider.rover_status())
+        elif path == "/api/recordings/status":
+            self._send_json(self.provider.recording_status())
+        elif path == "/api/recordings":
+            self._send_json(self.provider.recordings())
+        elif path.startswith("/api/recordings/"):
+            self._send_recording_payload(path)
         elif path == "/api/plan":
             self._send_json(self.provider.plan())
         elif path == "/api/site-map":
@@ -267,6 +300,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         self.close_connection = True
         self._log_served_json()
+
+    def _send_bytes(self, body: bytes, content_type: str, filename: str | None = None):
+        session_token = self._ensure_session(create=True)
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        if filename:
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self._send_session_cookie(session_token)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+        self.close_connection = True
 
     def _read_json_body(self):
         length = int(self.headers.get("Content-Length", "0") or 0)
@@ -382,6 +430,37 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 active_lidar_ws=lidar_websocket_stats()["active"],
                 active_camera_ws=camera_websocket_stats()["active"],
             )
+
+    def _send_recording_payload(self, path: str):
+        raw = path.removeprefix("/api/recordings/").strip("/")
+        if not raw:
+            self.send_error(404, "Recording id required")
+            return
+        if raw.endswith("/download"):
+            recording_id = unquote(raw.removesuffix("/download").strip("/"))
+            archive = self.provider.recording_archive_path(recording_id)
+            if archive is None or not archive.exists():
+                self.send_error(404, "Recording not found")
+                return
+            tmp_name = None
+            try:
+                with tempfile.NamedTemporaryFile(prefix=f"{archive.name}-", suffix=".tar.gz", delete=False) as tmp:
+                    tmp_name = tmp.name
+                with tarfile.open(tmp_name, "w:gz") as tar:
+                    tar.add(archive, arcname=archive.name)
+                body = Path(tmp_name).read_bytes()
+            except OSError as exc:
+                self._send_json({"ok": False, "error": str(exc), "id": recording_id})
+                return
+            finally:
+                if tmp_name:
+                    try:
+                        Path(tmp_name).unlink(missing_ok=True)
+                    except OSError:
+                        pass
+            self._send_bytes(body, "application/gzip", filename=f"{archive.name}.tar.gz")
+            return
+        self._send_json(self.provider.recording_detail(unquote(raw)))
 
     def _send_docker_container_payload(self, path: str, query: str):
         raw = path.removeprefix("/api/docker/container/").strip("/")

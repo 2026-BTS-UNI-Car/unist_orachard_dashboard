@@ -44,9 +44,9 @@ Browser
 
 Connection 페이지의 지도는 `/ws/lidar` WebSocket만 사용합니다. 이 경로는 dashboard server가 `ros2-lidar-bridge`의 `ws://127.0.0.1:8765/ws/lidar`로 프록시합니다.
 
-Docker 페이지는 컨테이너 행을 선택하면 Docker socket의 inspect API와 logs API를 읽어 상세 상태와 최근 로그를 보여줍니다. 로그는 화면 표시용이며, 장기 보관은 별도 Data Recorder 또는 rosbag 저장 서비스에서 담당해야 합니다.
+Docker 페이지는 컨테이너 행을 선택하면 Docker socket의 inspect API와 logs API를 읽어 상세 상태와 최근 로그를 보여줍니다. 로그는 화면 표시용이며, 장기 보관은 `ros2-data-recorder`가 담당합니다.
 
-`Data Recorder` 서비스 표시는 현재 placeholder입니다. 아직 실제 recorder 컨테이너나 rosbag2 기록 노드가 Compose에 없기 때문에 `not_connected`가 정상이며, 이후 실험 회차별 데이터 저장 파이프라인을 붙일 때 연결 상태로 전환합니다.
+`Data Recorder`는 `ros2 bag record`를 실행하고 `/app/runtime/recordings`에 LiDAR, camera, LiDAR+camera archive를 저장합니다. Dashboard는 `RECORDER_API_URL`을 통해 상태, start/stop, archive 목록을 조회합니다.
 
 ## 추후 확장
 

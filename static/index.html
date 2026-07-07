@@ -595,9 +595,80 @@
             <article class="kpi"><span>UART</span><strong id="roverControlState">--</strong><small id="roverControlBase">--</small></article>
             <article class="kpi"><span>Mode</span><strong id="roverProxyState">--</strong><small>network disabled</small></article>
             <article class="kpi"><span>ROS2</span><strong id="roverRosState">--</strong><small>/cmd_vel bridge</small></article>
+            <article class="kpi"><span>Archive</span><strong id="roverRecorderState">--</strong><small id="roverRecorderKind">대기</small></article>
           </section>
 
           <section class="dashboard-grid">
+            <article class="panel rover-drive-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Drive</p>
+                  <h2>주행 제어</h2>
+                </div>
+                <button id="roverStopButton" class="action-button danger" type="button">STOP</button>
+              </div>
+              <div class="rover-speed-control">
+                <label for="roverSpeedSlider">
+                  <span>Speed</span>
+                  <strong id="roverSpeedValue">25%</strong>
+                </label>
+                <input id="roverSpeedSlider" type="range" min="0" max="100" step="1" value="25" />
+              </div>
+              <div class="rover-pad" aria-label="Rover drive pad">
+                <button type="button" data-rover-drive="forward">W</button>
+                <button type="button" data-rover-drive="left">A</button>
+                <button type="button" data-rover-drive="stop">STOP</button>
+                <button type="button" data-rover-drive="right">D</button>
+                <button type="button" data-rover-drive="backward">S</button>
+              </div>
+              <div id="roverCommandStatus" class="test-result">명령 대기 중</div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Live</p>
+                  <h2>카메라</h2>
+                </div>
+                <button id="roverCameraToggle" class="action-button secondary" type="button">스트리밍 시작</button>
+              </div>
+              <div class="rover-camera-frame">
+                <img id="roverCameraImage" alt="Rover camera stream" />
+                <span id="roverCameraCaption">stream 대기</span>
+              </div>
+              <div id="roverCameraStats" class="chart-readout"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Live</p>
+                  <h2>LiDAR</h2>
+                </div>
+                <button id="roverLidarToggle" class="action-button secondary" type="button">LiDAR 시작</button>
+              </div>
+              <div class="lidar-map-stage rover-lidar-stage">
+                <canvas id="roverLidarCanvas" class="lidar-map" width="520" height="520"></canvas>
+              </div>
+              <div id="roverLidarStats" class="chart-readout"></div>
+            </article>
+
+            <article class="panel rover-record-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Archive</p>
+                  <h2>기록 제어</h2>
+                </div>
+                <button id="roverRecordStopButton" class="action-button danger" type="button">기록 중지</button>
+              </div>
+              <div class="record-button-grid">
+                <button id="roverRecordLidarButton" class="action-button secondary" type="button">LiDAR 기록</button>
+                <button id="roverRecordCameraButton" class="action-button secondary" type="button">카메라 녹화</button>
+                <button id="roverRecordBothButton" class="action-button primary" type="button">동시 기록</button>
+              </div>
+              <div id="roverRecordingStatus" class="test-result">기록 대기 중</div>
+            </article>
+
             <article class="panel wide">
               <div class="panel-head">
                 <div>
@@ -606,6 +677,25 @@
                 </div>
               </div>
               <div id="roverControlDetails" class="status-list"></div>
+            </article>
+
+            <article class="panel wide">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Archive</p>
+                  <h2>기록 데이터</h2>
+                </div>
+                <button id="roverArchiveRefreshButton" class="action-button secondary" type="button">새로고침</button>
+              </div>
+              <div class="archive-layout">
+                <div id="roverArchiveList" class="archive-list"></div>
+                <div class="archive-preview">
+                  <div class="lidar-map-stage rover-lidar-stage">
+                    <canvas id="roverArchiveLidarCanvas" class="lidar-map" width="520" height="520"></canvas>
+                  </div>
+                  <div id="roverArchiveDetails" class="status-list"></div>
+                </div>
+              </div>
             </article>
           </section>
         </section>

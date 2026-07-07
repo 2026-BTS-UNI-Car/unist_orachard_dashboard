@@ -298,6 +298,7 @@ class UsbCameraDriver(Node):
             height=self.request_height,
             fps=self.request_fps,
             frame_id=args.frame_id,
+            rotate_180=args.rotate_180,
             auto_usb_recover=args.auto_usb_recover,
             status_file=args.status_file,
             settings_file=args.settings_file,
@@ -336,6 +337,7 @@ class UsbCameraDriver(Node):
                 "height": self.request_height,
                 "fps": self.request_fps,
                 "fourcc": self.request_fourcc,
+                "rotate_180": bool(self.args.rotate_180),
             },
             "actual": {
                 "width": self.actual_width,
@@ -531,6 +533,8 @@ class UsbCameraDriver(Node):
         self.write_status("streaming")
 
     def publish_frame(self, frame):
+        if self.args.rotate_180:
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
         stamp = self.get_clock().now().to_msg()
         height, width = frame.shape[:2]
         image = Image()
@@ -565,6 +569,7 @@ def main() -> int:
     parser.add_argument("--fps", type=float, default=float(os.environ.get("CAMERA_FPS", "60")))
     parser.add_argument("--fourcc", default=os.environ.get("CAMERA_FOURCC", "MJPG"))
     parser.add_argument("--fov-deg", type=float, default=float(os.environ.get("CAMERA_FOV_DEG", "70")))
+    parser.add_argument("--rotate-180", default=parse_bool(os.environ.get("CAMERA_ROTATE_180", "1"), True), action=argparse.BooleanOptionalAction)
     parser.add_argument("--status-file", default=os.environ.get("CAMERA_DRIVER_STATUS_FILE", "/app/runtime/camera_driver_status.json"))
     parser.add_argument("--settings-file", default=os.environ.get("CAMERA_SETTINGS_FILE", "/app/runtime/camera_settings.json"))
     parser.add_argument("--max-tick-fps", type=float, default=float(os.environ.get("CAMERA_MAX_TICK_FPS", "60")))

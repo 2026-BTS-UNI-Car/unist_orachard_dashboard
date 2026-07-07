@@ -29,6 +29,9 @@ DEFAULT_CAMERA_DRIVER_STATUS_FILE = ROOT / "runtime" / "camera_driver_status.jso
 DEFAULT_CAMERA_BRIDGE_STATUS_FILE = ROOT / "runtime" / "camera_bridge_status.json"
 DEFAULT_CAMERA_SETTINGS_FILE = ROOT / "runtime" / "camera_settings.json"
 DEFAULT_ROVER_BRIDGE_STATUS_FILE = ROOT / "runtime" / "rover_bridge_status.json"
+DEFAULT_ROVER_COMMAND_FILE = ROOT / "runtime" / "rover_command.json"
+DEFAULT_DATA_RECORDER_STATUS_FILE = ROOT / "runtime" / "data_recorder_status.json"
+DEFAULT_RECORDING_ARCHIVE_DIR = ROOT / "runtime" / "recordings"
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_CAMERA_VIEW_MODES = [
     {"resolution": "1920x1080", "width": 1920, "height": 1080, "fps": [30], "label": "1080p 16:9"},
@@ -142,6 +145,13 @@ class TelemetryProvider:
             os.environ.get("ROVER_BRIDGE_STATUS_FILE", str(DEFAULT_ROVER_BRIDGE_STATUS_FILE))
         )
         self.rover_bridge_status_file = rover_bridge_file if rover_bridge_file.is_absolute() else ROOT / rover_bridge_file
+        rover_command_file = Path(os.environ.get("ROVER_COMMAND_FILE", str(DEFAULT_ROVER_COMMAND_FILE)))
+        self.rover_command_file = rover_command_file if rover_command_file.is_absolute() else ROOT / rover_command_file
+        recorder_status_file = Path(os.environ.get("DATA_RECORDER_STATUS_FILE", str(DEFAULT_DATA_RECORDER_STATUS_FILE)))
+        self.data_recorder_status_file = recorder_status_file if recorder_status_file.is_absolute() else ROOT / recorder_status_file
+        archive_dir = Path(os.environ.get("RECORDING_ARCHIVE_DIR", str(DEFAULT_RECORDING_ARCHIVE_DIR)))
+        self.recording_archive_dir = archive_dir if archive_dir.is_absolute() else ROOT / archive_dir
+        self.recorder_api_url = os.environ.get("RECORDER_API_URL", "http://127.0.0.1:8790").rstrip("/")
         self.rover_network_enabled = _env_bool("ROVER_NETWORK_ENABLED", False)
         self.host_root = Path(os.environ.get("HOST_ROOT", "/host-root"))
         if not self.host_root.exists():
@@ -656,6 +666,162 @@ class TelemetryProvider:
         self._rover_status_cache = dict(result)
         self._rover_status_next_refresh = now + self._rover_status_refresh_s
         return result
+
+    def set_rover_command(self, payload: dict[str, Any]) -> dict[str, Any]:
+        linear = self._bounded_float(payload.get("linear"), -0.45, 0.45)
+        angular = self._bounded_float(payload.get("angular"), -1.4, 1.4)
+        ttl_s = self._bounded_float(payload.get("ttl_s"), 0.2, 2.0, default=0.65)
+        try:
+            speed_pct = int(float(payload.get("speed_pct", 0) or 0))
+        except (TypeError, ValueError):
+            speed_pct = 0
+        command = {
+            "type": "rover_command",
+            "updated_at": time.time(),
+            "source": str(payload.get("source") or "dashboard"),
+            "linear": linear,
+            "angular": angular,
+            "ttl_s": ttl_s,
+            "speed_pct": max(0, min(100, speed_pct)),
+            "enabled": True,
+            "transport": "serial_bridge_file",
+        }
+        _write_json_atomic(self.rover_command_file, command)
+        return {"ok": True, "state": "queued", "command_file": str(self.rover_command_file), "command": command}
+
+    def stop_rover(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload = dict(payload or {})
+        payload.update({"linear": 0.0, "angular": 0.0, "ttl_s": 0.65, "speed_pct": 0, "source": payload.get("source") or "dashboard_stop"})
+        return self.set_rover_command(payload)
+
+    def recording_status(self) -> dict[str, Any]:
+        remote = self._recorder_get("/status")
+        if remote.get("ok"):
+            return remote
+        data = _load_json(self.data_recorder_status_file)
+        if data:
+            data.setdefault("ok", False)
+            data.setdefault("state", "status_file_only")
+            data["status_file"] = str(self.data_recorder_status_file)
+            data["status_url"] = f"{self.recorder_api_url}/status"
+            data["archive_count"] = len(self.recordings().get("recordings", []))
+            return data
+        return {
+            "ok": False,
+            "active": False,
+            "state": "not_connected",
+            "status_url": f"{self.recorder_api_url}/status",
+            "status_file": str(self.data_recorder_status_file),
+            "archive_dir": str(self.recording_archive_dir),
+            "archive_count": len(self.recordings().get("recordings", [])),
+            "error": remote.get("error"),
+        }
+
+    def start_recording(self, payload: dict[str, Any]) -> dict[str, Any]:
+        kind = str(payload.get("kind") or "").strip().lower()
+        if kind not in {"lidar", "camera", "both"}:
+            return {"ok": False, "state": "invalid_kind", "error": "kind must be lidar, camera, or both"}
+        result = self._recorder_post("/start", {"kind": kind})
+        if result.get("ok"):
+            return result
+        return {"ok": False, "state": "recorder_unavailable", "error": result.get("error"), "status": self.recording_status()}
+
+    def stop_recording(self) -> dict[str, Any]:
+        result = self._recorder_post("/stop", {})
+        if result.get("ok"):
+            return result
+        return {"ok": False, "state": "recorder_unavailable", "error": result.get("error"), "status": self.recording_status()}
+
+    def recordings(self) -> dict[str, Any]:
+        rows: list[dict[str, Any]] = []
+        if self.recording_archive_dir.exists():
+            for path in sorted(self.recording_archive_dir.iterdir(), key=lambda item: item.stat().st_mtime if item.exists() else 0, reverse=True):
+                if not path.is_dir():
+                    continue
+                metadata = _load_json(path / "metadata.json")
+                analysis = _load_json(path / "analysis.json")
+                rows.append(
+                    {
+                        "id": metadata.get("id") or path.name,
+                        "kind": metadata.get("kind") or "unknown",
+                        "state": metadata.get("state") or "archived",
+                        "started_at": metadata.get("started_at"),
+                        "finished_at": metadata.get("finished_at"),
+                        "duration_s": metadata.get("duration_s"),
+                        "path": str(path),
+                        "analysis": {
+                            "walls": len(analysis.get("walls", [])),
+                            "objects": len(analysis.get("objects", [])),
+                        },
+                    }
+                )
+        return {"ok": True, "archive_dir": str(self.recording_archive_dir), "recordings": rows}
+
+    def recording_detail(self, recording_id: str) -> dict[str, Any]:
+        path = self.recording_archive_path(recording_id)
+        if path is None or not path.exists():
+            return {"ok": False, "error": "recording_not_found", "id": recording_id}
+        metadata = _load_json(path / "metadata.json")
+        analysis = _load_json(path / "analysis.json")
+        preview_scan = _load_json(path / "preview_scan.json")
+        return {
+            "ok": True,
+            "recording": {
+                "id": metadata.get("id") or path.name,
+                "kind": metadata.get("kind"),
+                "metadata": metadata,
+                "analysis": analysis,
+                "preview_scan": preview_scan,
+                "download_url": f"/api/recordings/{path.name}/download",
+            },
+        }
+
+    def recording_archive_path(self, recording_id: str) -> Path | None:
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "", str(recording_id or ""))
+        if not safe:
+            return None
+        path = (self.recording_archive_dir / safe).resolve()
+        try:
+            root = self.recording_archive_dir.resolve()
+        except OSError:
+            root = self.recording_archive_dir
+        if root != path and root not in path.parents:
+            return None
+        return path
+
+    def _recorder_get(self, path: str) -> dict[str, Any]:
+        try:
+            with urllib.request.urlopen(f"{self.recorder_api_url}{path}", timeout=1.0) as res:
+                data = json.loads(res.read().decode("utf-8"))
+                data.setdefault("ok", 200 <= int(res.status) < 300)
+                return data
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _recorder_post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.recorder_api_url}{path}",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=2.0) as res:
+                data = json.loads(res.read().decode("utf-8"))
+                data.setdefault("ok", 200 <= int(res.status) < 300)
+                return data
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _bounded_float(self, value: Any, low: float, high: float, default: float = 0.0) -> float:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            numeric = default
+        if not math.isfinite(numeric):
+            numeric = default
+        return round(max(low, min(high, numeric)), 3)
 
     def fan_status(self) -> dict[str, Any]:
         self._enforce_fan_state()
@@ -1749,6 +1915,16 @@ class TelemetryProvider:
             "serial_open": rover_bridge.get("serial_open"),
             "last_error": rover_bridge.get("last_error"),
         }
+        recorder = self.recording_status()
+        services["data_recorder"] = {
+            "ok": bool(recorder.get("ok")),
+            "state": "recording" if recorder.get("active") else recorder.get("state", "not_connected"),
+            "active": bool(recorder.get("active")),
+            "kind": recorder.get("kind"),
+            "recording_id": recorder.get("recording_id"),
+            "archive_count": recorder.get("archive_count"),
+            "status_url": recorder.get("status_url") or f"{self.recorder_api_url}/status",
+        }
         return services
 
     def _lidar_bridge_status(self) -> dict[str, Any]:
@@ -1832,6 +2008,10 @@ class TelemetryProvider:
             "cmd_topic": data.get("cmd_topic") or "/cmd_vel",
             "status_topic": data.get("status_topic") or "/rover/status",
             "last_command": data.get("last_command"),
+            "last_command_source": data.get("last_command_source"),
+            "command_file": data.get("command_file") or str(self.rover_command_file),
+            "file_command_active": bool(alive and data.get("file_command_active")),
+            "file_command_age_sec": data.get("file_command_age_sec"),
             "serial_open": bool(alive and data.get("serial_open")),
             "last_error": data.get("last_error") if alive else None,
             "updated_at": updated_at or None,

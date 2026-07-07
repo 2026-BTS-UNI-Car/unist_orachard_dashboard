@@ -14,6 +14,10 @@ const LIDAR_RECONNECT_DEBOUNCE_MS = 650;
 const CAMERA_RESOLUTION_KEY = "ubts-camera-resolution-v1";
 const CAMERA_FPS_KEY = "ubts-camera-fps-v1";
 const CAMERA_RECONNECT_DEBOUNCE_MS = 500;
+const ROVER_SPEED_KEY = "ubts-rover-speed-v1";
+const ROVER_CONTROL_INTERVAL_MS = 180;
+const ROVER_MAX_LINEAR_MPS = 0.45;
+const ROVER_MAX_ANGULAR_RPS = 1.4;
 const DEFAULT_CAMERA_MODES = [
   { resolution: "1920x1080", width: 1920, height: 1080, fps: [30], label: "1080p 16:9" },
   { resolution: "1280x720", width: 1280, height: 720, fps: [60], label: "720p 16:9" },
@@ -100,6 +104,25 @@ const state = {
   cameraModes: DEFAULT_CAMERA_MODES,
   cameraModesSignature: JSON.stringify(DEFAULT_CAMERA_MODES),
   cameraModesSource: "fallback",
+  roverControl: {
+    speedPct: 25,
+    linear: 0,
+    angular: 0,
+    activeKeys: new Set(),
+    activeButton: "",
+    commandTimer: null,
+    inFlight: false,
+    lastCommandAt: null,
+    lastError: "",
+  },
+  recordings: {
+    status: null,
+    items: [],
+    selectedId: null,
+    selected: null,
+    loading: false,
+    actionInFlight: false,
+  },
   selectedContainerId: null,
   containerDetail: null,
   containerLogs: null,
@@ -215,9 +238,28 @@ async function getJson(path, options = {}) {
   }
 }
 
+async function postJson(path, payload = {}) {
+  const res = await fetch(path, {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  return res.json();
+}
+
 function currentRoute() {
   if (location.pathname === "/docs" || location.pathname.startsWith("/docs/")) return "/docs";
   return ROUTES.includes(location.pathname) ? location.pathname : "/";
+}
+
+function routeSupportsLidarLive(route = currentRoute()) {
+  return route === "/connection" || route === "/rover-control";
+}
+
+function routeSupportsCameraLive(route = currentRoute()) {
+  return route === "/connection" || route === "/rover-control";
 }
 
 function renderRoute() {
@@ -237,11 +279,16 @@ function renderRoute() {
     renderActiveLidarMap();
     if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
     if (!state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
+  } else if (route === "/rover-control") {
+    renderActiveLidarMap();
+    renderRoverControl(state.telemetry || {});
+    renderRecordingStatus();
+    if (!state.recordings.items.length && !state.recordings.loading) loadRecordings().catch(console.error);
   } else if (state.lidarLive.socket || state.lidarLive.enabled) {
-    closeLidarLive("Connection 페이지 밖에서는 LiDAR WebSocket을 닫습니다.", { userStopped: false });
+    closeLidarLive("Live 화면 밖에서는 LiDAR WebSocket을 닫습니다.", { userStopped: false });
   }
-  if (route !== "/connection" && (state.cameraLive.socket || state.cameraLive.enabled)) {
-    closeCameraLive("Connection 페이지 밖에서는 Camera WebSocket을 닫습니다.", { userStopped: false });
+  if (!routeSupportsCameraLive(route) && (state.cameraLive.socket || state.cameraLive.enabled)) {
+    closeCameraLive("Live 화면 밖에서는 Camera WebSocket을 닫습니다.", { userStopped: false });
   }
   requestChartAnimation();
 }
@@ -860,8 +907,8 @@ function toggleLidarLive() {
 }
 
 function startLidarLive() {
-  if (currentRoute() !== "/connection") {
-    debugLog("ws", "skip start outside /connection");
+  if (!routeSupportsLidarLive()) {
+    debugLog("ws", "skip start outside live routes");
     return;
   }
   if (state.lidarLive.socket) return;
@@ -892,7 +939,7 @@ function startLidarLive() {
       }
     });
     socket.addEventListener("message", (event) => {
-      if (socket !== state.lidarLive.socket || currentRoute() !== "/connection") return;
+      if (socket !== state.lidarLive.socket || !routeSupportsLidarLive()) return;
       handleLidarLiveMessage(event.data);
     });
     socket.addEventListener("error", (event) => {
@@ -903,7 +950,7 @@ function startLidarLive() {
     });
     socket.addEventListener("close", (event) => {
       if (socket !== state.lidarLive.socket) return;
-      const shouldReconnect = state.lidarLive.enabled && !state.lidarLive.userStopped && currentRoute() === "/connection";
+      const shouldReconnect = state.lidarLive.enabled && !state.lidarLive.userStopped && routeSupportsLidarLive();
       state.lidarLive.socket = null;
       state.lidarLive.connected = false;
       state.lidarLive.scanTopicAlive = false;
@@ -915,7 +962,7 @@ function startLidarLive() {
       } else if (shouldReconnect) {
         state.lidarLive.reconnectTimer = window.setTimeout(() => {
           state.lidarLive.reconnectTimer = null;
-          if (currentRoute() === "/connection" && !state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
+          if (routeSupportsLidarLive() && !state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
         }, 1500);
       }
     });
@@ -975,7 +1022,7 @@ function closeSocketAfterConnect(socket, reason = "closed") {
 }
 
 function scheduleLidarReconnectForSettings(delayMs = LIDAR_RECONNECT_DEBOUNCE_MS) {
-  if (currentRoute() !== "/connection") return;
+  if (!routeSupportsLidarLive()) return;
   if (!state.lidarLive.socket && !state.lidarLive.enabled) return;
   clearLidarReconnectTimer();
   state.lidarLive.pendingRestart = true;
@@ -987,7 +1034,7 @@ function scheduleLidarReconnectForSettings(delayMs = LIDAR_RECONNECT_DEBOUNCE_MS
 }
 
 function restartLidarLiveForSettings() {
-  if (currentRoute() !== "/connection") return;
+  if (!routeSupportsLidarLive()) return;
   const wasEnabled = state.lidarLive.enabled && !state.lidarLive.userStopped;
   const socket = state.lidarLive.socket;
   if (socket?.readyState === WebSocket.CONNECTING) {
@@ -1005,7 +1052,7 @@ function restartLidarLiveForSettings() {
   }
   if (wasEnabled) {
     window.setTimeout(() => {
-      if (currentRoute() === "/connection" && !state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
+      if (routeSupportsLidarLive() && !state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
     }, 160);
   }
 }
@@ -1032,8 +1079,8 @@ function cameraWebSocketUrl() {
 }
 
 function startCameraLive() {
-  if (currentRoute() !== "/connection") {
-    debugLog("camera", "skip start outside /connection");
+  if (!routeSupportsCameraLive()) {
+    debugLog("camera", "skip start outside live routes");
     return;
   }
   if (state.cameraLive.socket) return;
@@ -1062,7 +1109,7 @@ function startCameraLive() {
       }
     });
     socket.addEventListener("message", (event) => {
-      if (socket !== state.cameraLive.socket || currentRoute() !== "/connection") return;
+      if (socket !== state.cameraLive.socket || !routeSupportsCameraLive()) return;
       handleCameraLiveMessage(event.data);
     });
     socket.addEventListener("error", (event) => {
@@ -1073,7 +1120,7 @@ function startCameraLive() {
     });
     socket.addEventListener("close", (event) => {
       if (socket !== state.cameraLive.socket) return;
-      const shouldReconnect = state.cameraLive.enabled && !state.cameraLive.userStopped && currentRoute() === "/connection";
+      const shouldReconnect = state.cameraLive.enabled && !state.cameraLive.userStopped && routeSupportsCameraLive();
       state.cameraLive.socket = null;
       state.cameraLive.connected = false;
       state.cameraLive.frameTopicAlive = false;
@@ -1085,7 +1132,7 @@ function startCameraLive() {
       } else if (shouldReconnect) {
         state.cameraLive.reconnectTimer = window.setTimeout(() => {
           state.cameraLive.reconnectTimer = null;
-          if (currentRoute() === "/connection" && !state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
+          if (routeSupportsCameraLive() && !state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
         }, 1500);
       }
     });
@@ -1126,7 +1173,7 @@ function clearCameraReconnectTimer() {
 }
 
 function scheduleCameraReconnectForSettings(delayMs = CAMERA_RECONNECT_DEBOUNCE_MS) {
-  if (currentRoute() !== "/connection") return;
+  if (!routeSupportsCameraLive()) return;
   if (!state.cameraLive.socket && !state.cameraLive.enabled) return;
   clearCameraReconnectTimer();
   state.cameraLive.pendingRestart = true;
@@ -1138,7 +1185,7 @@ function scheduleCameraReconnectForSettings(delayMs = CAMERA_RECONNECT_DEBOUNCE_
 }
 
 function restartCameraLiveForSettings() {
-  if (currentRoute() !== "/connection") return;
+  if (!routeSupportsCameraLive()) return;
   const wasEnabled = state.cameraLive.enabled && !state.cameraLive.userStopped;
   const socket = state.cameraLive.socket;
   if (socket?.readyState === WebSocket.CONNECTING) {
@@ -1154,7 +1201,7 @@ function restartCameraLiveForSettings() {
   }
   if (wasEnabled) {
     window.setTimeout(() => {
-      if (currentRoute() === "/connection" && !state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
+      if (routeSupportsCameraLive() && !state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
     }, 160);
   }
 }
@@ -1219,8 +1266,11 @@ function handleCameraLiveMessage(raw) {
     state.cameraLive.frameId = payload.frame_id || state.cameraLive.frameId;
     state.cameraLive.lastFrameAt = Date.now();
     state.cameraLive.error = "";
+    const src = payload.data ? `data:${payload.mime || "image/jpeg"};base64,${payload.data}` : "";
     const image = $("cameraLiveImage");
-    if (image && payload.data) image.src = `data:${payload.mime || "image/jpeg"};base64,${payload.data}`;
+    const roverImage = $("roverCameraImage");
+    if (image && src) image.src = src;
+    if (roverImage && src) roverImage.src = src;
     const source = payload.source_width && payload.source_height ? `${payload.source_width}x${payload.source_height}` : "--";
     const output = payload.width && payload.height ? `${payload.width}x${payload.height}` : state.cameraLive.resolution;
     const rate = state.cameraLive.sourceFps || state.cameraLive.displayFps || state.cameraLive.fps;
@@ -1259,6 +1309,19 @@ function renderCameraLiveState(overrideLabel) {
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
     { label: "Display FPS", value: cameraFpsLabel(rate), sub: `frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
+  ]);
+  text("roverCameraCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · source ${source}` : socketText);
+  const roverButton = $("roverCameraToggle");
+  if (roverButton) {
+    roverButton.textContent = state.cameraLive.socket && !state.cameraLive.connected
+      ? "연결 중"
+      : state.cameraLive.connected ? "스트리밍 중지" : "스트리밍 시작";
+    roverButton.classList.toggle("active", state.cameraLive.connected);
+  }
+  renderReadout("roverCameraStats", [
+    { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
+    { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
+    { label: "FPS", value: cameraFpsLabel(rate), sub: `frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
 }
 
@@ -1398,14 +1461,28 @@ function renderLidarLiveState(overrideLabel) {
       : state.lidarLive.connected ? "실시간 중지" : "실시간 연결";
     button.classList.toggle("active", state.lidarLive.connected);
   }
+  const roverButton = $("roverLidarToggle");
+  if (roverButton) {
+    roverButton.textContent = state.lidarLive.socket && !state.lidarLive.connected
+      ? "연결 중"
+      : state.lidarLive.connected ? "LiDAR 중지" : "LiDAR 시작";
+    roverButton.classList.toggle("active", state.lidarLive.connected);
+  }
   text("lidarLiveDevice", state.telemetry?.connection?.lidar?.device || "--");
   text("lidarLiveTopic", state.lidarLive.scanTopicAlive ? `${lidarSourceLabel(state.lidarLive.source)} live` : lidarSourceLabel(state.lidarLive.source));
-  text("lidarLiveSocket", overrideLabel || (state.lidarLive.connected ? "connected" : state.lidarLive.error || "disconnected"));
+  const socketText = overrideLabel || (state.lidarLive.connected ? "connected" : state.lidarLive.error || "disconnected");
+  text("lidarLiveSocket", socketText);
   text("lidarLiveAge", lidarAgeLabel());
   const pointLabel = state.lidarLive.pointCount
     ? `${state.lidarLive.pointCount}/${state.lidarLive.requestedPointCount || state.lidarPoints.value}`
     : "--";
   text("lidarLivePoints", pointLabel);
+  const colors = chartColors();
+  renderReadout("roverLidarStats", [
+    { label: "Socket", value: state.lidarLive.connected ? "ON" : "OFF", sub: socketText, color: state.lidarLive.connected ? colors.good : colors.rose },
+    { label: "Source", value: state.lidarLive.scanTopicAlive ? "live" : lidarSourceLabel(state.lidarLive.source), sub: state.telemetry?.connection?.lidar?.device || "/scan", color: colors.cyan },
+    { label: "Points", value: pointLabel, sub: lidarAgeLabel(), color: colors.blue },
+  ]);
 }
 
 function renderLiveSensorLinks() {
@@ -2703,10 +2780,13 @@ function renderRoverControl(data) {
   const rover = data.rover || data.connection?.rover || {};
   const services = data.services || data.connection?.services || {};
   const roverBridge = services.rover_bridge || {};
+  const recorder = state.recordings.status || services.data_recorder || {};
   text("roverControlState", roverBridge.serial_open ? "open" : roverBridge.state || "대기");
   text("roverControlBase", roverBridge.serial_port || "--");
   text("roverProxyState", rover.mode || roverBridge.mode || "serial_only");
   text("roverRosState", roverBridge.ok ? "ready" : roverBridge.state || "대기");
+  text("roverRecorderState", recorder.active ? "recording" : recorder.ok ? "ready" : recorder.state || "대기");
+  text("roverRecorderKind", recorder.active ? recordingKindLabel(recorder.kind) : recorder.archive_count !== undefined ? `${recorder.archive_count} archives` : "대기");
   renderStatusRows("roverControlDetails", [
     {
       title: "UART ROS2 Bridge",
@@ -2729,7 +2809,380 @@ function renderRoverControl(data) {
       level: "ok",
       value: "비활성화",
     },
+    {
+      title: "Command File",
+      sub: roverBridge.command_file || "/app/runtime/rover_command.json",
+      ok: true,
+      level: "ok",
+      value: roverBridge.file_command_active ? "active" : "TTL 대기",
+    },
+    {
+      title: "Data Recorder",
+      sub: recorder.recording_id || recorder.status_url || "ros2-data-recorder",
+      ok: Boolean(recorder.ok),
+      level: recorder.ok ? "ok" : "warn",
+      value: recorder.active ? `${recordingKindLabel(recorder.kind)} 기록 중` : recorder.state || "대기",
+    },
   ]);
+  renderRecordingStatus();
+}
+
+function initRoverControl() {
+  try {
+    const rawSpeed = localStorage.getItem(ROVER_SPEED_KEY);
+    const stored = rawSpeed === null ? null : Number(rawSpeed);
+    if (Number.isFinite(stored)) state.roverControl.speedPct = Math.max(0, Math.min(100, stored));
+  } catch (_) {
+    // Speed defaults remain usable without localStorage.
+  }
+  $("roverSpeedSlider")?.addEventListener("input", (event) => setRoverSpeed(Number(event.target.value), true));
+  $("roverStopButton")?.addEventListener("click", () => stopRoverNow("operator_stop"));
+  $("roverCameraToggle")?.addEventListener("click", toggleCameraLive);
+  $("roverLidarToggle")?.addEventListener("click", toggleLidarLive);
+  $("roverRecordLidarButton")?.addEventListener("click", () => startRecording("lidar"));
+  $("roverRecordCameraButton")?.addEventListener("click", () => startRecording("camera"));
+  $("roverRecordBothButton")?.addEventListener("click", () => startRecording("both"));
+  $("roverRecordStopButton")?.addEventListener("click", stopRecording);
+  $("roverArchiveRefreshButton")?.addEventListener("click", () => loadRecordings().catch(console.error));
+  document.querySelectorAll("[data-rover-drive]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      const action = button.dataset.roverDrive || "stop";
+      if (action === "stop") stopRoverNow("pad_stop");
+      else startRoverButtonCommand(action);
+    });
+    button.addEventListener("pointerup", () => stopRoverNow("pad_release"));
+    button.addEventListener("pointercancel", () => stopRoverNow("pad_cancel"));
+    button.addEventListener("pointerleave", () => {
+      if (state.roverControl.activeButton) stopRoverNow("pad_leave");
+    });
+  });
+  document.addEventListener("keydown", handleRoverKeyDown);
+  document.addEventListener("keyup", handleRoverKeyUp);
+  setRoverSpeed(state.roverControl.speedPct, false);
+  renderRoverButtons();
+  renderRecordingStatus();
+  renderRecordings();
+}
+
+function setRoverSpeed(value, persist) {
+  state.roverControl.speedPct = Math.max(0, Math.min(100, Number(value) || 0));
+  text("roverSpeedValue", `${Math.round(state.roverControl.speedPct)}%`);
+  const slider = $("roverSpeedSlider");
+  if (slider && document.activeElement !== slider) slider.value = String(Math.round(state.roverControl.speedPct));
+  if (persist) {
+    try {
+      localStorage.setItem(ROVER_SPEED_KEY, String(Math.round(state.roverControl.speedPct)));
+    } catch (_) {
+      // Keep speed session-local when storage is unavailable.
+    }
+  }
+  if (hasActiveRoverInput()) updateRoverMotion();
+}
+
+function roverKeyFromEvent(event) {
+  const key = String(event.key || "").toLowerCase();
+  return ["w", "a", "s", "d"].includes(key) ? key : "";
+}
+
+function roverKeyTargetBlocked(event) {
+  const tag = String(event.target?.tagName || "").toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || event.target?.isContentEditable;
+}
+
+function handleRoverKeyDown(event) {
+  if (currentRoute() !== "/rover-control" || roverKeyTargetBlocked(event)) return;
+  const key = roverKeyFromEvent(event);
+  if (!key) return;
+  event.preventDefault();
+  state.roverControl.activeKeys.add(key);
+  state.roverControl.activeButton = "";
+  ensureRoverCommandTimer();
+  updateRoverMotion();
+}
+
+function handleRoverKeyUp(event) {
+  const key = roverKeyFromEvent(event);
+  if (!key) return;
+  state.roverControl.activeKeys.delete(key);
+  if (currentRoute() === "/rover-control") {
+    event.preventDefault();
+    if (hasActiveRoverInput()) updateRoverMotion();
+    else stopRoverNow("key_release");
+  }
+}
+
+function startRoverButtonCommand(action) {
+  state.roverControl.activeButton = action;
+  state.roverControl.activeKeys.clear();
+  ensureRoverCommandTimer();
+  updateRoverMotion();
+}
+
+function hasActiveRoverInput() {
+  return Boolean(state.roverControl.activeButton || state.roverControl.activeKeys.size);
+}
+
+function roverMotionVector() {
+  const keys = state.roverControl.activeKeys;
+  let linear = 0;
+  let angular = 0;
+  if (keys.size) {
+    linear += keys.has("w") ? 1 : 0;
+    linear -= keys.has("s") ? 1 : 0;
+    angular += keys.has("a") ? 1 : 0;
+    angular -= keys.has("d") ? 1 : 0;
+  } else {
+    const action = state.roverControl.activeButton;
+    linear = action === "forward" ? 1 : action === "backward" ? -1 : 0;
+    angular = action === "left" ? 1 : action === "right" ? -1 : 0;
+  }
+  const speed = state.roverControl.speedPct / 100;
+  return {
+    linear: Number((linear * ROVER_MAX_LINEAR_MPS * speed).toFixed(3)),
+    angular: Number((angular * ROVER_MAX_ANGULAR_RPS * speed).toFixed(3)),
+  };
+}
+
+function ensureRoverCommandTimer() {
+  if (state.roverControl.commandTimer) return;
+  state.roverControl.commandTimer = window.setInterval(() => {
+    if (!hasActiveRoverInput() || currentRoute() !== "/rover-control") {
+      clearRoverCommandTimer();
+      return;
+    }
+    updateRoverMotion();
+  }, ROVER_CONTROL_INTERVAL_MS);
+}
+
+function clearRoverCommandTimer() {
+  if (!state.roverControl.commandTimer) return;
+  window.clearInterval(state.roverControl.commandTimer);
+  state.roverControl.commandTimer = null;
+}
+
+function updateRoverMotion() {
+  const motion = roverMotionVector();
+  state.roverControl.linear = motion.linear;
+  state.roverControl.angular = motion.angular;
+  renderRoverButtons();
+  sendRoverCommand(motion.linear, motion.angular, "operator_drive").catch((err) => {
+    state.roverControl.lastError = err.message;
+    setRoverCommandStatus("bad", `명령 실패: ${err.message}`);
+  });
+}
+
+async function sendRoverCommand(linear, angular, source) {
+  if (state.roverControl.inFlight) return;
+  state.roverControl.inFlight = true;
+  try {
+    const payload = await postJson("/api/rover/command", {
+      linear,
+      angular,
+      ttl_s: 0.65,
+      speed_pct: Math.round(state.roverControl.speedPct),
+      source,
+    });
+    state.roverControl.lastCommandAt = Date.now();
+    state.roverControl.lastError = payload.ok ? "" : payload.error || "command rejected";
+    setRoverCommandStatus(payload.ok ? "ok" : "bad", roverCommandMessage(payload));
+  } finally {
+    state.roverControl.inFlight = false;
+  }
+}
+
+async function stopRoverNow(reason = "operator_stop") {
+  state.roverControl.activeButton = "";
+  state.roverControl.activeKeys.clear();
+  state.roverControl.linear = 0;
+  state.roverControl.angular = 0;
+  clearRoverCommandTimer();
+  renderRoverButtons();
+  setRoverCommandStatus("testing", "정지 명령 전송 중");
+  try {
+    const payload = await postJson("/api/rover/stop", { source: reason });
+    setRoverCommandStatus(payload.ok ? "ok" : "bad", roverCommandMessage(payload));
+  } catch (err) {
+    setRoverCommandStatus("bad", `정지 실패: ${err.message}`);
+  }
+}
+
+function roverCommandMessage(payload) {
+  const command = payload.command || {};
+  const linear = fmtNumber(command.linear || 0, 2);
+  const angular = fmtNumber(command.angular || 0, 2);
+  return payload.ok ? `serial bridge 대기 · linear ${linear} · angular ${angular}` : payload.error || payload.state || "명령 실패";
+}
+
+function setRoverCommandStatus(kind, message) {
+  const target = $("roverCommandStatus");
+  if (!target) return;
+  target.className = `test-result ${kind}`;
+  target.textContent = message;
+}
+
+function renderRoverButtons() {
+  document.querySelectorAll("[data-rover-drive]").forEach((button) => {
+    const action = button.dataset.roverDrive || "";
+    button.classList.toggle("active", action && action === state.roverControl.activeButton);
+  });
+}
+
+async function refreshRecordingStatus() {
+  try {
+    const status = await getJson("/api/recordings/status");
+    state.recordings.status = status;
+    renderRecordingStatus();
+  } catch (err) {
+    state.recordings.status = { ok: false, state: "unavailable", error: err.message };
+    renderRecordingStatus();
+  }
+}
+
+async function startRecording(kind) {
+  if (state.recordings.actionInFlight) return;
+  state.recordings.actionInFlight = true;
+  renderRecordingStatus("기록 시작 중");
+  try {
+    const payload = await postJson("/api/recordings/start", { kind });
+    state.recordings.status = payload.status || payload;
+    renderRecordingStatus();
+    await loadRecordings();
+  } catch (err) {
+    state.recordings.status = { ok: false, state: "start_failed", error: err.message };
+    renderRecordingStatus();
+  } finally {
+    state.recordings.actionInFlight = false;
+  }
+}
+
+async function stopRecording() {
+  if (state.recordings.actionInFlight) return;
+  state.recordings.actionInFlight = true;
+  renderRecordingStatus("기록 중지 중");
+  try {
+    const payload = await postJson("/api/recordings/stop", {});
+    state.recordings.status = payload.status || payload;
+    renderRecordingStatus();
+    await loadRecordings();
+  } catch (err) {
+    state.recordings.status = { ok: false, state: "stop_failed", error: err.message };
+    renderRecordingStatus();
+  } finally {
+    state.recordings.actionInFlight = false;
+  }
+}
+
+function recordingKindLabel(kind) {
+  return { lidar: "LiDAR", camera: "Camera", both: "LiDAR+Camera" }[kind] || kind || "대기";
+}
+
+function renderRecordingStatus(override) {
+  const status = state.recordings.status || {};
+  const active = Boolean(status.active);
+  const kind = recordingKindLabel(status.kind);
+  const message = override || (active ? `${kind} 기록 중 · ${status.recording_id || ""}` : status.error || status.state || "기록 대기 중");
+  const target = $("roverRecordingStatus");
+  if (target) {
+    target.className = `test-result ${active || status.ok ? "ok" : status.error ? "bad" : "testing"}`;
+    target.textContent = message;
+  }
+  [["roverRecordLidarButton", "lidar"], ["roverRecordCameraButton", "camera"], ["roverRecordBothButton", "both"]].forEach(([id, buttonKind]) => {
+    const button = $(id);
+    if (!button) return;
+    button.disabled = state.recordings.actionInFlight || active;
+    button.classList.toggle("active", active && status.kind === buttonKind);
+  });
+  const stop = $("roverRecordStopButton");
+  if (stop) stop.disabled = state.recordings.actionInFlight || !active;
+  text("roverRecorderState", active ? "recording" : status.ok ? "ready" : status.state || "--");
+  text("roverRecorderKind", active ? kind : status.archive_count !== undefined ? `${status.archive_count} archives` : "대기");
+}
+
+async function loadRecordings() {
+  state.recordings.loading = true;
+  renderRecordings();
+  await refreshRecordingStatus();
+  try {
+    const payload = await getJson("/api/recordings");
+    state.recordings.items = payload.recordings || [];
+    if (!state.recordings.selectedId && state.recordings.items.length) {
+      state.recordings.selectedId = state.recordings.items[0].id;
+    }
+    renderRecordings();
+    if (state.recordings.selectedId) await selectRecording(state.recordings.selectedId);
+  } finally {
+    state.recordings.loading = false;
+    renderRecordings();
+  }
+}
+
+async function selectRecording(id) {
+  state.recordings.selectedId = id;
+  renderRecordings();
+  try {
+    const detail = await getJson(`/api/recordings/${encodeURIComponent(id)}`);
+    state.recordings.selected = detail;
+    renderRecordingDetail(detail);
+  } catch (err) {
+    renderStatusRows("roverArchiveDetails", [
+      { title: "Archive", sub: id, ok: false, level: "bad", value: err.message },
+    ]);
+  }
+}
+
+function renderRecordings() {
+  const target = $("roverArchiveList");
+  if (!target) return;
+  target.innerHTML = "";
+  if (state.recordings.loading && !state.recordings.items.length) {
+    target.innerHTML = "<span>loading</span>";
+    return;
+  }
+  if (!state.recordings.items.length) {
+    target.innerHTML = "<span>archive empty</span>";
+    renderRecordingDetail(null);
+    return;
+  }
+  for (const item of state.recordings.items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.classList.toggle("active", item.id === state.recordings.selectedId);
+    button.innerHTML = `
+      <span>${escapeHtml(recordingKindLabel(item.kind))}</span>
+      <strong>${escapeHtml(item.id)}</strong>
+      <small>${escapeHtml(formatShortDate(item.started_at || item.created_at))} · ${escapeHtml(item.duration_s ? `${fmtNumber(item.duration_s, 1)}s` : item.state || "ready")}</small>
+    `;
+    button.addEventListener("click", () => selectRecording(item.id));
+    target.append(button);
+  }
+}
+
+function renderRecordingDetail(detail) {
+  const payload = detail?.recording || detail;
+  const metadata = payload?.metadata || {};
+  const analysis = payload?.analysis || {};
+  const preview = payload?.preview_scan;
+  const hasLidar = Boolean(preview?.points?.length);
+  drawLidarMapOnCanvas($("roverArchiveLidarCanvas"), hasLidar ? preview : null, analysis);
+  const id = payload?.id || metadata.id || state.recordings.selectedId || "";
+  const rows = id ? [
+    { title: "ID", sub: recordingKindLabel(metadata.kind || payload.kind), ok: true, level: "ok", value: id },
+    { title: "Duration", sub: formatShortDate(metadata.started_at), ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
+    { title: "LiDAR Analysis", sub: `${analysis.walls?.length || 0} walls · ${analysis.objects?.length || 0} objects`, ok: hasLidar, level: hasLidar ? "ok" : "warn", value: hasLidar ? `${preview.points.length} pts` : "no scan" },
+    { title: "Download", sub: `/api/recordings/${id}/download`, ok: true, level: "ok", value: "tar.gz" },
+  ] : [
+    { title: "Archive", sub: "기록을 선택하세요", ok: false, level: "warn", value: "--" },
+  ];
+  renderStatusRows("roverArchiveDetails", rows);
+  const target = $("roverArchiveDetails");
+  if (target && id) {
+    const link = document.createElement("a");
+    link.className = "action-button secondary";
+    link.href = `/api/recordings/${encodeURIComponent(id)}/download`;
+    link.textContent = "다운로드";
+    target.append(link);
+  }
 }
 
 function requestChartAnimation() {
@@ -2806,10 +3259,11 @@ function drawCharts() {
       ["chartFanTemp", [{ values: state.visualHistory.fanTemp, color: colors.amber, max: Math.max(90, ...state.history.fanTemp.filter((v) => v !== null)) }]],
     ],
     "/research": [],
+    "/rover-control": [],
   };
   for (const [id, series] of groups[currentRoute()] || []) drawMultiLine(id, series);
   if (currentRoute() === "/system" && state.cpuMode === "separate") drawCoreCharts();
-  if (currentRoute() === "/connection") renderActiveLidarMap();
+  if (routeSupportsLidarLive()) renderActiveLidarMap();
 }
 
 function renderActiveLidarMap() {
@@ -2953,7 +3407,11 @@ function strokeSegment(ctx, points) {
 }
 
 function drawLidarMap(result) {
-  const canvas = $("lidarScanCanvas");
+  drawLidarMapOnCanvas($("lidarScanCanvas"), result);
+  drawLidarMapOnCanvas($("roverLidarCanvas"), result);
+}
+
+function drawLidarMapOnCanvas(canvas, result, overlays = {}) {
   if (!canvas) return;
   const prepared = prepareCanvas(canvas);
   if (!prepared) return;
@@ -2992,6 +3450,8 @@ function drawLidarMap(result) {
   }
   ctx.restore();
 
+  drawLidarOverlays(ctx, overlays, { cx, cy, radius, range, colors });
+
   ctx.save();
   ctx.fillStyle = cssVar("--text", "#f7f9ff");
   ctx.font = "800 12px Inter, Arial, sans-serif";
@@ -2999,6 +3459,60 @@ function drawLidarMap(result) {
   ctx.fillText(`${fmtNumber(result.metrics?.coverage_deg ?? angleCoverage(points), 0)}° coverage`, 14, 40);
   ctx.textAlign = "right";
   ctx.fillText(`Grid: ${fmtNumber(gridStep, 0)}m · Range: ${fmtNumber(range, 1)}m`, w - 14, h - 16);
+  ctx.restore();
+}
+
+function lidarCanvasPoint(point, viewport) {
+  return {
+    x: viewport.cx + ((Number(point?.x_m) || 0) / viewport.range) * viewport.radius,
+    y: viewport.cy - ((Number(point?.y_m) || 0) / viewport.range) * viewport.radius,
+  };
+}
+
+function drawLidarOverlays(ctx, overlays, viewport) {
+  const walls = overlays?.walls || [];
+  const objects = overlays?.objects || [];
+  if (!walls.length && !objects.length) return;
+  ctx.save();
+  for (const wall of walls) {
+    const a = lidarCanvasPoint(wall.start || wall.a || {}, viewport);
+    const b = lidarCanvasPoint(wall.end || wall.b || {}, viewport);
+    ctx.strokeStyle = cssVar("--chart-amber", "#f4bd4f");
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  for (const item of objects) {
+    const center = lidarCanvasPoint(item.center || item.centroid || {}, viewport);
+    const radiusM = Math.max(0.08, Number(item.radius_m) || 0.18);
+    const r = Math.max(5, (radiusM / viewport.range) * viewport.radius);
+    ctx.globalAlpha = 0.95;
+    ctx.strokeStyle = cssVar("--chart-rose", "#f21b58");
+    ctx.fillStyle = "rgba(242,27,88,0.13)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    const track = item.track || item.history || [];
+    if (track.length > 1) {
+      ctx.strokeStyle = cssVar("--chart-good", "#55e2b2");
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      track.forEach((point, index) => {
+        const p = lidarCanvasPoint(point, viewport);
+        if (index === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.stroke();
+    }
+    ctx.fillStyle = cssVar("--text", "#f7f9ff");
+    ctx.font = "900 11px Inter, Arial, sans-serif";
+    ctx.fillText(item.label || item.id || "object", center.x + r + 5, center.y - r - 3);
+  }
   ctx.restore();
 }
 
@@ -3074,6 +3588,18 @@ function escapeHtml(value) {
 window.addEventListener("popstate", renderRoute);
 window.addEventListener("resize", requestChartAnimation);
 window.addEventListener("pagehide", () => {
+  if (hasActiveRoverInput()) {
+    try {
+      const body = JSON.stringify({ source: "pagehide" });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/rover/stop", new Blob([body], { type: "application/json" }));
+      } else {
+        fetch("/api/rover/stop", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body });
+      }
+    } catch (_) {
+      // The bridge command TTL still stops stale UI commands.
+    }
+  }
   if (state.lidarLive.socket || state.lidarLive.enabled) {
     closeLidarLive("페이지 종료로 LiDAR WebSocket을 닫습니다.", { userStopped: false });
   }
@@ -3105,6 +3631,7 @@ initLidarTest();
 initCameraLive();
 initFanControls();
 initDockerControls();
+initRoverControl();
 renderRoute();
 loadPlan().catch(console.error);
 loadDocs().catch(console.error);

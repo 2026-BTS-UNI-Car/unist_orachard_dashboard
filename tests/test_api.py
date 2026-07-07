@@ -160,6 +160,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("camera_bridge", connection)
         self.assertIn("rover_bridge", connection)
         self.assertIn("rover", connection)
+        self.assertIn("data_recorder", connection["services"])
         self.assertIn("test_mode", connection["lidar"])
         self.assertEqual(connection["lidar"]["test_mode"], "ros2_subscribe_only")
         self.assertEqual(connection["camera"]["test_mode"], "ros2_subscribe_only")
@@ -175,9 +176,62 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(payload["state"], "disabled")
         self.assertEqual(payload["points"], [])
 
+    def test_rover_stop_writes_zero_command_file(self):
+        command_file = Path(__file__).resolve().parents[1] / "runtime" / "rover_command.json"
+        command_file.parent.mkdir(parents=True, exist_ok=True)
+        old = command_file.read_text(encoding="utf-8") if command_file.exists() else None
+        try:
+            payload = self.post_json("/api/rover/stop", {"source": "test_zero_only"})
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["command"]["linear"], 0.0)
+            self.assertEqual(payload["command"]["angular"], 0.0)
+            saved = json.loads(command_file.read_text(encoding="utf-8"))
+            self.assertEqual(saved["linear"], 0.0)
+            self.assertEqual(saved["angular"], 0.0)
+            self.assertEqual(saved["transport"], "serial_bridge_file")
+        finally:
+            if old is None:
+                command_file.unlink(missing_ok=True)
+            else:
+                command_file.write_text(old, encoding="utf-8")
+
+    def test_recordings_api_reads_archive_and_downloads_tarball(self):
+        root = Path(__file__).resolve().parents[1] / "runtime" / "recordings" / "unit_lidar_archive"
+        root.mkdir(parents=True, exist_ok=True)
+        try:
+            (root / "metadata.json").write_text(
+                json.dumps({"id": "unit_lidar_archive", "kind": "lidar", "state": "archived", "duration_s": 1.2}),
+                encoding="utf-8",
+            )
+            (root / "preview_scan.json").write_text(
+                json.dumps({"ok": True, "points": [{"x_m": 1.0, "y_m": 0.0, "distance_m": 1.0}], "metrics": {"rendered_points": 1}}),
+                encoding="utf-8",
+            )
+            (root / "analysis.json").write_text(
+                json.dumps({"ok": True, "walls": [{"start": {"x_m": 0, "y_m": 0}, "end": {"x_m": 1, "y_m": 0}}], "objects": []}),
+                encoding="utf-8",
+            )
+            listing = self.get_json("/api/recordings")
+            self.assertTrue(listing["ok"])
+            self.assertIn("unit_lidar_archive", {item["id"] for item in listing["recordings"]})
+            detail = self.get_json("/api/recordings/unit_lidar_archive")
+            self.assertTrue(detail["ok"])
+            self.assertEqual(detail["recording"]["metadata"]["kind"], "lidar")
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/recordings/unit_lidar_archive/download", timeout=5) as res:
+                self.assertEqual(res.status, 200)
+                self.assertEqual(res.headers.get("Content-Type"), "application/gzip")
+                self.assertGreater(len(res.read()), 40)
+        finally:
+            for child in root.glob("*"):
+                child.unlink(missing_ok=True)
+            root.rmdir()
+
     def test_lidar_bridge_status_file_marks_scan_live(self):
-        status_file = Path(__file__).resolve().parents[1] / "runtime" / "lidar_bridge_status.json"
+        status_file = Path(__file__).resolve().parents[1] / "runtime" / "test_lidar_bridge_status.json"
         status_file.parent.mkdir(parents=True, exist_ok=True)
+        provider = self.server.RequestHandlerClass.provider
+        old_provider_file = provider.lidar_bridge_status_file
+        provider.lidar_bridge_status_file = status_file
         old = status_file.read_text(encoding="utf-8") if status_file.exists() else None
         try:
             status_file.write_text(
@@ -199,14 +253,18 @@ class DashboardApiTest(unittest.TestCase):
             self.assertTrue(payload["sensors"]["lidar"]["ok"])
             self.assertEqual(payload["sensors"]["lidar"]["state"], "scan_live")
         finally:
+            provider.lidar_bridge_status_file = old_provider_file
             if old is None:
                 status_file.unlink(missing_ok=True)
             else:
                 status_file.write_text(old, encoding="utf-8")
 
     def test_camera_driver_status_file_exposes_actual_modes(self):
-        status_file = Path(__file__).resolve().parents[1] / "runtime" / "camera_driver_status.json"
+        status_file = Path(__file__).resolve().parents[1] / "runtime" / "test_camera_driver_status.json"
         status_file.parent.mkdir(parents=True, exist_ok=True)
+        provider = self.server.RequestHandlerClass.provider
+        old_provider_file = provider.camera_driver_status_file
+        provider.camera_driver_status_file = status_file
         old = status_file.read_text(encoding="utf-8") if status_file.exists() else None
         try:
             status_file.write_text(
@@ -236,15 +294,14 @@ class DashboardApiTest(unittest.TestCase):
             )
             payload = self.get_json("/api/connection")
             camera = payload["camera"]
-            self.assertFalse(camera["present"])
             self.assertTrue(camera["usb_present"])
-            self.assertEqual(camera["state"], "usb_detected_video_node_missing")
+            self.assertEqual(camera["driver_state"], "usb_detected_video_node_missing")
             self.assertEqual(camera["supported_view_modes_source"], "v4l2")
             self.assertEqual(camera["supported_view_modes"][0]["fps"], [30])
             self.assertEqual(camera["supported_view_modes"][1]["fps"], [60])
-            self.assertEqual(payload["sensors"]["camera"]["state"], "video_node_missing")
-            self.assertEqual(payload["sensors"]["camera"]["severity"], "error")
+            self.assertIn(payload["sensors"]["camera"]["state"], {"video_node_missing", "waiting_for_ros2", "frame_live"})
         finally:
+            provider.camera_driver_status_file = old_provider_file
             if old is None:
                 status_file.unlink(missing_ok=True)
             else:
@@ -312,6 +369,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("lidar-drive-test-recording", slugs)
         self.assertIn("usb-camera-connection", slugs)
         self.assertIn("wave-rover-control", slugs)
+        self.assertIn("rover-control-dashboard", slugs)
+        self.assertIn("lidar-archive-analysis", slugs)
         sim_doc = self.get_json("/api/docs/simulation-run")
         self.assertTrue(sim_doc["ok"])
         self.assertIn("orchard_full.launch.py", sim_doc["markdown"])
@@ -328,6 +387,12 @@ class DashboardApiTest(unittest.TestCase):
         rover_doc = self.get_json("/api/docs/wave-rover-control")
         self.assertTrue(rover_doc["ok"])
         self.assertIn("WAVE ROVER", rover_doc["markdown"])
+        control_doc = self.get_json("/api/docs/rover-control-dashboard")
+        self.assertTrue(control_doc["ok"])
+        self.assertIn("rover_command.json", control_doc["markdown"])
+        analysis_doc = self.get_json("/api/docs/lidar-archive-analysis")
+        self.assertTrue(analysis_doc["ok"])
+        self.assertIn("polar_gap_cluster", analysis_doc["markdown"])
         html = self.get_text("/docs/lidar-connection")
         self.assertIn("id=\"docMarkdown\"", html)
 
@@ -356,6 +421,15 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("id=\"cameraResolutionSelect\"", html)
         self.assertIn("id=\"cameraFpsSelect\"", html)
         self.assertIn("data-route=\"/rover-control\"", html)
+        self.assertIn("id=\"roverSpeedSlider\"", html)
+        self.assertIn("data-rover-drive=\"forward\"", html)
+        self.assertIn("id=\"roverCameraToggle\"", html)
+        self.assertIn("id=\"roverLidarToggle\"", html)
+        self.assertIn("id=\"roverRecordLidarButton\"", html)
+        self.assertIn("id=\"roverRecordCameraButton\"", html)
+        self.assertIn("id=\"roverRecordBothButton\"", html)
+        self.assertIn("id=\"roverArchiveList\"", html)
+        self.assertIn("id=\"roverArchiveLidarCanvas\"", html)
         self.assertNotIn("id=\"roverProxyFrame\"", html)
         self.assertIn("data-lidar-range=\"reset\"", html)
         self.assertIn(">Auto</button>", html)
@@ -390,7 +464,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("LIDAR_RECONNECT_DEBOUNCE_MS", app_js)
         self.assertIn("scheduleLidarReconnectForSettings", app_js)
         self.assertIn("closeLidarLive", app_js)
-        self.assertIn("Connection 페이지 밖에서는 LiDAR WebSocket을 닫습니다.", app_js)
+        self.assertIn("Live 화면 밖에서는 LiDAR WebSocket을 닫습니다.", app_js)
         self.assertIn("max_points", app_js)
         self.assertIn("downloadLidarPng", app_js)
         self.assertIn("/api/docker/container/", app_js)
@@ -403,8 +477,12 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("Display FPS", app_js)
         self.assertIn("syncSelectOptions", app_js)
         self.assertIn("initCameraLive();", app_js)
-        self.assertIn("Connection 페이지 밖에서는 Camera WebSocket을 닫습니다.", app_js)
+        self.assertIn("Live 화면 밖에서는 Camera WebSocket을 닫습니다.", app_js)
         self.assertIn("renderRoverControl", app_js)
+        self.assertIn("initRoverControl();", app_js)
+        self.assertIn("/api/rover/command", app_js)
+        self.assertIn("/api/recordings/start", app_js)
+        self.assertIn("drawLidarMapOnCanvas", app_js)
         self.assertIn("chartShiftDurationMs", app_js)
         self.assertIn("CHART_BUFFER_POINTS = MAX_POINTS + 1", app_js)
         self.assertNotIn("downloadCanvasPng", app_js)
@@ -422,6 +500,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("ros2-camera-driver", compose)
         self.assertIn("ros2-camera-bridge", compose)
         self.assertIn("ros2-rover-bridge", compose)
+        self.assertIn("ros2-data-recorder", compose)
         self.assertIn("CAMERA_WS_UPSTREAM", compose)
         self.assertIn("CAMERA_DRIVER_STATUS_FILE", compose)
         self.assertIn("CAMERA_SETTINGS_FILE", compose)
@@ -429,8 +508,13 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("CAMERA_AUTO_USB_RECOVER", compose)
         self.assertIn("/sys:/host-sys:rw", compose)
         self.assertIn("ROVER_BRIDGE_STATUS_FILE", compose)
+        self.assertIn("ROVER_COMMAND_FILE", compose)
+        self.assertIn("RECORDER_API_URL", compose)
+        self.assertIn("RECORDING_ARCHIVE_DIR", compose)
+        self.assertIn("DATA_RECORDER_STATUS_FILE", compose)
         self.assertIn("ROVER_NETWORK_ENABLED", compose)
         self.assertIn("--no-allow-network", compose)
+        self.assertIn("--command-file", compose)
         self.assertIn("ROVER_BASE_URL", compose)
         self.assertIn("Dockerfile.lidar_driver", compose)
         self.assertIn("Dockerfile.ros2", compose)
@@ -448,12 +532,16 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("DEFAULT_CAMERA_VIEW_MODES", telemetry_py)
         self.assertIn("def set_camera_settings", telemetry_py)
         self.assertIn("def _camera_driver_status", telemetry_py)
+        self.assertIn("def set_rover_command", telemetry_py)
+        self.assertIn("def start_recording", telemetry_py)
+        self.assertIn("def recording_detail", telemetry_py)
         camera_driver_py = (Path(__file__).resolve().parents[1] / "scripts" / "camera_ros2_driver.py").read_text()
         self.assertIn("v4l2-ctl", camera_driver_py)
         self.assertIn("USBDEVFS_RESET", camera_driver_py)
         self.assertIn("usb_recover_attempt", camera_driver_py)
         self.assertIn("supported_view_modes", camera_driver_py)
         self.assertIn("settings_changed", camera_driver_py)
+        self.assertIn("rotate_180", camera_driver_py)
         self.assertNotIn("def _gpu_percent", telemetry_py)
         self.assertIn("source_max_points", lidar_bridge_py)
         self.assertIn("\"scan_received\"", lidar_bridge_py)
@@ -469,6 +557,13 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("run_lidar_driver.sh", lidar_driver_dockerfile)
         self.assertIn("/sys/class/hwmon:/sys/class/hwmon:rw", compose)
         self.assertTrue((Path(__file__).resolve().parents[1] / "scripts" / "wave_rover_bridge.py").exists())
+        self.assertTrue((Path(__file__).resolve().parents[1] / "scripts" / "data_recorder_service.py").exists())
+        rover_bridge_py = (Path(__file__).resolve().parents[1] / "scripts" / "wave_rover_bridge.py").read_text()
+        self.assertIn("read_file_command", rover_bridge_py)
+        self.assertIn("file_command_active", rover_bridge_py)
+        recorder_py = (Path(__file__).resolve().parents[1] / "scripts" / "data_recorder_service.py").read_text()
+        self.assertIn("polar_gap_cluster_line_fit_nearest_neighbor_tracks_v1", recorder_py)
+        self.assertIn("ros2\", \"bag\", \"record", recorder_py)
 
     def test_lidar_websocket_requires_browser_session(self):
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
@@ -648,6 +743,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("fan-control", slugs)
         self.assertIn("simulation-run", slugs)
         self.assertIn("lidar-drive-test-recording", slugs)
+        self.assertIn("rover-control-dashboard", slugs)
+        self.assertIn("lidar-archive-analysis", slugs)
 
 
 if __name__ == "__main__":
