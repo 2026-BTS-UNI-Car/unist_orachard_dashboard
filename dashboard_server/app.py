@@ -109,6 +109,13 @@ DOCS_CATALOG = [
         "file": "lidar_connection.md",
     },
     {
+        "slug": "lidar-drive-test-recording",
+        "title": "LiDAR 주행 테스트 기록",
+        "category": "Data",
+        "summary": "주행 테스트 중 /scan, TF, cmd_vel, Rover 상태를 rosbag2로 수집하는 절차",
+        "file": "lidar_drive_test_recording.md",
+    },
+    {
         "slug": "usb-camera-connection",
         "title": "USB 카메라 연결",
         "category": "Hardware",
@@ -175,6 +182,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.lidar_test())
         elif path == "/api/lidar/scan":
             self._send_json(self.provider.lidar_scan())
+        elif path == "/api/camera/settings":
+            payload = self._read_json_body()
+            self._send_json(self.provider.set_camera_settings(payload))
         elif path.startswith("/rover-proxy/") or path == "/rover-proxy":
             self._proxy_rover_request(parsed)
         elif path == "/api/fan/mode":
@@ -542,6 +552,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return f"{upstream_url}{separator}{client_query}"
 
     def _proxy_rover_request(self, parsed):
+        if os.environ.get("ROVER_NETWORK_ENABLED", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+            self._send_json(
+                {
+                    "ok": False,
+                    "state": "network_disabled",
+                    "mode": "serial_only",
+                    "message": "WAVE ROVER network proxy is disabled. Use Jetson UART pins and ROS2 /cmd_vel only.",
+                }
+            )
+            return
         base_url = os.environ.get("ROVER_DASHBOARD_URL", os.environ.get("ROVER_BASE_URL", "http://192.168.4.1")).rstrip("/") + "/"
         suffix = parsed.path.removeprefix("/rover-proxy").lstrip("/")
         target_url = urljoin(base_url, suffix)

@@ -27,12 +27,17 @@ DEFAULT_TELEMETRY_FILE = ROOT / "runtime" / "telemetry_snapshot.json"
 DEFAULT_LIDAR_BRIDGE_STATUS_FILE = ROOT / "runtime" / "lidar_bridge_status.json"
 DEFAULT_CAMERA_DRIVER_STATUS_FILE = ROOT / "runtime" / "camera_driver_status.json"
 DEFAULT_CAMERA_BRIDGE_STATUS_FILE = ROOT / "runtime" / "camera_bridge_status.json"
+DEFAULT_CAMERA_SETTINGS_FILE = ROOT / "runtime" / "camera_settings.json"
 DEFAULT_ROVER_BRIDGE_STATUS_FILE = ROOT / "runtime" / "rover_bridge_status.json"
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_CAMERA_VIEW_MODES = [
-    {"resolution": "640x480", "width": 640, "height": 480, "fps": [30]},
-    {"resolution": "1280x720", "width": 1280, "height": 720, "fps": [15, 30]},
-    {"resolution": "1920x1080", "width": 1920, "height": 1080, "fps": [5, 10, 15, 30]},
+    {"resolution": "1920x1080", "width": 1920, "height": 1080, "fps": [30], "label": "1080p 16:9"},
+    {"resolution": "1280x720", "width": 1280, "height": 720, "fps": [60], "label": "720p 16:9"},
+    {"resolution": "1024x768", "width": 1024, "height": 768, "fps": [30], "label": "768p 4:3"},
+    {"resolution": "800x600", "width": 800, "height": 600, "fps": [60], "label": "600p 4:3"},
+    {"resolution": "640x480", "width": 640, "height": 480, "fps": [30], "label": "480p 4:3"},
+    {"resolution": "320x240", "width": 320, "height": 240, "fps": [30], "label": "240p 4:3"},
+    {"resolution": "1280x1024", "width": 1280, "height": 1024, "fps": [30], "label": "1024p 5:4"},
 ]
 DEFAULT_LIDAR_BAUDS = [1_000_000, 460_800, 256_000, 115_200]
 DEFAULT_LIDAR_SCAN_DURATION_S = 3.0
@@ -59,6 +64,21 @@ def _load_json(path: str | Path) -> dict[str, Any]:
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _write_json_atomic(path: str | Path, payload: dict[str, Any]) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(f"{target.suffix}.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(target)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _safe_int(value: str | None) -> int | None:
@@ -114,10 +134,15 @@ class TelemetryProvider:
             os.environ.get("CAMERA_BRIDGE_STATUS_FILE", str(DEFAULT_CAMERA_BRIDGE_STATUS_FILE))
         )
         self.camera_bridge_status_file = camera_bridge_file if camera_bridge_file.is_absolute() else ROOT / camera_bridge_file
+        camera_settings_file = Path(
+            os.environ.get("CAMERA_SETTINGS_FILE", str(DEFAULT_CAMERA_SETTINGS_FILE))
+        )
+        self.camera_settings_file = camera_settings_file if camera_settings_file.is_absolute() else ROOT / camera_settings_file
         rover_bridge_file = Path(
             os.environ.get("ROVER_BRIDGE_STATUS_FILE", str(DEFAULT_ROVER_BRIDGE_STATUS_FILE))
         )
         self.rover_bridge_status_file = rover_bridge_file if rover_bridge_file.is_absolute() else ROOT / rover_bridge_file
+        self.rover_network_enabled = _env_bool("ROVER_NETWORK_ENABLED", False)
         self.host_root = Path(os.environ.get("HOST_ROOT", "/host-root"))
         if not self.host_root.exists():
             self.host_root = Path("/")
@@ -464,6 +489,81 @@ class TelemetryProvider:
         self._last_lidar_scan = result
         return result
 
+    def camera_settings(self) -> dict[str, Any]:
+        settings = _load_json(self.camera_settings_file)
+        if not settings:
+            driver = self._camera_driver_status()
+            requested = driver.get("requested") if isinstance(driver.get("requested"), dict) else {}
+            width = requested.get("width") or int(os.environ.get("CAMERA_WIDTH", "1280"))
+            height = requested.get("height") or int(os.environ.get("CAMERA_HEIGHT", "720"))
+            fps = requested.get("fps") or float(os.environ.get("CAMERA_FPS", "60"))
+            settings = {
+                "resolution": f"{int(width)}x{int(height)}",
+                "width": int(width),
+                "height": int(height),
+                "fps": fps,
+                "fourcc": requested.get("fourcc") or os.environ.get("CAMERA_FOURCC", "MJPG"),
+                "source": "driver_default",
+            }
+        return {"ok": True, "settings": settings, "settings_file": str(self.camera_settings_file)}
+
+    def set_camera_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        driver_status = self._camera_driver_status()
+        modes = self._camera_supported_view_modes(driver_status)
+        mode_by_resolution = {item["resolution"]: item for item in modes}
+        resolution = str(payload.get("resolution") or "").strip().lower()
+        if not resolution:
+            try:
+                width = int(payload.get("width"))
+                height = int(payload.get("height"))
+                resolution = f"{width}x{height}"
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "camera_resolution_required", "supported_view_modes": modes}
+        mode = mode_by_resolution.get(resolution)
+        if mode is None:
+            return {
+                "ok": False,
+                "error": "unsupported_camera_resolution",
+                "resolution": resolution,
+                "supported_view_modes": modes,
+            }
+        allowed_fps = [float(value) for value in mode.get("fps", [])]
+        try:
+            requested_fps = float(payload.get("fps"))
+        except (TypeError, ValueError):
+            requested_fps = allowed_fps[-1] if allowed_fps else 30.0
+        if not any(abs(requested_fps - value) < 0.05 for value in allowed_fps):
+            return {
+                "ok": False,
+                "error": "unsupported_camera_fps",
+                "resolution": resolution,
+                "fps": requested_fps,
+                "allowed_fps": mode.get("fps", []),
+                "supported_view_modes": modes,
+            }
+        fps: int | float = int(round(requested_fps)) if abs(requested_fps - round(requested_fps)) < 0.05 else round(requested_fps, 2)
+        fourcc = str(payload.get("fourcc") or os.environ.get("CAMERA_FOURCC", "MJPG")).strip().upper()[:4] or "MJPG"
+        settings = {
+            "updated_at": time.time(),
+            "source": "dashboard",
+            "resolution": mode["resolution"],
+            "width": int(mode["width"]),
+            "height": int(mode["height"]),
+            "fps": fps,
+            "fourcc": fourcc,
+        }
+        try:
+            _write_json_atomic(self.camera_settings_file, settings)
+        except OSError as exc:
+            return {"ok": False, "error": str(exc), "settings_file": str(self.camera_settings_file)}
+        return {
+            "ok": True,
+            "message": "camera capture settings saved; ROS2 camera driver will reopen the device",
+            "settings": settings,
+            "settings_file": str(self.camera_settings_file),
+            "supported_view_modes": modes,
+        }
+
     def camera_status(self) -> dict[str, Any]:
         driver_status = self._camera_driver_status()
         candidates = self._camera_candidates()
@@ -490,7 +590,10 @@ class TelemetryProvider:
             "driver_status_age_sec": driver_status.get("age_sec"),
             "driver_last_error": driver_status.get("last_error"),
             "driver_last_recovery": driver_status.get("last_recovery"),
+            "driver_requested": driver_status.get("requested", {}),
             "driver_actual": driver_status.get("actual", {}),
+            "settings": self.camera_settings().get("settings", {}),
+            "settings_file": str(self.camera_settings_file),
             "usb_devices": driver_status.get("usb_devices", []),
             "video_nodes": driver_status.get("video_nodes", []),
             "test_supported": False,
@@ -507,6 +610,22 @@ class TelemetryProvider:
         if self._rover_status_cache is not None and now < self._rover_status_next_refresh:
             return dict(self._rover_status_cache)
         base = os.environ.get("ROVER_BASE_URL", "http://192.168.4.1").rstrip("/")
+        if not self.rover_network_enabled:
+            result = {
+                "ok": False,
+                "connected": False,
+                "state": "network_disabled",
+                "base_url": None,
+                "proxy_url": None,
+                "control_page": "/rover-control",
+                "mode": "serial_only",
+                "message": "WAVE ROVER network control is disabled; Jetson UART pins are the only control path.",
+                "checked_at": now,
+                "cache_ttl_s": self._rover_status_refresh_s,
+            }
+            self._rover_status_cache = dict(result)
+            self._rover_status_next_refresh = now + self._rover_status_refresh_s
+            return result
         result = {
             "ok": False,
             "connected": False,
@@ -968,8 +1087,25 @@ class TelemetryProvider:
 
     def _camera_supported_view_modes(self, driver_status: dict[str, Any]) -> list[dict[str, Any]]:
         raw_modes = driver_status.get("supported_view_modes")
+        if raw_modes:
+            raw_resolutions = set()
+            for item in raw_modes:
+                if not isinstance(item, dict):
+                    continue
+                resolution = str(item.get("resolution") or "")
+                if "x" not in resolution and item.get("width") and item.get("height"):
+                    resolution = f"{item.get('width')}x{item.get('height')}"
+                if "x" in resolution:
+                    raw_resolutions.add(resolution.lower())
+            product_modes = self._normalized_camera_modes(DEFAULT_CAMERA_VIEW_MODES)
+            filtered = [item for item in product_modes if item["resolution"].lower() in raw_resolutions]
+            if filtered:
+                return filtered
         if not raw_modes:
             raw_modes = driver_status.get("default_view_modes") or DEFAULT_CAMERA_VIEW_MODES
+        return self._normalized_camera_modes(raw_modes)
+
+    def _normalized_camera_modes(self, raw_modes: list[Any]) -> list[dict[str, Any]]:
         rows = []
         seen: set[str] = set()
         for item in raw_modes:
@@ -1000,9 +1136,12 @@ class TelemetryProvider:
                     fps_values.append(int(round(value)) if abs(value - round(value)) < 0.05 else round(value, 2))
             fps_values = sorted({value for value in fps_values if value >= 1})
             if not fps_values:
-                fps_values = [15]
-            rows.append({"resolution": resolution, "width": width, "height": height, "fps": fps_values})
-        return sorted(rows, key=lambda item: (item["width"] * item["height"], item["width"]))
+                fps_values = [30]
+            row = {"resolution": resolution, "width": width, "height": height, "fps": fps_values}
+            if item.get("label"):
+                row["label"] = str(item.get("label"))
+            rows.append(row)
+        return rows
 
     def _host_device_label_for_root(self, path: Path, root: Path, resolve: bool = True) -> str:
         try:
@@ -1566,7 +1705,7 @@ class TelemetryProvider:
             "ros2_bridge": {"ok": False, "state": "not_connected"},
             "lidar_bridge": {"ok": False, "state": "not_connected", "topic": "/scan"},
             "camera_bridge": {"ok": False, "state": "not_connected", "topic": "/camera/image_raw"},
-            "rover_bridge": {"ok": False, "state": "not_connected", "host": os.environ.get("ROVER_BASE_URL", "http://192.168.4.1")},
+            "rover_bridge": {"ok": False, "state": "not_connected", "host": None, "mode": "serial_only"},
             "data_recorder": {"ok": False, "state": "not_connected"},
         }
         services.update(external.get("services", {}))
@@ -1591,17 +1730,23 @@ class TelemetryProvider:
                 "frame_count": camera.get("frame_count", 0),
                 "last_frame_age_sec": camera.get("last_frame_age_sec"),
                 "resolution": self._resolution_text(camera.get("source_width"), camera.get("source_height")),
+                "source_fps": camera.get("source_fps"),
             }
         rover = self.rover_status()
         rover_bridge = rover_bridge or self._rover_bridge_status()
+        rover_bridge_ok = bool(rover_bridge.get("alive")) and (
+            rover_bridge.get("transport") != "serial" or bool(rover_bridge.get("serial_open"))
+        ) and not rover_bridge.get("last_error")
         services["rover_bridge"] = {
-            "ok": bool(rover_bridge.get("alive")),
+            "ok": rover_bridge_ok,
             "state": rover_bridge.get("state", "not_connected"),
             "host": rover.get("base_url"),
             "proxy": rover.get("proxy_url"),
+            "mode": rover.get("mode", "serial_only"),
             "transport": rover_bridge.get("transport"),
             "serial_port": rover_bridge.get("serial_port"),
             "status_topic": rover_bridge.get("status_topic"),
+            "serial_open": rover_bridge.get("serial_open"),
             "last_error": rover_bridge.get("last_error"),
         }
         return services
@@ -1657,6 +1802,7 @@ class TelemetryProvider:
             "frame_count": int(data.get("frame_count") or 0),
             "source_width": data.get("source_width"),
             "source_height": data.get("source_height"),
+            "source_fps": data.get("source_fps"),
             "encoding": data.get("encoding"),
             "frame_id": data.get("frame_id") or "camera_link_optical",
             "error": None if frame_alive else data.get("error"),
@@ -1673,6 +1819,7 @@ class TelemetryProvider:
             updated_at = 0.0
         status_age = round(now - updated_at, 3) if updated_at else None
         alive = status_age is not None and status_age <= 3.0
+        base_url = None if not self.rover_network_enabled else (data.get("base_url") or os.environ.get("ROVER_BASE_URL", "http://192.168.4.1"))
         return {
             "alive": alive,
             "connected": bool(alive and data.get("connected")),
@@ -1681,10 +1828,11 @@ class TelemetryProvider:
             "transport": data.get("transport") or os.environ.get("ROVER_TRANSPORT", "serial"),
             "serial_port": data.get("serial_port") or os.environ.get("ROVER_SERIAL_PORT", "/dev/ttyTHS1"),
             "serial_baudrate": data.get("serial_baudrate") or int(os.environ.get("ROVER_SERIAL_BAUDRATE", "115200")),
-            "base_url": data.get("base_url") or os.environ.get("ROVER_BASE_URL", "http://192.168.4.1"),
+            "base_url": base_url,
             "cmd_topic": data.get("cmd_topic") or "/cmd_vel",
             "status_topic": data.get("status_topic") or "/rover/status",
             "last_command": data.get("last_command"),
+            "serial_open": bool(alive and data.get("serial_open")),
             "last_error": data.get("last_error") if alive else None,
             "updated_at": updated_at or None,
             "status_file": str(self.rover_bridge_status_file),

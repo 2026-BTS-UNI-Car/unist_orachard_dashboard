@@ -7,7 +7,7 @@
 - 카메라 장치는 `ros2-camera-driver` 컨테이너가 단독으로 연다.
 - Dashboard server는 `/dev/video*`를 직접 열지 않는다.
 - Dashboard는 `ros2-camera-bridge`가 ROS2 `/camera/image_raw`를 구독해 WebSocket으로 변환한 JPEG 프레임만 표시한다.
-- 브라우저별 해상도와 FPS 설정은 각 브라우저 localStorage에 저장되며, 다른 접속자에게 영향을 주지 않는다.
+- Connection 탭의 해상도/FPS 선택은 `runtime/camera_settings.json`에 저장되고, `ros2-camera-driver`가 실제 UVC 캡처 모드로 적용한다.
 
 ## 제품 기준 사양
 
@@ -15,7 +15,7 @@
 |---|---|
 | 인터페이스 | USB 2.0, UVC compliant |
 | 최대 출력 | 1920x1080, 30 fps |
-| 권장 표시 | 1280x720, 15 fps |
+| 기본 캡처 | 1280x720, 60 fps 또는 1920x1080, 30 fps |
 | 센서 | CMOS |
 | 포커스 | 고정 포커스 |
 | Linux 장치 | `/dev/video0`, `/dev/video1` 등 |
@@ -53,9 +53,25 @@ Dashboard는 `/ws/camera` 요청을 local camera bridge로 프록시한다. 브�
 v4l2-ctl --list-formats-ext -d /dev/video0
 ```
 
-Dashboard Connection 탭의 해상도와 FPS 선택지는 이 상태 파일의 `supported_view_modes` 값을 우선 사용한다. 카메라가 아직 `/dev/video*`까지 올라오지 않은 경우에는 제품 기준 기본값을 임시로 보여주고, 실제 모드 확인 대기 상태로 남는다.
+Dashboard Connection 탭의 해상도와 FPS 선택지는 이 상태 파일의 `supported_view_modes` 값을 우선 사용한다. 카메라가 아직 `/dev/video*`까지 올라오지 않은 경우에는 Windows에서 확인한 제품 기준 기본값을 임시로 보여주고, 실제 모드 확인 대기 상태로 남는다.
 
-브라우저 표시 해상도는 WebSocket client마다 독립적이다. ROS2 driver의 기본 캡처 설정은 Compose 환경변수 `CAMERA_WIDTH`, `CAMERA_HEIGHT`, `CAMERA_FPS`, `CAMERA_FOURCC`로 조정한다.
+현재 fallback catalog는 다음 기준이다.
+
+| 선택지 | 실제 해상도 | FPS |
+|---|---:|---:|
+| 1080p 16:9 | 1920x1080 | 30 |
+| 720p 16:9 | 1280x720 | 60 |
+| 768p 4:3 | 1024x768 | 30 |
+| 600p 4:3 | 800x600 | 60 |
+| 480p 4:3 | 640x480 | 30 |
+| 240p 4:3 | 320x240 | 30 |
+| 1024p 5:4 | 1280x1024 | 30 |
+
+선택을 바꾸면 Dashboard가 `/api/camera/settings`로 `runtime/camera_settings.json`을 갱신한다. `ros2-camera-driver`는 이 파일 변경을 감지해 카메라를 닫고 새 width/height/fps/fourcc로 다시 연다.
+
+WebSocket bridge는 source와 output 해상도를 모두 보낸다. 정상 상태에서는 Dashboard caption의 `source` 값이 선택한 캡처 해상도와 일치해야 한다. 일치하지 않으면 UVC 장치가 요청 모드를 거부했거나 아직 재오픈 중인 상태다.
+
+ROS2 driver의 초기 기본값은 Compose 환경변수 `CAMERA_WIDTH`, `CAMERA_HEIGHT`, `CAMERA_FPS`, `CAMERA_FOURCC`로 정한다. 런타임 변경은 `CAMERA_SETTINGS_FILE`의 JSON이 우선한다.
 
 ## 자동 재인식
 
@@ -84,6 +100,7 @@ ros2 topic echo /camera/camera_info --once
 - `/camera/image_raw`가 publish된다.
 - `/camera/camera_info.header.frame_id`는 `camera_link_optical`이다.
 - Dashboard Connection 탭의 Camera 상태가 `수신 중`으로 바뀐다.
+- Camera readout의 `Display FPS`는 누적 프레임 수가 아니라 최근 WebSocket 표시 속도다.
 
 ## 주의사항
 

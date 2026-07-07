@@ -15,9 +15,13 @@ const CAMERA_RESOLUTION_KEY = "ubts-camera-resolution-v1";
 const CAMERA_FPS_KEY = "ubts-camera-fps-v1";
 const CAMERA_RECONNECT_DEBOUNCE_MS = 500;
 const DEFAULT_CAMERA_MODES = [
-  { resolution: "640x480", width: 640, height: 480, fps: [30] },
-  { resolution: "1280x720", width: 1280, height: 720, fps: [15, 30] },
-  { resolution: "1920x1080", width: 1920, height: 1080, fps: [5, 10, 15, 30] },
+  { resolution: "1920x1080", width: 1920, height: 1080, fps: [30], label: "1080p 16:9" },
+  { resolution: "1280x720", width: 1280, height: 720, fps: [60], label: "720p 16:9" },
+  { resolution: "1024x768", width: 1024, height: 768, fps: [30], label: "768p 4:3" },
+  { resolution: "800x600", width: 800, height: 600, fps: [60], label: "600p 4:3" },
+  { resolution: "640x480", width: 640, height: 480, fps: [30], label: "480p 4:3" },
+  { resolution: "320x240", width: 320, height: 240, fps: [30], label: "240p 4:3" },
+  { resolution: "1280x1024", width: 1280, height: 1024, fps: [30], label: "1024p 5:4" },
 ];
 
 const state = {
@@ -76,6 +80,10 @@ const state = {
     frameTopicAlive: false,
     lastFrameAgeSec: null,
     frameCount: 0,
+    displayFps: null,
+    sourceFps: null,
+    fpsWindowStartedAt: null,
+    fpsWindowFrames: 0,
     sourceWidth: null,
     sourceHeight: null,
     frameId: "camera_link_optical",
@@ -84,7 +92,9 @@ const state = {
     reconnectTimer: null,
     pendingRestart: false,
     resolution: "1280x720",
-    fps: 15,
+    fps: 60,
+    settingsInFlight: false,
+    settingsError: "",
     lastFrameAt: null,
   },
   cameraModes: DEFAULT_CAMERA_MODES,
@@ -382,12 +392,10 @@ function normalizeCameraModes(rawModes) {
       .map((value) => Number(value))
       .filter((value) => Number.isFinite(value) && value >= 1)
       .map((value) => Math.abs(value - Math.round(value)) < 0.05 ? Math.round(value) : Number(value.toFixed(2))))].sort((a, b) => a - b);
-    rows.push({ resolution, width, height, fps: fps.length ? fps : [15] });
+    rows.push({ resolution, width, height, fps: fps.length ? fps : [30], label: item.label || "" });
     seen.add(resolution);
   });
-  return rows.length
-    ? rows.sort((a, b) => (a.width * a.height) - (b.width * b.height) || a.width - b.width)
-    : DEFAULT_CAMERA_MODES;
+  return rows.length ? rows : DEFAULT_CAMERA_MODES;
 }
 
 function applyCameraModeCatalog(rawModes, source = "fallback") {
@@ -406,20 +414,49 @@ function applyCameraModeCatalog(rawModes, source = "fallback") {
   }
 }
 
+function applyCameraStatus(camera = {}, cameraBridge = {}) {
+  if (Number.isFinite(Number(cameraBridge.source_fps))) {
+    state.cameraLive.sourceFps = Number(cameraBridge.source_fps);
+  }
+  if (cameraBridge.source_width && cameraBridge.source_height) {
+    state.cameraLive.sourceWidth = cameraBridge.source_width;
+    state.cameraLive.sourceHeight = cameraBridge.source_height;
+  }
+  if (state.cameraLive.settingsInFlight) return;
+  const requested = camera.settings || camera.driver_requested || {};
+  const resolution = requested.resolution || (requested.width && requested.height ? `${requested.width}x${requested.height}` : "");
+  const fps = Number(requested.fps);
+  const resolutions = cameraResolutionOptions();
+  if (!resolutions.includes(resolution) || !Number.isFinite(fps)) return;
+  const allowed = cameraFpsOptions(resolution);
+  const nextFps = chooseCameraFps(allowed, fps);
+  const changed = state.cameraLive.resolution !== resolution || Number(state.cameraLive.fps) !== Number(nextFps);
+  state.cameraLive.resolution = resolution;
+  state.cameraLive.fps = nextFps;
+  if (changed) updateCameraControls();
+}
+
 function cameraResolutionOptions() {
   return state.cameraModes.map((mode) => mode.resolution);
 }
 
+function cameraResolutionOptionLabels() {
+  return state.cameraModes.map((mode) => ({
+    value: mode.resolution,
+    label: mode.label ? `${mode.resolution} · ${mode.label}` : mode.resolution,
+  }));
+}
+
 function cameraFpsOptions(resolution = state.cameraLive.resolution) {
   const mode = state.cameraModes.find((item) => item.resolution === resolution);
-  return mode?.fps?.length ? mode.fps : [15];
+  return mode?.fps?.length ? mode.fps : [30];
 }
 
 function chooseCameraFps(allowed, preferred) {
   const current = Number(preferred);
   if (allowed.includes(current)) return current;
   const lower = allowed.filter((value) => value <= current).pop();
-  return lower || allowed[allowed.length - 1] || 15;
+  return lower || allowed[allowed.length - 1] || 30;
 }
 
 function enforceCameraSelection() {
@@ -431,7 +468,7 @@ function enforceCameraSelection() {
   state.cameraLive.fps = chooseCameraFps(fps, state.cameraLive.fps);
 }
 
-function setCameraSettings(next) {
+async function setCameraSettings(next) {
   if (next.resolution) {
     const resolutions = cameraResolutionOptions();
     state.cameraLive.resolution = resolutions.includes(next.resolution) ? next.resolution : (resolutions[0] || "1280x720");
@@ -445,7 +482,38 @@ function setCameraSettings(next) {
     // Ignore storage failures.
   }
   updateCameraControls();
-  if (state.cameraLive.socket || state.cameraLive.enabled) scheduleCameraReconnectForSettings();
+  state.cameraLive.settingsError = "";
+  state.cameraLive.settingsInFlight = true;
+  setCameraResult("testing", `카메라 캡처 설정 적용 중 · ${state.cameraLive.resolution} · ${state.cameraLive.fps} fps`);
+  try {
+    const [width, height] = state.cameraLive.resolution.split("x").map((value) => Number(value));
+    const res = await fetch("/api/camera/settings", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        resolution: state.cameraLive.resolution,
+        width,
+        height,
+        fps: state.cameraLive.fps,
+      }),
+    });
+    const result = await res.json();
+    if (!res.ok || !result.ok) {
+      throw new Error(result.error || `HTTP ${res.status}`);
+    }
+    if (Array.isArray(result.supported_view_modes)) {
+      applyCameraModeCatalog(result.supported_view_modes, "settings");
+    }
+    setCameraResult("testing", `캡처 설정 저장됨 · ${state.cameraLive.resolution} · ${state.cameraLive.fps} fps`);
+    scheduleCameraReconnectForSettings(900);
+  } catch (err) {
+    state.cameraLive.settingsError = err.message || String(err);
+    setCameraResult("bad", `카메라 설정 적용 실패: ${state.cameraLive.settingsError}`);
+  } finally {
+    state.cameraLive.settingsInFlight = false;
+    updateCameraControls();
+  }
 }
 
 function updateCameraControls() {
@@ -453,7 +521,7 @@ function updateCameraControls() {
   text("cameraFpsValue", `${state.cameraLive.fps} fps`);
   const resolution = $("cameraResolutionSelect");
   if (resolution) {
-    syncSelectOptions(resolution, cameraResolutionOptions().map((value) => ({ value, label: value })));
+    syncSelectOptions(resolution, cameraResolutionOptionLabels());
     if (document.activeElement !== resolution) resolution.value = state.cameraLive.resolution;
   }
   const fps = $("cameraFpsSelect");
@@ -1091,6 +1159,31 @@ function restartCameraLiveForSettings() {
   }
 }
 
+function noteCameraFrame(payload) {
+  const now = Date.now();
+  if (!state.cameraLive.fpsWindowStartedAt) {
+    state.cameraLive.fpsWindowStartedAt = now;
+    state.cameraLive.fpsWindowFrames = 0;
+  }
+  state.cameraLive.fpsWindowFrames += 1;
+  const elapsed = (now - state.cameraLive.fpsWindowStartedAt) / 1000;
+  if (elapsed >= 0.8) {
+    state.cameraLive.displayFps = state.cameraLive.fpsWindowFrames / elapsed;
+    state.cameraLive.fpsWindowStartedAt = now;
+    state.cameraLive.fpsWindowFrames = 0;
+  }
+  const sourceFps = Number(payload.source_fps);
+  if (Number.isFinite(sourceFps) && sourceFps > 0) {
+    state.cameraLive.sourceFps = sourceFps;
+  }
+}
+
+function cameraFpsLabel(value) {
+  const fps = Number(value);
+  if (!Number.isFinite(fps) || fps <= 0) return "--";
+  return `${fmtNumber(fps, fps >= 10 ? 0 : 1)} fps`;
+}
+
 function handleCameraLiveMessage(raw) {
   let payload = null;
   try {
@@ -1105,6 +1198,7 @@ function handleCameraLiveMessage(raw) {
     state.cameraLive.frameTopicAlive = Boolean(payload.frame_topic_alive);
     state.cameraLive.lastFrameAgeSec = payload.last_frame_age_sec;
     state.cameraLive.frameCount = payload.frame_count || state.cameraLive.frameCount || 0;
+    if (Number.isFinite(Number(payload.source_fps))) state.cameraLive.sourceFps = Number(payload.source_fps);
     state.cameraLive.sourceWidth = payload.source_width;
     state.cameraLive.sourceHeight = payload.source_height;
     state.cameraLive.frameId = payload.frame_id || state.cameraLive.frameId;
@@ -1119,6 +1213,7 @@ function handleCameraLiveMessage(raw) {
     state.cameraLive.frameTopicAlive = true;
     state.cameraLive.lastFrameAgeSec = 0;
     state.cameraLive.frameCount = payload.frame_count || state.cameraLive.frameCount + 1;
+    noteCameraFrame(payload);
     state.cameraLive.sourceWidth = payload.source_width;
     state.cameraLive.sourceHeight = payload.source_height;
     state.cameraLive.frameId = payload.frame_id || state.cameraLive.frameId;
@@ -1126,7 +1221,11 @@ function handleCameraLiveMessage(raw) {
     state.cameraLive.error = "";
     const image = $("cameraLiveImage");
     if (image && payload.data) image.src = `data:${payload.mime || "image/jpeg"};base64,${payload.data}`;
-    setCameraResult("ok", `실시간 수신 중 · ${payload.width}x${payload.height} · ${state.cameraLive.fps} fps 표시`);
+    const source = payload.source_width && payload.source_height ? `${payload.source_width}x${payload.source_height}` : "--";
+    const output = payload.width && payload.height ? `${payload.width}x${payload.height}` : state.cameraLive.resolution;
+    const rate = state.cameraLive.sourceFps || state.cameraLive.displayFps || state.cameraLive.fps;
+    const modeText = source === output ? source : `source ${source} · output ${output}`;
+    setCameraResult("ok", `실시간 수신 중 · ${modeText} · ${cameraFpsLabel(rate)}`);
     renderCameraLiveState();
     renderLiveSensorLinks();
     return;
@@ -1151,11 +1250,15 @@ function renderCameraLiveState(overrideLabel) {
     : "--";
   const socketText = overrideLabel || (state.cameraLive.connected ? "connected" : state.cameraLive.error || "disconnected");
   text("cameraFrameCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · source ${source}` : socketText);
+  const rate = state.cameraLive.sourceFps || state.cameraLive.displayFps;
+  const frameAge = state.cameraLive.lastFrameAgeSec === null || state.cameraLive.lastFrameAgeSec === undefined
+    ? "--"
+    : `${fmtNumber(state.cameraLive.lastFrameAgeSec, 1)}s ago`;
   const colors = chartColors();
   renderReadout("cameraLiveStats", [
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
-    { label: "Frames", value: String(state.cameraLive.frameCount || 0), sub: state.cameraLive.lastFrameAgeSec === null || state.cameraLive.lastFrameAgeSec === undefined ? "--" : `${fmtNumber(state.cameraLive.lastFrameAgeSec, 1)}s ago`, color: colors.blue },
+    { label: "Display FPS", value: cameraFpsLabel(rate), sub: `frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
 }
 
@@ -1490,6 +1593,7 @@ function renderConnection(connection) {
   const wsText = `WS ${ws.active || 0}`;
   const cameraWsText = `WS ${cameraWs.active || 0}`;
   applyCameraModeCatalog(camera.supported_view_modes, camera.supported_view_modes_source || "fallback");
+  applyCameraStatus(camera, cameraBridge);
   text("connectionLidarState", scanLive ? "수신 중" : (lidar.present ? lidarStateLabel(lidar.state) : "미인식"));
   text("connectionLidarDevice", lidar.device || "--");
   text("connectionLidarProtocol", "ROS2 /scan");
@@ -2599,9 +2703,9 @@ function renderRoverControl(data) {
   const rover = data.rover || data.connection?.rover || {};
   const services = data.services || data.connection?.services || {};
   const roverBridge = services.rover_bridge || {};
-  text("roverControlState", rover.connected || rover.ok ? "reachable" : rover.state || "unreachable");
-  text("roverControlBase", rover.base_url || "--");
-  text("roverProxyState", rover.proxy_url ? rover.proxy_url : "/rover-proxy/");
+  text("roverControlState", roverBridge.serial_open ? "open" : roverBridge.state || "대기");
+  text("roverControlBase", roverBridge.serial_port || "--");
+  text("roverProxyState", rover.mode || roverBridge.mode || "serial_only");
   text("roverRosState", roverBridge.ok ? "ready" : roverBridge.state || "대기");
   renderStatusRows("roverControlDetails", [
     {
@@ -2612,18 +2716,18 @@ function renderRoverControl(data) {
       value: roverBridge.state || "대기",
     },
     {
-      title: "Original Web UI",
-      sub: rover.base_url || "http://192.168.4.1",
-      ok: Boolean(rover.connected || rover.ok),
-      level: rover.connected || rover.ok ? "ok" : "warn",
-      value: rover.connected || rover.ok ? "접속 가능" : "대기",
+      title: "Jetson UART",
+      sub: roverBridge.serial_port || "/dev/ttyTHS1",
+      ok: Boolean(roverBridge.serial_open),
+      level: roverBridge.serial_open ? "ok" : "warn",
+      value: roverBridge.serial_open ? "열림" : "포트 대기",
     },
     {
-      title: "Dashboard Proxy",
-      sub: "/rover-proxy/",
-      ok: true,
+      title: "Network Control",
+      sub: "WAVE ROVER AP/Web UI",
+      ok: rover.mode === "serial_only" || rover.state === "network_disabled",
       level: "ok",
-      value: "준비",
+      value: "비활성화",
     },
   ]);
 }

@@ -39,7 +39,11 @@ class WaveRoverBridge(Node):
     def __init__(self, args: argparse.Namespace):
         super().__init__("ubts_wave_rover_bridge")
         self.args = args
-        self.transport = args.transport.strip().lower()
+        requested_transport = args.transport.strip().lower()
+        if requested_transport != "serial" and not args.allow_network:
+            log("network_transport_disabled", requested_transport=requested_transport, fallback="serial")
+            requested_transport = "serial"
+        self.transport = requested_transport
         self.serial_fd: int | None = None
         self.last_cmd: Twist | None = None
         self.last_cmd_at = 0.0
@@ -58,7 +62,14 @@ class WaveRoverBridge(Node):
             base_url=args.base_url,
             cmd_topic=args.cmd_topic,
             status_topic=args.status_topic,
+            allow_network=args.allow_network,
         )
+        if self.transport == "serial" and args.probe_serial_on_start:
+            try:
+                self.ensure_serial()
+            except Exception as exc:
+                self.last_error = str(exc)
+                self.get_logger().warn(f"WAVE ROVER UART probe failed: {exc}", throttle_duration_sec=2.0)
 
     def cmd_vel_callback(self, msg: Twist) -> None:
         self.last_cmd = msg
@@ -86,7 +97,7 @@ class WaveRoverBridge(Node):
 
     def send_speed(self, left: float, right: float) -> None:
         command = {"T": 1, "L": round(left, 3), "R": round(right, 3)}
-        if self.transport == "http":
+        if self.transport == "http" and self.args.allow_network:
             self.send_http_command(command)
         else:
             self.send_serial_command(command)
@@ -158,22 +169,26 @@ class WaveRoverBridge(Node):
 
     def status_timer(self) -> None:
         now = time.time()
-        connected = self.last_sent is not None and now - float(self.last_sent.get("at", 0.0)) < 3.0 and not self.last_error
+        serial_open = self.serial_fd is not None
+        recent_command = self.last_sent is not None and now - float(self.last_sent.get("at", 0.0)) < 3.0
+        connected = (serial_open if self.transport == "serial" else recent_command) and not self.last_error
         payload = {
             "type": "rover_bridge_status",
             "updated_at": now,
             "alive": True,
             "connected": connected,
-            "state": "connected" if connected else ("error" if self.last_error else "idle"),
+            "state": "serial_open" if self.transport == "serial" and serial_open and not self.last_error else ("connected" if connected else ("error" if self.last_error else "idle")),
             "transport": self.transport,
+            "network_enabled": bool(self.args.allow_network),
             "serial_port": self.args.serial_port,
+            "serial_open": serial_open,
             "serial_baudrate": self.args.serial_baudrate,
-            "base_url": self.args.base_url,
+            "base_url": self.args.base_url if self.args.allow_network else None,
             "cmd_topic": self.args.cmd_topic,
             "status_topic": self.args.status_topic,
             "last_command": self.last_sent,
             "last_error": self.last_error,
-            "mode": "cmd_vel_to_wave_rover_json",
+            "mode": "serial_only_cmd_vel_to_wave_rover_json" if not self.args.allow_network else "cmd_vel_to_wave_rover_json",
         }
         msg = String()
         msg.data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -200,6 +215,8 @@ def main() -> int:
     parser.add_argument("--command-hz", type=float, default=float(os.environ.get("ROVER_COMMAND_HZ", "5.0")))
     parser.add_argument("--status-hz", type=float, default=float(os.environ.get("ROVER_STATUS_HZ", "1.0")))
     parser.add_argument("--cmd-timeout-s", type=float, default=float(os.environ.get("ROVER_CMD_TIMEOUT_S", "2.0")))
+    parser.add_argument("--allow-network", default=os.environ.get("ROVER_ALLOW_NETWORK", "0").strip().lower() in {"1", "true", "yes", "on"}, action=argparse.BooleanOptionalAction)
+    parser.add_argument("--probe-serial-on-start", default=os.environ.get("ROVER_PROBE_SERIAL_ON_START", "1").strip().lower() in {"1", "true", "yes", "on"}, action=argparse.BooleanOptionalAction)
     args = parser.parse_args()
     rclpy.init()
     node = WaveRoverBridge(args)

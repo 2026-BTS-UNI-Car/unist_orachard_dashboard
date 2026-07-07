@@ -1,6 +1,6 @@
 # WAVE ROVER 연동
 
-이 문서는 Waveshare WAVE ROVER를 Jetson Orin Nano Super와 연결해 ROS2 제어 경로와 Dashboard Rover Control 화면을 함께 사용하는 기준이다.
+이 문서는 Waveshare WAVE ROVER를 Jetson Orin Nano Super와 연결해 ROS2 UART 제어 경로와 Dashboard Rover Control 화면을 함께 사용하는 기준이다.
 
 ## 결론
 
@@ -17,7 +17,7 @@ Dashboard가 직접 UART를 열지 않는다. `wave_rover_bridge` ROS2 node가 U
 
 Waveshare WAVE ROVER는 ESP32 slave와 JSON 명령으로 통신한다. 공식 문서 기준으로 AP WiFi 이름은 `UGV`, 기본 비밀번호는 `12345678`, AP 모드 Web UI 주소는 `http://192.168.4.1`이다. 같은 JSON 명령은 Web application, HTTP, ESP-NOW, GPIO/USB serial 경로로 보낼 수 있다.
 
-Dashboard의 `/rover-control` 페이지는 원본 Web UI를 `/rover-proxy/`로 보조 표시한다. 실제 연구 주행 제어는 ROS2 `/cmd_vel` 경로를 사용한다.
+현재 연구차 운영 기준에서는 WiFi/AP/Web UI/HTTP 제어를 사용하지 않는다. 실제 제어 경로는 Jetson 40-pin UART와 ROS2 `/cmd_vel`뿐이다. Dashboard의 `/rover-proxy/`도 기본적으로 비활성화되어 있다.
 
 ## ROS2 bridge 구조
 
@@ -51,12 +51,14 @@ ros2 launch orchard_bringup orchard_full.launch.py \
 
 ## Dashboard Rover Control
 
-`/rover-control` 페이지는 두 가지를 제공한다.
+`/rover-control` 페이지는 UART 기반 ROS2 bridge 상태를 표시한다.
 
-- WAVE ROVER 원본 Web UI proxy: `/rover-proxy/`
 - ROS2 Rover bridge 상태: `/rover/status`와 `runtime/rover_bridge_status.json`
+- UART open 여부: `serial_open`
+- command topic: `/cmd_vel`
+- status topic: `/rover/status`
 
-원본 Web UI가 열리지 않아도 ROS2 UART bridge는 별도로 동작할 수 있다. 반대로 Web UI proxy가 열려도 Dashboard가 UART를 직접 점유하지 않는다.
+`serial_open`이 false면 먼저 Jetson 장치명, 권한, TX/RX 교차 연결, 공통 GND를 확인한다. bridge 프로세스가 살아 있어도 UART fd가 열리지 않으면 실제 핀 제어는 준비되지 않은 상태다.
 
 Docker Compose에서는 `ros2-rover-bridge` 컨테이너가 이 역할을 수행한다. 전체 ROS2 bringup에서 별도 `wave_rover_bridge`를 실행할 때는 UART를 여는 bridge가 하나만 남도록 Compose service를 중지한다.
 
@@ -64,7 +66,7 @@ Docker Compose에서는 `ros2-rover-bridge` 컨테이너가 이 역할을 수행
 
 - UART는 `wave_rover_bridge`만 연다.
 - Dashboard는 `/rover/status`와 service 상태만 표시한다.
-- 수동 Web UI 조작과 ROS2 `/cmd_vel` 주행 명령을 동시에 쓰지 않는다.
+- 네트워크/Web UI/HTTP 제어를 사용하지 않는다.
 - 실제 주행 테스트 전에는 바퀴를 띄운 상태에서 `/cmd_vel` 0 명령과 timeout stop 동작을 먼저 확인한다.
 
 ## 확인 명령

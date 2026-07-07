@@ -40,8 +40,12 @@ class DashboardApiTest(unittest.TestCase):
             self.assertEqual(res.status, 200)
             return res.read().decode("utf-8")
 
-    def post_json(self, path: str) -> dict:
-        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method="POST")
+    def post_json(self, path: str, payload: dict | None = None) -> dict:
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=body, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=5) as res:
             self.assertEqual(res.status, 200)
             return json.loads(res.read().decode("utf-8"))
@@ -223,8 +227,8 @@ class DashboardApiTest(unittest.TestCase):
                         ],
                         "last_error": "USB camera video node not found",
                         "supported_view_modes": [
-                            {"resolution": "640x480", "width": 640, "height": 480, "fps": [30]},
-                            {"resolution": "1280x720", "width": 1280, "height": 720, "fps": [15, 30]},
+                            {"resolution": "1920x1080", "width": 1920, "height": 1080, "fps": [30]},
+                            {"resolution": "1280x720", "width": 1280, "height": 720, "fps": [60]},
                         ],
                     }
                 ),
@@ -237,6 +241,7 @@ class DashboardApiTest(unittest.TestCase):
             self.assertEqual(camera["state"], "usb_detected_video_node_missing")
             self.assertEqual(camera["supported_view_modes_source"], "v4l2")
             self.assertEqual(camera["supported_view_modes"][0]["fps"], [30])
+            self.assertEqual(camera["supported_view_modes"][1]["fps"], [60])
             self.assertEqual(payload["sensors"]["camera"]["state"], "video_node_missing")
             self.assertEqual(payload["sensors"]["camera"]["severity"], "error")
         finally:
@@ -244,6 +249,47 @@ class DashboardApiTest(unittest.TestCase):
                 status_file.unlink(missing_ok=True)
             else:
                 status_file.write_text(old, encoding="utf-8")
+
+    def test_camera_settings_endpoint_writes_capture_settings(self):
+        root = Path(__file__).resolve().parents[1]
+        settings_file = root / "runtime" / "camera_settings.json"
+        driver_status_file = root / "runtime" / "camera_driver_status.json"
+        settings_file.parent.mkdir(parents=True, exist_ok=True)
+        old_settings = settings_file.read_text(encoding="utf-8") if settings_file.exists() else None
+        old_driver = driver_status_file.read_text(encoding="utf-8") if driver_status_file.exists() else None
+        try:
+            driver_status_file.write_text(
+                json.dumps(
+                    {
+                        "updated_at": time.time(),
+                        "supported_view_modes": [
+                            {"resolution": "1920x1080", "width": 1920, "height": 1080, "fps": [30]},
+                            {"resolution": "1280x720", "width": 1280, "height": 720, "fps": [60]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            payload = self.post_json("/api/camera/settings", {"resolution": "1280x720", "fps": 60})
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["settings"]["resolution"], "1280x720")
+            self.assertEqual(payload["settings"]["fps"], 60)
+            saved = json.loads(settings_file.read_text(encoding="utf-8"))
+            self.assertEqual(saved["width"], 1280)
+            self.assertEqual(saved["height"], 720)
+            self.assertEqual(saved["fps"], 60)
+            rejected = self.post_json("/api/camera/settings", {"resolution": "1280x720", "fps": 30})
+            self.assertFalse(rejected["ok"])
+            self.assertEqual(rejected["error"], "unsupported_camera_fps")
+        finally:
+            if old_settings is None:
+                settings_file.unlink(missing_ok=True)
+            else:
+                settings_file.write_text(old_settings, encoding="utf-8")
+            if old_driver is None:
+                driver_status_file.unlink(missing_ok=True)
+            else:
+                driver_status_file.write_text(old_driver, encoding="utf-8")
 
     def test_plan_contains_research_topic(self):
         payload = self.get_json("/api/plan")
@@ -263,6 +309,7 @@ class DashboardApiTest(unittest.TestCase):
         slugs = [item["slug"] for item in index["documents"]]
         self.assertIn("simulation-run", slugs)
         self.assertIn("lidar-connection", slugs)
+        self.assertIn("lidar-drive-test-recording", slugs)
         self.assertIn("usb-camera-connection", slugs)
         self.assertIn("wave-rover-control", slugs)
         sim_doc = self.get_json("/api/docs/simulation-run")
@@ -275,6 +322,9 @@ class DashboardApiTest(unittest.TestCase):
         camera_doc = self.get_json("/api/docs/usb-camera-connection")
         self.assertTrue(camera_doc["ok"])
         self.assertIn("/camera/image_raw", camera_doc["markdown"])
+        drive_doc = self.get_json("/api/docs/lidar-drive-test-recording")
+        self.assertTrue(drive_doc["ok"])
+        self.assertIn("rosbag2", drive_doc["markdown"])
         rover_doc = self.get_json("/api/docs/wave-rover-control")
         self.assertTrue(rover_doc["ok"])
         self.assertIn("WAVE ROVER", rover_doc["markdown"])
@@ -306,7 +356,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("id=\"cameraResolutionSelect\"", html)
         self.assertIn("id=\"cameraFpsSelect\"", html)
         self.assertIn("data-route=\"/rover-control\"", html)
-        self.assertIn("id=\"roverProxyFrame\"", html)
+        self.assertNotIn("id=\"roverProxyFrame\"", html)
         self.assertIn("data-lidar-range=\"reset\"", html)
         self.assertIn(">Auto</button>", html)
         self.assertNotIn("chartGpu", html)
@@ -349,6 +399,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("CAMERA_RESOLUTION_KEY", app_js)
         self.assertIn("DEFAULT_CAMERA_MODES", app_js)
         self.assertIn("applyCameraModeCatalog", app_js)
+        self.assertIn("/api/camera/settings", app_js)
+        self.assertIn("Display FPS", app_js)
         self.assertIn("syncSelectOptions", app_js)
         self.assertIn("initCameraLive();", app_js)
         self.assertIn("Connection 페이지 밖에서는 Camera WebSocket을 닫습니다.", app_js)
@@ -372,9 +424,13 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("ros2-rover-bridge", compose)
         self.assertIn("CAMERA_WS_UPSTREAM", compose)
         self.assertIn("CAMERA_DRIVER_STATUS_FILE", compose)
+        self.assertIn("CAMERA_SETTINGS_FILE", compose)
+        self.assertIn("CAMERA_MAX_TICK_FPS", compose)
         self.assertIn("CAMERA_AUTO_USB_RECOVER", compose)
         self.assertIn("/sys:/host-sys:rw", compose)
         self.assertIn("ROVER_BRIDGE_STATUS_FILE", compose)
+        self.assertIn("ROVER_NETWORK_ENABLED", compose)
+        self.assertIn("--no-allow-network", compose)
         self.assertIn("ROVER_BASE_URL", compose)
         self.assertIn("Dockerfile.lidar_driver", compose)
         self.assertIn("Dockerfile.ros2", compose)
@@ -390,12 +446,14 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("findmnt", telemetry_py)
         self.assertIn("def _host_mounted_partitions", telemetry_py)
         self.assertIn("DEFAULT_CAMERA_VIEW_MODES", telemetry_py)
+        self.assertIn("def set_camera_settings", telemetry_py)
         self.assertIn("def _camera_driver_status", telemetry_py)
         camera_driver_py = (Path(__file__).resolve().parents[1] / "scripts" / "camera_ros2_driver.py").read_text()
         self.assertIn("v4l2-ctl", camera_driver_py)
         self.assertIn("USBDEVFS_RESET", camera_driver_py)
         self.assertIn("usb_recover_attempt", camera_driver_py)
         self.assertIn("supported_view_modes", camera_driver_py)
+        self.assertIn("settings_changed", camera_driver_py)
         self.assertNotIn("def _gpu_percent", telemetry_py)
         self.assertIn("source_max_points", lidar_bridge_py)
         self.assertIn("\"scan_received\"", lidar_bridge_py)
@@ -589,6 +647,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("jetson-runtime-architecture", slugs)
         self.assertIn("fan-control", slugs)
         self.assertIn("simulation-run", slugs)
+        self.assertIn("lidar-drive-test-recording", slugs)
 
 
 if __name__ == "__main__":

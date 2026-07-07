@@ -22,9 +22,13 @@ from sensor_msgs.msg import CameraInfo, Image
 USBDEVFS_RESET = 21780
 VIDEO_CLASS = "0e"
 DEFAULT_VIEW_MODES = [
-    {"resolution": "640x480", "fps": [30]},
-    {"resolution": "1280x720", "fps": [15, 30]},
-    {"resolution": "1920x1080", "fps": [5, 10, 15, 30]},
+    {"resolution": "1920x1080", "width": 1920, "height": 1080, "fps": [30], "label": "1080p 16:9"},
+    {"resolution": "1280x720", "width": 1280, "height": 720, "fps": [60], "label": "720p 16:9"},
+    {"resolution": "1024x768", "width": 1024, "height": 768, "fps": [30], "label": "768p 4:3"},
+    {"resolution": "800x600", "width": 800, "height": 600, "fps": [60], "label": "600p 4:3"},
+    {"resolution": "640x480", "width": 640, "height": 480, "fps": [30], "label": "480p 4:3"},
+    {"resolution": "320x240", "width": 320, "height": 240, "fps": [30], "label": "240p 4:3"},
+    {"resolution": "1280x1024", "width": 1280, "height": 1024, "fps": [30], "label": "1024p 5:4"},
 ]
 
 
@@ -48,6 +52,35 @@ def write_json_atomic(path: Path | None, payload: dict[str, Any]) -> None:
         tmp.replace(path)
     except OSError as exc:
         log("status_write_error", path=str(path), error=str(exc))
+
+
+def load_json(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def normalize_mode(width: Any, height: Any, fps: Any, fourcc: Any) -> dict[str, Any] | None:
+    try:
+        normalized_width = int(width)
+        normalized_height = int(height)
+        normalized_fps = float(fps)
+    except (TypeError, ValueError):
+        return None
+    if normalized_width <= 0 or normalized_height <= 0 or normalized_fps < 1:
+        return None
+    rounded_fps: int | float = int(round(normalized_fps)) if abs(normalized_fps - round(normalized_fps)) < 0.05 else round(normalized_fps, 2)
+    normalized_fourcc = str(fourcc or "MJPG").strip().upper()[:4] or "MJPG"
+    return {
+        "resolution": f"{normalized_width}x{normalized_height}",
+        "width": normalized_width,
+        "height": normalized_height,
+        "fps": rounded_fps,
+        "fourcc": normalized_fourcc,
+    }
 
 
 def candidate_devices(configured: str) -> Iterable[str]:
@@ -229,6 +262,15 @@ class UsbCameraDriver(Node):
         self.args = args
         self.frame_id = args.frame_id
         self.status_file = Path(args.status_file) if args.status_file else None
+        self.settings_file = Path(args.settings_file) if args.settings_file else None
+        initial_mode = normalize_mode(args.width, args.height, args.fps, args.fourcc) or normalize_mode(1280, 720, 30, "MJPG")
+        assert initial_mode is not None
+        self.request_width = int(initial_mode["width"])
+        self.request_height = int(initial_mode["height"])
+        self.request_fps = float(initial_mode["fps"])
+        self.request_fourcc = str(initial_mode["fourcc"])
+        self.settings_mtime_ns: int | None = None
+        self.next_settings_check_at = 0.0
         self.image_pub = self.create_publisher(Image, args.image_topic, 10)
         self.info_pub = self.create_publisher(CameraInfo, args.camera_info_topic, 10)
         self.cap: cv2.VideoCapture | None = None
@@ -246,17 +288,19 @@ class UsbCameraDriver(Node):
         self.next_recovery_at = 0.0
         self.last_wait_log_at = 0.0
         self.last_status_write_at = 0.0
-        self.timer = self.create_timer(1.0 / max(1.0, args.fps), self.tick)
+        self.apply_settings_file(force=True)
+        self.timer = self.create_timer(1.0 / max(1.0, args.max_tick_fps), self.tick)
         log(
             "start",
             image_topic=args.image_topic,
             camera_info_topic=args.camera_info_topic,
-            width=args.width,
-            height=args.height,
-            fps=args.fps,
+            width=self.request_width,
+            height=self.request_height,
+            fps=self.request_fps,
             frame_id=args.frame_id,
             auto_usb_recover=args.auto_usb_recover,
             status_file=args.status_file,
+            settings_file=args.settings_file,
         )
         self.write_status("start", force=True)
 
@@ -288,10 +332,10 @@ class UsbCameraDriver(Node):
             "video_nodes": nodes,
             "usb_devices": usb_devices,
             "requested": {
-                "width": self.args.width,
-                "height": self.args.height,
-                "fps": self.args.fps,
-                "fourcc": self.args.fourcc,
+                "width": self.request_width,
+                "height": self.request_height,
+                "fps": self.request_fps,
+                "fourcc": self.request_fourcc,
             },
             "actual": {
                 "width": self.actual_width,
@@ -300,6 +344,7 @@ class UsbCameraDriver(Node):
             },
             "supported_view_modes": self.supported_modes,
             "default_view_modes": DEFAULT_VIEW_MODES,
+            "settings_file": str(self.settings_file) if self.settings_file else None,
             "frame_count": self.frame_count,
             "fail_count": self.fail_count,
             "last_error": self.last_error,
@@ -307,6 +352,75 @@ class UsbCameraDriver(Node):
             "recovery_count": self.recovery_count,
         }
         write_json_atomic(self.status_file, payload)
+
+    def current_mode(self) -> dict[str, Any]:
+        return {
+            "resolution": f"{self.request_width}x{self.request_height}",
+            "width": self.request_width,
+            "height": self.request_height,
+            "fps": int(self.request_fps) if abs(self.request_fps - round(self.request_fps)) < 0.05 else round(self.request_fps, 2),
+            "fourcc": self.request_fourcc,
+        }
+
+    def write_settings_file_if_missing(self) -> None:
+        if self.settings_file is None or self.settings_file.exists():
+            return
+        payload = {**self.current_mode(), "updated_at": time.time(), "source": "driver_default"}
+        write_json_atomic(self.settings_file, payload)
+        try:
+            self.settings_mtime_ns = self.settings_file.stat().st_mtime_ns
+        except OSError:
+            self.settings_mtime_ns = None
+
+    def apply_settings_file(self, force: bool = False) -> bool:
+        if self.settings_file is None:
+            return False
+        self.write_settings_file_if_missing()
+        now = time.time()
+        if not force and now < self.next_settings_check_at:
+            return False
+        self.next_settings_check_at = now + 0.5
+        try:
+            stat = self.settings_file.stat()
+        except OSError:
+            return False
+        if not force and self.settings_mtime_ns == stat.st_mtime_ns:
+            return False
+        self.settings_mtime_ns = stat.st_mtime_ns
+        raw = load_json(self.settings_file)
+        mode = normalize_mode(
+            raw.get("width"),
+            raw.get("height"),
+            raw.get("fps"),
+            raw.get("fourcc") or self.request_fourcc,
+        )
+        if mode is None and isinstance(raw.get("resolution"), str):
+            try:
+                width_text, height_text = raw["resolution"].lower().split("x", 1)
+                mode = normalize_mode(width_text, height_text, raw.get("fps"), raw.get("fourcc") or self.request_fourcc)
+            except ValueError:
+                mode = None
+        if mode is None:
+            self.last_error = f"Invalid camera settings file: {self.settings_file}"
+            log("settings_invalid", path=str(self.settings_file), payload=raw)
+            self.write_status("settings_invalid", force=True)
+            return False
+        changed = (
+            int(mode["width"]) != self.request_width
+            or int(mode["height"]) != self.request_height
+            or abs(float(mode["fps"]) - self.request_fps) >= 0.05
+            or str(mode["fourcc"]) != self.request_fourcc
+        )
+        self.request_width = int(mode["width"])
+        self.request_height = int(mode["height"])
+        self.request_fps = float(mode["fps"])
+        self.request_fourcc = str(mode["fourcc"])
+        if changed:
+            log("settings_changed", **self.current_mode())
+            self.close_camera()
+            self.next_open_attempt_at = 0.0
+            self.write_status("settings_changed", force=True)
+        return changed
 
     def maybe_recover_usb(self) -> None:
         if not self.args.auto_usb_recover or video_nodes():
@@ -351,10 +465,10 @@ class UsbCameraDriver(Node):
             if not cap.isOpened():
                 cap.release()
                 continue
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.args.fourcc))
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.args.width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.args.height)
-            cap.set(cv2.CAP_PROP_FPS, self.args.fps)
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*self.request_fourcc))
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.request_width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.request_height)
+            cap.set(cv2.CAP_PROP_FPS, self.request_fps)
             ok, frame = cap.read()
             if not ok or frame is None:
                 cap.release()
@@ -366,7 +480,7 @@ class UsbCameraDriver(Node):
             self.last_error = None
             self.actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or frame.shape[1])
             self.actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or frame.shape[0])
-            self.actual_fps = round(float(cap.get(cv2.CAP_PROP_FPS) or self.args.fps), 2)
+            self.actual_fps = round(float(cap.get(cv2.CAP_PROP_FPS) or self.request_fps), 2)
             self.supported_modes = list_camera_modes(path)
             log(
                 "opened",
@@ -374,7 +488,7 @@ class UsbCameraDriver(Node):
                 width=self.actual_width,
                 height=self.actual_height,
                 fps=self.actual_fps,
-                fourcc=self.args.fourcc,
+                fourcc=self.request_fourcc,
                 supported_modes=self.supported_modes,
             )
             self.publish_frame(frame)
@@ -398,6 +512,8 @@ class UsbCameraDriver(Node):
         self.actual_fps = None
 
     def tick(self):
+        if self.apply_settings_file():
+            return
         if self.cap is None:
             self.open_camera()
             return
@@ -446,10 +562,12 @@ def main() -> int:
     parser.add_argument("--frame-id", default=os.environ.get("CAMERA_FRAME_ID", "camera_link_optical"))
     parser.add_argument("--width", type=int, default=int(os.environ.get("CAMERA_WIDTH", "1280")))
     parser.add_argument("--height", type=int, default=int(os.environ.get("CAMERA_HEIGHT", "720")))
-    parser.add_argument("--fps", type=float, default=float(os.environ.get("CAMERA_FPS", "30")))
+    parser.add_argument("--fps", type=float, default=float(os.environ.get("CAMERA_FPS", "60")))
     parser.add_argument("--fourcc", default=os.environ.get("CAMERA_FOURCC", "MJPG"))
     parser.add_argument("--fov-deg", type=float, default=float(os.environ.get("CAMERA_FOV_DEG", "70")))
     parser.add_argument("--status-file", default=os.environ.get("CAMERA_DRIVER_STATUS_FILE", "/app/runtime/camera_driver_status.json"))
+    parser.add_argument("--settings-file", default=os.environ.get("CAMERA_SETTINGS_FILE", "/app/runtime/camera_settings.json"))
+    parser.add_argument("--max-tick-fps", type=float, default=float(os.environ.get("CAMERA_MAX_TICK_FPS", "60")))
     parser.add_argument("--status-interval-s", type=float, default=float(os.environ.get("CAMERA_DRIVER_STATUS_INTERVAL_S", "0.5")))
     parser.add_argument("--open-retry-interval-s", type=float, default=float(os.environ.get("CAMERA_OPEN_RETRY_INTERVAL_S", "1.0")))
     parser.add_argument("--wait-log-interval-s", type=float, default=float(os.environ.get("CAMERA_WAIT_LOG_INTERVAL_S", "8.0")))

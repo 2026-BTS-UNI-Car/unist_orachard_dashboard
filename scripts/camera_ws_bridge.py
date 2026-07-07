@@ -29,6 +29,9 @@ class CameraState:
     encoding: str = ""
     last_frame_at: float | None = None
     frame_count: int = 0
+    fps_window_started_at: float | None = None
+    fps_window_count: int = 0
+    source_fps: float | None = None
     error: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -39,8 +42,18 @@ class CameraState:
             self.frame_bgr = frame_bgr
             self.source_height, self.source_width = frame_bgr.shape[:2]
             self.encoding = encoding
-            self.last_frame_at = time.time()
+            now = time.time()
+            self.last_frame_at = now
             self.frame_count += 1
+            if self.fps_window_started_at is None:
+                self.fps_window_started_at = now
+                self.fps_window_count = 0
+            self.fps_window_count += 1
+            elapsed = now - self.fps_window_started_at
+            if elapsed >= 1.0:
+                self.source_fps = round(self.fps_window_count / elapsed, 1)
+                self.fps_window_started_at = now
+                self.fps_window_count = 0
             self.error = None
 
     def set_error(self, message: str) -> None:
@@ -60,6 +73,7 @@ class CameraState:
                 "encoding": self.encoding,
                 "last_frame_age_sec": age,
                 "frame_count": self.frame_count,
+                "source_fps": self.source_fps,
                 "error": self.error,
             }
 
@@ -82,6 +96,7 @@ def status_payload(state: CameraState) -> dict[str, Any]:
         "frame_topic_alive": alive,
         "last_frame_age_sec": snap["last_frame_age_sec"],
         "frame_count": snap["frame_count"],
+        "source_fps": snap["source_fps"],
         "source_width": snap["source_width"],
         "source_height": snap["source_height"],
         "encoding": snap["encoding"],
@@ -136,11 +151,11 @@ def client_settings(actual_path: str) -> dict[str, int]:
         height = int(height_text)
     except (ValueError, TypeError):
         width, height = 1280, 720
-    allowed = {(640, 480), (1280, 720), (1920, 1080)}
+    allowed = {(320, 240), (640, 480), (800, 600), (1024, 768), (1280, 720), (1280, 1024), (1920, 1080)}
     if (width, height) not in allowed:
         width, height = 1280, 720
     try:
-        fps = int((params.get("fps") or ["15"])[0])
+        fps = int((params.get("fps") or ["30"])[0])
     except (TypeError, ValueError):
         fps = 15
     try:
@@ -150,7 +165,7 @@ def client_settings(actual_path: str) -> dict[str, int]:
     return {
         "width": width,
         "height": height,
-        "fps": max(1, min(30, fps)),
+        "fps": max(1, min(60, fps)),
         "quality": max(35, min(92, quality)),
     }
 
@@ -225,6 +240,7 @@ async def serve_websocket(state: CameraState, host: str, port: int, path: str):
                             "frame_topic_alive": alive,
                             "last_frame_age_sec": snap["last_frame_age_sec"],
                             "frame_count": snap["frame_count"],
+                            "source_fps": snap["source_fps"],
                             "source_width": snap["source_width"],
                             "source_height": snap["source_height"],
                             "frame_id": snap["frame_id"],
@@ -255,6 +271,7 @@ async def serve_websocket(state: CameraState, host: str, port: int, path: str):
                                     "frame_id": snap["frame_id"],
                                     "stamp": snap["stamp"],
                                     "frame_count": snap["frame_count"],
+                                    "source_fps": snap["source_fps"],
                                 },
                                 separators=(",", ":"),
                             )

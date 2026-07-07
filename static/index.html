@@ -291,8 +291,7 @@
                       <span>Resolution</span>
                       <strong id="cameraResolutionValue">1280x720</strong>
                     </div>
-                    <select id="cameraResolutionSelect" aria-label="카메라 표시 해상도">
-                      <option value="640x480">640x480</option>
+                    <select id="cameraResolutionSelect" aria-label="카메라 캡처 해상도">
                       <option value="1280x720" selected>1280x720</option>
                       <option value="1920x1080">1920x1080</option>
                     </select>
@@ -300,12 +299,10 @@
                   <div class="map-control">
                     <div>
                       <span>Frame rate</span>
-                      <strong id="cameraFpsValue">15 fps</strong>
+                      <strong id="cameraFpsValue">60 fps</strong>
                     </div>
-                    <select id="cameraFpsSelect" aria-label="카메라 표시 FPS">
-                      <option value="5">5 fps</option>
-                      <option value="10">10 fps</option>
-                      <option value="15" selected>15 fps</option>
+                    <select id="cameraFpsSelect" aria-label="카메라 캡처 FPS">
+                      <option value="60" selected>60 fps</option>
                       <option value="30">30 fps</option>
                     </select>
                   </div>
@@ -591,27 +588,17 @@
           <header class="page-head">
             <p class="eyebrow">WAVE ROVER</p>
             <h1>Rover Control</h1>
-            <p>Jetson이 WAVE ROVER 네트워크에 닿으면 원본 Web UI를 프록시로 열고, ROS2 bridge 상태를 함께 확인합니다.</p>
+            <p>Jetson 40-pin UART와 ROS2 /cmd_vel bridge만 사용합니다. WAVE ROVER 네트워크 제어는 비활성화되어 있습니다.</p>
           </header>
 
           <section class="kpi-grid">
-            <article class="kpi"><span>Rover</span><strong id="roverControlState">--</strong><small id="roverControlBase">--</small></article>
-            <article class="kpi"><span>Proxy</span><strong id="roverProxyState">--</strong><small>/rover-proxy/</small></article>
+            <article class="kpi"><span>UART</span><strong id="roverControlState">--</strong><small id="roverControlBase">--</small></article>
+            <article class="kpi"><span>Mode</span><strong id="roverProxyState">--</strong><small>network disabled</small></article>
             <article class="kpi"><span>ROS2</span><strong id="roverRosState">--</strong><small>/cmd_vel bridge</small></article>
           </section>
 
           <section class="dashboard-grid">
-            <article class="panel wide rover-frame-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Original UI</p>
-                  <h2>Waveshare Web Dashboard</h2>
-                </div>
-                <a class="action-button secondary" href="/rover-proxy/" target="roverDashboard">새로고침</a>
-              </div>
-              <iframe id="roverProxyFrame" name="roverDashboard" class="rover-proxy-frame" src="/rover-proxy/" title="WAVE ROVER dashboard"></iframe>
-            </article>
-            <article class="panel">
+            <article class="panel wide">
               <div class="panel-head">
                 <div>
                   <p class="eyebrow">Runtime</p>
