@@ -302,7 +302,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/recordings":
             self._send_json(self.provider.recordings())
         elif path.startswith("/api/recordings/"):
-            self._send_recording_payload(path)
+            self._send_recording_payload(path, parsed.query)
         elif path == "/api/plan":
             self._send_json(self.provider.plan())
         elif path == "/api/site-map":
@@ -469,7 +469,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 active_camera_ws=camera_websocket_stats()["active"],
             )
 
-    def _send_recording_payload(self, path: str):
+    def _send_recording_payload(self, path: str, query: str = ""):
         raw = path.removeprefix("/api/recordings/").strip("/")
         if not raw:
             self.send_error(404, "Recording id required")
@@ -484,7 +484,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if raw.endswith("/timeline"):
             recording_id = unquote(raw.removesuffix("/timeline").strip("/"))
-            self._send_json(self.provider.recording_timeline(recording_id))
+            params = parse_qs(query or "")
+            start_s = (params.get("start_s") or [None])[0]
+            duration_s = (params.get("duration_s") or [None])[0]
+            self._send_json(self.provider.recording_timeline(recording_id, start_s=start_s, duration_s=duration_s))
             return
         self._send_json(self.provider.recording_detail(unquote(raw)))
 

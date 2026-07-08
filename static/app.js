@@ -13,7 +13,9 @@ const LIDAR_OVERLAY_MODE_KEY = "ubts-lidar-overlay-mode-v1";
 const ARCHIVE_OVERLAY_MODE_KEY = "ubts-archive-overlay-mode-v1";
 const ARCHIVE_OVERLAY_VISIBLE_KEY = "ubts-archive-overlay-visible-v1";
 const ARCHIVE_RANGE_KEY = "ubts-archive-lidar-range-v1";
+const ARCHIVE_SEGMENT_SECONDS = 8;
 const LIDAR_SPEC_MAX_POINTS = 3200;
+const LIDAR_COORDINATE_FRAME = "lidar_bridge_xy_v1";
 const LIDAR_RECONNECT_DEBOUNCE_MS = 650;
 const CAMERA_RESOLUTION_KEY = "ubts-camera-resolution-v1";
 const CAMERA_FPS_KEY = "ubts-camera-fps-v1";
@@ -156,6 +158,9 @@ const state = {
 	    range: 25,
 	    fallbackPreview: null,
 	    cache: { lidarFrames: [], cameraFrames: [], objectUrls: new Map(), imageElements: new Map() },
+	    segmentDurationS: ARCHIVE_SEGMENT_SECONDS,
+	    segmentCache: new Map(),
+	    loadingSegments: new Map(),
 	    lastLidarRenderKey: "",
 	    lastCameraRenderKey: "",
 	  },
@@ -1780,6 +1785,50 @@ function normalizeLidarResult(result, analysis = result?.analysis) {
     ...result,
     points: (result.points || []).map(normalizeLidarExportPoint).filter(Boolean),
     analysis: normalizeLidarOverlay(analysis),
+  };
+}
+
+function normalizeArchiveLidarResult(result, analysis = result?.analysis, frame = result) {
+  if (!result) return null;
+  const coordinateFrame = frame?.coordinate_frame || result.coordinate_frame || analysis?.coordinate_frame || state.recordings.timeline?.coordinate_frame || "";
+  const legacyRecorderFrame = coordinateFrame !== LIDAR_COORDINATE_FRAME;
+  const points = (result.points || []).map((point) => legacyRecorderFrame ? archiveLegacyPointToBridgeFrame(point) : point);
+  return {
+    ...result,
+    coordinate_frame: coordinateFrame || "legacy_archive_recorder_xy_v0",
+    points: points.map(normalizeLidarExportPoint).filter(Boolean),
+    analysis: normalizeLidarOverlay(legacyRecorderFrame ? transformArchiveLegacyOverlay(analysis) : analysis),
+  };
+}
+
+function archiveLegacyPointToBridgeFrame(point) {
+  if (!point) return point;
+  const xM = Number(point.x_m);
+  const yM = Number(point.y_m);
+  if (!Number.isFinite(xM) || !Number.isFinite(yM)) return point;
+  return {
+    ...point,
+    x_m: yM,
+    y_m: xM,
+  };
+}
+
+function transformArchiveLegacyOverlay(analysis) {
+  if (!analysis) return analysis;
+  const overlayPoint = (point) => archiveLegacyPointToBridgeFrame(point || {});
+  return {
+    ...analysis,
+    coordinate_frame: LIDAR_COORDINATE_FRAME,
+    walls: (analysis.walls || []).map((wall) => ({
+      ...wall,
+      start: overlayPoint(wall.start || wall.a),
+      end: overlayPoint(wall.end || wall.b),
+    })),
+    objects: (analysis.objects || []).map((item) => ({
+      ...item,
+      center: overlayPoint(item.center || item.centroid),
+      track: (item.track || item.history || []).map(overlayPoint),
+    })),
   };
 }
 
@@ -3538,18 +3587,44 @@ async function selectRecording(id) {
   clearArchiveFrameCache();
   renderRecordings();
   try {
-    const [detail, timeline] = await Promise.all([
-      getJson(`/api/recordings/${encodeURIComponent(id)}`),
-      getJson(`/api/recordings/${encodeURIComponent(id)}/timeline`).catch((err) => ({ ok: false, error: err.message })),
-    ]);
+    const detail = await getJson(`/api/recordings/${encodeURIComponent(id)}`);
     state.recordings.selected = detail;
-    state.recordings.timeline = timeline?.ok ? timeline.timeline : null;
+    state.recordings.timeline = timelineShellFromRecording(detail?.recording || detail);
     renderRecordingDetail(detail);
+    if (state.recordings.timeline) {
+      await ensureArchiveSegmentForTime(0, { force: true }).catch((err) => debugLog("archive", "first segment load failed", err));
+      renderArchiveFrame();
+    }
   } catch (err) {
     renderStatusRows("roverArchiveDetails", [
       { title: "Archive", sub: id, ok: false, level: "bad", value: err.message },
     ]);
   }
+}
+
+function timelineShellFromRecording(payload) {
+  const summary = payload?.timeline_summary || {};
+  const metadata = payload?.metadata || {};
+  const durationS = Number(summary.duration_s || metadata.duration_s || payload?.duration_s || 0);
+  const lidarFrames = Number(summary.lidar_frames || 0);
+  const cameraFrames = Number(summary.camera_frames || 0);
+  if (!summary.ok && !lidarFrames && !cameraFrames) return null;
+  return {
+    ok: true,
+    id: payload?.id || metadata.id || state.recordings.selectedId,
+    kind: payload?.kind || metadata.kind,
+    algorithm: summary.algorithm,
+    coordinate_frame: summary.coordinate_frame || payload?.preview_scan?.coordinate_frame || "",
+    duration_s: durationS,
+    lidar: { frames: [] },
+    camera: { frames: [] },
+    sync: {
+      time_base: "seconds_since_recording_start",
+      lidar_frames: lidarFrames,
+      camera_frames: cameraFrames,
+    },
+    streaming: true,
+  };
 }
 
 function clearArchiveFrameCache() {
@@ -3562,45 +3637,122 @@ function clearArchiveFrameCache() {
   state.archivePlayback.cache = {
     lidarFrames: [],
     cameraFrames: [],
+    lidarKeys: new Set(),
+    cameraKeys: new Set(),
     objectUrls: new Map(),
     imageElements: new Map(),
   };
+  state.archivePlayback.segmentCache = new Map();
+  state.archivePlayback.loadingSegments = new Map();
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
 }
 
 function prepareArchiveTimelineCache(timeline) {
   clearArchiveFrameCache();
+  mergeArchiveTimelineSegment(timeline);
+}
+
+function mergeArchiveTimelineSegment(timeline) {
   if (!timeline) return;
+  const cache = state.archivePlayback.cache;
   const lidarFrames = (timeline.lidar?.frames || []).map((frame, index) => ({
     ...frame,
     index,
     t_s: Number(frame.t_s) || 0,
-    result: normalizeLidarResult({
+    result: normalizeArchiveLidarResult({
       ok: true,
       state: "archive_timeline",
       frame_id: frame.frame_id || "laser",
       stamp: frame.stamp,
       points: frame.points || [],
+      coordinate_frame: frame.coordinate_frame || timeline.coordinate_frame,
       metrics: frame.metrics || {},
       source: "archive_timeline",
-    }, frame.overlay),
-  })).sort((a, b) => a.t_s - b.t_s);
-  lidarFrames.forEach((frame, cacheIndex) => {
+    }, frame.overlay, frame),
+  }));
+  for (const frame of lidarFrames) {
+    const key = archiveFrameKey(frame, "lidar");
+    if (cache.lidarKeys.has(key)) continue;
+    cache.lidarKeys.add(key);
+    frame.cacheKey = key;
+    cache.lidarFrames.push(frame);
+  }
+  cache.lidarFrames.sort((a, b) => a.t_s - b.t_s);
+  cache.lidarFrames.forEach((frame, cacheIndex) => {
     frame.cacheIndex = cacheIndex;
   });
   const cameraFrames = (timeline.camera?.frames || []).map((frame, index) => ({
     ...frame,
     index,
     t_s: Number(frame.t_s) || 0,
-    cacheKey: `${index}:${frame.mime || "image/jpeg"}:${String(frame.data || "").length}`,
-  })).sort((a, b) => a.t_s - b.t_s);
-  cameraFrames.forEach((frame, cacheIndex) => {
+  }));
+  for (const frame of cameraFrames) {
+    const key = archiveFrameKey(frame, "camera");
+    if (cache.cameraKeys.has(key)) continue;
+    cache.cameraKeys.add(key);
+    frame.cacheKey = key;
+    cache.cameraFrames.push(frame);
+  }
+  cache.cameraFrames.sort((a, b) => a.t_s - b.t_s);
+  cache.cameraFrames.forEach((frame, cacheIndex) => {
     frame.cacheIndex = cacheIndex;
-    frame.cacheKey = `${cacheIndex}:${frame.mime || "image/jpeg"}:${String(frame.data || "").length}`;
   });
-  state.archivePlayback.cache.lidarFrames = lidarFrames;
-  state.archivePlayback.cache.cameraFrames = cameraFrames;
+  state.archivePlayback.lastLidarRenderKey = "";
+  state.archivePlayback.lastCameraRenderKey = "";
+}
+
+function archiveFrameKey(frame, kind) {
+  const stamp = frame?.stamp ? `${frame.stamp.sec || 0}.${frame.stamp.nanosec || 0}` : "";
+  const size = kind === "camera" ? String(frame?.data || "").length : (frame?.points || []).length;
+  return `${kind}:${Number(frame?.t_s || 0).toFixed(3)}:${stamp}:${size}`;
+}
+
+async function ensureArchiveSegmentForTime(timeS, options = {}) {
+  const id = state.recordings.selectedId;
+  const timeline = state.recordings.timeline;
+  if (!id || !timeline) return;
+  const segmentDuration = Math.max(1, Number(state.archivePlayback.segmentDurationS) || ARCHIVE_SEGMENT_SECONDS);
+  const startS = Math.max(0, Math.floor((Number(timeS) || 0) / segmentDuration) * segmentDuration);
+  await loadArchiveTimelineSegment(id, startS, segmentDuration, options);
+  const nextStart = startS + segmentDuration;
+  const nearSegmentEnd = Number(timeS) + 2 >= nextStart;
+  if ((state.archivePlayback.playing || nearSegmentEnd) && nextStart < state.archivePlayback.durationS + 0.25) {
+    loadArchiveTimelineSegment(id, nextStart, segmentDuration).catch((err) => debugLog("archive", "segment prefetch failed", err));
+  }
+}
+
+async function loadArchiveTimelineSegment(id, startS, durationS, options = {}) {
+  const start = Math.max(0, Number(startS) || 0);
+  const duration = Math.max(1, Number(durationS) || ARCHIVE_SEGMENT_SECONDS);
+  const key = `${id}:${start.toFixed(3)}:${duration.toFixed(3)}`;
+  if (!options.force && state.archivePlayback.segmentCache.has(key)) return state.archivePlayback.segmentCache.get(key);
+  if (state.archivePlayback.loadingSegments.has(key)) return state.archivePlayback.loadingSegments.get(key);
+  const params = new URLSearchParams({ start_s: start.toFixed(3), duration_s: duration.toFixed(3) });
+  const promise = getJson(`/api/recordings/${encodeURIComponent(id)}/timeline?${params.toString()}`)
+    .then((payload) => {
+      if (id !== state.recordings.selectedId) return payload;
+      if (payload?.ok && payload.timeline) {
+        if (!state.recordings.timeline) state.recordings.timeline = payload.timeline;
+        if (payload.timeline.coordinate_frame && !state.recordings.timeline.coordinate_frame) {
+          state.recordings.timeline.coordinate_frame = payload.timeline.coordinate_frame;
+        }
+        mergeArchiveTimelineSegment(payload.timeline);
+        state.archivePlayback.segmentCache.set(key, {
+          start_s: start,
+          duration_s: duration,
+          lidar_frames: payload.timeline.lidar?.frames?.length || 0,
+          camera_frames: payload.timeline.camera?.frames?.length || 0,
+        });
+        if (currentRoute() === "/rover-control") renderArchiveFrame();
+      }
+      return payload;
+    })
+    .finally(() => {
+      state.archivePlayback.loadingSegments.delete(key);
+    });
+  state.archivePlayback.loadingSegments.set(key, promise);
+  return promise;
 }
 
 function archiveCameraFrameSrc(frame) {
@@ -3688,7 +3840,7 @@ function renderRecordingDetail(detail) {
   const analysis = payload?.analysis || {};
   const preview = payload?.preview_scan;
   const hasLidar = Boolean(preview?.points?.length);
-  const normalizedPreview = hasLidar ? normalizeLidarResult(preview, analysis) : null;
+  const normalizedPreview = hasLidar ? normalizeArchiveLidarResult(preview, analysis) : null;
   drawLidarMapOnCanvas($("roverArchiveLidarCanvas"), normalizedPreview, normalizedPreview?.analysis, {
     mode: archiveOverlayRenderMode(),
     range: state.archivePlayback.range,
@@ -3736,6 +3888,7 @@ function toggleArchivePlayback() {
     return;
   }
   if (!state.recordings.timeline) return;
+  ensureArchiveSegmentForTime(state.archivePlayback.timeS).catch((err) => debugLog("archive", "initial segment load failed", err));
   state.archivePlayback.playing = true;
   state.archivePlayback.startedAt = performance.now();
   state.archivePlayback.startTimeS = state.archivePlayback.timeS >= state.archivePlayback.durationS ? 0 : state.archivePlayback.timeS;
@@ -3769,12 +3922,14 @@ function archivePlaybackTick(now = performance.now()) {
 function setArchiveTime(value, options = {}) {
   if (options.pause) stopArchivePlayback(false);
   state.archivePlayback.timeS = Math.max(0, Math.min(state.archivePlayback.durationS, Number(value) || 0));
+  ensureArchiveSegmentForTime(state.archivePlayback.timeS).catch((err) => debugLog("archive", "seek segment load failed", err));
   renderArchiveFrame();
 }
 
 function renderArchiveFrame() {
   const timeline = state.recordings.timeline;
   const timeS = Math.max(0, Number(state.archivePlayback.timeS) || 0);
+  ensureArchiveSegmentForTime(timeS).catch((err) => debugLog("archive", "render segment load failed", err));
   const cache = state.archivePlayback.cache || {};
   const lidarFrame = timeline ? nearestTimelineFrame(cache.lidarFrames || [], timeS) : null;
   const cameraFrame = timeline && state.archivePlayback.sync ? nearestTimelineFrame(cache.cameraFrames || [], timeS) : null;

@@ -785,19 +785,67 @@ class TelemetryProvider:
                     "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
                     "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
                     "algorithm": timeline.get("algorithm"),
+                    "coordinate_frame": timeline.get("coordinate_frame") or preview_scan.get("coordinate_frame"),
                 },
                 "download_url": f"/api/recordings/{path.name}/download",
             },
         }
 
-    def recording_timeline(self, recording_id: str) -> dict[str, Any]:
+    def recording_timeline(self, recording_id: str, start_s: Any = None, duration_s: Any = None) -> dict[str, Any]:
         path = self.recording_archive_path(recording_id)
         if path is None or not path.exists():
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
         timeline = _load_json(path / "timeline.json")
         if not timeline:
             return {"ok": False, "error": "timeline_not_found", "id": recording_id}
+        if start_s is not None or duration_s is not None:
+            return {"ok": True, "timeline": self._recording_timeline_segment(timeline, start_s, duration_s)}
         return {"ok": True, "timeline": timeline}
+
+    def _recording_timeline_segment(self, timeline: dict[str, Any], start_s: Any = None, duration_s: Any = None) -> dict[str, Any]:
+        try:
+            start = max(0.0, float(start_s if start_s is not None else 0.0))
+        except (TypeError, ValueError):
+            start = 0.0
+        try:
+            duration = float(duration_s if duration_s is not None else 8.0)
+        except (TypeError, ValueError):
+            duration = 8.0
+        duration = max(0.5, min(60.0, duration))
+        end = start + duration
+        payload = {key: value for key, value in timeline.items() if key not in {"lidar", "camera"}}
+        payload["segment"] = {
+            "start_s": round(start, 3),
+            "end_s": round(end, 3),
+            "duration_s": round(duration, 3),
+            "partial": True,
+        }
+        payload["lidar"] = {"frames": self._timeline_frames_between(timeline.get("lidar", {}).get("frames", []), start, end)}
+        payload["camera"] = {"frames": self._timeline_frames_between(timeline.get("camera", {}).get("frames", []), start, end)}
+        payload["sync"] = {
+            **(timeline.get("sync") or {}),
+            "segment_lidar_frames": len(payload["lidar"]["frames"]),
+            "segment_camera_frames": len(payload["camera"]["frames"]),
+        }
+        return payload
+
+    def _timeline_frames_between(self, frames: list[dict[str, Any]], start: float, end: float) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        previous: dict[str, Any] | None = None
+        for frame in frames:
+            try:
+                stamp = float(frame.get("t_s") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if stamp < start:
+                previous = frame
+                continue
+            if stamp >= end:
+                break
+            if previous and not rows:
+                rows.append(previous)
+            rows.append(frame)
+        return rows
 
     def recording_archive_path(self, recording_id: str) -> Path | None:
         safe = re.sub(r"[^A-Za-z0-9_.-]", "", str(recording_id or ""))

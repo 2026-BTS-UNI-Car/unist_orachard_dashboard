@@ -881,21 +881,27 @@ h2 {
   align-items: start;
 }
 
-.rover-control-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin: -4px 0 16px;
-}
-
-.rover-control-toolbar .action-button {
-  min-width: 150px;
-}
-
 .rover-layout .wide {
   grid-column: 1 / -1;
 }
 
+.drive-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.drive-head-actions .action-button {
+  min-width: 92px;
+}
+
 .rover-layout.drive-collapsed .rover-drive-panel {
+  min-height: auto;
+  position: static;
+}
+
+.rover-layout.drive-collapsed .rover-drive-panel > :not(.panel-head) {
   display: none;
 }
 
@@ -1288,7 +1294,7 @@ h2 {
 
   .rover-layout.drive-collapsed .rover-record-panel {
     grid-column: 3;
-    grid-row: 1;
+    grid-row: 2;
   }
 
   .rover-lidar-stage {
@@ -2488,7 +2494,7 @@ h2 {
 
   .rover-layout.drive-collapsed .rover-record-panel {
     grid-column: 3;
-    grid-row: 1;
+    grid-row: 2;
   }
 
   .rover-record-panel {
@@ -2602,14 +2608,6 @@ h2 {
 	  .record-button-grid {
 	    grid-template-columns: 1fr;
 	  }
-
-  .rover-control-toolbar {
-    justify-content: stretch;
-  }
-
-  .rover-control-toolbar .action-button {
-    width: 100%;
-  }
 
 	  .rover-sensor-controls,
 	  .archive-media-grid {

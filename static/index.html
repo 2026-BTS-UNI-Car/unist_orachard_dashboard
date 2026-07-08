@@ -603,10 +603,6 @@
             <article class="kpi"><span>Archive</span><strong id="roverRecorderState">--</strong><small id="roverRecorderKind">대기</small></article>
           </section>
 
-          <div class="rover-control-toolbar">
-            <button id="roverDrivePanelToggle" class="action-button secondary" type="button">조종 패널 숨기기</button>
-          </div>
-
           <section class="rover-layout">
             <article class="panel rover-live-panel rover-lidar-panel">
               <div class="panel-head">
@@ -691,7 +687,10 @@
                   <p class="eyebrow">Drive</p>
                   <h2>주행 제어</h2>
                 </div>
-                <button id="roverStopButton" class="action-button danger" type="button">STOP</button>
+                <div class="drive-head-actions">
+                  <button id="roverDrivePanelToggle" class="action-button secondary" type="button">조종 패널 숨기기</button>
+                  <button id="roverStopButton" class="action-button danger" type="button">STOP</button>
+                </div>
               </div>
               <div class="rover-speed-control">
                 <label for="roverSpeedSlider">

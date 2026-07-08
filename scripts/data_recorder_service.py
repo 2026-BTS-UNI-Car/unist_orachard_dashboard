@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from dashboard_server.lidar_analysis import ALGORITHM_NAME, analyze_points, empty_analysis as shared_empty_analysis
+from dashboard_server.lidar_analysis import ALGORITHM_NAME, LIDAR_COORDINATE_FRAME, analyze_points, empty_analysis as shared_empty_analysis
 
 
 def iso_now() -> str:
@@ -157,6 +157,7 @@ class RecordingState:
             "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
             "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
             "algorithm": timeline.get("algorithm"),
+            "coordinate_frame": timeline.get("coordinate_frame"),
         }
 
     def start(self, kind: str) -> dict[str, Any]:
@@ -254,6 +255,7 @@ class RecordingState:
             "id": active.get("id") or metadata.get("id"),
             "kind": active.get("kind") or metadata.get("kind"),
             "algorithm": ALGORITHM_NAME,
+            "coordinate_frame": LIDAR_COORDINATE_FRAME,
             "generated_at": iso_now(),
             "started_at": metadata.get("started_at"),
             "finished_at": metadata.get("finished_at"),
@@ -304,8 +306,8 @@ class RecordingState:
                 continue
             r = float(distance)
             if math.isfinite(r) and max(float(msg.range_min), 0.02) <= r <= float(msg.range_max):
-                x = r * math.cos(angle)
-                y = r * math.sin(angle)
+                x = r * math.sin(angle)
+                y = r * math.cos(angle)
                 points.append(
                     {
                         "angle_deg": round((math.degrees(angle) + 360.0) % 360.0, 2),
@@ -324,6 +326,7 @@ class RecordingState:
             "stamp": {"sec": int(msg.header.stamp.sec), "nanosec": int(msg.header.stamp.nanosec)},
             "tested_at": int(time.time()),
             "points": points,
+            "coordinate_frame": LIDAR_COORDINATE_FRAME,
             "metrics": {
                 "rendered_points": len(points),
                 "source_points": len(msg.ranges),
@@ -342,6 +345,7 @@ class RecordingState:
                 "frame_id": preview["frame_id"],
                 "stamp": preview["stamp"],
                 "points": points,
+                "coordinate_frame": LIDAR_COORDINATE_FRAME,
                 "metrics": preview["metrics"],
                 "overlay": analysis,
             }

@@ -15,13 +15,13 @@
 - `W/A/S/D`와 화면 버튼은 누르고 있을 때만 command TTL을 갱신한다.
 - 출발 페이드와 정지 페이드 옵션을 독립 toggle로 제공한다.
 - Recording 상태는 `/api/recordings/status`와 telemetry로 복원한다.
-- Archive는 `timeline.json`으로 LiDAR/Camera preview를 동영상처럼 재생한다.
+- Archive는 timeline segment API로 현재 재생 구간을 cache하며 LiDAR/Camera preview를 동영상처럼 재생한다.
 - LiDAR archive view는 `LiDAR`, `LiDAR+Overlay`, `Overlay` 모드를 지원한다.
 
 ## 알고리즘 TODO
 
-- `polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2`를 주행 테스트 bag 기준으로 threshold tuning한다.
-- 벽과 과수 줄기 cluster가 섞이는 케이스를 RANSAC line fitting으로 분리한다.
+- `polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v3`를 주행 테스트 bag 기준으로 wall merge threshold와 track gate를 tuning한다.
+- 벽과 과수 줄기 cluster가 섞이는 케이스를 RANSAC line fitting 또는 temporal scan accumulation으로 더 분리한다.
 - `/tf`, odometry, IMU를 기록해 scan frame을 world frame으로 누적한다.
 - Camera object detection 결과와 LiDAR cluster를 time sync해서 object class label을 붙인다.
 - Track matching을 nearest-neighbor에서 Kalman filter 기반으로 바꿔 속도 추정 noise를 줄인다.

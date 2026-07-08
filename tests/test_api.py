@@ -216,7 +216,8 @@ class DashboardApiTest(unittest.TestCase):
                     {
                         "ok": True,
                         "duration_s": 1.2,
-                        "algorithm": "polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2",
+                        "algorithm": "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v3",
+                        "coordinate_frame": "lidar_bridge_xy_v1",
                         "lidar": {"frames": [{"t_s": 0.0, "points": [{"x_m": 1.0, "y_m": 0.0, "distance_m": 1.0}], "overlay": {}}]},
                         "camera": {"frames": []},
                     }
@@ -232,7 +233,11 @@ class DashboardApiTest(unittest.TestCase):
             self.assertEqual(detail["recording"]["timeline_summary"]["lidar_frames"], 1)
             timeline = self.get_json("/api/recordings/unit_lidar_archive/timeline")
             self.assertTrue(timeline["ok"])
-            self.assertEqual(timeline["timeline"]["algorithm"], "polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2")
+            self.assertEqual(timeline["timeline"]["algorithm"], "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v3")
+            segment = self.get_json("/api/recordings/unit_lidar_archive/timeline?start_s=0&duration_s=0.5")
+            self.assertTrue(segment["ok"])
+            self.assertTrue(segment["timeline"]["segment"]["partial"])
+            self.assertEqual(len(segment["timeline"]["lidar"]["frames"]), 1)
             with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/recordings/unit_lidar_archive/download", timeout=5) as res:
                 self.assertEqual(res.status, 200)
                 self.assertEqual(res.headers.get("Content-Type"), "application/gzip")
@@ -624,7 +629,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("file_command_active", rover_bridge_py)
         recorder_py = (Path(__file__).resolve().parents[1] / "scripts" / "data_recorder_service.py").read_text()
         lidar_analysis_py = (Path(__file__).resolve().parents[1] / "dashboard_server" / "lidar_analysis.py").read_text()
-        self.assertIn("polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2", lidar_analysis_py)
+        self.assertIn("polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v3", lidar_analysis_py)
         self.assertIn("timeline.json", recorder_py)
         self.assertIn("ros2\", \"bag\", \"record", recorder_py)
 

@@ -27,7 +27,8 @@ Rover Control과 archive replay는 같은 세 가지 모드를 지원한다.
 ```json
 {
   "overlay": {
-    "algorithm": "polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2",
+    "algorithm": "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v3",
+    "coordinate_frame": "lidar_bridge_xy_v1",
     "walls": [],
     "objects": [],
     "tracks": []
@@ -39,15 +40,15 @@ Raw LiDAR points와 overlay 데이터는 분리되어 저장된다. 그래서 ar
 
 ## 알고리즘 요약
 
-1. range가 유효한 scan point만 XY 좌표로 변환한다.
-2. angle 순서에서 distance gap이 큰 지점을 기준으로 cluster를 나눈다.
-3. cluster 길이, 두께, point 수를 계산한다.
-4. 길고 얇은 cluster는 wall 후보로 분류하고 양 끝점을 line segment로 저장한다.
-5. wall이 아닌 작은 cluster는 중심점과 반경을 가진 object 후보로 저장한다.
-6. 직전 frame object 중심점과 nearest-neighbor matching을 수행해 track history와 velocity를 갱신한다.
+1. range가 유효한 scan point만 live bridge 좌표계(`x=sin(theta)*r`, `y=cos(theta)*r`)로 변환한다.
+2. angle 순서에서 cartesian gap이 큰 지점을 기준으로 cluster를 나누고 0/360도 wrap-around cluster를 병합한다.
+3. cluster 길이, 두께, aspect ratio, point 수를 계산한다.
+4. 길고 얇은 cluster는 wall 후보로 분류한다. 벽이 라이다 noise 때문에 여러 조각으로 끊기면 방향, lateral distance, endpoint gap이 가까운 wall fragment를 다시 병합한다.
+5. wall이 아닌 작은 cluster는 중심점과 반경을 가진 object 후보로 저장한다. 작고 조밀한 cluster는 orchard 주행에서 나무 기둥 후보(`trunk`)로 표시한다.
+6. 직전 frame object 중심점만 보지 않고 track velocity로 다음 위치를 예측한 뒤 matching한다. 로버가 움직여 고정 물체가 센서 좌표계에서 이동해 보여도 track이 쉽게 끊기지 않게 하기 위함이다.
 
 ## 운영 메모
 
-- 현재 overlay는 class label을 추정하지 않는다. Camera object detection과 time sync가 붙기 전까지는 모든 작은 cluster가 generic object다.
-- 정지 상태에서 흔들리는 object velocity는 LiDAR noise의 영향을 받는다. 주행 테스트 bag이 쌓이면 threshold와 track filter를 튜닝한다.
+- `trunk` label은 LiDAR 형상 기반 후보일 뿐 semantic 확정값은 아니다. Camera object detection과 time sync가 붙으면 class label을 더 정확하게 붙인다.
+- 정지 상태에서 흔들리는 object velocity는 LiDAR noise의 영향을 받는다. 주행 테스트 bag이 쌓이면 wall merge threshold와 track gate를 계속 튜닝한다.
 - 표시가 복잡하면 `Overlay` 대신 `LiDAR` 또는 `LiDAR+Overlay`에서 stream point 수를 줄여 확인한다.

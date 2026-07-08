@@ -16,19 +16,29 @@ Archive viewer는 recorded `/scan`에서 만든 `preview_scan.json`, `analysis.j
 
 ## 알고리즘
 
-현재 알고리즘 이름은 `polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2`이다.
+현재 알고리즘 이름은 `polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v3`이다.
 
 1. Polar scan 순서를 유지한 채 인접 점 사이의 cartesian gap을 계산한다.
-2. gap이 `max(0.18m, range * 0.06)`보다 크면 cluster를 나눈다.
-3. 4점 미만 cluster는 noise로 버린다.
-4. 8점 이상 cluster는 covariance 주축을 구해 line fitting한다.
-5. line 길이가 `0.65m` 이상이고 90 percentile residual 폭이 `0.16m` 이하이면 wall segment로 분류한다.
-6. wall이 아닌 작은 cluster는 centroid/radius를 구해 object 후보로 분류한다.
-7. object 후보는 직전 track centroid와 nearest-neighbor matching한다.
-8. 0.55m 안의 track에 붙으면 같은 object로 보고, 위치 history와 velocity를 갱신한다.
-9. 2초 동안 갱신되지 않은 track은 제거한다.
+2. range에 따라 gap threshold를 조정하고 0/360도 wrap-around cluster를 병합한다.
+3. 3점 미만 cluster는 noise로 버린다.
+4. covariance 주축으로 line fitting을 수행하고 길이, 폭, aspect ratio를 계산한다.
+5. 길고 얇은 cluster는 wall segment로 분류한다. 같은 방향의 wall fragment가 일정 lateral distance와 endpoint gap 안에 있으면 하나의 wall로 병합한다.
+6. wall이 아닌 작은 cluster는 centroid/radius/density를 구해 object 후보로 분류한다. 작고 조밀한 후보는 과수 주행에서 나무 기둥 후보로 `trunk` label을 붙인다.
+7. object 후보는 track velocity로 예측한 위치와 matching한다.
+8. 로버 이동으로 고정 물체가 센서 좌표계에서 빠르게 이동해 보여도 예측 gate 안이면 같은 object로 보고, history와 velocity를 갱신한다.
+9. 4초 동안 갱신되지 않은 track은 제거한다.
 
-v2에서는 이 로직을 `dashboard_server/lidar_analysis.py`로 분리해 live bridge와 data recorder가 같은 함수를 사용한다. 그래서 실시간 overlay와 archive overlay의 wall/object 기준이 같다.
+v3에서는 이 로직을 `dashboard_server/lidar_analysis.py`로 분리해 live bridge와 data recorder가 같은 함수를 사용한다. 그래서 실시간 overlay와 archive overlay의 wall/object 기준이 같다.
+
+## 좌표계
+
+Live bridge와 data recorder는 같은 dashboard 좌표계를 사용한다.
+
+- `x_m = sin(theta) * range`
+- `y_m = cos(theta) * range`
+- `coordinate_frame = lidar_bridge_xy_v1`
+
+초기 archive는 recorder가 `x=cos(theta)`, `y=sin(theta)`로 저장하던 legacy 좌표계가 섞여 있을 수 있다. Dashboard archive viewer는 `coordinate_frame`이 없는 기록을 legacy archive로 보고 표시 시 `x/y`를 교환한 뒤 live 화면과 같은 방향으로 그린다.
 
 ## Overlay
 
@@ -50,7 +60,7 @@ Dashboard viewer는 다음 세 가지 표시 모드를 지원한다.
 - `camera.frames[]`: `t_s`, JPEG preview frame
 - `sync.time_base`: recording 시작 후 초 단위
 
-LiDAR+Camera archive는 scrubber의 같은 `t_s`를 기준으로 LiDAR frame과 camera frame을 같이 표시한다. 원본 분석이나 재처리가 필요하면 `rosbag2/`를 기준으로 다시 처리한다.
+LiDAR+Camera archive는 scrubber의 같은 `t_s`를 기준으로 LiDAR frame과 camera frame을 같이 표시한다. Dashboard는 `/api/recordings/{id}/timeline?start_s=...&duration_s=...`로 필요한 시간 구간만 받아 cache하고, 재생 중에는 다음 구간을 미리 요청한다. 원본 분석이나 재처리가 필요하면 `rosbag2/`를 기준으로 다시 처리한다.
 
 ## 한계
 
