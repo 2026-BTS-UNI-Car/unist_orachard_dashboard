@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-ALGORITHM_NAME = "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v3"
+ALGORITHM_NAME = "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v4"
 LIDAR_COORDINATE_FRAME = "lidar_bridge_xy_v1"
 
 
@@ -57,6 +57,7 @@ def analyze_points(
         "walls": [public_wall(wall) for wall in walls],
         "objects": objects,
         "orchard": orchard,
+        "tracking": track_summary(objects),
         "cluster_count": len(clusters),
         "source_point_count": len(points),
     }
@@ -70,7 +71,8 @@ def empty_analysis() -> dict[str, Any]:
         "coordinate_frame": LIDAR_COORDINATE_FRAME,
         "walls": [],
         "objects": [],
-        "orchard": {"trees": [], "excluded_rear_candidates": 0, "method": "lidar_geometry_v1"},
+        "orchard": {"trees": [], "excluded_rear_candidates": 0, "method": "lidar_geometry_v2"},
+        "tracking": {"drawable_tracks": 0, "object_tracks": 0, "method": "sensor_relative_predictive_tracks_v4"},
         "cluster_count": 0,
         "source_point_count": 0,
     }
@@ -242,6 +244,7 @@ def object_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, Any] | None:
     cx = sum(xs) / len(xs)
     cy = sum(ys) / len(ys)
     radius = max(math.hypot(x - cx, y - cy) for x, y in zip(xs, ys))
+    distance = math.hypot(cx, cy)
     features = line_features(cluster)
     if features and features["length"] > 0.28 and features["aspect"] >= 3.0 and features["width"] <= 0.2:
         return None
@@ -253,6 +256,7 @@ def object_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, Any] | None:
         "label": label,
         "center": {"x_m": round(cx, 3), "y_m": round(cy, 3)},
         "radius_m": round(max(0.08, min(radius, 0.75)), 3),
+        "distance_m": round(distance, 3),
         "points": len(cluster),
         "density": round(density, 2),
     }
@@ -272,7 +276,7 @@ def detect_orchard_trees(points: list[dict[str, Any]]) -> dict[str, Any]:
         trees.append(candidate)
     trees = merge_orchard_candidates(trees)
     return {
-        "method": "lidar_geometry_v1",
+        "method": "lidar_geometry_v2",
         "trees": trees,
         "excluded_rear_candidates": excluded_rear,
     }
@@ -286,27 +290,43 @@ def orchard_candidate_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, A
     cx = sum(xs) / len(xs)
     cy = sum(ys) / len(ys)
     distance = math.hypot(cx, cy)
-    if distance < 0.45 or distance > 14.0:
+    if distance < 0.85 or distance > 13.5:
         return None
     radius = max(math.hypot(x - cx, y - cy) for x, y in zip(xs, ys))
-    if radius < 0.035 or radius > 0.65:
+    if radius < 0.035 or radius > 0.58:
         return None
     features = line_features(cluster)
     aspect = float(features.get("aspect", 1.0)) if features else 1.0
     width = float(features.get("width", radius)) if features else radius
     length = float(features.get("length", radius * 2.0)) if features else radius * 2.0
-    if aspect > 4.2 and length > 0.45 and width < 0.18:
+    if aspect > 4.6 and length > 0.42 and width < 0.18:
+        return None
+    if len(cluster) > 70 and distance < 1.35:
         return None
     density = len(cluster) / max(math.pi * max(radius, 0.05) ** 2, 0.01)
-    compact_score = 1.0 - min(1.0, abs(radius - 0.18) / 0.55)
-    density_score = min(1.0, density / 28.0)
-    aspect_score = max(0.0, 1.0 - max(0.0, aspect - 1.8) / 3.2)
-    range_score = max(0.0, 1.0 - max(0.0, distance - 9.0) / 7.0)
-    confidence = 0.2 + 0.32 * compact_score + 0.24 * density_score + 0.16 * aspect_score + 0.08 * range_score
-    if confidence < 0.42:
+    compact_score = 1.0 - min(1.0, abs(radius - 0.18) / 0.36)
+    density_score = min(1.0, density / 55.0)
+    aspect_score = max(0.0, 1.0 - max(0.0, aspect - 1.7) / 3.0)
+    point_score = max(0.0, 1.0 - abs(len(cluster) - 12) / 44.0)
+    range_score = max(0.0, 1.0 - max(0.0, distance - 8.5) / 6.0)
+    trunk_like = radius <= 0.34 and aspect <= 3.8 and len(cluster) <= 48
+    clutter_penalty = 0.12 if radius > 0.36 or len(cluster) > 50 else 0.0
+    confidence = (
+        0.16
+        + 0.34 * compact_score
+        + 0.18 * density_score
+        + 0.18 * aspect_score
+        + 0.08 * point_score
+        + 0.06 * range_score
+        - clutter_penalty
+    )
+    if trunk_like:
+        confidence += 0.08
+    if confidence < 0.56:
         return None
     return {
         "label": "orchard_tree",
+        "kind": "trunk_like" if trunk_like else "foliage_cluster",
         "center": {"x_m": round(cx, 3), "y_m": round(cy, 3)},
         "radius_m": round(max(0.1, min(radius, 0.75)), 3),
         "confidence": round(min(0.98, confidence), 3),
@@ -319,7 +339,7 @@ def orchard_candidate_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, A
 def is_rear_person_zone(center: dict[str, Any]) -> bool:
     x = float(center.get("x_m") or 0.0)
     y = float(center.get("y_m") or 0.0)
-    return y < -0.35 and abs(x) < 4.5
+    return y < -0.25 and abs(x) < 5.0 and math.hypot(x, y) < 9.0
 
 
 def merge_orchard_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -332,6 +352,8 @@ def merge_orchard_candidates(candidates: list[dict[str, Any]]) -> list[dict[str,
             ix = float(item["center"]["x_m"])
             iy = float(item["center"]["y_m"])
             gate = max(0.32, min(0.78, 0.16 + 0.035 * max(float(candidate.get("distance_m") or 0.0), float(item.get("distance_m") or 0.0))))
+            if candidate.get("kind") != item.get("kind") and gate < 0.5:
+                continue
             if math.hypot(cx - ix, cy - iy) <= gate:
                 found = item
                 break
@@ -352,6 +374,16 @@ def merge_orchard_candidates(candidates: list[dict[str, Any]]) -> list[dict[str,
     return merged
 
 
+def track_summary(objects: list[dict[str, Any]]) -> dict[str, Any]:
+    drawable = sum(1 for item in objects if item.get("track_drawable"))
+    tracked = sum(1 for item in objects if int(item.get("track_hits") or 0) >= 2)
+    return {
+        "method": "sensor_relative_predictive_tracks_v4",
+        "object_tracks": tracked,
+        "drawable_tracks": drawable,
+    }
+
+
 def update_tracks(
     objects: list[dict[str, Any]],
     tracks: dict[str, dict[str, Any]],
@@ -362,22 +394,37 @@ def update_tracks(
     for obj in sorted(objects, key=lambda item: float(item.get("radius_m") or 0.0)):
         cx = float(obj["center"]["x_m"])
         cy = float(obj["center"]["y_m"])
+        radius = float(obj.get("radius_m") or 0.18)
         best_id = None
-        best_dist = float("inf")
+        best_score = float("inf")
         for track_id, track in tracks.items():
             if track_id in matched:
                 continue
             dt = max(0.001, now - float(track.get("last_at", now)))
+            if dt > 3.0:
+                continue
             last = track.get("last", {"x_m": cx, "y_m": cy})
             velocity = track.get("velocity", {"x_mps": 0.0, "y_mps": 0.0})
             predicted_x = float(last["x_m"]) + float(velocity.get("x_mps", 0.0)) * min(dt, 0.85)
             predicted_y = float(last["y_m"]) + float(velocity.get("y_mps", 0.0)) * min(dt, 0.85)
             dist = math.hypot(cx - predicted_x, cy - predicted_y)
             speed = math.hypot(float(velocity.get("x_mps", 0.0)), float(velocity.get("y_mps", 0.0)))
-            gate = min(2.2, max(0.7, 0.45 + dt * 1.7 + speed * 0.22))
-            if dist < gate and dist < best_dist:
+            previous_radius = float(track.get("radius_m") or radius)
+            radius_delta = abs(radius - previous_radius) / max(radius, previous_radius, 0.08)
+            if radius_delta > 1.35:
+                continue
+            range_gate = 0.015 * math.hypot(cx, cy)
+            gate = min(1.25, max(0.38, 0.39 + dt * 1.0 + min(speed, 1.8) * 0.14 + range_gate))
+            if dist > gate:
+                continue
+            instant_speed = math.hypot(cx - float(last["x_m"]), cy - float(last["y_m"])) / dt
+            if instant_speed > 3.2:
+                continue
+            label_penalty = 0.16 if track.get("label") != obj.get("label") else 0.0
+            score = dist / max(gate, 0.01) + radius_delta * 0.28 + label_penalty
+            if score < best_score:
                 best_id = track_id
-                best_dist = dist
+                best_score = score
         if best_id is None:
             best_id = f"obj-{next_track_id}"
             next_track_id += 1
@@ -387,7 +434,10 @@ def update_tracks(
                 "last_at": now,
                 "last": {"x_m": cx, "y_m": cy},
                 "velocity": {"x_mps": 0.0, "y_mps": 0.0},
+                "radius_m": radius,
+                "label": obj.get("label"),
                 "hits": 0,
+                "stable_hits": 0,
             }
         track = tracks[best_id]
         dt = max(0.001, now - float(track.get("last_at", now)))
@@ -395,23 +445,50 @@ def update_tracks(
         instant_vx = (cx - float(last["x_m"])) / dt
         instant_vy = (cy - float(last["y_m"])) / dt
         previous_velocity = track.get("velocity", {"x_mps": 0.0, "y_mps": 0.0})
-        vx = 0.52 * instant_vx + 0.48 * float(previous_velocity.get("x_mps", 0.0))
-        vy = 0.52 * instant_vy + 0.48 * float(previous_velocity.get("y_mps", 0.0))
-        track["history"] = (track.get("history") or [])[-13:] + [{"x_m": round(cx, 3), "y_m": round(cy, 3)}]
+        vx = 0.38 * instant_vx + 0.62 * float(previous_velocity.get("x_mps", 0.0))
+        vy = 0.38 * instant_vy + 0.62 * float(previous_velocity.get("y_mps", 0.0))
+        speed_mps = math.hypot(vx, vy)
+        history = (track.get("history") or [])[-8:] + [{"x_m": round(cx, 3), "y_m": round(cy, 3)}]
+        quality = track_history_quality(history, speed_mps)
+        track["history"] = history
         track["last"] = {"x_m": cx, "y_m": cy}
         track["last_at"] = now
         track["velocity"] = {"x_mps": vx, "y_mps": vy}
+        track["radius_m"] = radius
+        track["label"] = obj.get("label")
         track["hits"] = int(track.get("hits") or 0) + 1
+        track["stable_hits"] = int(track.get("stable_hits") or 0) + (1 if quality["drawable"] else 0)
         matched.add(best_id)
         obj["id"] = best_id
-        obj["velocity"] = {"x_mps": round(vx, 3), "y_mps": round(vy, 3), "speed_mps": round(math.hypot(vx, vy), 3)}
+        obj["velocity"] = {"x_mps": round(vx, 3), "y_mps": round(vy, 3), "speed_mps": round(speed_mps, 3)}
         obj["track"] = track["history"]
+        obj["track_confidence"] = quality["confidence"]
+        obj["track_drawable"] = quality["drawable"] and int(track.get("hits") or 0) >= 2
+        obj["track_reference_frame"] = "sensor_relative"
         obj["track_age_s"] = round(now - float(track.get("first_at", now)), 2)
         obj["track_hits"] = track["hits"]
     for track_id in list(tracks):
         if now - float(tracks[track_id].get("last_at", 0.0)) > 4.0:
             tracks.pop(track_id, None)
     return objects, tracks, next_track_id
+
+
+def track_history_quality(history: list[dict[str, float]], speed_mps: float) -> dict[str, Any]:
+    if len(history) < 2:
+        return {"drawable": False, "confidence": 0.0}
+    segments = [
+        math.hypot(float(history[index]["x_m"]) - float(history[index - 1]["x_m"]), float(history[index]["y_m"]) - float(history[index - 1]["y_m"]))
+        for index in range(1, len(history))
+    ]
+    max_segment = max(segments, default=0.0)
+    path_m = sum(segments)
+    span_m = math.hypot(float(history[-1]["x_m"]) - float(history[0]["x_m"]), float(history[-1]["y_m"]) - float(history[0]["y_m"]))
+    smoothness = 1.0 - min(1.0, max_segment / 1.25)
+    speed_score = 1.0 - min(1.0, max(0.0, speed_mps - 1.8) / 1.2)
+    compactness = 1.0 - min(1.0, max(0.0, path_m - span_m - 1.0) / 3.0)
+    confidence = max(0.0, min(0.99, 0.18 + 0.36 * smoothness + 0.26 * speed_score + 0.2 * compactness))
+    drawable = confidence >= 0.46 and max_segment <= 1.25 and speed_mps <= 2.6
+    return {"drawable": drawable, "confidence": round(confidence, 3)}
 
 
 def _round_point(point: dict[str, Any]) -> dict[str, float]:

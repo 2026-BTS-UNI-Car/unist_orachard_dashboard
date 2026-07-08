@@ -16,7 +16,7 @@ Archive viewer는 recorded `/scan`에서 만든 `preview_scan.json`, `analysis.j
 
 ## 알고리즘
 
-현재 알고리즘 이름은 `polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v3`이다.
+현재 알고리즘 이름은 `polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v4`이다.
 
 1. Polar scan 순서를 유지한 채 인접 점 사이의 cartesian gap을 계산한다.
 2. range에 따라 gap threshold를 조정하고 0/360도 wrap-around cluster를 병합한다.
@@ -25,10 +25,10 @@ Archive viewer는 recorded `/scan`에서 만든 `preview_scan.json`, `analysis.j
 5. 길고 얇은 cluster는 wall segment로 분류한다. 같은 방향의 wall fragment가 일정 lateral distance와 endpoint gap 안에 있으면 하나의 wall로 병합한다.
 6. wall이 아닌 작은 cluster는 centroid/radius/density를 구해 object 후보로 분류한다. 작고 조밀한 후보는 과수 주행에서 나무 기둥 후보로 `trunk` label을 붙인다.
 7. object 후보는 track velocity로 예측한 위치와 matching한다.
-8. 로버 이동으로 고정 물체가 센서 좌표계에서 빠르게 이동해 보여도 예측 gate 안이면 같은 object로 보고, history와 velocity를 갱신한다.
+8. 로버 이동으로 고정 물체가 센서 좌표계에서 움직여 보여도 예측 gate, 반경 변화, 순간 속도 제한을 통과할 때만 같은 object로 보고 history와 velocity를 갱신한다.
 9. 4초 동안 갱신되지 않은 track은 제거한다.
 
-v3에서는 이 로직을 `dashboard_server/lidar_analysis.py`로 분리해 live bridge와 data recorder가 같은 함수를 사용한다. 그래서 실시간 overlay와 archive overlay의 wall/object 기준이 같다.
+v4에서는 이 로직을 `dashboard_server/lidar_analysis.py`로 분리해 live bridge와 data recorder가 같은 함수를 사용한다. Archive segment API도 저장 당시 overlay를 그대로 믿지 않고 segment 구간을 v4로 재분석해 오래된 긴 track이 다시 표시되지 않게 한다.
 
 ## 좌표계
 
@@ -44,7 +44,7 @@ Live bridge와 data recorder는 같은 dashboard 좌표계를 사용한다.
 
 - Wall: fitted line segment를 LiDAR map 위에 노란 선으로 표시한다.
 - Object: centroid와 cluster radius를 원으로 표시한다.
-- Track: 같은 object로 매칭된 최근 위치 history를 선으로 표시한다.
+- Track: 같은 object로 매칭된 최근 위치 history 중 `track_drawable=true`인 안정 trail만 초록 선으로 표시한다.
 
 Dashboard viewer는 다음 세 가지 표시 모드를 지원한다.
 
@@ -68,9 +68,11 @@ LiDAR+Camera archive는 scrubber의 같은 `t_s`를 기준으로 LiDAR frame과 
 
 - LiDAR frame마다 `orchard_tree` 후보를 검출한다.
 - LiDAR 뒤쪽 사람 영역 후보는 제외한다.
-- 연속 frame에서 반복 관측되는 과수 후보의 median displacement로 임시 pseudo-odometry를 추정한다.
+- 연속 frame 사이의 downsampled LiDAR point cloud를 occupancy scan matching으로 정합해 임시 pseudo-odometry를 추정한다.
+- 같은 world 좌표에 반복 누적된 trunk-like/foliage cluster만 지도 과수 후보로 승격한다.
 - 누적 과수 후보는 지도에서 파란 원으로 표시하고, 출발지/도착지는 `S`/`E` marker로 표시한다.
 - Web UI에서는 orchard map을 drag로 이동하고 wheel 또는 버튼으로 확대/축소할 수 있으며 PNG로 다운로드할 수 있다.
+- 결과는 `/runtime/orchard_analysis/{recording_id}_orchard_map.json`에 cache한다. 같은 algorithm version이면 이후 조회는 cache를 사용한다.
 
 ## 한계
 

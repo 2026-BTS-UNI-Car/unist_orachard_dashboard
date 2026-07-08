@@ -67,7 +67,7 @@ class LidarAnalysisTest(unittest.TestCase):
     def test_orchard_map_builds_path_and_tree_hits(self):
         frames = []
         for index, offset in enumerate([0.0, -0.25, -0.5]):
-            frames.append({"t_s": index * 0.5, "points": trunk_points(1.4, 3.0 + offset) + trunk_points(-1.2, 3.4 + offset)})
+            frames.append({"t_s": index * 0.5, "points": trunk_points(1.4, 3.0 + offset, radius=0.08) + trunk_points(-1.2, 3.4 + offset, radius=0.08)})
         payload = build_orchard_map({"ok": True, "duration_s": 1.0, "lidar": {"frames": frames}, "camera": {"frames": []}})
         self.assertTrue(payload["ok"])
         self.assertGreaterEqual(payload["tree_count"], 2)

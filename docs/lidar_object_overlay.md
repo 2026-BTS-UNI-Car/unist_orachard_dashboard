@@ -28,6 +28,8 @@ Perception source는 Connection, Rover Control, Archive가 같은 설정을 공�
 | `Camera` | camera classifier support 확인용. 현재 LiDAR canvas에는 직접 geometry를 그리지 않고 archive map/fusion score에 반영한다. |
 | `Fusion Trees` | LiDAR 과수 후보와 camera support를 결합한 과수 후보만 파란 원으로 표시 |
 
+`2D Objects` mode에서는 object 원과 함께 v4 track gate를 통과한 녹색 trail이 표시된다. 이 trail은 sensor-relative history라서 로버가 움직이면 world-frame 물체 경로가 아니다. 실제 로버 경로와 누적 과수 위치는 Rover Control archive의 Orchard Map에서 확인한다.
+
 ## 데이터 생성
 
 실시간 overlay는 `ros2-lidar-bridge`가 `/scan`을 받을 때마다 생성한다. Archive overlay는 `ros2-data-recorder`가 `timeline.json`을 만들 때 각 LiDAR frame에 별도 field로 저장한다.
@@ -35,7 +37,7 @@ Perception source는 Connection, Rover Control, Archive가 같은 설정을 공�
 ```json
 {
   "overlay": {
-    "algorithm": "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v3",
+    "algorithm": "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v4",
     "coordinate_frame": "lidar_bridge_xy_v1",
     "walls": [],
     "objects": [],
@@ -54,7 +56,9 @@ Raw LiDAR points와 overlay 데이터는 분리되어 저장된다. 그래서 ar
 4. 길고 얇은 cluster는 wall 후보로 분류한다. 벽이 라이다 noise 때문에 여러 조각으로 끊기면 방향, lateral distance, endpoint gap이 가까운 wall fragment를 다시 병합한다.
 5. wall이 아닌 작은 cluster는 중심점과 반경을 가진 object 후보로 저장한다. 작고 조밀한 cluster는 orchard 주행에서 나무 기둥 후보(`trunk`)로 표시한다.
 6. 별도의 orchard 후보 검출은 뒤쪽 사람 영역을 제외하고, compactness/density/aspect/range score로 `orchard_tree` 후보를 만든다.
-7. 직전 frame object 중심점만 보지 않고 track velocity로 다음 위치를 예측한 뒤 matching한다. 이 track은 분석 JSON에는 남기지만 주행 중 sensor frame에서 선으로 그리면 왜곡되므로 UI에서는 기본으로 숨긴다.
+7. 직전 frame object 중심점만 보지 않고 track velocity로 다음 위치를 예측한 뒤 matching한다.
+8. matching은 거리뿐 아니라 cluster 반경 변화, label 변화, 순간 sensor-relative speed를 같이 검사한다.
+9. track history는 분석 JSON에 유지하지만, UI는 `track_drawable=true`이고 segment jump가 작은 짧은 trail만 초록 선으로 그린다.
 
 ## 운영 메모
 

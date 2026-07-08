@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Any
 import urllib.request
 
-from dashboard_server.orchard_mapping import build_orchard_map
+from dashboard_server.lidar_analysis import analyze_points
+from dashboard_server.orchard_mapping import MAP_ALGORITHM_NAME, build_orchard_map
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -808,10 +809,36 @@ class TelemetryProvider:
         path = self.recording_archive_path(recording_id)
         if path is None or not path.exists():
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
-        timeline = _load_json(path / "timeline.json")
+        timeline_path = path / "timeline.json"
+        cache_path = self.recording_archive_dir.parent / "orchard_analysis" / f"{path.name}_orchard_map.json"
+        cached = self._cached_orchard_map(cache_path, timeline_path)
+        if cached:
+            return cached
+        timeline = _load_json(timeline_path)
         if not timeline:
             return {"ok": False, "error": "timeline_not_found", "id": recording_id}
-        return {"ok": True, "id": recording_id, "map": build_orchard_map(timeline)}
+        payload = {"ok": True, "id": recording_id, "map": build_orchard_map(timeline)}
+        try:
+            _write_json_atomic(cache_path, payload)
+        except OSError:
+            pass
+        return payload
+
+    def _cached_orchard_map(self, cache_path: Path, timeline_path: Path) -> dict[str, Any] | None:
+        if not cache_path.exists() or not timeline_path.exists():
+            return None
+        try:
+            if cache_path.stat().st_mtime < timeline_path.stat().st_mtime:
+                return None
+        except OSError:
+            return None
+        payload = _load_json(cache_path)
+        if not payload.get("ok"):
+            return None
+        if payload.get("map", {}).get("algorithm") != MAP_ALGORITHM_NAME:
+            return None
+        payload["cached"] = True
+        return payload
 
     def _recording_timeline_segment(self, timeline: dict[str, Any], start_s: Any = None, duration_s: Any = None) -> dict[str, Any]:
         try:
@@ -831,7 +858,8 @@ class TelemetryProvider:
             "duration_s": round(duration, 3),
             "partial": True,
         }
-        payload["lidar"] = {"frames": self._timeline_frames_between(timeline.get("lidar", {}).get("frames", []), start, end)}
+        lidar_frames = self._timeline_frames_between(timeline.get("lidar", {}).get("frames", []), start, end)
+        payload["lidar"] = {"frames": self._reanalyze_lidar_segment_frames(lidar_frames)}
         payload["camera"] = {"frames": self._timeline_frames_between(timeline.get("camera", {}).get("frames", []), start, end)}
         payload["sync"] = {
             **(timeline.get("sync") or {}),
@@ -839,6 +867,22 @@ class TelemetryProvider:
             "segment_camera_frames": len(payload["camera"]["frames"]),
         }
         return payload
+
+    def _reanalyze_lidar_segment_frames(self, frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        tracks: dict[str, dict[str, Any]] = {}
+        next_track_id = 1
+        rows: list[dict[str, Any]] = []
+        for frame in frames:
+            row = dict(frame)
+            points = row.get("points") or []
+            try:
+                now = float(row.get("t_s") or 0.0)
+                overlay, tracks, next_track_id = analyze_points(points, tracks, next_track_id, now=now)
+                row["overlay"] = overlay
+            except Exception:
+                pass
+            rows.append(row)
+        return rows
 
     def _timeline_frames_between(self, frames: list[dict[str, Any]], start: float, end: float) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []

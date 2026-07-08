@@ -1780,6 +1780,19 @@ function normalizeLidarOverlay(analysis) {
       center: overlayPoint(item.center || item.centroid),
       track: (item.track || item.history || []).map(overlayPoint),
     })),
+    orchard: analysis.orchard ? {
+      ...analysis.orchard,
+      trees: (analysis.orchard.trees || []).map((tree) => ({
+        ...tree,
+        center: overlayPoint(tree.center || tree),
+      })),
+    } : analysis.orchard,
+    trees: (analysis.trees || []).map((tree) => ({
+      ...tree,
+      center: tree.center ? overlayPoint(tree.center) : undefined,
+      x_m: Number.isFinite(Number(tree.x_m)) ? Number(Number(tree.x_m).toFixed(3)) : tree.x_m,
+      y_m: Number.isFinite(Number(tree.y_m)) ? Number((-Number(tree.y_m)).toFixed(3)) : tree.y_m,
+    })),
   };
 }
 
@@ -1832,6 +1845,19 @@ function transformArchiveLegacyOverlay(analysis) {
       ...item,
       center: overlayPoint(item.center || item.centroid),
       track: (item.track || item.history || []).map(overlayPoint),
+    })),
+    orchard: analysis.orchard ? {
+      ...analysis.orchard,
+      trees: (analysis.orchard.trees || []).map((tree) => ({
+        ...tree,
+        center: overlayPoint(tree.center || tree),
+      })),
+    } : analysis.orchard,
+    trees: (analysis.trees || []).map((tree) => ({
+      ...tree,
+      center: tree.center ? overlayPoint(tree.center) : undefined,
+      x_m: Number.isFinite(Number(tree.x_m)) ? overlayPoint(tree).x_m : tree.x_m,
+      y_m: Number.isFinite(Number(tree.y_m)) ? overlayPoint(tree).y_m : tree.y_m,
     })),
   };
 }
@@ -4519,6 +4545,7 @@ function drawLidarOverlays(ctx, overlays, viewport) {
     const center = lidarCanvasPoint(item.center || item.centroid || {}, viewport);
     const radiusM = Math.max(0.08, Number(item.radius_m) || 0.18);
     const r = Math.max(5, (radiusM / viewport.range) * viewport.radius);
+    drawObjectTrack(ctx, item, viewport);
     ctx.globalAlpha = 0.95;
     ctx.strokeStyle = cssVar("--chart-rose", "#f21b58");
     ctx.fillStyle = "rgba(242,27,88,0.13)";
@@ -4529,6 +4556,35 @@ function drawLidarOverlays(ctx, overlays, viewport) {
     ctx.stroke();
   }
   if (mode === "fusion") drawOrchardTreeOverlay(ctx, trees, viewport);
+  ctx.restore();
+}
+
+function drawObjectTrack(ctx, item, viewport) {
+  const rawTrack = Array.isArray(item.track) ? item.track : [];
+  if (rawTrack.length < 2 || item.track_drawable !== true) return;
+  const track = rawTrack.filter((point) => Number.isFinite(Number(point.x_m)) && Number.isFinite(Number(point.y_m))).slice(-7);
+  if (track.length < 2) return;
+  const maxJumpM = Math.max(0.45, viewport.range * 0.055);
+  for (let index = 1; index < track.length; index += 1) {
+    const jump = Math.hypot(Number(track[index].x_m) - Number(track[index - 1].x_m), Number(track[index].y_m) - Number(track[index - 1].y_m));
+    if (jump > maxJumpM) return;
+  }
+  ctx.save();
+  ctx.strokeStyle = cssVar("--chart-good", "#55e2b2");
+  ctx.lineWidth = 2.4;
+  ctx.globalAlpha = Math.max(0.35, Math.min(0.82, Number(item.track_confidence) || 0.55));
+  ctx.beginPath();
+  track.forEach((point, index) => {
+    const p = lidarCanvasPoint(point, viewport);
+    if (index === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  });
+  ctx.stroke();
+  const tail = lidarCanvasPoint(track[track.length - 1], viewport);
+  ctx.fillStyle = cssVar("--chart-good", "#55e2b2");
+  ctx.beginPath();
+  ctx.arc(tail.x, tail.y, 3.2, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
