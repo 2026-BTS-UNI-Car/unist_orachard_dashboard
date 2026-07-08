@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any
 import urllib.request
 
+from dashboard_server.orchard_mapping import build_orchard_map
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
@@ -801,6 +803,15 @@ class TelemetryProvider:
         if start_s is not None or duration_s is not None:
             return {"ok": True, "timeline": self._recording_timeline_segment(timeline, start_s, duration_s)}
         return {"ok": True, "timeline": timeline}
+
+    def recording_orchard_map(self, recording_id: str) -> dict[str, Any]:
+        path = self.recording_archive_path(recording_id)
+        if path is None or not path.exists():
+            return {"ok": False, "error": "recording_not_found", "id": recording_id}
+        timeline = _load_json(path / "timeline.json")
+        if not timeline:
+            return {"ok": False, "error": "timeline_not_found", "id": recording_id}
+        return {"ok": True, "id": recording_id, "map": build_orchard_map(timeline)}
 
     def _recording_timeline_segment(self, timeline: dict[str, Any], start_s: Any = None, duration_s: Any = None) -> dict[str, Any]:
         try:

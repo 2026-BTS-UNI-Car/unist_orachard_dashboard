@@ -226,6 +226,11 @@
                     <button type="button" data-lidar-overlay-mode="both">LiDAR+Overlay</button>
                     <button type="button" data-lidar-overlay-mode="overlay">Overlay</button>
                   </div>
+                  <div class="segmented-control perception-mode" aria-label="Perception overlay source">
+                    <button type="button" data-perception-overlay="lidar">2D Objects</button>
+                    <button type="button" data-perception-overlay="camera">Camera</button>
+                    <button type="button" data-perception-overlay="fusion">Fusion Trees</button>
+                  </div>
                 </div>
               </div>
               <div id="lidarScanResult" class="test-result">실시간 연결 대기 중</div>
@@ -647,6 +652,11 @@
                 <button type="button" data-lidar-overlay-mode="both">LiDAR+Overlay</button>
                 <button type="button" data-lidar-overlay-mode="overlay">Overlay</button>
               </div>
+              <div class="segmented-control perception-mode" aria-label="Rover perception overlay source">
+                <button type="button" data-perception-overlay="lidar">2D Objects</button>
+                <button type="button" data-perception-overlay="camera">Camera</button>
+                <button type="button" data-perception-overlay="fusion">Fusion Trees</button>
+              </div>
               <div id="roverLidarStats" class="chart-readout"></div>
             </article>
 
@@ -789,6 +799,11 @@
                     <button type="button" data-archive-overlay-mode="both">LiDAR+Overlay</button>
                     <button type="button" data-archive-overlay-mode="overlay">Overlay</button>
                   </div>
+                  <div class="segmented-control perception-mode" aria-label="archive perception overlay source">
+                    <button type="button" data-perception-overlay="lidar">2D Objects</button>
+                    <button type="button" data-perception-overlay="camera">Camera</button>
+                    <button type="button" data-perception-overlay="fusion">Fusion Trees</button>
+                  </div>
                   <div class="archive-media-grid">
                     <div class="lidar-map-stage rover-lidar-stage">
                       <canvas id="roverArchiveLidarCanvas" class="lidar-map" width="520" height="520"></canvas>
@@ -799,6 +814,22 @@
                     </figure>
                   </div>
                   <div id="roverArchiveDetails" class="status-list"></div>
+                  <div class="orchard-map-panel">
+                    <div class="panel-head mini">
+                      <div>
+                        <p class="eyebrow">Orchard Map</p>
+                        <h3>과수 위치 지도</h3>
+                      </div>
+                      <div class="map-zoom-buttons" aria-label="Orchard map controls">
+                        <button id="roverOrchardMapZoomOut" type="button">−</button>
+                        <button id="roverOrchardMapReset" type="button">Reset</button>
+                        <button id="roverOrchardMapZoomIn" type="button">+</button>
+                        <button id="roverOrchardMapDownload" type="button">PNG</button>
+                      </div>
+                    </div>
+                    <canvas id="roverOrchardMapCanvas" class="orchard-map-canvas" width="980" height="520"></canvas>
+                    <div id="roverOrchardMapStats" class="chart-readout compact"></div>
+                  </div>
                   <div class="archive-download-actions">
                     <a id="roverArchiveDownloadButton" class="archive-download-button" href="#" download hidden>
                       <span>기록 데이터 다운로드</span>

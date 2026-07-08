@@ -62,6 +62,16 @@ Dashboard viewer는 다음 세 가지 표시 모드를 지원한다.
 
 LiDAR+Camera archive는 scrubber의 같은 `t_s`를 기준으로 LiDAR frame과 camera frame을 같이 표시한다. Dashboard는 `/api/recordings/{id}/timeline?start_s=...&duration_s=...`로 필요한 시간 구간만 받아 cache하고, 재생 중에는 다음 구간을 미리 요청한다. 원본 분석이나 재처리가 필요하면 `rosbag2/`를 기준으로 다시 처리한다.
 
+## Orchard Map
+
+`/api/recordings/{id}/orchard-map`은 archive `timeline.json`을 재처리해 과수 위치 지도를 만든다.
+
+- LiDAR frame마다 `orchard_tree` 후보를 검출한다.
+- LiDAR 뒤쪽 사람 영역 후보는 제외한다.
+- 연속 frame에서 반복 관측되는 과수 후보의 median displacement로 임시 pseudo-odometry를 추정한다.
+- 누적 과수 후보는 지도에서 파란 원으로 표시하고, 출발지/도착지는 `S`/`E` marker로 표시한다.
+- Web UI에서는 orchard map을 drag로 이동하고 wheel 또는 버튼으로 확대/축소할 수 있으며 PNG로 다운로드할 수 있다.
+
 ## 한계
 
 - 이 방식은 scan 한 장과 짧은 history만 사용하므로 사람/차체/벽의 semantic class를 확정하지 않는다.

@@ -48,6 +48,7 @@ def analyze_points(
 
     walls = merge_wall_fragments(walls)
     objects, tracks, next_track_id = update_tracks(objects, tracks, next_track_id, now)
+    orchard = detect_orchard_trees(points)
     analysis = {
         "ok": True,
         "algorithm": ALGORITHM_NAME,
@@ -55,6 +56,7 @@ def analyze_points(
         "generated_at": iso_now(),
         "walls": [public_wall(wall) for wall in walls],
         "objects": objects,
+        "orchard": orchard,
         "cluster_count": len(clusters),
         "source_point_count": len(points),
     }
@@ -68,6 +70,7 @@ def empty_analysis() -> dict[str, Any]:
         "coordinate_frame": LIDAR_COORDINATE_FRAME,
         "walls": [],
         "objects": [],
+        "orchard": {"trees": [], "excluded_rear_candidates": 0, "method": "lidar_geometry_v1"},
         "cluster_count": 0,
         "source_point_count": 0,
     }
@@ -253,6 +256,100 @@ def object_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, Any] | None:
         "points": len(cluster),
         "density": round(density, 2),
     }
+
+
+def detect_orchard_trees(points: list[dict[str, Any]]) -> dict[str, Any]:
+    trees: list[dict[str, Any]] = []
+    excluded_rear = 0
+    for cluster in cluster_points(points):
+        candidate = orchard_candidate_from_cluster(cluster)
+        if not candidate:
+            continue
+        center = candidate["center"]
+        if is_rear_person_zone(center):
+            excluded_rear += 1
+            continue
+        trees.append(candidate)
+    trees = merge_orchard_candidates(trees)
+    return {
+        "method": "lidar_geometry_v1",
+        "trees": trees,
+        "excluded_rear_candidates": excluded_rear,
+    }
+
+
+def orchard_candidate_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if len(cluster) < 3:
+        return None
+    xs = [float(point["x_m"]) for point in cluster]
+    ys = [float(point["y_m"]) for point in cluster]
+    cx = sum(xs) / len(xs)
+    cy = sum(ys) / len(ys)
+    distance = math.hypot(cx, cy)
+    if distance < 0.45 or distance > 14.0:
+        return None
+    radius = max(math.hypot(x - cx, y - cy) for x, y in zip(xs, ys))
+    if radius < 0.035 or radius > 0.65:
+        return None
+    features = line_features(cluster)
+    aspect = float(features.get("aspect", 1.0)) if features else 1.0
+    width = float(features.get("width", radius)) if features else radius
+    length = float(features.get("length", radius * 2.0)) if features else radius * 2.0
+    if aspect > 4.2 and length > 0.45 and width < 0.18:
+        return None
+    density = len(cluster) / max(math.pi * max(radius, 0.05) ** 2, 0.01)
+    compact_score = 1.0 - min(1.0, abs(radius - 0.18) / 0.55)
+    density_score = min(1.0, density / 28.0)
+    aspect_score = max(0.0, 1.0 - max(0.0, aspect - 1.8) / 3.2)
+    range_score = max(0.0, 1.0 - max(0.0, distance - 9.0) / 7.0)
+    confidence = 0.2 + 0.32 * compact_score + 0.24 * density_score + 0.16 * aspect_score + 0.08 * range_score
+    if confidence < 0.42:
+        return None
+    return {
+        "label": "orchard_tree",
+        "center": {"x_m": round(cx, 3), "y_m": round(cy, 3)},
+        "radius_m": round(max(0.1, min(radius, 0.75)), 3),
+        "confidence": round(min(0.98, confidence), 3),
+        "points": len(cluster),
+        "density": round(density, 2),
+        "distance_m": round(distance, 3),
+    }
+
+
+def is_rear_person_zone(center: dict[str, Any]) -> bool:
+    x = float(center.get("x_m") or 0.0)
+    y = float(center.get("y_m") or 0.0)
+    return y < -0.35 and abs(x) < 4.5
+
+
+def merge_orchard_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: float(item.get("confidence") or 0.0), reverse=True):
+        cx = float(candidate["center"]["x_m"])
+        cy = float(candidate["center"]["y_m"])
+        found = None
+        for item in merged:
+            ix = float(item["center"]["x_m"])
+            iy = float(item["center"]["y_m"])
+            gate = max(0.32, min(0.78, 0.16 + 0.035 * max(float(candidate.get("distance_m") or 0.0), float(item.get("distance_m") or 0.0))))
+            if math.hypot(cx - ix, cy - iy) <= gate:
+                found = item
+                break
+        if not found:
+            candidate["hits"] = 1
+            merged.append(candidate)
+            continue
+        hits = int(found.get("hits") or 1) + 1
+        weight = 1.0 / hits
+        found["center"] = {
+            "x_m": round(float(found["center"]["x_m"]) * (1.0 - weight) + cx * weight, 3),
+            "y_m": round(float(found["center"]["y_m"]) * (1.0 - weight) + cy * weight, 3),
+        }
+        found["radius_m"] = round(max(float(found.get("radius_m") or 0.1), float(candidate.get("radius_m") or 0.1)), 3)
+        found["confidence"] = round(max(float(found.get("confidence") or 0.0), float(candidate.get("confidence") or 0.0)), 3)
+        found["points"] = int(found.get("points") or 0) + int(candidate.get("points") or 0)
+        found["hits"] = hits
+    return merged
 
 
 def update_tracks(

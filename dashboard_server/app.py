@@ -177,6 +177,13 @@ DOCS_CATALOG = [
         "file": "lidar_object_overlay.md",
     },
     {
+        "slug": "orchard-tree-detection-fusion",
+        "title": "과수 인식과 LiDAR-Camera Fusion",
+        "category": "Research",
+        "summary": "2D LiDAR 과수 후보, camera support, fusion confidence, archive orchard map 설계",
+        "file": "orchard_tree_detection_fusion.md",
+    },
+    {
         "slug": "rover-control-todo",
         "title": "Rover Control TODO",
         "category": "Data",
@@ -488,6 +495,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             start_s = (params.get("start_s") or [None])[0]
             duration_s = (params.get("duration_s") or [None])[0]
             self._send_json(self.provider.recording_timeline(recording_id, start_s=start_s, duration_s=duration_s))
+            return
+        if raw.endswith("/orchard-map"):
+            recording_id = unquote(raw.removesuffix("/orchard-map").strip("/"))
+            self._send_json(self.provider.recording_orchard_map(recording_id))
             return
         self._send_json(self.provider.recording_detail(unquote(raw)))
 
