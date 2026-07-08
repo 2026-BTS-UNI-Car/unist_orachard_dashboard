@@ -464,7 +464,8 @@ h2 {
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
+  min-height: 0;
 }
 
 .resource-grid {
@@ -576,6 +577,12 @@ h2 {
   box-shadow: none;
 }
 
+.action-button.danger {
+  color: #ffffff;
+  background: color-mix(in srgb, var(--rose) 72%, #5b1027);
+  border-color: color-mix(in srgb, var(--rose) 64%, transparent);
+}
+
 .action-button.active {
   border-color: color-mix(in srgb, var(--good) 48%, transparent);
   color: var(--good);
@@ -652,7 +659,8 @@ h2 {
   min-width: 0;
 }
 
-.camera-controls select {
+.camera-controls select,
+.rover-sensor-controls select {
   width: 100%;
   min-height: 38px;
   border: 1px solid var(--line-strong);
@@ -856,13 +864,52 @@ h2 {
   margin-top: 10px;
 }
 
+.overlay-mode {
+  width: 100%;
+  min-width: min(100%, 300px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .download-mode button {
+  min-width: 0;
+}
+
+.rover-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.rover-control-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 16px;
+}
+
+.rover-control-toolbar .action-button {
+  min-width: 150px;
+}
+
+.rover-layout .wide {
+  grid-column: 1 / -1;
+}
+
+.rover-layout.drive-collapsed .rover-drive-panel {
+  display: none;
+}
+
+.rover-live-panel {
+  display: grid;
+  align-content: start;
   min-width: 0;
 }
 
 .rover-drive-panel,
 .rover-record-panel {
+  display: grid;
   align-content: start;
+  min-width: 0;
 }
 
 .rover-speed-control {
@@ -895,11 +942,50 @@ h2 {
   accent-color: var(--cyan);
 }
 
+.rover-fade-options,
+.record-head-actions,
+.archive-player-toolbar,
+.rover-sensor-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.rover-sensor-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.map-control.compact {
+  margin-bottom: 0;
+  padding: 10px;
+}
+
+.map-control.compact strong {
+  font-size: 16px;
+}
+
+.rover-fade-options {
+  margin: 4px 0 14px;
+}
+
+.rover-fade-options .switch-control {
+  flex: 1 1 150px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-2) 58%, transparent);
+}
+
 .rover-pad {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 16px 0;
+  min-width: 0;
 }
 
 .rover-pad button {
@@ -948,7 +1034,7 @@ h2 {
   display: grid;
   place-items: center;
   overflow: hidden;
-  min-height: 260px;
+  min-height: 320px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #020617;
@@ -957,7 +1043,7 @@ h2 {
 .rover-camera-frame img {
   width: 100%;
   height: 100%;
-  min-height: 260px;
+  min-height: 320px;
   object-fit: contain;
   display: block;
 }
@@ -978,23 +1064,37 @@ h2 {
 }
 
 .rover-lidar-stage {
-  min-height: 300px;
+  min-height: 320px;
+}
+
+.rover-live-panel .chart-readout,
+.rover-drive-panel .chart-readout,
+.rover-record-panel .chart-readout {
+  min-height: 0;
 }
 
 .record-button-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 14px;
+  margin: 12px 0 14px;
 }
 
 .record-button-grid .action-button {
   min-width: 0;
 }
 
+.record-start-button {
+  width: 100%;
+}
+
+.record-head-actions {
+  justify-content: flex-end;
+}
+
 .archive-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 0.75fr) minmax(0, 1.25fr);
+  grid-template-columns: minmax(240px, 0.58fr) minmax(0, 1.42fr);
   gap: 14px;
   align-items: start;
 }
@@ -1041,6 +1141,202 @@ h2 {
   display: grid;
   gap: 12px;
   min-width: 0;
+}
+
+.archive-player-toolbar {
+  justify-content: flex-start;
+}
+
+.archive-scrubber {
+  width: 100%;
+  accent-color: var(--cyan);
+}
+
+.archive-map-control {
+  margin-bottom: 0;
+}
+
+.archive-media-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.9fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.archive-camera-frame {
+  position: relative;
+  min-width: 0;
+  min-height: 260px;
+  margin: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #020617;
+}
+
+.archive-camera-frame img {
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+  object-fit: contain;
+  display: block;
+}
+
+.archive-download-actions {
+  display: grid;
+  justify-items: stretch;
+}
+
+.archive-download-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 48%, var(--line));
+  border-radius: 8px;
+  color: var(--text);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--blue) 20%, transparent), color-mix(in srgb, var(--cyan) 12%, transparent)),
+    color-mix(in srgb, var(--surface-2) 82%, transparent);
+  text-decoration: none;
+  box-shadow: 0 12px 24px rgba(56, 216, 255, 0.12);
+}
+
+.archive-download-button[hidden] {
+  display: none;
+}
+
+.archive-download-button span {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.archive-download-button small {
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.archive-camera-frame img:not([src]),
+.archive-camera-frame img[src=""] {
+  opacity: 0;
+}
+
+.archive-camera-frame figcaption {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  max-width: calc(100% - 24px);
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 1181px) {
+  .rover-layout {
+    grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) minmax(240px, 0.78fr);
+    align-items: start;
+  }
+
+  .rover-lidar-panel {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .rover-camera-panel {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .rover-drive-panel {
+    grid-column: 3;
+    grid-row: 1;
+    position: sticky;
+    top: 22px;
+    z-index: 2;
+    padding: 12px;
+  }
+
+  .rover-drive-panel .panel-head {
+    margin-bottom: 10px;
+  }
+
+  .rover-drive-panel .rover-speed-control {
+    gap: 8px;
+  }
+
+  .rover-drive-panel .rover-speed-control strong {
+    font-size: 20px;
+  }
+
+  .rover-record-panel {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .rover-layout.drive-collapsed .rover-record-panel {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .rover-lidar-stage {
+    min-height: clamp(300px, 24vw, 430px);
+  }
+
+  .rover-lidar-stage .lidar-map {
+    width: min(100%, clamp(300px, 23vw, 430px));
+  }
+
+  .rover-camera-frame {
+    min-height: clamp(250px, 21vw, 390px);
+    aspect-ratio: 16 / 9;
+  }
+
+  .rover-camera-frame img {
+    min-height: 0;
+  }
+
+  .rover-sensor-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .rover-drive-panel .chart-readout.compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .rover-drive-panel .chart-readout.compact .readout-row {
+    min-height: 34px;
+  }
+
+  .rover-pad {
+    gap: 6px;
+    margin: 8px 0;
+  }
+
+  .rover-pad button {
+    min-height: 38px;
+  }
+
+  .rover-drive-panel .test-result {
+    min-height: 34px;
+    margin-bottom: 0;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
 }
 
 .rover-frame-panel {
@@ -1447,8 +1743,9 @@ h2 {
 }
 
 .docs-index-panel {
-  position: sticky;
-  top: 18px;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .doc-group {
@@ -1496,7 +1793,9 @@ h2 {
 }
 
 .docs-reader-panel {
-  min-height: 620px;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .doc-reader-head {
@@ -1526,6 +1825,30 @@ h2 {
   color: var(--text);
   font-size: 15px;
   line-height: 1.72;
+}
+
+.page[data-page="/docs"].active {
+  height: calc(100dvh - 44px);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.page[data-page="/docs"] .page-head {
+  min-height: 150px;
+}
+
+.page[data-page="/docs"] .docs-layout {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.page[data-page="/docs"] .docs-index,
+.page[data-page="/docs"] .markdown-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
 }
 
 .markdown-body h1,
@@ -2114,22 +2437,103 @@ h2 {
   }
 
   .kpi-grid,
-  .fan-control-grid,
-  .dashboard-grid,
-  .resource-grid,
-  .docs-layout {
+	  .fan-control-grid,
+	  .dashboard-grid,
+	  .rover-layout,
+	  .resource-grid,
+	  .docs-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .chart-frame,
-  .lidar-map-frame,
-  .camera-live-layout,
-  .archive-layout {
+	  .lidar-map-frame,
+	  .camera-live-layout,
+	  .archive-layout,
+	  .archive-media-grid {
     grid-template-columns: 1fr;
   }
 
   .page[data-page="/connection"] .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1180px) {
+  .kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .rover-layout {
+    grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr) minmax(220px, 0.78fr);
+    align-items: start;
+  }
+
+  .rover-lidar-panel {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .rover-camera-panel {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .rover-drive-panel {
+    grid-column: 3;
+    grid-row: 1;
+    position: sticky;
+    top: 76px;
+    z-index: 2;
+  }
+
+  .rover-layout.drive-collapsed .rover-record-panel {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .rover-record-panel {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .rover-lidar-stage {
+    min-height: clamp(260px, 30vw, 360px);
+  }
+
+  .rover-lidar-stage .lidar-map {
+    width: min(100%, clamp(260px, 29vw, 360px));
+  }
+
+  .rover-camera-frame {
+    min-height: clamp(220px, 28vw, 340px);
+    aspect-ratio: 16 / 9;
+  }
+
+  .rover-camera-frame img {
+    min-height: 0;
+  }
+
+  .rover-sensor-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .rover-drive-panel .chart-readout.compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .rover-drive-panel .chart-readout.compact .readout-row {
+    min-height: 34px;
+  }
+
+  .rover-pad {
+    gap: 6px;
+    margin: 12px 0;
+  }
+
+  .rover-pad button {
+    min-height: 52px;
   }
 }
 
@@ -2166,10 +2570,11 @@ h2 {
 
   .kpi-grid,
   .network-focus-grid,
-  .fan-control-grid,
-  .dashboard-grid,
-  .resource-grid,
-  .docs-layout,
+	  .fan-control-grid,
+	  .dashboard-grid,
+	  .rover-layout,
+	  .resource-grid,
+	  .docs-layout,
   .timeline,
   .live-status-grid,
   .core-grid,
@@ -2194,9 +2599,22 @@ h2 {
     aspect-ratio: 4 / 3;
   }
 
-  .record-button-grid {
-    grid-template-columns: 1fr;
+	  .record-button-grid {
+	    grid-template-columns: 1fr;
+	  }
+
+  .rover-control-toolbar {
+    justify-content: stretch;
   }
+
+  .rover-control-toolbar .action-button {
+    width: 100%;
+  }
+
+	  .rover-sensor-controls,
+	  .archive-media-grid {
+	    grid-template-columns: 1fr;
+	  }
 
   .rover-camera-frame,
   .rover-camera-frame img {
@@ -2286,8 +2704,20 @@ h2 {
     grid-template-columns: 1fr;
   }
 
-  .docs-index-panel {
-    position: static;
+  .page[data-page="/docs"].active {
+    height: auto;
+    overflow: visible;
+  }
+
+  .page[data-page="/docs"] .docs-layout,
+  .page[data-page="/docs"] .docs-index,
+  .page[data-page="/docs"] .markdown-body {
+    overflow: visible;
+  }
+
+  .docs-index-panel,
+  .docs-reader-panel {
+    display: block;
   }
 
   .doc-reader-head {

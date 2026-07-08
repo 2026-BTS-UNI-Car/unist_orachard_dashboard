@@ -159,6 +159,7 @@ class TelemetryProvider:
         self.proc_root = Path(os.environ.get("HOST_PROC", "/proc"))
         self.sys_root = Path(os.environ.get("HOST_SYS", "/sys"))
         self.docker_socket = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
+        self._self_container_names = self._dashboard_container_names()
         self._self_container_id = self._detect_self_container_id()
         self._last_cpu = self._read_cpu_times()
         self._last_net = self._read_net_counters()
@@ -319,7 +320,7 @@ class TelemetryProvider:
                     "memory_limit": stats.get("memory_limit"),
                     "rx_bytes": stats.get("rx_bytes"),
                     "tx_bytes": stats.get("tx_bytes"),
-                    "self": self._is_self_container(container_id),
+                    "self": self._is_self_container(container_id, container.get("Names") or []),
                 }
             )
         running = [row for row in rows if row.get("state") == "running"]
@@ -376,7 +377,7 @@ class TelemetryProvider:
             "mounts": detail.get("Mounts", []),
             "ports": network_settings.get("Ports") or {},
             "stats": stats,
-            "self": self._is_self_container(detail.get("Id") or safe_id),
+            "self": self._is_self_container(detail.get("Id") or safe_id, [detail.get("Name") or ""]),
         }
 
     def docker_container_action(self, container_id: str, action: str) -> dict[str, Any]:
@@ -740,6 +741,7 @@ class TelemetryProvider:
                     continue
                 metadata = _load_json(path / "metadata.json")
                 analysis = _load_json(path / "analysis.json")
+                timeline = _load_json(path / "timeline.json")
                 rows.append(
                     {
                         "id": metadata.get("id") or path.name,
@@ -753,6 +755,10 @@ class TelemetryProvider:
                             "walls": len(analysis.get("walls", [])),
                             "objects": len(analysis.get("objects", [])),
                         },
+                        "timeline": {
+                            "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
+                            "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
+                        },
                     }
                 )
         return {"ok": True, "archive_dir": str(self.recording_archive_dir), "recordings": rows}
@@ -764,6 +770,7 @@ class TelemetryProvider:
         metadata = _load_json(path / "metadata.json")
         analysis = _load_json(path / "analysis.json")
         preview_scan = _load_json(path / "preview_scan.json")
+        timeline = _load_json(path / "timeline.json")
         return {
             "ok": True,
             "recording": {
@@ -772,9 +779,25 @@ class TelemetryProvider:
                 "metadata": metadata,
                 "analysis": analysis,
                 "preview_scan": preview_scan,
+                "timeline_summary": {
+                    "ok": bool(timeline.get("ok")),
+                    "duration_s": timeline.get("duration_s"),
+                    "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
+                    "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
+                    "algorithm": timeline.get("algorithm"),
+                },
                 "download_url": f"/api/recordings/{path.name}/download",
             },
         }
+
+    def recording_timeline(self, recording_id: str) -> dict[str, Any]:
+        path = self.recording_archive_path(recording_id)
+        if path is None or not path.exists():
+            return {"ok": False, "error": "recording_not_found", "id": recording_id}
+        timeline = _load_json(path / "timeline.json")
+        if not timeline:
+            return {"ok": False, "error": "timeline_not_found", "id": recording_id}
+        return {"ok": True, "timeline": timeline}
 
     def recording_archive_path(self, recording_id: str) -> Path | None:
         safe = re.sub(r"[^A-Za-z0-9_.-]", "", str(recording_id or ""))
@@ -1923,6 +1946,9 @@ class TelemetryProvider:
             "kind": recorder.get("kind"),
             "recording_id": recorder.get("recording_id"),
             "archive_count": recorder.get("archive_count"),
+            "started_at": recorder.get("started_at"),
+            "duration_s": recorder.get("duration_s"),
+            "samples": recorder.get("samples"),
             "status_url": recorder.get("status_url") or f"{self.recorder_api_url}/status",
         }
         return services
@@ -2450,21 +2476,83 @@ class TelemetryProvider:
         finally:
             conn.close()
 
+    def _dashboard_container_names(self) -> set[str]:
+        names = {
+            "unist-orachard-dashboard",
+            "dashboard",
+            os.environ.get("DASHBOARD_CONTAINER_NAME", ""),
+            os.environ.get("COMPOSE_SERVICE", ""),
+        }
+        return {str(name).strip().lstrip("/") for name in names if str(name or "").strip()}
+
     def _detect_self_container_id(self) -> str | None:
+        explicit = os.environ.get("DASHBOARD_CONTAINER_ID")
+        if explicit and re.fullmatch(r"[0-9a-f]{12,64}", explicit):
+            return explicit
+        by_name = self._container_id_by_known_name()
+        if by_name:
+            return by_name
         candidates: list[str] = []
         hostname = os.environ.get("HOSTNAME") or socket.gethostname()
         if re.fullmatch(r"[0-9a-f]{12,64}", hostname or ""):
             candidates.append(hostname)
-        for path in ("/proc/self/cgroup", "/proc/self/mountinfo"):
-            text = _read_text(path) or ""
-            candidates.extend(re.findall(r"[0-9a-f]{64}", text))
-            candidates.extend(re.findall(r"docker-([0-9a-f]{64})\\.scope", text))
+        text = _read_text("/proc/self/cgroup") or ""
+        candidates.extend(re.findall(r"[0-9a-f]{64}", text))
+        candidates.extend(re.findall(r"docker-([0-9a-f]{64})\\.scope", text))
         for candidate in candidates:
-            if len(candidate) >= 12:
-                return candidate
+            matched = self._inspect_container_name_matches(candidate)
+            if matched:
+                return matched
+        if len(candidates) == 1 and str(candidates[0]).startswith(str(hostname or "")):
+            return candidates[0]
         return None
 
-    def _is_self_container(self, container_id: str | None) -> bool:
+    def _container_id_by_known_name(self) -> str | None:
+        if not Path(self.docker_socket).exists():
+            return None
+        try:
+            containers = self._docker_get_json("/containers/json?all=1")
+        except (OSError, json.JSONDecodeError):
+            return None
+        for container in containers:
+            names = container.get("Names") or []
+            labels = container.get("Labels") or {}
+            if self._container_names_match(names) or labels.get("com.docker.compose.service") in self._self_container_names:
+                return container.get("Id")
+        return None
+
+    def _inspect_container_name_matches(self, container_id: str) -> str | None:
+        if not Path(self.docker_socket).exists():
+            return None
+        try:
+            detail = self._docker_get_json(f"/containers/{container_id}/json")
+        except (OSError, json.JSONDecodeError):
+            return None
+        config = detail.get("Config") or {}
+        labels = config.get("Labels") or {}
+        if self._container_names_match([detail.get("Name") or ""]) or labels.get("com.docker.compose.service") in self._self_container_names:
+            return detail.get("Id") or container_id
+        return None
+
+    def _container_names_match(self, names: list[str] | tuple[str, ...]) -> bool:
+        normalized = {str(name).strip().lstrip("/") for name in names if str(name or "").strip()}
+        return bool(normalized & self._self_container_names)
+
+    def _detect_container_ids_from_mountinfo(self) -> list[str]:
+        ids: list[str] = []
+        for path in ("/proc/self/mountinfo",):
+            text = _read_text(path) or ""
+            for line in text.splitlines():
+                parts = line.split()
+                if len(parts) > 4 and parts[4] == "/":
+                    ids.extend(re.findall(r"[0-9a-f]{64}", line))
+                    ids.extend(re.findall(r"docker-([0-9a-f]{64})\\.scope", line))
+                    break
+        return ids
+
+    def _is_self_container(self, container_id: str | None, names: list[str] | tuple[str, ...] | None = None) -> bool:
+        if names and self._container_names_match(names):
+            return True
         if not container_id or not self._self_container_id:
             return False
         full = str(container_id)

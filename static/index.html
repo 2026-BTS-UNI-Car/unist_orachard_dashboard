@@ -221,6 +221,11 @@
                 <div class="panel-actions">
                   <button id="lidarLiveButton" class="action-button secondary" type="button">실시간 연결</button>
                   <button id="lidarDownloadButton" class="action-button secondary" type="button" disabled>현재 지도 다운로드</button>
+                  <div class="segmented-control overlay-mode" aria-label="LiDAR overlay mode">
+                    <button type="button" data-lidar-overlay-mode="raw">LiDAR</button>
+                    <button type="button" data-lidar-overlay-mode="both">LiDAR+Overlay</button>
+                    <button type="button" data-lidar-overlay-mode="overlay">Overlay</button>
+                  </div>
                 </div>
               </div>
               <div id="lidarScanResult" class="test-result">실시간 연결 대기 중</div>
@@ -232,7 +237,7 @@
                   <div class="map-control">
                     <div>
                       <span>Range</span>
-                      <strong id="lidarRangeValue">Auto</strong>
+                      <strong id="lidarRangeValue" data-lidar-range-value>Auto</strong>
                     </div>
                     <div class="map-zoom-buttons" aria-label="LiDAR 지도 범위">
                       <button type="button" data-lidar-range="out">−</button>
@@ -241,13 +246,13 @@
                     </div>
                     <label class="map-range-slider" for="lidarRangeSlider">
                       <span>Zoom</span>
-                      <input id="lidarRangeSlider" type="range" min="1" max="30" step="0.1" value="25" />
+                      <input id="lidarRangeSlider" data-lidar-range-slider type="range" min="1" max="30" step="0.1" value="25" />
                     </label>
                   </div>
                   <div class="map-control">
                     <div>
                       <span>Points</span>
-                      <strong id="lidarPointValue">900 pts</strong>
+                      <strong id="lidarPointValue" data-lidar-point-value>900 pts</strong>
                     </div>
                     <div class="map-zoom-buttons" aria-label="LiDAR point 수">
                       <button type="button" data-lidar-points="down">−</button>
@@ -256,7 +261,7 @@
                     </div>
                     <label class="map-range-slider" for="lidarPointSlider">
                       <span>Point limit</span>
-                      <input id="lidarPointSlider" type="range" min="50" max="3200" step="50" value="900" />
+                      <input id="lidarPointSlider" data-lidar-point-slider type="range" min="50" max="3200" step="50" value="900" />
                     </label>
                   </div>
                   <div id="lidarScanStats" class="chart-readout"></div>
@@ -289,9 +294,9 @@
                   <div class="map-control">
                     <div>
                       <span>Resolution</span>
-                      <strong id="cameraResolutionValue">1280x720</strong>
+                      <strong id="cameraResolutionValue" data-camera-resolution-value>1280x720</strong>
                     </div>
-                    <select id="cameraResolutionSelect" aria-label="카메라 캡처 해상도">
+                    <select id="cameraResolutionSelect" data-camera-resolution-select aria-label="카메라 캡처 해상도">
                       <option value="1280x720" selected>1280x720</option>
                       <option value="1920x1080">1920x1080</option>
                     </select>
@@ -299,9 +304,9 @@
                   <div class="map-control">
                     <div>
                       <span>Frame rate</span>
-                      <strong id="cameraFpsValue">60 fps</strong>
+                      <strong id="cameraFpsValue" data-camera-fps-value>60 fps</strong>
                     </div>
-                    <select id="cameraFpsSelect" aria-label="카메라 캡처 FPS">
+                    <select id="cameraFpsSelect" data-camera-fps-select aria-label="카메라 캡처 FPS">
                       <option value="60" selected>60 fps</option>
                       <option value="30">30 fps</option>
                     </select>
@@ -598,7 +603,88 @@
             <article class="kpi"><span>Archive</span><strong id="roverRecorderState">--</strong><small id="roverRecorderKind">대기</small></article>
           </section>
 
-          <section class="dashboard-grid">
+          <div class="rover-control-toolbar">
+            <button id="roverDrivePanelToggle" class="action-button secondary" type="button">조종 패널 숨기기</button>
+          </div>
+
+          <section class="rover-layout">
+            <article class="panel rover-live-panel rover-lidar-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Live</p>
+                  <h2>LiDAR</h2>
+                </div>
+                <button id="roverLidarToggle" class="action-button secondary" type="button">LiDAR 시작</button>
+              </div>
+              <div class="lidar-map-stage rover-lidar-stage">
+                <canvas id="roverLidarCanvas" class="lidar-map" width="520" height="520"></canvas>
+              </div>
+              <div class="rover-sensor-controls">
+                <div class="map-control compact">
+                  <div>
+                    <span>Range</span>
+                    <strong id="roverLidarRangeValue" data-lidar-range-value>Auto</strong>
+                  </div>
+                  <div class="map-zoom-buttons" aria-label="Rover LiDAR 지도 범위">
+                    <button type="button" data-lidar-range="out">−</button>
+                    <button type="button" data-lidar-range="reset">Auto</button>
+                    <button type="button" data-lidar-range="in">+</button>
+                  </div>
+                  <label class="map-range-slider" for="roverLidarRangeSlider">
+                    <span>Zoom</span>
+                    <input id="roverLidarRangeSlider" data-lidar-range-slider type="range" min="1" max="30" step="0.1" value="25" />
+                  </label>
+                </div>
+                <div class="map-control compact">
+                  <div>
+                    <span>Points</span>
+                    <strong id="roverLidarPointValue" data-lidar-point-value>900 pts</strong>
+                  </div>
+                  <label class="map-range-slider" for="roverLidarPointSlider">
+                    <span>Stream limit</span>
+                    <input id="roverLidarPointSlider" data-lidar-point-slider type="range" min="50" max="3200" step="50" value="900" />
+                  </label>
+                </div>
+              </div>
+              <div class="segmented-control overlay-mode" aria-label="Rover LiDAR overlay mode">
+                <button type="button" data-lidar-overlay-mode="raw">LiDAR</button>
+                <button type="button" data-lidar-overlay-mode="both">LiDAR+Overlay</button>
+                <button type="button" data-lidar-overlay-mode="overlay">Overlay</button>
+              </div>
+              <div id="roverLidarStats" class="chart-readout"></div>
+            </article>
+
+            <article class="panel rover-live-panel rover-camera-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Live</p>
+                  <h2>카메라</h2>
+                </div>
+                <button id="roverCameraToggle" class="action-button secondary" type="button">스트리밍 시작</button>
+              </div>
+              <div class="rover-camera-frame">
+                <img id="roverCameraImage" alt="Rover camera stream" />
+                <span id="roverCameraCaption">stream 대기</span>
+              </div>
+              <div class="rover-sensor-controls">
+                <div class="map-control compact">
+                  <div>
+                    <span>Resolution</span>
+                    <strong id="roverCameraResolutionValue" data-camera-resolution-value>1280x720</strong>
+                  </div>
+                  <select id="roverCameraResolutionSelect" data-camera-resolution-select aria-label="Rover camera capture resolution"></select>
+                </div>
+                <div class="map-control compact">
+                  <div>
+                    <span>Frame rate</span>
+                    <strong id="roverCameraFpsValue" data-camera-fps-value>60 fps</strong>
+                  </div>
+                  <select id="roverCameraFpsSelect" data-camera-fps-select aria-label="Rover camera capture FPS"></select>
+                </div>
+              </div>
+              <div id="roverCameraStats" class="chart-readout"></div>
+            </article>
+
             <article class="panel rover-drive-panel">
               <div class="panel-head">
                 <div>
@@ -614,6 +700,7 @@
                 </label>
                 <input id="roverSpeedSlider" type="range" min="0" max="100" step="1" value="25" />
               </div>
+              <div id="roverMotionReadout" class="chart-readout compact"></div>
               <div class="rover-pad" aria-label="Rover drive pad">
                 <button type="button" data-rover-drive="forward">W</button>
                 <button type="button" data-rover-drive="left">A</button>
@@ -621,36 +708,17 @@
                 <button type="button" data-rover-drive="right">D</button>
                 <button type="button" data-rover-drive="backward">S</button>
               </div>
+              <div class="rover-fade-options">
+                <label class="switch-control">
+                  <input id="roverFadeStartToggle" type="checkbox" />
+                  <span>출발 페이드</span>
+                </label>
+                <label class="switch-control">
+                  <input id="roverFadeStopToggle" type="checkbox" />
+                  <span>정지 페이드</span>
+                </label>
+              </div>
               <div id="roverCommandStatus" class="test-result">명령 대기 중</div>
-            </article>
-
-            <article class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Live</p>
-                  <h2>카메라</h2>
-                </div>
-                <button id="roverCameraToggle" class="action-button secondary" type="button">스트리밍 시작</button>
-              </div>
-              <div class="rover-camera-frame">
-                <img id="roverCameraImage" alt="Rover camera stream" />
-                <span id="roverCameraCaption">stream 대기</span>
-              </div>
-              <div id="roverCameraStats" class="chart-readout"></div>
-            </article>
-
-            <article class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Live</p>
-                  <h2>LiDAR</h2>
-                </div>
-                <button id="roverLidarToggle" class="action-button secondary" type="button">LiDAR 시작</button>
-              </div>
-              <div class="lidar-map-stage rover-lidar-stage">
-                <canvas id="roverLidarCanvas" class="lidar-map" width="520" height="520"></canvas>
-              </div>
-              <div id="roverLidarStats" class="chart-readout"></div>
             </article>
 
             <article class="panel rover-record-panel">
@@ -659,12 +727,16 @@
                   <p class="eyebrow">Archive</p>
                   <h2>기록 제어</h2>
                 </div>
-                <button id="roverRecordStopButton" class="action-button danger" type="button">기록 중지</button>
+                <div class="record-head-actions">
+                  <span id="roverRecordingTimer" class="tag">00:00</span>
+                  <button id="roverRecordStopButton" class="action-button danger" type="button">중지</button>
+                </div>
               </div>
-              <div class="record-button-grid">
-                <button id="roverRecordLidarButton" class="action-button secondary" type="button">LiDAR 기록</button>
-                <button id="roverRecordCameraButton" class="action-button secondary" type="button">카메라 녹화</button>
-                <button id="roverRecordBothButton" class="action-button primary" type="button">동시 기록</button>
+              <button id="roverRecordStartButton" class="action-button primary record-start-button" type="button">기록 시작</button>
+              <div class="record-button-grid" role="group" aria-label="recording kind">
+                <button id="roverRecordLidarButton" class="action-button secondary" type="button" data-record-kind="lidar">LiDAR</button>
+                <button id="roverRecordCameraButton" class="action-button secondary" type="button" data-record-kind="camera">Camera</button>
+                <button id="roverRecordBothButton" class="action-button secondary" type="button" data-record-kind="both">LiDAR+Camera</button>
               </div>
               <div id="roverRecordingStatus" class="test-result">기록 대기 중</div>
             </article>
@@ -690,10 +762,50 @@
               <div class="archive-layout">
                 <div id="roverArchiveList" class="archive-list"></div>
                 <div class="archive-preview">
-                  <div class="lidar-map-stage rover-lidar-stage">
-                    <canvas id="roverArchiveLidarCanvas" class="lidar-map" width="520" height="520"></canvas>
+                  <div class="archive-player-toolbar">
+                    <button id="roverArchivePlayButton" class="action-button secondary" type="button">재생</button>
+                    <span id="roverArchiveTime" class="tag">00:00 / 00:00</span>
+                    <label class="switch-control">
+                      <input id="roverArchiveSyncToggle" type="checkbox" checked />
+                      <span>동시 재생</span>
+                    </label>
+                    <label class="switch-control">
+                      <input id="roverArchiveOverlayToggle" type="checkbox" checked />
+                      <span>오버레이</span>
+                    </label>
+                  </div>
+                  <input id="roverArchiveScrubber" class="archive-scrubber" type="range" min="0" max="0" step="0.01" value="0" />
+                  <div class="map-control compact archive-map-control">
+                    <div>
+                      <span>Archive range</span>
+                      <strong id="roverArchiveRangeValue">25m</strong>
+                    </div>
+                    <label class="map-range-slider" for="roverArchiveRangeSlider">
+                      <span>Zoom</span>
+                      <input id="roverArchiveRangeSlider" type="range" min="1" max="30" step="0.1" value="25" />
+                    </label>
+                  </div>
+                  <div class="segmented-control overlay-mode archive-overlay-mode" aria-label="archive lidar mode">
+                    <button type="button" data-archive-overlay-mode="raw">LiDAR</button>
+                    <button type="button" data-archive-overlay-mode="both">LiDAR+Overlay</button>
+                    <button type="button" data-archive-overlay-mode="overlay">Overlay</button>
+                  </div>
+                  <div class="archive-media-grid">
+                    <div class="lidar-map-stage rover-lidar-stage">
+                      <canvas id="roverArchiveLidarCanvas" class="lidar-map" width="520" height="520"></canvas>
+                    </div>
+                    <figure class="archive-camera-frame">
+                      <img id="roverArchiveCameraImage" alt="Archived camera preview" />
+                      <figcaption id="roverArchiveCameraCaption">camera preview 대기</figcaption>
+                    </figure>
                   </div>
                   <div id="roverArchiveDetails" class="status-list"></div>
+                  <div class="archive-download-actions">
+                    <a id="roverArchiveDownloadButton" class="archive-download-button" href="#" download hidden>
+                      <span>기록 데이터 다운로드</span>
+                      <small id="roverArchiveDownloadMeta">tar.gz</small>
+                    </a>
+                  </div>
                 </div>
               </div>
             </article>

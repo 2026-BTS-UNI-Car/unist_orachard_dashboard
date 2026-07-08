@@ -10,7 +10,6 @@ import secrets
 import select
 import socket
 import tarfile
-import tempfile
 import threading
 import time
 from http.cookies import CookieError, SimpleCookie
@@ -81,6 +80,22 @@ def websocket_stats(registry: dict[str, dict[str, float | str]]) -> dict[str, ob
         }
 
 
+class _TeeWriter:
+    def __init__(self, *targets):
+        self.targets = targets
+
+    def write(self, data: bytes) -> int:
+        for target in self.targets:
+            target.write(data)
+        return len(data)
+
+    def flush(self):
+        for target in self.targets:
+            flush = getattr(target, "flush", None)
+            if flush:
+                flush()
+
+
 DOCS_CATALOG = [
     {
         "slug": "architecture",
@@ -144,6 +159,20 @@ DOCS_CATALOG = [
         "category": "Data",
         "summary": "LiDAR scan clustering, wall line fitting, object tracking overlay 알고리즘",
         "file": "lidar_archive_analysis.md",
+    },
+    {
+        "slug": "lidar-object-overlay",
+        "title": "LiDAR Object Overlay",
+        "category": "Data",
+        "summary": "실시간/아카이브 LiDAR object overlay 표시 기준과 데이터 구조",
+        "file": "lidar_object_overlay.md",
+    },
+    {
+        "slug": "rover-control-todo",
+        "title": "Rover Control TODO",
+        "category": "Data",
+        "summary": "Rover Control, 카메라/LiDAR 디버깅, 아카이브 재생 개선 작업 목록",
+        "file": "rover_control_todo.md",
     },
     {
         "slug": "jetson-runtime-architecture",
@@ -442,25 +471,84 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if archive is None or not archive.exists():
                 self.send_error(404, "Recording not found")
                 return
-            tmp_name = None
-            try:
-                with tempfile.NamedTemporaryFile(prefix=f"{archive.name}-", suffix=".tar.gz", delete=False) as tmp:
-                    tmp_name = tmp.name
-                with tarfile.open(tmp_name, "w:gz") as tar:
-                    tar.add(archive, arcname=archive.name)
-                body = Path(tmp_name).read_bytes()
-            except OSError as exc:
-                self._send_json({"ok": False, "error": str(exc), "id": recording_id})
-                return
-            finally:
-                if tmp_name:
-                    try:
-                        Path(tmp_name).unlink(missing_ok=True)
-                    except OSError:
-                        pass
-            self._send_bytes(body, "application/gzip", filename=f"{archive.name}.tar.gz")
+            self._send_recording_archive_download(archive, recording_id)
+            return
+        if raw.endswith("/timeline"):
+            recording_id = unquote(raw.removesuffix("/timeline").strip("/"))
+            self._send_json(self.provider.recording_timeline(recording_id))
             return
         self._send_json(self.provider.recording_detail(unquote(raw)))
+
+    def _send_recording_archive_download(self, archive: Path, recording_id: str):
+        filename = f"{archive.name}.tar.gz"
+        cache_path = self._recording_download_cache_path(archive)
+        if self._recording_download_cache_current(cache_path, archive):
+            self._send_download_file(cache_path, "application/gzip", filename=filename)
+            return
+        if self.command == "HEAD":
+            self._send_download_headers("application/gzip", filename=filename)
+            return
+        tmp_path = cache_path.with_suffix(f".{secrets.token_hex(6)}.tmp")
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with tmp_path.open("wb") as cache_file:
+                self._send_download_headers("application/gzip", filename=filename)
+                writer = _TeeWriter(self.wfile, cache_file)
+                with tarfile.open(fileobj=writer, mode="w|gz") as tar:
+                    tar.add(archive, arcname=archive.name)
+                writer.flush()
+            tmp_path.replace(cache_path)
+        except (BrokenPipeError, ConnectionResetError):
+            tmp_path.unlink(missing_ok=True)
+        except OSError as exc:
+            tmp_path.unlink(missing_ok=True)
+            dashboard_log("recording.download.error", id=recording_id, error=str(exc))
+        finally:
+            self.close_connection = True
+
+    def _recording_download_cache_path(self, archive: Path) -> Path:
+        return archive.parent.parent / "recording_downloads" / f"{archive.name}.tar.gz"
+
+    def _recording_download_cache_current(self, cache_path: Path, archive: Path) -> bool:
+        try:
+            if not cache_path.exists() or cache_path.stat().st_size <= 0:
+                return False
+            newest = archive.stat().st_mtime
+            for item in archive.rglob("*"):
+                if item.is_file():
+                    newest = max(newest, item.stat().st_mtime)
+            return cache_path.stat().st_mtime >= newest
+        except OSError:
+            return False
+
+    def _send_download_file(self, path: Path, content_type: str, filename: str | None = None):
+        try:
+            size = path.stat().st_size
+        except OSError:
+            self.send_error(404, "File not found")
+            return
+        self._send_download_headers(content_type, filename=filename, content_length=size)
+        if self.command != "HEAD":
+            with path.open("rb") as handle:
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        self.close_connection = True
+
+    def _send_download_headers(self, content_type: str, filename: str | None = None, content_length: int | None = None):
+        session_token = self._ensure_session(create=True)
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        if filename:
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        if content_length is not None:
+            self.send_header("Content-Length", str(content_length))
+        self._send_session_cookie(session_token)
+        self.end_headers()
 
     def _send_docker_container_payload(self, path: str, query: str):
         raw = path.removeprefix("/api/docker/container/").strip("/")

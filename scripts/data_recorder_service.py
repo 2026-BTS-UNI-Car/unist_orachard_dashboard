@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import math
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -14,9 +16,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import cv2
+import numpy as np
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Image, LaserScan
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from dashboard_server.lidar_analysis import ALGORITHM_NAME, analyze_points, empty_analysis as shared_empty_analysis
 
 
 def iso_now() -> str:
@@ -55,8 +65,12 @@ class RecordingState:
         self.process: subprocess.Popen | None = None
         self.preview_scan: dict[str, Any] = {}
         self.analysis: dict[str, Any] = {}
+        self.lidar_frames: list[dict[str, Any]] = []
+        self.camera_frames: list[dict[str, Any]] = []
         self.tracks: dict[str, dict[str, Any]] = {}
         self.next_track_id = 1
+        self.next_lidar_sample_at = 0.0
+        self.next_camera_sample_at = 0.0
         self.write_status("start")
 
     def status(self) -> dict[str, Any]:
@@ -75,6 +89,10 @@ class RecordingState:
                 "archive_dir": str(self.archive_dir),
                 "archive_count": len(self.list_recordings()["recordings"]),
                 "rosbag_pid": self.process.pid if self.process and self.process.poll() is None else None,
+                "samples": {
+                    "lidar_frames": len(self.lidar_frames),
+                    "camera_frames": len(self.camera_frames),
+                },
             }
 
     def write_status(self, event: str) -> None:
@@ -116,7 +134,29 @@ class RecordingState:
                 "metadata": read_json(path / "metadata.json"),
                 "analysis": read_json(path / "analysis.json"),
                 "preview_scan": read_json(path / "preview_scan.json"),
+                "timeline_summary": self.timeline_summary(path),
             },
+        }
+
+    def timeline(self, recording_id: str) -> dict[str, Any]:
+        path = self.archive_dir / safe_id(recording_id)
+        if not path.exists():
+            return {"ok": False, "error": "recording_not_found", "id": recording_id}
+        timeline = read_json(path / "timeline.json")
+        if not timeline:
+            return {"ok": False, "error": "timeline_not_found", "id": recording_id}
+        return {"ok": True, "timeline": timeline}
+
+    def timeline_summary(self, path: Path) -> dict[str, Any]:
+        timeline = read_json(path / "timeline.json")
+        if not timeline:
+            return {"ok": False, "lidar_frames": 0, "camera_frames": 0}
+        return {
+            "ok": bool(timeline.get("ok")),
+            "duration_s": timeline.get("duration_s"),
+            "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
+            "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
+            "algorithm": timeline.get("algorithm"),
         }
 
     def start(self, kind: str) -> dict[str, Any]:
@@ -142,13 +182,22 @@ class RecordingState:
                 "started_at": iso_now(),
                 "topics": topics,
                 "archive_path": str(root),
-                "algorithm": "polar_gap_cluster_line_fit_nearest_neighbor_tracks_v1",
+                "algorithm": ALGORITHM_NAME,
+                "timeline": {
+                    "sample_hz": self.args.timeline_hz,
+                    "camera_preview_width": self.args.camera_preview_width,
+                    "max_frames": self.args.timeline_max_frames,
+                },
             }
             write_json_atomic(root / "metadata.json", metadata)
             self.preview_scan = {}
             self.analysis = {}
+            self.lidar_frames = []
+            self.camera_frames = []
             self.tracks = {}
             self.next_track_id = 1
+            self.next_lidar_sample_at = 0.0
+            self.next_camera_sample_at = 0.0
             self.active = {**metadata, "path": str(root), "started_monotonic": time.time()}
             self.process = self.start_rosbag(root / "rosbag2", topics)
         log("start", id=recording_id, kind=kind, topics=topics, rosbag_pid=self.process.pid if self.process else None)
@@ -178,13 +227,46 @@ class RecordingState:
         finished_at = iso_now()
         duration_s = round(time.time() - float(active.get("started_monotonic", time.time())), 2)
         metadata = read_json(root / "metadata.json")
-        metadata.update({"state": "archived", "finished_at": finished_at, "duration_s": duration_s})
+        metadata.update(
+            {
+                "state": "archived",
+                "finished_at": finished_at,
+                "duration_s": duration_s,
+                "timeline": {
+                    "lidar_frames": len(self.lidar_frames),
+                    "camera_frames": len(self.camera_frames),
+                    "sample_hz": self.args.timeline_hz,
+                },
+            }
+        )
         write_json_atomic(root / "metadata.json", metadata)
         write_json_atomic(root / "preview_scan.json", self.preview_scan or {"ok": False, "points": [], "message": "no lidar scan captured"})
         write_json_atomic(root / "analysis.json", self.analysis or self.empty_analysis())
+        write_json_atomic(root / "timeline.json", self.timeline_payload(active, metadata, duration_s))
         log("stop", id=active.get("id"), duration_s=duration_s)
         self.write_status("stop_recording")
         return {"ok": True, "state": "archived", "recording_id": active.get("id"), "status": self.status()}
+
+    def timeline_payload(self, active: dict[str, Any], metadata: dict[str, Any], duration_s: float) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "version": 1,
+            "id": active.get("id") or metadata.get("id"),
+            "kind": active.get("kind") or metadata.get("kind"),
+            "algorithm": ALGORITHM_NAME,
+            "generated_at": iso_now(),
+            "started_at": metadata.get("started_at"),
+            "finished_at": metadata.get("finished_at"),
+            "duration_s": duration_s,
+            "sample_hz": self.args.timeline_hz,
+            "lidar": {"frames": list(self.lidar_frames)},
+            "camera": {"frames": list(self.camera_frames)},
+            "sync": {
+                "time_base": "seconds_since_recording_start",
+                "lidar_frames": len(self.lidar_frames),
+                "camera_frames": len(self.camera_frames),
+            },
+        }
 
     def start_rosbag(self, output_dir: Path, topics: list[str]) -> subprocess.Popen | None:
         if self.args.disable_rosbag:
@@ -211,6 +293,7 @@ class RecordingState:
         with self.lock:
             if not self.active or self.active.get("kind") not in {"lidar", "both"}:
                 return
+            started_monotonic = float(self.active.get("started_monotonic", time.time()))
         points = []
         angle = float(msg.angle_min)
         max_points = max(50, int(self.args.preview_max_points))
@@ -250,9 +333,88 @@ class RecordingState:
             "source": "archive_recorder",
         }
         analysis = self.analyze(points)
+        now = time.time()
+        frame = None
+        if now >= self.next_lidar_sample_at:
+            self.next_lidar_sample_at = now + self.sample_interval_s()
+            frame = {
+                "t_s": round(now - started_monotonic, 3),
+                "frame_id": preview["frame_id"],
+                "stamp": preview["stamp"],
+                "points": points,
+                "metrics": preview["metrics"],
+                "overlay": analysis,
+            }
         with self.lock:
             self.preview_scan = preview
             self.analysis = analysis
+            if frame:
+                self.append_limited(self.lidar_frames, frame)
+
+    def observe_camera(self, msg: Image) -> None:
+        with self.lock:
+            if not self.active or self.active.get("kind") not in {"camera", "both"}:
+                return
+            started_monotonic = float(self.active.get("started_monotonic", time.time()))
+            now = time.time()
+            if now < self.next_camera_sample_at:
+                return
+            self.next_camera_sample_at = now + self.sample_interval_s()
+        try:
+            frame = self.image_to_bgr(msg)
+            source_height, source_width = frame.shape[:2]
+            preview_width = max(160, int(self.args.camera_preview_width))
+            if source_width > preview_width:
+                scale = preview_width / source_width
+                preview_height = max(1, int(source_height * scale))
+                frame = cv2.resize(frame, (preview_width, preview_height), interpolation=cv2.INTER_AREA)
+            ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), int(self.args.camera_jpeg_quality)])
+            if not ok:
+                return
+        except Exception as exc:
+            log("camera_preview_error", error=str(exc))
+            return
+        payload = {
+            "t_s": round(now - started_monotonic, 3),
+            "frame_id": msg.header.frame_id or "camera_link_optical",
+            "stamp": {"sec": int(msg.header.stamp.sec), "nanosec": int(msg.header.stamp.nanosec)},
+            "mime": "image/jpeg",
+            "data": base64.b64encode(encoded.tobytes()).decode("ascii"),
+            "width": int(frame.shape[1]),
+            "height": int(frame.shape[0]),
+            "source_width": int(source_width),
+            "source_height": int(source_height),
+        }
+        with self.lock:
+            self.append_limited(self.camera_frames, payload)
+
+    def sample_interval_s(self) -> float:
+        return 1.0 / max(0.1, float(self.args.timeline_hz))
+
+    def append_limited(self, rows: list[dict[str, Any]], item: dict[str, Any]) -> None:
+        rows.append(item)
+        limit = max(1, int(self.args.timeline_max_frames))
+        if len(rows) > limit:
+            del rows[: len(rows) - limit]
+
+    def image_to_bgr(self, msg: Image) -> Any:
+        height = int(getattr(msg, "height", 0) or 0)
+        width = int(getattr(msg, "width", 0) or 0)
+        encoding = str(getattr(msg, "encoding", "") or "").lower()
+        data = bytes(getattr(msg, "data", b"") or b"")
+        if height <= 0 or width <= 0 or not data:
+            raise ValueError("empty image message")
+        if encoding in {"bgr8", "rgb8"}:
+            arr = np.frombuffer(data, dtype=np.uint8).reshape((height, width, 3))
+            return arr.copy() if encoding == "bgr8" else cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        if encoding in {"bgra8", "rgba8"}:
+            arr = np.frombuffer(data, dtype=np.uint8).reshape((height, width, 4))
+            code = cv2.COLOR_BGRA2BGR if encoding == "bgra8" else cv2.COLOR_RGBA2BGR
+            return cv2.cvtColor(arr, code)
+        if encoding in {"mono8", "8uc1"}:
+            arr = np.frombuffer(data, dtype=np.uint8).reshape((height, width))
+            return cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
+        raise ValueError(f"unsupported image encoding: {encoding}")
 
     def coverage(self, points: list[dict[str, Any]]) -> float:
         if len(points) < 2:
@@ -263,26 +425,10 @@ class RecordingState:
         return round(max(0.0, 360.0 - max(gaps)), 1)
 
     def analyze(self, points: list[dict[str, Any]]) -> dict[str, Any]:
-        clusters = self.cluster_points(points)
-        walls = []
-        objects = []
-        for cluster in clusters:
-            wall = self.fit_wall(cluster)
-            if wall:
-                walls.append(wall)
-                continue
-            obj = self.object_from_cluster(cluster)
-            if obj:
-                objects.append(obj)
-        objects = self.update_tracks(objects)
-        return {
-            "ok": True,
-            "algorithm": "polar_gap_cluster_line_fit_nearest_neighbor_tracks_v1",
-            "generated_at": iso_now(),
-            "walls": walls,
-            "objects": objects,
-            "cluster_count": len(clusters),
-        }
+        analysis, tracks, next_track_id = analyze_points(points, self.tracks, self.next_track_id)
+        self.tracks = tracks
+        self.next_track_id = next_track_id
+        return analysis
 
     def cluster_points(self, points: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
         clusters: list[list[dict[str, Any]]] = []
@@ -385,7 +531,7 @@ class RecordingState:
         return objects
 
     def empty_analysis(self) -> dict[str, Any]:
-        return {"ok": False, "algorithm": "polar_gap_cluster_line_fit_nearest_neighbor_tracks_v1", "walls": [], "objects": [], "cluster_count": 0}
+        return shared_empty_analysis()
 
 
 class RecorderNode(Node):
@@ -393,6 +539,7 @@ class RecorderNode(Node):
         super().__init__("ubts_data_recorder")
         self.state = state
         self.create_subscription(LaserScan, args.scan_topic, self.state.observe_scan, 10)
+        self.create_subscription(Image, args.camera_topic, self.state.observe_camera, 10)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -405,7 +552,11 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/recordings":
             self.send_json(self.state.list_recordings())
         elif self.path.startswith("/recordings/"):
-            self.send_json(self.state.detail(self.path.removeprefix("/recordings/").strip("/")))
+            raw = self.path.removeprefix("/recordings/").strip("/")
+            if raw.endswith("/timeline"):
+                self.send_json(self.state.timeline(raw.removesuffix("/timeline").strip("/")))
+            else:
+                self.send_json(self.state.detail(raw))
         else:
             self.send_error(404, "Not found")
 
@@ -462,6 +613,10 @@ def main() -> int:
     parser.add_argument("--rover-status-topic", default=os.environ.get("ROVER_STATUS_TOPIC", "/rover/status"))
     parser.add_argument("--lidar-frame-id", default=os.environ.get("LIDAR_FRAME_ID", "laser"))
     parser.add_argument("--preview-max-points", type=int, default=int(os.environ.get("RECORDER_PREVIEW_MAX_POINTS", "1200")))
+    parser.add_argument("--timeline-hz", type=float, default=float(os.environ.get("RECORDER_TIMELINE_HZ", "2.0")))
+    parser.add_argument("--timeline-max-frames", type=int, default=int(os.environ.get("RECORDER_TIMELINE_MAX_FRAMES", "1800")))
+    parser.add_argument("--camera-preview-width", type=int, default=int(os.environ.get("RECORDER_CAMERA_PREVIEW_WIDTH", "640")))
+    parser.add_argument("--camera-jpeg-quality", type=int, default=int(os.environ.get("RECORDER_CAMERA_JPEG_QUALITY", "68")))
     parser.add_argument("--rosbag-stop-timeout-s", type=float, default=float(os.environ.get("RECORDER_ROSBAG_STOP_TIMEOUT_S", "8.0")))
     parser.add_argument("--disable-rosbag", default=os.environ.get("RECORDER_DISABLE_ROSBAG", "0").strip().lower() in {"1", "true", "yes", "on"}, action=argparse.BooleanOptionalAction)
     args = parser.parse_args()

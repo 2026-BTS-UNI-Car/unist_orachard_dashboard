@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from dashboard_server.lidar_analysis import analyze_points, empty_analysis
+
 
 @dataclass
 class ScanState:
@@ -28,16 +30,23 @@ class ScanState:
     source: str = "waiting"
     stamp: float | None = None
     points: list[dict[str, float | int]] = field(default_factory=list)
+    analysis: dict[str, Any] = field(default_factory=empty_analysis)
+    tracks: dict[str, dict[str, Any]] = field(default_factory=dict)
+    next_track_id: int = 1
     last_scan_at: float | None = None
     error: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def update(self, frame_id: str, stamp: float, points: list[dict[str, float | int]], source: str) -> None:
         with self.lock:
+            analysis, tracks, next_track_id = analyze_points(points, self.tracks, self.next_track_id)
             self.frame_id = frame_id or "laser"
             self.source = source
             self.stamp = stamp
             self.points = points
+            self.analysis = analysis
+            self.tracks = tracks
+            self.next_track_id = next_track_id
             self.last_scan_at = time.time()
             self.error = None
 
@@ -53,6 +62,7 @@ class ScanState:
                 "source": self.source,
                 "stamp": self.stamp,
                 "points": list(self.points),
+                "analysis": dict(self.analysis or empty_analysis()),
                 "last_scan_age_sec": age,
                 "point_count": len(self.points),
                 "error": self.error,
@@ -381,6 +391,11 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                             "point_count": len(points),
                             "source_point_count": snap["point_count"],
                             "requested_max_points": requested_max_points,
+                            "overlay": {
+                                "algorithm": snap["analysis"].get("algorithm"),
+                                "walls": len(snap["analysis"].get("walls", [])),
+                                "objects": len(snap["analysis"].get("objects", [])),
+                            },
                             "source": snap["source"],
                             "frame_id": snap["frame_id"],
                             "error": snap["error"] or (
@@ -404,6 +419,7 @@ async def serve_websocket(state: ScanState, host: str, port: int, path: str, max
                                 "source_point_count": snap["point_count"],
                                 "requested_max_points": requested_max_points,
                                 "points": points,
+                                "overlay": snap["analysis"],
                             },
                             separators=(",", ":"),
                         )

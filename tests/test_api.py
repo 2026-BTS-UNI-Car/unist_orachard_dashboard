@@ -211,20 +211,46 @@ class DashboardApiTest(unittest.TestCase):
                 json.dumps({"ok": True, "walls": [{"start": {"x_m": 0, "y_m": 0}, "end": {"x_m": 1, "y_m": 0}}], "objects": []}),
                 encoding="utf-8",
             )
+            (root / "timeline.json").write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "duration_s": 1.2,
+                        "algorithm": "polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2",
+                        "lidar": {"frames": [{"t_s": 0.0, "points": [{"x_m": 1.0, "y_m": 0.0, "distance_m": 1.0}], "overlay": {}}]},
+                        "camera": {"frames": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
             listing = self.get_json("/api/recordings")
             self.assertTrue(listing["ok"])
             self.assertIn("unit_lidar_archive", {item["id"] for item in listing["recordings"]})
             detail = self.get_json("/api/recordings/unit_lidar_archive")
             self.assertTrue(detail["ok"])
             self.assertEqual(detail["recording"]["metadata"]["kind"], "lidar")
+            self.assertEqual(detail["recording"]["timeline_summary"]["lidar_frames"], 1)
+            timeline = self.get_json("/api/recordings/unit_lidar_archive/timeline")
+            self.assertTrue(timeline["ok"])
+            self.assertEqual(timeline["timeline"]["algorithm"], "polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2")
             with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/recordings/unit_lidar_archive/download", timeout=5) as res:
                 self.assertEqual(res.status, 200)
                 self.assertEqual(res.headers.get("Content-Type"), "application/gzip")
+                self.assertIn("unit_lidar_archive.tar.gz", res.headers.get("Content-Disposition", ""))
                 self.assertGreater(len(res.read()), 40)
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/api/recordings/unit_lidar_archive/download",
+                method="HEAD",
+            )
+            with urllib.request.urlopen(req, timeout=5) as res:
+                self.assertEqual(res.status, 200)
+                self.assertEqual(res.headers.get("Content-Type"), "application/gzip")
         finally:
             for child in root.glob("*"):
                 child.unlink(missing_ok=True)
             root.rmdir()
+            cache = Path(__file__).resolve().parents[1] / "runtime" / "recording_downloads" / "unit_lidar_archive.tar.gz"
+            cache.unlink(missing_ok=True)
 
     def test_lidar_bridge_status_file_marks_scan_live(self):
         status_file = Path(__file__).resolve().parents[1] / "runtime" / "test_lidar_bridge_status.json"
@@ -371,6 +397,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("wave-rover-control", slugs)
         self.assertIn("rover-control-dashboard", slugs)
         self.assertIn("lidar-archive-analysis", slugs)
+        self.assertIn("lidar-object-overlay", slugs)
+        self.assertIn("rover-control-todo", slugs)
         sim_doc = self.get_json("/api/docs/simulation-run")
         self.assertTrue(sim_doc["ok"])
         self.assertIn("orchard_full.launch.py", sim_doc["markdown"])
@@ -393,6 +421,12 @@ class DashboardApiTest(unittest.TestCase):
         analysis_doc = self.get_json("/api/docs/lidar-archive-analysis")
         self.assertTrue(analysis_doc["ok"])
         self.assertIn("polar_gap_cluster", analysis_doc["markdown"])
+        overlay_doc = self.get_json("/api/docs/lidar-object-overlay")
+        self.assertTrue(overlay_doc["ok"])
+        self.assertIn("Object text label", overlay_doc["markdown"])
+        todo_doc = self.get_json("/api/docs/rover-control-todo")
+        self.assertTrue(todo_doc["ok"])
+        self.assertIn("Rover Control TODO", todo_doc["markdown"])
         html = self.get_text("/docs/lidar-connection")
         self.assertIn("id=\"docMarkdown\"", html)
 
@@ -422,12 +456,25 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("id=\"cameraFpsSelect\"", html)
         self.assertIn("data-route=\"/rover-control\"", html)
         self.assertIn("id=\"roverSpeedSlider\"", html)
+        self.assertIn("id=\"roverDrivePanelToggle\"", html)
         self.assertIn("data-rover-drive=\"forward\"", html)
         self.assertIn("id=\"roverCameraToggle\"", html)
         self.assertIn("id=\"roverLidarToggle\"", html)
         self.assertIn("id=\"roverRecordLidarButton\"", html)
         self.assertIn("id=\"roverRecordCameraButton\"", html)
         self.assertIn("id=\"roverRecordBothButton\"", html)
+        self.assertIn("id=\"roverRecordStartButton\"", html)
+        self.assertIn("id=\"roverRecordingTimer\"", html)
+        self.assertIn("id=\"roverFadeStartToggle\"", html)
+        self.assertIn("id=\"roverFadeStopToggle\"", html)
+        self.assertIn("data-lidar-overlay-mode=\"both\"", html)
+        self.assertIn("data-archive-overlay-mode=\"overlay\"", html)
+        self.assertIn("id=\"roverArchiveOverlayToggle\"", html)
+        self.assertIn("id=\"roverArchiveRangeSlider\"", html)
+        self.assertIn("id=\"roverArchiveDownloadButton\"", html)
+        self.assertIn("id=\"roverArchivePlayButton\"", html)
+        self.assertIn("id=\"roverArchiveScrubber\"", html)
+        self.assertIn("id=\"roverArchiveCameraImage\"", html)
         self.assertIn("id=\"roverArchiveList\"", html)
         self.assertIn("id=\"roverArchiveLidarCanvas\"", html)
         self.assertNotIn("id=\"roverProxyFrame\"", html)
@@ -464,6 +511,14 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("LIDAR_RECONNECT_DEBOUNCE_MS", app_js)
         self.assertIn("scheduleLidarReconnectForSettings", app_js)
         self.assertIn("closeLidarLive", app_js)
+        self.assertIn("setLidarOverlayMode", app_js)
+        self.assertIn("setArchiveOverlayMode", app_js)
+        self.assertIn("setArchiveOverlayVisible", app_js)
+        self.assertIn("setArchiveRange", app_js)
+        self.assertIn("prepareArchiveTimelineCache", app_js)
+        self.assertIn("archiveCameraFrameSrc", app_js)
+        self.assertIn("setRoverDrivePanelCollapsed", app_js)
+        self.assertIn("toggleArchivePlayback", app_js)
         self.assertIn("Live 화면 밖에서는 LiDAR WebSocket을 닫습니다.", app_js)
         self.assertIn("max_points", app_js)
         self.assertIn("downloadLidarPng", app_js)
@@ -474,7 +529,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("DEFAULT_CAMERA_MODES", app_js)
         self.assertIn("applyCameraModeCatalog", app_js)
         self.assertIn("/api/camera/settings", app_js)
-        self.assertIn("Display FPS", app_js)
+        self.assertIn("Observed FPS", app_js)
         self.assertIn("syncSelectOptions", app_js)
         self.assertIn("initCameraLive();", app_js)
         self.assertIn("Live 화면 밖에서는 Camera WebSocket을 닫습니다.", app_js)
@@ -482,7 +537,10 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("initRoverControl();", app_js)
         self.assertIn("/api/rover/command", app_js)
         self.assertIn("/api/recordings/start", app_js)
+        self.assertIn("/timeline", app_js)
+        self.assertIn("ROVER_FADE_START_KEY", app_js)
         self.assertIn("drawLidarMapOnCanvas", app_js)
+        self.assertNotIn("fillText(item.label", app_js)
         self.assertIn("chartShiftDurationMs", app_js)
         self.assertIn("CHART_BUFFER_POINTS = MAX_POINTS + 1", app_js)
         self.assertNotIn("downloadCanvasPng", app_js)
@@ -502,6 +560,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("ros2-rover-bridge", compose)
         self.assertIn("ros2-data-recorder", compose)
         self.assertIn("CAMERA_WS_UPSTREAM", compose)
+        self.assertIn("DASHBOARD_CONTAINER_NAME", compose)
         self.assertIn("CAMERA_DRIVER_STATUS_FILE", compose)
         self.assertIn("CAMERA_SETTINGS_FILE", compose)
         self.assertIn("CAMERA_MAX_TICK_FPS", compose)
@@ -512,6 +571,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("RECORDER_API_URL", compose)
         self.assertIn("RECORDING_ARCHIVE_DIR", compose)
         self.assertIn("DATA_RECORDER_STATUS_FILE", compose)
+        self.assertIn("RECORDER_TIMELINE_HZ", compose)
+        self.assertIn("RECORDER_CAMERA_PREVIEW_WIDTH", compose)
         self.assertIn("ROVER_NETWORK_ENABLED", compose)
         self.assertIn("--no-allow-network", compose)
         self.assertIn("--command-file", compose)
@@ -562,7 +623,9 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("read_file_command", rover_bridge_py)
         self.assertIn("file_command_active", rover_bridge_py)
         recorder_py = (Path(__file__).resolve().parents[1] / "scripts" / "data_recorder_service.py").read_text()
-        self.assertIn("polar_gap_cluster_line_fit_nearest_neighbor_tracks_v1", recorder_py)
+        lidar_analysis_py = (Path(__file__).resolve().parents[1] / "dashboard_server" / "lidar_analysis.py").read_text()
+        self.assertIn("polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2", lidar_analysis_py)
+        self.assertIn("timeline.json", recorder_py)
         self.assertIn("ros2\", \"bag\", \"record", recorder_py)
 
     def test_lidar_websocket_requires_browser_session(self):
@@ -745,6 +808,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("lidar-drive-test-recording", slugs)
         self.assertIn("rover-control-dashboard", slugs)
         self.assertIn("lidar-archive-analysis", slugs)
+        self.assertIn("lidar-object-overlay", slugs)
+        self.assertIn("rover-control-todo", slugs)
 
 
 if __name__ == "__main__":

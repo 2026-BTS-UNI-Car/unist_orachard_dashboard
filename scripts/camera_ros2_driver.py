@@ -30,6 +30,7 @@ DEFAULT_VIEW_MODES = [
     {"resolution": "320x240", "width": 320, "height": 240, "fps": [30], "label": "240p 4:3"},
     {"resolution": "1280x1024", "width": 1280, "height": 1024, "fps": [30], "label": "1024p 5:4"},
 ]
+DEFAULT_MODE_BY_RESOLUTION = {item["resolution"]: item for item in DEFAULT_VIEW_MODES}
 
 
 def log(event: str, **fields: Any) -> None:
@@ -81,6 +82,10 @@ def normalize_mode(width: Any, height: Any, fps: Any, fourcc: Any) -> dict[str, 
         "fps": rounded_fps,
         "fourcc": normalized_fourcc,
     }
+
+
+def preferred_mode_for_resolution(resolution: str) -> dict[str, Any] | None:
+    return DEFAULT_MODE_BY_RESOLUTION.get(str(resolution or "").lower())
 
 
 def candidate_devices(configured: str) -> Iterable[str]:
@@ -199,12 +204,15 @@ def list_camera_modes(device: str) -> list[dict[str, Any]]:
     rows = []
     for resolution, fps_values in modes.items():
         width, height = (int(part) for part in resolution.split("x", 1))
+        preferred = preferred_mode_for_resolution(resolution)
+        preferred_fps = preferred.get("fps") if preferred else None
         rows.append(
             {
                 "resolution": resolution,
                 "width": width,
                 "height": height,
-                "fps": sorted(fps_values),
+                "fps": list(preferred_fps or sorted(fps_values) or [30]),
+                "label": preferred.get("label") if preferred else "",
             }
         )
     return sorted(rows, key=lambda item: (item["width"] * item["height"], item["width"]))
@@ -288,6 +296,7 @@ class UsbCameraDriver(Node):
         self.next_recovery_at = 0.0
         self.last_wait_log_at = 0.0
         self.last_status_write_at = 0.0
+        self.last_publish_at = 0.0
         self.apply_settings_file(force=True)
         self.timer = self.create_timer(1.0 / max(1.0, args.max_tick_fps), self.tick)
         log(
@@ -458,11 +467,20 @@ class UsbCameraDriver(Node):
         self.next_open_attempt_at = now + self.args.open_retry_interval_s
         self.close_camera()
         seen: set[str] = set()
+        supported_seen: list[dict[str, Any]] = []
         for path in candidate_devices(self.args.device):
             resolved = str(Path(path).resolve()) if Path(path).exists() else path
             if resolved in seen:
                 continue
             seen.add(resolved)
+            modes = list_camera_modes(path)
+            if modes:
+                supported_seen = modes
+                mode_resolutions = {item.get("resolution") for item in modes}
+                requested_resolution = f"{self.request_width}x{self.request_height}"
+                if requested_resolution not in mode_resolutions:
+                    log("skip_unsupported_mode", device=path, requested=requested_resolution, supported=modes)
+                    continue
             cap = cv2.VideoCapture(path, cv2.CAP_V4L2)
             if not cap.isOpened():
                 cap.release()
@@ -479,11 +497,25 @@ class UsbCameraDriver(Node):
             self.device = path
             self.fail_count = 0
             self.frame_count = 0
+            self.last_publish_at = 0.0
             self.last_error = None
             self.actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or frame.shape[1])
             self.actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or frame.shape[0])
             self.actual_fps = round(float(cap.get(cv2.CAP_PROP_FPS) or self.request_fps), 2)
-            self.supported_modes = list_camera_modes(path)
+            if self.actual_width != self.request_width or self.actual_height != self.request_height:
+                log(
+                    "mode_rejected",
+                    device=path,
+                    requested_width=self.request_width,
+                    requested_height=self.request_height,
+                    actual_width=self.actual_width,
+                    actual_height=self.actual_height,
+                    fps=self.actual_fps,
+                )
+                cap.release()
+                self.cap = None
+                continue
+            self.supported_modes = modes or list_camera_modes(path) or supported_seen
             log(
                 "opened",
                 device=path,
@@ -496,6 +528,8 @@ class UsbCameraDriver(Node):
             self.publish_frame(frame)
             self.write_status("opened", force=True)
             return True
+        if supported_seen:
+            self.supported_modes = supported_seen
         self.last_error = "USB camera video node not found" if not video_nodes() else "Unable to open USB camera video node"
         if now - self.last_wait_log_at >= self.args.wait_log_interval_s:
             self.last_wait_log_at = now
@@ -519,6 +553,11 @@ class UsbCameraDriver(Node):
         if self.cap is None:
             self.open_camera()
             return
+        now = time.time()
+        publish_interval = 1.0 / max(1.0, self.request_fps)
+        if now - self.last_publish_at < publish_interval:
+            self.write_status("streaming")
+            return
         ok, frame = self.cap.read()
         if not ok or frame is None:
             self.fail_count += 1
@@ -535,6 +574,7 @@ class UsbCameraDriver(Node):
     def publish_frame(self, frame):
         if self.args.rotate_180:
             frame = cv2.rotate(frame, cv2.ROTATE_180)
+        self.last_publish_at = time.time()
         stamp = self.get_clock().now().to_msg()
         height, width = frame.shape[:2]
         image = Image()

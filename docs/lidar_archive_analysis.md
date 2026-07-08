@@ -1,6 +1,6 @@
 # LiDAR Archive 분석
 
-Archive viewer는 recorded `/scan`에서 만든 `preview_scan.json`과 `analysis.json`을 사용해 지도 위에 벽과 물체 움직임을 overlay한다.
+Archive viewer는 recorded `/scan`에서 만든 `preview_scan.json`, `analysis.json`, `timeline.json`을 사용해 지도 위에 벽과 물체 움직임을 overlay한다. 실시간 화면은 `ros2-lidar-bridge`가 WebSocket scan마다 같은 알고리즘으로 overlay JSON을 생성한다.
 
 ## 입력
 
@@ -12,11 +12,11 @@ Archive viewer는 recorded `/scan`에서 만든 `preview_scan.json`과 `analysis
 - `y_m`
 - `quality`
 
-원본 전체 데이터는 `rosbag2/`에 그대로 남기고, dashboard는 빠른 조회를 위해 preview sample만 그린다.
+원본 전체 데이터는 `rosbag2/`에 그대로 남기고, dashboard는 빠른 조회와 재생을 위해 downsample된 timeline frame을 그린다.
 
 ## 알고리즘
 
-현재 알고리즘 이름은 `polar_gap_cluster_line_fit_nearest_neighbor_tracks_v1`이다.
+현재 알고리즘 이름은 `polar_gap_cluster_line_fit_nearest_neighbor_tracks_v2`이다.
 
 1. Polar scan 순서를 유지한 채 인접 점 사이의 cartesian gap을 계산한다.
 2. gap이 `max(0.18m, range * 0.06)`보다 크면 cluster를 나눈다.
@@ -28,11 +28,29 @@ Archive viewer는 recorded `/scan`에서 만든 `preview_scan.json`과 `analysis
 8. 0.55m 안의 track에 붙으면 같은 object로 보고, 위치 history와 velocity를 갱신한다.
 9. 2초 동안 갱신되지 않은 track은 제거한다.
 
+v2에서는 이 로직을 `dashboard_server/lidar_analysis.py`로 분리해 live bridge와 data recorder가 같은 함수를 사용한다. 그래서 실시간 overlay와 archive overlay의 wall/object 기준이 같다.
+
 ## Overlay
 
 - Wall: fitted line segment를 LiDAR map 위에 노란 선으로 표시한다.
 - Object: centroid와 cluster radius를 원으로 표시한다.
 - Track: 같은 object로 매칭된 최근 위치 history를 선으로 표시한다.
+
+Dashboard viewer는 다음 세 가지 표시 모드를 지원한다.
+
+- `LiDAR`: raw/downsampled point만 표시한다.
+- `LiDAR+Overlay`: point와 wall/object/track overlay를 같이 표시한다.
+- `Overlay`: wall/object/track overlay만 표시한다.
+
+## Timeline
+
+`timeline.json`은 장시간 기록을 브라우저에서 동영상처럼 재생하기 위한 lightweight preview이다.
+
+- `lidar.frames[]`: `t_s`, downsampled points, frame별 overlay
+- `camera.frames[]`: `t_s`, JPEG preview frame
+- `sync.time_base`: recording 시작 후 초 단위
+
+LiDAR+Camera archive는 scrubber의 같은 `t_s`를 기준으로 LiDAR frame과 camera frame을 같이 표시한다. 원본 분석이나 재처리가 필요하면 `rosbag2/`를 기준으로 다시 처리한다.
 
 ## 한계
 

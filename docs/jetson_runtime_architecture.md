@@ -74,8 +74,8 @@ cat runtime/lidar_bridge_status.json
 개발 PC/WSL에서는 rsync로 Jetson에 업로드하고, Jetson에서 build/restart를 수행합니다.
 
 ```bash
-scripts/sync_to_jetson.sh --host unist --user unist --dest /home/unist/unist_orachard_dashboard
-scripts/jetson_dashboard_remote_restart.sh --host unist --user unist --path /home/unist/unist_orachard_dashboard
+scripts/sync_to_jetson.sh --host unist --user unist --dest /home/unist/workspace/unist_orachard_dashboard
+scripts/jetson_dashboard_remote_restart.sh --host unist --user unist --path /home/unist/workspace/unist_orachard_dashboard
 ```
 
 systemd 템플릿은 `deploy/systemd`에 있습니다.

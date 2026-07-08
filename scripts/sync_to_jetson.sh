@@ -3,7 +3,7 @@ set -euo pipefail
 
 HOST="unist"
 USER_NAME="unist"
-DEST="/home/unist/unist_orachard_dashboard"
+DEST="/home/unist/workspace/unist_orachard_dashboard"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

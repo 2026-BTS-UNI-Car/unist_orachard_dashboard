@@ -12,6 +12,7 @@ services:
       DASHBOARD_HOST: "0.0.0.0"
       DASHBOARD_PORT: "8080"
       DASHBOARD_MODE: "live"
+      DASHBOARD_CONTAINER_NAME: "unist-orachard-dashboard"
       TELEMETRY_FILE: "/app/runtime/telemetry_snapshot.json"
       HOST_ROOT: "/host-root"
       HOST_PROC: "/proc"
@@ -270,6 +271,10 @@ services:
       ROVER_CMD_TOPIC: "${ROVER_CMD_TOPIC:-/cmd_vel}"
       ROVER_STATUS_TOPIC: "${ROVER_STATUS_TOPIC:-/rover/status}"
       RECORDER_PREVIEW_MAX_POINTS: "${RECORDER_PREVIEW_MAX_POINTS:-1200}"
+      RECORDER_TIMELINE_HZ: "${RECORDER_TIMELINE_HZ:-2.0}"
+      RECORDER_TIMELINE_MAX_FRAMES: "${RECORDER_TIMELINE_MAX_FRAMES:-1800}"
+      RECORDER_CAMERA_PREVIEW_WIDTH: "${RECORDER_CAMERA_PREVIEW_WIDTH:-640}"
+      RECORDER_CAMERA_JPEG_QUALITY: "${RECORDER_CAMERA_JPEG_QUALITY:-68}"
     volumes:
       - ./runtime:/app/runtime
     command:

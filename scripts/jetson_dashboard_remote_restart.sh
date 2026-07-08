@@ -3,7 +3,7 @@ set -euo pipefail
 
 HOST="unist"
 USER_NAME="unist"
-APP_PATH="/home/unist/unist_orachard_dashboard"
+APP_PATH="/home/unist/workspace/unist_orachard_dashboard"
 SYSTEMD_RESTART="0"
 
 while [[ $# -gt 0 ]]; do
