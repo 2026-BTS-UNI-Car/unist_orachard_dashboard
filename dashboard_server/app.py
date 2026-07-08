@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import hashlib
 import json
 import mimetypes
@@ -81,19 +82,27 @@ def websocket_stats(registry: dict[str, dict[str, float | str]]) -> dict[str, ob
 
 
 class _TeeWriter:
-    def __init__(self, *targets):
-        self.targets = targets
+    def __init__(self, response_target, cache_target):
+        self.response_target = response_target
+        self.cache_target = cache_target
+        self.response_broken = False
 
     def write(self, data: bytes) -> int:
-        for target in self.targets:
-            target.write(data)
+        if not self.response_broken:
+            try:
+                self.response_target.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                self.response_broken = True
+        self.cache_target.write(data)
         return len(data)
 
     def flush(self):
-        for target in self.targets:
-            flush = getattr(target, "flush", None)
-            if flush:
-                flush()
+        if not self.response_broken:
+            try:
+                self.response_target.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                self.response_broken = True
+        self.cache_target.flush()
 
 
 DOCS_CATALOG = [
@@ -494,12 +503,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             with tmp_path.open("wb") as cache_file:
                 self._send_download_headers("application/gzip", filename=filename)
                 writer = _TeeWriter(self.wfile, cache_file)
-                with tarfile.open(fileobj=writer, mode="w|gz") as tar:
-                    tar.add(archive, arcname=archive.name)
+                with gzip.GzipFile(fileobj=writer, mode="wb", compresslevel=1) as gzip_file:
+                    with tarfile.open(fileobj=gzip_file, mode="w|") as tar:
+                        tar.add(archive, arcname=archive.name)
                 writer.flush()
             tmp_path.replace(cache_path)
-        except (BrokenPipeError, ConnectionResetError):
-            tmp_path.unlink(missing_ok=True)
         except OSError as exc:
             tmp_path.unlink(missing_ok=True)
             dashboard_log("recording.download.error", id=recording_id, error=str(exc))
