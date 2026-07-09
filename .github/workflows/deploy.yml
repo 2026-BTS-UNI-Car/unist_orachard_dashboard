@@ -33,7 +33,19 @@ jobs:
 
       - name: Install cloudflared
         run: |
-          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+          set -euo pipefail
+          url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+          for attempt in 1 2 3 4 5; do
+            if curl --retry 4 --retry-all-errors --retry-delay 5 -fsSL "$url" -o /tmp/cloudflared; then
+              install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+              break
+            fi
+            if [ "$attempt" = "5" ]; then
+              echo "cloudflared download failed after retries" >&2
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
           chmod +x /usr/local/bin/cloudflared
           cloudflared --version
 
