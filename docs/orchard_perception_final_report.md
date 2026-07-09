@@ -80,6 +80,30 @@ suppress if d_wall <= tau_wall and projection is inside the wall segment
 
 YOLO11 trunk segmentation이 가장 좋은 이유는 bbox가 아니라 줄기 contour mask를 제공하기 때문이다. 과수원에서는 밑둥이 여러 갈래로 갈라지거나 기울어진 줄기가 많기 때문에, 단순 bbox보다 mask와 skeleton/axis 정보가 중요하다.
 
+### 모델별 시각 결과
+
+아래 이미지는 `20260708T053333Z_both`, `20260708T054036Z_both` archive frame에서 실제 inference 결과를 contact sheet로 묶은 것이다.
+
+![Roboflow YOLO11 trunk segmentation result](assets/orchard_perception_models/rf_yolo11_trunk_seg.jpg)
+
+`tree-trunk-detection-369pz-vm3hn/2`는 줄기 contour mask를 직접 제공해 현재 후보 중 가장 연구 목적에 가깝다. 다만 hosted API 결과이므로 최종 field system에서는 같은 형태의 local segmentation model을 직접 fine-tuning/export해야 한다.
+
+![Roboflow orchard YOLOv5s bbox result](assets/orchard_perception_models/rf_orchard_yolov5s_det.jpg)
+
+`orchard-trunk-yolov5s/3`는 bbox-only라서 기울어진 줄기와 여러 갈래 밑둥의 실제 테두리를 설명하기 어렵다. 지도 생성에는 root point 추정 오차가 커질 수 있다.
+
+![Roboflow trees and trunks bbox result](assets/orchard_perception_models/rf_trees_and_trunks_det.jpg)
+
+`trees-and-trunks/1`은 일부 장면에서 줄기를 잡지만 edge false positive와 bbox-only 한계가 있어 채택하지 않았다.
+
+![Roboflow generic segmentation result](assets/orchard_perception_models/rf_generic_tree_wall_seg.jpg)
+
+`object-detection-isoz2/1`은 archive sample에서 유효 tree prediction이 거의 없어 비채택했다.
+
+![Hugging Face SegFormer ADE20K result](assets/orchard_perception_models/hf_segformer_ade20k.jpg)
+
+SegFormer ADE20K는 tree/grass/wall/building 같은 semantic context를 제공하지만 trunk instance detector가 아니다. 따라서 최종 tree mask가 아니라 negative semantic gate 또는 pseudo-label 검수 보조로 사용한다.
+
 ### Multi-stem tree 처리
 
 과수 밑둥이 여러 갈래로 갈라지는 경우를 한 개의 tree root로 세기 위해 camera post-process는 stem instance와 root landmark를 분리한다.
@@ -200,7 +224,7 @@ Dashboard 쪽 schema는 현재 `detections[].bbox`, `confidence`, `contour`, `li
 | AI worker image | `Dockerfile.vision_ai` | PyTorch/Ultralytics/Transformers 의존성을 dashboard와 분리 |
 | Compose service | `docker-compose.yml`의 `vision-ai-worker` profile | `docker compose --profile vision-ai up -d vision-ai-worker`로 별도 실행 |
 | Model preparation | `scripts/prepare_local_vision_models.py` | HF snapshot download, YOLO base 준비, fine-tuned model TensorRT export |
-| Dashboard bridge | `dashboard_server/camera_analysis.py` | `ORCHARD_VISION_AI_URL`이 있으면 local worker 우선, 실패 시 OpenCV fallback |
+| Dashboard bridge | `dashboard_server/camera_analysis.py` | camera perception은 AI-only. `ORCHARD_VISION_AI_URL` 또는 worker가 없으면 오류 overlay를 반환하고 OpenCV fallback을 사용하지 않음 |
 
 실행 예:
 
@@ -217,6 +241,8 @@ export ORCHARD_VISION_AI_URL=http://127.0.0.1:8785/analyze
 export ORCHARD_YOLO_MODEL=/app/runtime/models/best.engine
 docker compose --profile vision-ai up -d vision-ai-worker dashboard
 ```
+
+`ORCHARD_VISION_AI_URL`이 설정되지 않았거나 worker가 응답하지 않으면 dashboard는 `algorithm=local_orchard_vision_ai_worker_v1`, `ok=false`, `method=vision_ai_url_required` 또는 `vision_ai_worker_unavailable`인 overlay를 반환한다. UI는 이를 `Camera AI unavailable`로 표시한다. 이 정책은 잘못된 OpenCV heuristic 결과가 연구 데이터에 조용히 섞이는 것을 막기 위한 fail-closed 설계다.
 
 ## 8. 남긴 시행착오
 

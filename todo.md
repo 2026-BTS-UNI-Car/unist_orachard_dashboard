@@ -22,6 +22,16 @@ Last updated: 2026-07-09
 - [x] Local worker health endpoint는 모델이 없어도 JSON으로 상태를 반환한다.
 - [x] Python tests, docs API smoke, `git diff --check`를 통과한다.
 
+## 2026-07-09 Camera AI-only 정책 TODO
+
+- [x] 모델별 contact sheet를 `docs/assets/orchard_perception_models/`에 보고서용 이미지로 보존한다.
+- [x] Notion 보고서에 각 모델의 실제 결과 이미지를 첨부한다.
+- [x] Camera vision entrypoint에서 OpenCV fallback을 제거한다.
+- [x] `ORCHARD_VISION_AI_URL`이 없으면 `vision_ai_url_required` 오류를 반환한다.
+- [x] Local AI worker가 응답하지 않으면 `vision_ai_worker_unavailable` 오류를 반환한다.
+- [x] UI camera overlay에 `Camera AI unavailable` 오류를 표시한다.
+- [x] AI-only 정책 회귀 테스트를 추가한다.
+
 ## 완료 조건
 
 - [x] Connections, Rover Control, Archive에서 perception mode가 같은 의미로 동작한다.

@@ -1401,7 +1401,8 @@ function handleCameraLiveMessage(raw) {
       width: Number(payload.width || payload.source_width || 0),
       height: Number(payload.height || payload.source_height || 0),
     };
-    state.cameraLive.error = "";
+    const overlayError = cameraOverlayErrorText(payload.overlay);
+    state.cameraLive.error = overlayError;
     const src = payload.data ? `data:${payload.mime || "image/jpeg"};base64,${payload.data}` : "";
     const image = $("cameraLiveImage");
     const roverImage = $("roverCameraImage");
@@ -1411,7 +1412,11 @@ function handleCameraLiveMessage(raw) {
     const output = payload.width && payload.height ? `${payload.width}x${payload.height}` : state.cameraLive.resolution;
     const rate = state.cameraLive.sourceFps || state.cameraLive.displayFps || state.cameraLive.fps;
     const modeText = source === output ? source : `source ${source} · output ${output}`;
-    setCameraResult("ok", `실시간 수신 중 · ${modeText} · ${cameraFpsLabel(rate)}`);
+    if (overlayError) {
+      setCameraResult("error", `AI 비전 오류 · ${overlayError}`);
+    } else {
+      setCameraResult("ok", `실시간 수신 중 · ${modeText} · ${cameraFpsLabel(rate)}`);
+    }
     renderCameraLiveState();
     renderLiveCameraOverlays();
     renderLiveSensorLinks();
@@ -1444,10 +1449,17 @@ function renderCameraLiveState(overrideLabel) {
   const observedFps = state.cameraLive.sourceFps || state.cameraLive.displayFps;
   const observedDetail = `ROS ${cameraFpsLabel(state.cameraLive.sourceFps)} · WS ${cameraFpsLabel(state.cameraLive.displayFps)}`;
   const colors = chartColors();
+  const overlayError = cameraOverlayErrorText(state.cameraLive.lastOverlay);
+  const aiVisionValue = state.cameraLive.lastOverlay
+    ? overlayError ? "ERROR" : "ON"
+    : "WAIT";
+  const aiVisionSub = overlayError || state.cameraLive.lastOverlay?.backend || state.cameraLive.lastOverlay?.method || "local AI worker required";
+  const aiVisionColor = overlayError ? colors.rose : state.cameraLive.lastOverlay ? colors.good : colors.amber;
   renderReadout("cameraLiveStats", [
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
+    { label: "AI Vision", value: aiVisionValue, sub: aiVisionSub, color: aiVisionColor },
     { label: "Observed FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
   text("roverCameraCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · source ${source} · capture ${captureTarget}` : socketText);
@@ -1462,6 +1474,7 @@ function renderCameraLiveState(overrideLabel) {
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
+    { label: "AI Vision", value: aiVisionValue, sub: aiVisionSub, color: aiVisionColor },
     { label: "Observed FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
 }
@@ -1486,6 +1499,11 @@ function shouldShowCameraOverlay() {
   return ["camera", "fusion"].includes(state.perceptionOverlayMode) && state.cameraOverlayMode !== "raw";
 }
 
+function cameraOverlayErrorText(overlay) {
+  if (!overlay || overlay.ok !== false) return "";
+  return overlay.error || overlay.method || "local vision AI worker unavailable";
+}
+
 function drawCameraOverlayOnCanvas(canvas, overlay, options = {}) {
   if (!canvas) return;
   const frame = canvas.closest(".camera-frame, .rover-camera-frame, .archive-camera-frame");
@@ -1496,6 +1514,11 @@ function drawCameraOverlayOnCanvas(canvas, overlay, options = {}) {
   const { ctx, w, h } = prepared;
   ctx.clearRect(0, 0, w, h);
   if (mode === "raw") return;
+  const overlayError = cameraOverlayErrorText(overlay);
+  if (overlayError) {
+    drawCameraOverlayError(ctx, w, h, overlayError, mode);
+    return;
+  }
 
   const detections = (overlay?.detections || [])
     .filter((item) => Number(item?.confidence) >= 0.12 && Array.isArray(item?.bbox))
@@ -1535,6 +1558,58 @@ function drawCameraOverlayOnCanvas(canvas, overlay, options = {}) {
     drawCameraConfidenceLabel(ctx, `${Math.round(confidence * 100)}%`, x, y, boxW, color, labelBoxes);
   }
   ctx.restore();
+}
+
+function drawCameraOverlayError(ctx, w, h, message, mode) {
+  ctx.save();
+  if (mode === "overlay") {
+    ctx.fillStyle = "rgba(2, 6, 23, 0.78)";
+    ctx.fillRect(0, 0, w, h);
+  }
+  const maxW = Math.min(w - 32, 560);
+  const x = Math.max(16, (w - maxW) / 2);
+  const y = Math.max(18, h * 0.08);
+  ctx.fillStyle = "rgba(127, 29, 29, 0.82)";
+  ctx.strokeStyle = cssVar("--chart-rose", "#ff5d7e");
+  ctx.lineWidth = 2;
+  roundRectPath(ctx, x, y, maxW, 72, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#fff7f8";
+  ctx.font = "900 14px Inter, Arial, sans-serif";
+  ctx.fillText("Camera AI unavailable", x + 16, y + 27);
+  ctx.font = "700 12px Inter, Arial, sans-serif";
+  wrapCanvasText(ctx, String(message), x + 16, y + 50, maxW - 32, 16, 2);
+  ctx.restore();
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function wrapCanvasText(ctx, textValue, x, y, maxWidth, lineHeight, maxLines) {
+  const words = String(textValue || "").split(/\s+/).filter(Boolean);
+  let line = "";
+  let lines = 0;
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width > maxWidth && line) {
+      ctx.fillText(lines + 1 >= maxLines ? `${line.slice(0, Math.max(0, line.length - 3))}...` : line, x, y + lines * lineHeight);
+      lines += 1;
+      line = word;
+      if (lines >= maxLines) return;
+    } else {
+      line = next;
+    }
+  }
+  if (line && lines < maxLines) ctx.fillText(line, x, y + lines * lineHeight);
 }
 
 function drawCameraDetectionShape(ctx, detection, viewport) {

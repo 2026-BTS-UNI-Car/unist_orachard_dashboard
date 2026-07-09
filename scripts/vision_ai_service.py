@@ -125,6 +125,11 @@ class VisionAnalyzer:
                 return
             except Exception as exc:
                 self.backend_error = f"{self.backend_error}; segformer: {exc}".strip("; ")
+        if not self.backend_error:
+            self.backend_error = (
+                "No local AI model configured. Set ORCHARD_YOLO_MODEL to a local .pt/.onnx/.engine file "
+                "or ORCHARD_SEGFORMER_MODEL to a local model directory."
+            )
 
     def health(self) -> dict[str, Any]:
         return {

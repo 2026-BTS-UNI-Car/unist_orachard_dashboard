@@ -16,11 +16,13 @@ VISION_AI_URL = os.environ.get("ORCHARD_VISION_AI_URL", "").strip()
 VISION_AI_TIMEOUT_S = float(os.environ.get("ORCHARD_VISION_AI_TIMEOUT_S", "1.2"))
 
 
-def empty_camera_analysis(method: str = "unavailable") -> dict[str, Any]:
+def empty_camera_analysis(method: str = "unavailable", error: str = "") -> dict[str, Any]:
     return {
         "ok": False,
-        "algorithm": CAMERA_ALGORITHM_NAME,
+        "algorithm": LOCAL_VISION_ALGORITHM_NAME,
         "method": method,
+        "error": error,
+        "ai_required": True,
         "confidence": 0.0,
         "detections": [],
     }
@@ -37,29 +39,12 @@ def analyze_camera_frame_payload(frame: dict[str, Any]) -> dict[str, Any]:
 
 
 def current_camera_overlay_algorithm(algorithm: Any) -> bool:
-    if VISION_AI_URL:
-        return algorithm == LOCAL_VISION_ALGORITHM_NAME
-    return algorithm in {CAMERA_ALGORITHM_NAME, LOCAL_VISION_ALGORITHM_NAME}
+    return algorithm == LOCAL_VISION_ALGORITHM_NAME
 
 
 @lru_cache(maxsize=2048)
 def _analyze_camera_data_cached(data: str) -> dict[str, Any]:
-    worker_result = analyze_camera_data_with_local_worker(data)
-    if worker_result is not None:
-        return worker_result
-    try:
-        import cv2  # type: ignore
-        import numpy as np  # type: ignore
-    except Exception:
-        return empty_camera_analysis("opencv_unavailable")
-    try:
-        raw = base64.b64decode(data)
-        image = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
-    except Exception:
-        return empty_camera_analysis("decode_error")
-    if image is None:
-        return empty_camera_analysis("decode_error")
-    return analyze_camera_image(image)
+    return analyze_camera_data_with_local_worker(data)
 
 
 def estimate_camera_orchard_support(frame: dict[str, Any]) -> dict[str, Any]:
@@ -69,70 +54,33 @@ def estimate_camera_orchard_support(frame: dict[str, Any]) -> dict[str, Any]:
 def analyze_camera_image(image_bgr: Any) -> dict[str, Any]:
     try:
         import cv2  # type: ignore
-        import numpy as np  # type: ignore
     except Exception:
-        return empty_camera_analysis("opencv_unavailable")
+        return empty_camera_analysis("vision_ai_encode_unavailable", "OpenCV is required only to JPEG-encode frames before local AI inference.")
     if image_bgr is None:
         return empty_camera_analysis("no_image")
     height, width = image_bgr.shape[:2]
     if height <= 0 or width <= 0:
         return empty_camera_analysis("empty_image")
-    worker_result = analyze_camera_image_with_local_worker(cv2, image_bgr)
-    if worker_result is not None:
-        return worker_result
-
-    masks = camera_tree_masks(cv2, np, image_bgr)
-    scene = masks.get("scene") or {}
-    if not scene.get("orchard_scene"):
-        return {
-            "ok": True,
-            "algorithm": CAMERA_ALGORITHM_NAME,
-            "method": "orchard_scene_gate_rejected",
-            "confidence": 0.0,
-            "detections": [],
-            "image": {"width": int(width), "height": int(height)},
-            "scene": scene,
-            "legend": {
-                "contour": "suppressed because vegetation/canopy context is too weak for an orchard scene",
-                "confidence": "0.0 when the image is classified as non-orchard context",
-            },
-        }
-
-    detections = contour_detections(cv2, masks, width, height)
-    detections.extend(hough_line_detections(cv2, np, masks, width, height))
-    detections = merge_camera_detections(detections, width, height)
-    confidence = max((float(item.get("confidence") or 0.0) for item in detections), default=0.0)
-    return {
-        "ok": True,
-        "algorithm": CAMERA_ALGORITHM_NAME,
-        "method": "orchard_scene_gate_plus_canopy_supported_trunk_contours_and_lines",
-        "confidence": round(confidence, 3),
-        "detections": detections[:8],
-        "image": {"width": int(width), "height": int(height)},
-        "scene": scene,
-        "legend": {
-            "contour": "camera tree trunk-like outline",
-            "confidence": "conservative tree probability from bark/dark trunk evidence gated by image-level orchard context and local canopy support",
-        },
-    }
+    return analyze_camera_image_with_local_worker(cv2, image_bgr)
 
 
-def analyze_camera_image_with_local_worker(cv2: Any, image_bgr: Any) -> dict[str, Any] | None:
-    if not VISION_AI_URL:
-        return None
+def analyze_camera_image_with_local_worker(cv2: Any, image_bgr: Any) -> dict[str, Any]:
     try:
         ok, encoded = cv2.imencode(".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 86])
     except Exception:
-        return None
+        return empty_camera_analysis("vision_ai_encode_failed", "Failed to JPEG-encode camera frame for local AI inference.")
     if not ok:
-        return None
+        return empty_camera_analysis("vision_ai_encode_failed", "Failed to JPEG-encode camera frame for local AI inference.")
     image_data = base64.b64encode(encoded.tobytes()).decode("ascii")
     return analyze_camera_data_with_local_worker(image_data)
 
 
-def analyze_camera_data_with_local_worker(data: str) -> dict[str, Any] | None:
+def analyze_camera_data_with_local_worker(data: str) -> dict[str, Any]:
     if not VISION_AI_URL:
-        return None
+        return empty_camera_analysis(
+            "vision_ai_url_required",
+            "ORCHARD_VISION_AI_URL is not configured. Camera perception is AI-only and will not use OpenCV fallback.",
+        )
     payload = {
         "image": data,
         "schema": "dashboard_camera_overlay_v1",
@@ -148,14 +96,19 @@ def analyze_camera_data_with_local_worker(data: str) -> dict[str, Any] | None:
         )
         with urlopen(request, timeout=VISION_AI_TIMEOUT_S) as response:
             result = json.loads(response.read().decode("utf-8"))
-    except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
-        return None
+    except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+        return empty_camera_analysis(
+            "vision_ai_worker_unavailable",
+            f"Local vision AI worker did not return a valid response: {exc}",
+        )
     if not isinstance(result, dict) or result.get("algorithm") != LOCAL_VISION_ALGORITHM_NAME:
-        return None
-    if not result.get("ok") and not result.get("detections"):
-        return None
+        return empty_camera_analysis(
+            "vision_ai_invalid_response",
+            "Local vision AI worker response used an unexpected schema or algorithm.",
+        )
     result.setdefault("image", {})
     result.setdefault("detections", [])
+    result.setdefault("ai_required", True)
     result["source"] = "local_vision_ai_worker"
     return result
 
