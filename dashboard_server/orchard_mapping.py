@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-import base64
 import math
 from typing import Any
 
+from dashboard_server.camera_analysis import estimate_camera_orchard_support
 from dashboard_server.lidar_analysis import ALGORITHM_NAME, LIDAR_COORDINATE_FRAME, detect_orchard_trees, is_rear_person_zone
 
 
-MAP_ALGORITHM_NAME = "orchard_lidar_camera_scanmatch_fusion_v3"
+MAP_ALGORITHM_NAME = "orchard_three_layer_weighted_centerline_v7"
 SCAN_MATCH_GRID_M = 0.28
 SCAN_MATCH_FINE_GRID_M = 0.2
+CAMERA_FOV_X_RAD = math.radians(78.0)
+CAMERA_ASSUMED_VISIBLE_TRUNK_HEIGHT_M = 1.35
+LIDAR_TREE_WEIGHT = 0.64
+CAMERA_TREE_WEIGHT = 0.36
 
 
 def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
@@ -19,7 +23,7 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
     pose = {"x_m": 0.0, "y_m": 0.0, "theta_rad": 0.0}
     path = [{"t_s": 0.0, "x_m": 0.0, "y_m": 0.0, "heading_deg": 0.0, "alignment_score": 1.0}]
     previous_points: list[dict[str, Any]] = []
-    global_hits: list[dict[str, Any]] = []
+    lidar_hits: list[dict[str, Any]] = []
     frame_summaries: list[dict[str, Any]] = []
 
     for frame in lidar_frames:
@@ -43,8 +47,7 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
         )
         camera_support = nearest_camera_support(camera_index, t_s)
         for tree in local_trees:
-            global_tree = local_to_global_tree(tree, pose, t_s, camera_support)
-            global_hits.append(global_tree)
+            lidar_hits.append(local_to_global_tree(tree, pose, t_s, camera_support=None))
         frame_summaries.append(
             {
                 "t_s": round(t_s, 3),
@@ -61,28 +64,59 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
         )
         previous_points = points
 
-    trees = merge_global_trees(global_hits, frame_count=len(lidar_frames))
-    bounds = map_bounds(path, trees)
+    camera_hits = camera_global_tree_hits(camera_index, path)
+    lidar_trees = spatial_thin_trees(merge_global_trees(lidar_hits, frame_count=len(lidar_frames)), min_spacing_m=0.82, max_count=36)
+    camera_trees = spatial_thin_trees(merge_global_trees(camera_hits, frame_count=len(camera_index), source="camera"), min_spacing_m=1.05, max_count=42)
+    fusion_trees = spatial_thin_trees(fuse_tree_maps(lidar_trees, camera_trees), min_spacing_m=0.95, max_count=48)
+    lidar_map = build_map_layer(
+        "lidar",
+        "LiDAR-only",
+        "2D LiDAR trunk candidates only",
+        lidar_trees,
+        path,
+    )
+    camera_map = build_map_layer(
+        "camera",
+        "Camera-only",
+        "Monocular camera trunk contour/line detections projected with image geometry",
+        camera_trees,
+        path,
+    )
+    fusion_map = build_map_layer(
+        "fusion",
+        "Weighted Fusion",
+        f"Weighted average of LiDAR ({LIDAR_TREE_WEIGHT:.2f}) and camera ({CAMERA_TREE_WEIGHT:.2f}) tree evidence",
+        fusion_trees,
+        path,
+    )
+    bounds = combined_map_bounds(path, [lidar_map, camera_map, fusion_map])
     return {
         "ok": True,
         "algorithm": MAP_ALGORITHM_NAME,
         "lidar_algorithm": ALGORITHM_NAME,
         "coordinate_frame": LIDAR_COORDINATE_FRAME,
         "duration_s": timeline.get("duration_s"),
-        "tree_count": len(trees),
-        "trees": trees,
+        "tree_count": len(fusion_trees),
+        "trees": fusion_trees,
         "path": path,
         "start": path[0] if path else None,
         "end": path[-1] if path else None,
         "bounds": bounds,
+        "centerline": fusion_map["centerline"],
+        "maps": {
+            "lidar": lidar_map,
+            "camera": camera_map,
+            "fusion": fusion_map,
+        },
         "frames": frame_summaries,
         "camera": {
             "frames_analyzed": len(camera_index),
             "method": camera_index[0]["method"] if camera_index else "unavailable",
         },
         "fusion": {
-            "method": "LiDAR trunk-like candidates + nearest camera trunk/canopy support; pseudo-odometry from 2D scan matching",
-            "note": "Use wheel odometry or visual/LiDAR odometry when available to replace pseudo-odometry.",
+            "method": "Three-layer map: LiDAR-only, camera-only, and confidence-weighted landmark fusion; pseudo-odometry from 2D scan matching",
+            "weights": {"lidar": LIDAR_TREE_WEIGHT, "camera": CAMERA_TREE_WEIGHT},
+            "note": "The current camera-only layer uses monocular geometric depth approximation. Add calibrated camera intrinsics/extrinsics or visual odometry for metric publication results.",
         },
     }
 
@@ -219,21 +253,19 @@ def compose_pose(pose: dict[str, float], transform: dict[str, Any]) -> dict[str,
     }
 
 
-def local_to_global_tree(tree: dict[str, Any], pose: dict[str, float], t_s: float, camera_support: dict[str, Any] | None) -> dict[str, Any]:
+def local_to_global_tree(tree: dict[str, Any], pose: dict[str, float], t_s: float, camera_support: dict[str, Any] | None = None) -> dict[str, Any]:
     local = tree["center"]
-    camera_score = float((camera_support or {}).get("confidence") or 0.0)
     lidar_score = float(tree.get("confidence") or 0.0)
-    front_visible = float(local.get("y_m") or 0.0) > 0.3 and abs(math.atan2(float(local.get("x_m") or 0.0), max(0.1, float(local.get("y_m") or 0.0)))) < math.radians(42)
-    fusion_score = min(0.99, lidar_score * 0.72 + (camera_score if front_visible else 0.0) * 0.28)
     gx, gy = transform_local_point(float(local["x_m"]), float(local["y_m"]), pose)
     return {
         "x_m": round(gx, 3),
         "y_m": round(gy, 3),
         "radius_m": tree.get("radius_m", 0.2),
-        "confidence": round(fusion_score, 3),
+        "confidence": round(lidar_score, 3),
         "lidar_confidence": round(lidar_score, 3),
-        "camera_confidence": round(camera_score if front_visible else 0.0, 3),
+        "camera_confidence": 0.0,
         "kind": tree.get("kind", "trunk_like"),
+        "source": "lidar",
         "first_seen_s": round(t_s, 3),
         "last_seen_s": round(t_s, 3),
         "hits": 1,
@@ -247,12 +279,106 @@ def transform_local_point(x: float, y: float, pose: dict[str, float]) -> tuple[f
     return cos_h * x - sin_h * y + float(pose.get("x_m") or 0.0), sin_h * x + cos_h * y + float(pose.get("y_m") or 0.0)
 
 
-def merge_global_trees(hits: list[dict[str, Any]], frame_count: int | None = None) -> list[dict[str, Any]]:
+def camera_global_tree_hits(camera_index: list[dict[str, Any]], path: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    hits: list[dict[str, Any]] = []
+    for frame in camera_index:
+        if not frame.get("ok"):
+            continue
+        t_s = float(frame.get("t_s") or 0.0)
+        pose = nearest_path_pose(path, t_s)
+        if not pose:
+            continue
+        for detection in camera_tree_local_candidates(frame):
+            gx, gy = transform_local_point(detection["center"]["x_m"], detection["center"]["y_m"], pose)
+            confidence = float(detection.get("confidence") or 0.0)
+            hits.append(
+                {
+                    "x_m": round(gx, 3),
+                    "y_m": round(gy, 3),
+                    "radius_m": detection.get("radius_m", 0.22),
+                    "confidence": round(confidence, 3),
+                    "lidar_confidence": 0.0,
+                    "camera_confidence": round(confidence, 3),
+                    "kind": "camera_trunk_projection",
+                    "source": "camera",
+                    "bearing_deg": detection.get("bearing_deg"),
+                    "distance_m": detection.get("distance_m"),
+                    "projection": detection.get("projection"),
+                    "first_seen_s": round(t_s, 3),
+                    "last_seen_s": round(t_s, 3),
+                    "hits": 1,
+                }
+            )
+    return hits
+
+
+def camera_tree_local_candidates(frame: dict[str, Any]) -> list[dict[str, Any]]:
+    image = frame.get("image") if isinstance(frame.get("image"), dict) else {}
+    width = int(image.get("width") or 1280)
+    height = int(image.get("height") or 720)
+    focal_px = width / (2.0 * math.tan(CAMERA_FOV_X_RAD / 2.0))
+    rows: list[dict[str, Any]] = []
+    for detection in frame.get("detections") or []:
+        bbox = detection.get("bbox") or []
+        if len(bbox) < 4:
+            continue
+        try:
+            x, y, bw, bh = [float(value) for value in bbox[:4]]
+        except (TypeError, ValueError):
+            continue
+        confidence = float(detection.get("confidence") or 0.0)
+        if confidence < 0.62 or bw <= 0 or bh <= 0:
+            continue
+        bottom_ratio = max(0.0, min(1.0, (y + bh) / max(1.0, height)))
+        if bottom_ratio < 0.45:
+            continue
+        center_x = x + bw / 2.0
+        bearing = ((center_x / max(1.0, width)) - 0.5) * CAMERA_FOV_X_RAD
+        height_depth = focal_px * CAMERA_ASSUMED_VISIBLE_TRUNK_HEIGHT_M / max(12.0, bh)
+        bottom_depth = 1.15 + max(0.0, 1.0 - bottom_ratio) * 11.2
+        distance = clamp(0.62 * height_depth + 0.38 * bottom_depth, 1.15, 13.5)
+        lateral = math.tan(bearing) * distance
+        radius = clamp(distance * (bw / max(1.0, focal_px)) * 0.34, 0.12, 0.55)
+        geometry_confidence = confidence
+        if bottom_ratio < 0.58:
+            geometry_confidence *= 0.86
+        if abs(math.degrees(bearing)) > 34:
+            geometry_confidence *= 0.9
+        rows.append(
+            {
+                "center": {"x_m": lateral, "y_m": distance},
+                "radius_m": round(radius, 3),
+                "confidence": round(max(0.05, min(0.96, geometry_confidence)), 3),
+                "bearing_deg": round(math.degrees(bearing), 2),
+                "distance_m": round(distance, 3),
+                "projection": {
+                    "method": "monocular_trunk_height_bottom_bearing",
+                    "bbox": [round(x, 1), round(y, 1), round(bw, 1), round(bh, 1)],
+                    "bottom_ratio": round(bottom_ratio, 3),
+                    "fov_x_deg": round(math.degrees(CAMERA_FOV_X_RAD), 1),
+                },
+            }
+        )
+    rows.sort(key=lambda item: float(item.get("confidence") or 0.0), reverse=True)
+    return rows[:10]
+
+
+def nearest_path_pose(path: list[dict[str, Any]], t_s: float) -> dict[str, float] | None:
+    if not path:
+        return None
+    item = min(path, key=lambda row: abs(float(row.get("t_s") or 0.0) - t_s))
+    theta = math.radians(float(item.get("heading_deg") or 0.0))
+    return {"x_m": float(item.get("x_m") or 0.0), "y_m": float(item.get("y_m") or 0.0), "theta_rad": theta}
+
+
+def merge_global_trees(hits: list[dict[str, Any]], frame_count: int | None = None, source: str = "lidar") -> list[dict[str, Any]]:
     trees: list[dict[str, Any]] = []
     for hit in sorted(hits, key=lambda item: item["first_seen_s"]):
         found = None
         for tree in trees:
-            gate = max(0.48, min(1.05, 0.32 + float(hit.get("radius_m") or 0.2) + 0.018 * max(abs(hit["x_m"]), abs(hit["y_m"]))))
+            base_gate = 0.72 if source == "camera" else 0.48
+            max_gate = 1.45 if source == "camera" else 1.05
+            gate = max(base_gate, min(max_gate, 0.38 + float(hit.get("radius_m") or 0.2) + 0.026 * max(abs(hit["x_m"]), abs(hit["y_m"]))))
             if math.hypot(hit["x_m"] - tree["x_m"], hit["y_m"] - tree["y_m"]) <= gate:
                 found = tree
                 break
@@ -275,7 +401,11 @@ def merge_global_trees(hits: list[dict[str, Any]], frame_count: int | None = Non
         time_span = float(tree.get("last_seen_s") or 0.0) - float(tree.get("first_seen_s") or 0.0)
         confidence = float(tree.get("confidence") or 0.0)
         camera_confidence = float(tree.get("camera_confidence") or 0.0)
-        if hits >= 8 and time_span >= 2.0:
+        if source == "camera" and hits >= 3 and confidence >= 0.66:
+            filtered.append(tree)
+        elif source == "camera" and hits >= 2 and time_span >= 0.5 and confidence >= 0.78:
+            filtered.append(tree)
+        elif hits >= 8 and time_span >= 2.0:
             filtered.append(tree)
         elif hits >= 5 and confidence >= 0.74:
             filtered.append(tree)
@@ -287,53 +417,286 @@ def merge_global_trees(hits: list[dict[str, Any]], frame_count: int | None = Non
     return filtered[:80]
 
 
+def fuse_tree_maps(lidar_trees: list[dict[str, Any]], camera_trees: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    fused: list[dict[str, Any]] = []
+    used_camera: set[int] = set()
+    for lidar in lidar_trees:
+        best_index = -1
+        best_distance = float("inf")
+        for index, camera in enumerate(camera_trees):
+            if index in used_camera:
+                continue
+            distance = math.hypot(float(lidar["x_m"]) - float(camera["x_m"]), float(lidar["y_m"]) - float(camera["y_m"]))
+            if distance < best_distance:
+                best_index = index
+                best_distance = distance
+        distance_from_origin = math.hypot(float(lidar["x_m"]), float(lidar["y_m"]))
+        gate = max(0.9, min(2.2, 0.75 + 0.055 * distance_from_origin))
+        camera = camera_trees[best_index] if best_index >= 0 and best_distance <= gate else None
+        if camera:
+            used_camera.add(best_index)
+        fused.append(fuse_tree_pair(lidar, camera, best_distance if camera else None))
+
+    for index, camera in enumerate(camera_trees):
+        if index in used_camera:
+            continue
+        confidence = float(camera.get("confidence") or 0.0)
+        if confidence < 0.9 or int(camera.get("hits") or 0) < 5:
+            continue
+        fused.append(
+            {
+                **camera,
+                "confidence": round(min(0.84, confidence * CAMERA_TREE_WEIGHT + 0.38), 3),
+                "fusion_source": "camera_only_high_confidence",
+                "fusion_weight_lidar": 0.0,
+                "fusion_weight_camera": CAMERA_TREE_WEIGHT,
+                "match_error_m": None,
+            }
+        )
+    fused.sort(key=lambda item: (-(int(item.get("hits") or 0)), -float(item.get("confidence") or 0.0)))
+    return fused[:80]
+
+
+def spatial_thin_trees(trees: list[dict[str, Any]], min_spacing_m: float, max_count: int) -> list[dict[str, Any]]:
+    kept: list[dict[str, Any]] = []
+    for tree in sorted(trees, key=lambda item: (-(int(item.get("hits") or 0)), -float(item.get("confidence") or 0.0))):
+        try:
+            x = float(tree["x_m"])
+            y = float(tree["y_m"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if any(math.hypot(x - float(other["x_m"]), y - float(other["y_m"])) < min_spacing_m for other in kept):
+            continue
+        kept.append(tree)
+        if len(kept) >= max_count:
+            break
+    kept.sort(key=lambda item: (float(item.get("first_seen_s") or 0.0), float(item.get("x_m") or 0.0)))
+    return kept
+
+
+def fuse_tree_pair(lidar: dict[str, Any], camera: dict[str, Any] | None, match_error_m: float | None) -> dict[str, Any]:
+    lidar_conf = float(lidar.get("confidence") or lidar.get("lidar_confidence") or 0.0)
+    if not camera:
+        return {
+            **lidar,
+            "confidence": round(min(0.92, lidar_conf * 0.9), 3),
+            "fusion_source": "lidar_only",
+            "fusion_weight_lidar": LIDAR_TREE_WEIGHT,
+            "fusion_weight_camera": 0.0,
+            "match_error_m": None,
+        }
+    camera_conf = float(camera.get("confidence") or camera.get("camera_confidence") or 0.0)
+    wl = LIDAR_TREE_WEIGHT * max(0.05, lidar_conf)
+    wc = CAMERA_TREE_WEIGHT * max(0.05, camera_conf)
+    total = max(0.001, wl + wc)
+    x = (float(lidar["x_m"]) * wl + float(camera["x_m"]) * wc) / total
+    y = (float(lidar["y_m"]) * wl + float(camera["y_m"]) * wc) / total
+    radius = max(float(lidar.get("radius_m") or 0.2), float(camera.get("radius_m") or 0.2))
+    confidence = min(0.98, 0.56 * lidar_conf + 0.34 * camera_conf + 0.12 * max(0.0, 1.0 - (match_error_m or 0.0) / 2.0))
+    return {
+        "x_m": round(x, 3),
+        "y_m": round(y, 3),
+        "radius_m": round(radius, 3),
+        "confidence": round(confidence, 3),
+        "lidar_confidence": round(lidar_conf, 3),
+        "camera_confidence": round(camera_conf, 3),
+        "kind": "fused_tree",
+        "source": "weighted_lidar_camera",
+        "fusion_source": "matched_weighted_average",
+        "fusion_weight_lidar": round(wl / total, 3),
+        "fusion_weight_camera": round(wc / total, 3),
+        "match_error_m": round(match_error_m or 0.0, 3),
+        "first_seen_s": min(float(lidar.get("first_seen_s") or 0.0), float(camera.get("first_seen_s") or 0.0)),
+        "last_seen_s": max(float(lidar.get("last_seen_s") or 0.0), float(camera.get("last_seen_s") or 0.0)),
+        "hits": int(lidar.get("hits") or 0) + int(camera.get("hits") or 0),
+        "components": {
+            "lidar": {"x_m": lidar.get("x_m"), "y_m": lidar.get("y_m"), "hits": lidar.get("hits")},
+            "camera": {"x_m": camera.get("x_m"), "y_m": camera.get("y_m"), "hits": camera.get("hits")},
+        },
+    }
+
+
+def build_map_layer(layer_id: str, label: str, method: str, trees: list[dict[str, Any]], path: list[dict[str, Any]]) -> dict[str, Any]:
+    centerline = estimate_row_centerline(trees, path, layer_id)
+    return {
+        "id": layer_id,
+        "label": label,
+        "method": method,
+        "tree_count": len(trees),
+        "trees": trees,
+        "path": path,
+        "start": path[0] if path else None,
+        "end": path[-1] if path else None,
+        "bounds": map_bounds_for_items(path, trees, centerline.get("points") or []),
+        "centerline": centerline,
+    }
+
+
+def estimate_row_centerline(trees: list[dict[str, Any]], path: list[dict[str, Any]], layer_id: str) -> dict[str, Any]:
+    if len(path) < 2:
+        return empty_centerline("path_unavailable", layer_id)
+    origin, axis, normal = path_reference_axis(path)
+    projected = []
+    for tree in trees:
+        try:
+            dx = float(tree["x_m"]) - origin[0]
+            dy = float(tree["y_m"]) - origin[1]
+        except (KeyError, TypeError, ValueError):
+            continue
+        s = dx * axis[0] + dy * axis[1]
+        lateral = dx * normal[0] + dy * normal[1]
+        if abs(lateral) < 0.35:
+            continue
+        projected.append({"tree": tree, "s": s, "lateral": lateral, "weight": max(0.2, float(tree.get("confidence") or 0.5))})
+    if len(projected) < 3:
+        return empty_centerline("insufficient_tree_rows", layer_id)
+
+    bin_size = 2.0
+    bins: dict[int, dict[str, list[dict[str, Any]]]] = {}
+    for item in projected:
+        key = int(math.floor(item["s"] / bin_size))
+        side = "left" if item["lateral"] >= 0 else "right"
+        bins.setdefault(key, {"left": [], "right": []})[side].append(item)
+
+    paired_gaps = []
+    side_centers: dict[int, dict[str, float | None]] = {}
+    for key, sides in bins.items():
+        left = weighted_average([row["lateral"] for row in sides["left"]], [row["weight"] for row in sides["left"]])
+        right = weighted_average([row["lateral"] for row in sides["right"]], [row["weight"] for row in sides["right"]])
+        side_centers[key] = {"left": left, "right": right}
+        if left is not None and right is not None and left > right:
+            gap = left - right
+            if 1.0 <= gap <= 8.0:
+                paired_gaps.append(gap)
+    row_gap = median(paired_gaps) if paired_gaps else None
+    points: list[dict[str, Any]] = []
+    for key in sorted(side_centers):
+        left = side_centers[key]["left"]
+        right = side_centers[key]["right"]
+        source = "paired_rows"
+        if left is not None and right is not None:
+            center_lateral = (left + right) / 2.0
+        elif row_gap is not None and left is not None:
+            center_lateral = left - row_gap / 2.0
+            source = "left_row_gap_projection"
+        elif row_gap is not None and right is not None:
+            center_lateral = right + row_gap / 2.0
+            source = "right_row_gap_projection"
+        else:
+            continue
+        s = (key + 0.5) * bin_size
+        x = origin[0] + axis[0] * s + normal[0] * center_lateral
+        y = origin[1] + axis[1] * s + normal[1] * center_lateral
+        points.append({"x_m": round(x, 3), "y_m": round(y, 3), "s_m": round(s, 3), "source": source})
+    points = smooth_centerline_points(points)
+    length = polyline_length(points)
+    confidence = centerline_confidence(points, projected, paired_gaps)
+    return {
+        "ok": len(points) >= 2,
+        "layer": layer_id,
+        "method": "tree_row_lateral_midpoint_bins_v1",
+        "points": points,
+        "point_count": len(points),
+        "length_m": round(length, 3),
+        "row_gap_m": round(row_gap, 3) if row_gap is not None else None,
+        "left_tree_count": sum(1 for item in projected if item["lateral"] >= 0),
+        "right_tree_count": sum(1 for item in projected if item["lateral"] < 0),
+        "confidence": confidence,
+        "state": "ready" if len(points) >= 2 else "insufficient_tree_rows",
+    }
+
+
+def empty_centerline(reason: str, layer_id: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "layer": layer_id,
+        "method": "tree_row_lateral_midpoint_bins_v1",
+        "points": [],
+        "point_count": 0,
+        "length_m": 0.0,
+        "row_gap_m": None,
+        "left_tree_count": 0,
+        "right_tree_count": 0,
+        "confidence": 0.0,
+        "state": reason,
+    }
+
+
+def path_reference_axis(path: list[dict[str, Any]]) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
+    start = path[0]
+    end = path[-1]
+    ox = float(start.get("x_m") or 0.0)
+    oy = float(start.get("y_m") or 0.0)
+    dx = float(end.get("x_m") or 0.0) - ox
+    dy = float(end.get("y_m") or 0.0) - oy
+    if math.hypot(dx, dy) < 0.5:
+        heading = math.radians(float(start.get("heading_deg") or 0.0))
+        dx = math.sin(heading)
+        dy = math.cos(heading)
+    norm = math.hypot(dx, dy) or 1.0
+    axis = (dx / norm, dy / norm)
+    normal = (-axis[1], axis[0])
+    return (ox, oy), axis, normal
+
+
+def weighted_average(values: list[float], weights: list[float]) -> float | None:
+    if not values:
+        return None
+    total = sum(max(0.001, weight) for weight in weights)
+    return sum(value * max(0.001, weight) for value, weight in zip(values, weights)) / total
+
+
+def median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def smooth_centerline_points(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if len(points) < 3:
+        return points
+    rows = []
+    for index, point in enumerate(points):
+        neighbors = points[max(0, index - 1) : min(len(points), index + 2)]
+        rows.append(
+            {
+                **point,
+                "x_m": round(sum(float(row["x_m"]) for row in neighbors) / len(neighbors), 3),
+                "y_m": round(sum(float(row["y_m"]) for row in neighbors) / len(neighbors), 3),
+            }
+        )
+    return rows
+
+
+def polyline_length(points: list[dict[str, Any]]) -> float:
+    total = 0.0
+    for a, b in zip(points, points[1:]):
+        total += math.hypot(float(a["x_m"]) - float(b["x_m"]), float(a["y_m"]) - float(b["y_m"]))
+    return total
+
+
+def centerline_confidence(points: list[dict[str, Any]], projected: list[dict[str, Any]], paired_gaps: list[float]) -> float:
+    if len(points) < 2:
+        return 0.0
+    tree_term = min(1.0, len(projected) / 16.0)
+    paired_term = min(1.0, len(paired_gaps) / 4.0)
+    length_term = min(1.0, polyline_length(points) / 8.0)
+    return round(0.25 + 0.32 * tree_term + 0.28 * paired_term + 0.15 * length_term, 3)
+
+
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
 def camera_observation_index(frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     for frame in frames:
         rows.append({"t_s": float(frame.get("t_s") or 0.0), **estimate_camera_orchard_support(frame)})
     return rows
-
-
-def estimate_camera_orchard_support(frame: dict[str, Any]) -> dict[str, Any]:
-    try:
-        import cv2  # type: ignore
-        import numpy as np  # type: ignore
-    except Exception:
-        return {"confidence": 0.0, "detections": [], "method": "opencv_unavailable"}
-    data = frame.get("data")
-    if not data:
-        return {"confidence": 0.0, "detections": [], "method": "no_frame_data"}
-    try:
-        raw = base64.b64decode(data)
-        image = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
-    except Exception:
-        return {"confidence": 0.0, "detections": [], "method": "decode_error"}
-    if image is None:
-        return {"confidence": 0.0, "detections": [], "method": "decode_error"}
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    green = cv2.inRange(hsv, (35, 30, 30), (95, 255, 255))
-    brown = cv2.inRange(hsv, (5, 28, 20), (34, 230, 210))
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    dark_vertical = cv2.inRange(gray, 18, 125)
-    mask = cv2.morphologyEx(cv2.bitwise_or(cv2.bitwise_or(green, brown), dark_vertical), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 3), np.uint8))
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    detections = []
-    h, w = image.shape[:2]
-    for contour in contours:
-        x, y, bw, bh = cv2.boundingRect(contour)
-        area = bw * bh
-        if area < max(90, 0.0007 * w * h):
-            continue
-        vertical = bh / max(1, bw)
-        center_bias = 1.0 - min(1.0, abs((x + bw / 2) - w / 2) / (w / 2))
-        lower_half = 1.0 if y + bh > h * 0.38 else 0.55
-        score = min(0.95, 0.18 + min(0.36, area / max(1, w * h) * 7.0) + min(0.26, vertical / 9.0) + 0.1 * center_bias + 0.05 * lower_half)
-        label = "trunk_or_tree" if vertical >= 1.35 and bh > h * 0.16 else "canopy_or_branch"
-        detections.append({"bbox": [x, y, bw, bh], "confidence": round(score, 3), "label": label})
-    confidence = max((item["confidence"] for item in detections), default=0.0)
-    detections.sort(key=lambda item: float(item["confidence"]), reverse=True)
-    return {"confidence": round(confidence, 3), "detections": detections[:12], "method": "opencv_hsv_dark_vertical_tree_support_v2"}
 
 
 def nearest_camera_support(index: list[dict[str, Any]], t_s: float) -> dict[str, Any] | None:
@@ -343,9 +706,26 @@ def nearest_camera_support(index: list[dict[str, Any]], t_s: float) -> dict[str,
 
 
 def map_bounds(path: list[dict[str, Any]], trees: list[dict[str, Any]]) -> dict[str, float]:
-    xs = [float(item["x_m"]) for item in path] + [float(item["x_m"]) for item in trees]
-    ys = [float(item["y_m"]) for item in path] + [float(item["y_m"]) for item in trees]
+    return map_bounds_for_items(path, trees, [])
+
+
+def map_bounds_for_items(
+    path: list[dict[str, Any]],
+    trees: list[dict[str, Any]],
+    extra_points: list[dict[str, Any]],
+) -> dict[str, float]:
+    xs = [float(item["x_m"]) for item in path] + [float(item["x_m"]) for item in trees] + [float(item["x_m"]) for item in extra_points]
+    ys = [float(item["y_m"]) for item in path] + [float(item["y_m"]) for item in trees] + [float(item["y_m"]) for item in extra_points]
     if not xs or not ys:
         return {"min_x": -5.0, "max_x": 5.0, "min_y": -5.0, "max_y": 5.0}
     pad = 2.0
     return {"min_x": round(min(xs) - pad, 3), "max_x": round(max(xs) + pad, 3), "min_y": round(min(ys) - pad, 3), "max_y": round(max(ys) + pad, 3)}
+
+
+def combined_map_bounds(path: list[dict[str, Any]], maps: list[dict[str, Any]]) -> dict[str, float]:
+    trees: list[dict[str, Any]] = []
+    points: list[dict[str, Any]] = []
+    for layer in maps:
+        trees.extend(layer.get("trees") or [])
+        points.extend(layer.get("centerline", {}).get("points") or [])
+    return map_bounds_for_items(path, trees, points)

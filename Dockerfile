@@ -14,6 +14,8 @@ COPY static ./static
 COPY config ./config
 COPY docs ./docs
 
+RUN python -m pip install --no-cache-dir -r requirements.txt
+
 RUN apt-get update \
   && apt-get install -y --no-install-recommends util-linux \
   && rm -rf /var/lib/apt/lists/*

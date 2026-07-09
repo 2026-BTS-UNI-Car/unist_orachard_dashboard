@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 import urllib.request
 
+from dashboard_server.camera_analysis import CameraOverlayStabilizer, analyze_camera_frame_payload
 from dashboard_server.lidar_analysis import analyze_points
 from dashboard_server.orchard_mapping import MAP_ALGORITHM_NAME, build_orchard_map
 
@@ -708,7 +709,7 @@ class TelemetryProvider:
             data.setdefault("state", "status_file_only")
             data["status_file"] = str(self.data_recorder_status_file)
             data["status_url"] = f"{self.recorder_api_url}/status"
-            data["archive_count"] = len(self.recordings().get("recordings", []))
+            data["archive_count"] = self._recording_archive_count()
             return data
         return {
             "ok": False,
@@ -717,7 +718,7 @@ class TelemetryProvider:
             "status_url": f"{self.recorder_api_url}/status",
             "status_file": str(self.data_recorder_status_file),
             "archive_dir": str(self.recording_archive_dir),
-            "archive_count": len(self.recordings().get("recordings", [])),
+            "archive_count": self._recording_archive_count(),
             "error": remote.get("error"),
         }
 
@@ -744,7 +745,7 @@ class TelemetryProvider:
                     continue
                 metadata = _load_json(path / "metadata.json")
                 analysis = _load_json(path / "analysis.json")
-                timeline = _load_json(path / "timeline.json")
+                timeline_summary = self._recording_timeline_summary(path, metadata)
                 rows.append(
                     {
                         "id": metadata.get("id") or path.name,
@@ -758,13 +759,67 @@ class TelemetryProvider:
                             "walls": len(analysis.get("walls", [])),
                             "objects": len(analysis.get("objects", [])),
                         },
-                        "timeline": {
-                            "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
-                            "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
-                        },
+                        "timeline": timeline_summary,
                     }
                 )
         return {"ok": True, "archive_dir": str(self.recording_archive_dir), "recordings": rows}
+
+    def _recording_archive_count(self) -> int:
+        if not self.recording_archive_dir.exists():
+            return 0
+        try:
+            return sum(1 for path in self.recording_archive_dir.iterdir() if path.is_dir())
+        except OSError:
+            return 0
+
+    def _recording_timeline_summary(
+        self,
+        path: Path,
+        metadata: dict[str, Any],
+        preview_scan: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        metadata_summary = metadata.get("timeline") if isinstance(metadata.get("timeline"), dict) else {}
+        summary: dict[str, Any] = {
+            "ok": True,
+            "duration_s": metadata.get("duration_s"),
+            "lidar_frames": metadata_summary.get("lidar_frames"),
+            "camera_frames": metadata_summary.get("camera_frames"),
+            "sample_hz": metadata_summary.get("sample_hz"),
+            "algorithm": metadata.get("algorithm"),
+            "coordinate_frame": (preview_scan or {}).get("coordinate_frame"),
+            "source": "metadata",
+        }
+        if summary["lidar_frames"] is not None or summary["camera_frames"] is not None:
+            return summary
+
+        timeline_path = path / "timeline.json"
+        if not timeline_path.exists():
+            summary.update({"ok": False, "source": "missing"})
+            return summary
+        try:
+            if timeline_path.stat().st_size > 2_000_000:
+                summary.update({"source": "deferred", "deferred": True})
+                return summary
+        except OSError:
+            summary.update({"source": "deferred", "deferred": True})
+            return summary
+
+        timeline = _load_json(timeline_path)
+        if not timeline:
+            summary.update({"ok": False, "source": "unreadable"})
+            return summary
+        summary.update(
+            {
+                "ok": bool(timeline.get("ok")),
+                "duration_s": timeline.get("duration_s") or summary.get("duration_s"),
+                "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
+                "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
+                "algorithm": timeline.get("algorithm") or summary.get("algorithm"),
+                "coordinate_frame": timeline.get("coordinate_frame") or summary.get("coordinate_frame"),
+                "source": "timeline",
+            }
+        )
+        return summary
 
     def recording_detail(self, recording_id: str) -> dict[str, Any]:
         path = self.recording_archive_path(recording_id)
@@ -773,7 +828,7 @@ class TelemetryProvider:
         metadata = _load_json(path / "metadata.json")
         analysis = _load_json(path / "analysis.json")
         preview_scan = _load_json(path / "preview_scan.json")
-        timeline = _load_json(path / "timeline.json")
+        timeline_summary = self._recording_timeline_summary(path, metadata, preview_scan=preview_scan)
         return {
             "ok": True,
             "recording": {
@@ -782,14 +837,7 @@ class TelemetryProvider:
                 "metadata": metadata,
                 "analysis": analysis,
                 "preview_scan": preview_scan,
-                "timeline_summary": {
-                    "ok": bool(timeline.get("ok")),
-                    "duration_s": timeline.get("duration_s"),
-                    "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
-                    "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
-                    "algorithm": timeline.get("algorithm"),
-                    "coordinate_frame": timeline.get("coordinate_frame") or preview_scan.get("coordinate_frame"),
-                },
+                "timeline_summary": timeline_summary,
                 "download_url": f"/api/recordings/{path.name}/download",
             },
         }
@@ -860,7 +908,8 @@ class TelemetryProvider:
         }
         lidar_frames = self._timeline_frames_between(timeline.get("lidar", {}).get("frames", []), start, end)
         payload["lidar"] = {"frames": self._reanalyze_lidar_segment_frames(lidar_frames)}
-        payload["camera"] = {"frames": self._timeline_frames_between(timeline.get("camera", {}).get("frames", []), start, end)}
+        camera_frames = self._timeline_frames_between(timeline.get("camera", {}).get("frames", []), start, end)
+        payload["camera"] = {"frames": self._analyze_camera_segment_frames(camera_frames)}
         payload["sync"] = {
             **(timeline.get("sync") or {}),
             "segment_lidar_frames": len(payload["lidar"]["frames"]),
@@ -879,6 +928,18 @@ class TelemetryProvider:
                 now = float(row.get("t_s") or 0.0)
                 overlay, tracks, next_track_id = analyze_points(points, tracks, next_track_id, now=now)
                 row["overlay"] = overlay
+            except Exception:
+                pass
+            rows.append(row)
+        return rows
+
+    def _analyze_camera_segment_frames(self, frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        stabilizer = CameraOverlayStabilizer()
+        for frame in frames:
+            row = dict(frame)
+            try:
+                row["overlay"] = stabilizer.update(analyze_camera_frame_payload(row), float(row.get("t_s") or 0.0))
             except Exception:
                 pass
             rows.append(row)

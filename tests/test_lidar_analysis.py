@@ -64,6 +64,15 @@ class LidarAnalysisTest(unittest.TestCase):
         self.assertGreater(trees[0]["center"]["y_m"], 0)
         self.assertEqual(analysis["orchard"]["excluded_rear_candidates"], 1)
 
+    def test_wall_adjacent_fragments_are_not_orchard_trees(self):
+        scan = []
+        scan.extend(line_points((1.0, 4.0), (4.4, 4.0), 28))
+        scan.extend(trunk_points(2.7, 4.33, radius=0.08, count=8))
+        analysis, _, _ = analyze_points(scan, now=35.0)
+        self.assertGreaterEqual(len(analysis["walls"]), 1)
+        self.assertEqual(analysis["orchard"]["trees"], [])
+        self.assertGreaterEqual(analysis["orchard"]["wall_suppressed_candidates"], 1)
+
     def test_orchard_map_builds_path_and_tree_hits(self):
         frames = []
         for index, offset in enumerate([0.0, -0.25, -0.5]):

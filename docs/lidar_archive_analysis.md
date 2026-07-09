@@ -16,7 +16,7 @@ Archive viewer는 recorded `/scan`에서 만든 `preview_scan.json`, `analysis.j
 
 ## 알고리즘
 
-현재 알고리즘 이름은 `polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v4`이다.
+현재 알고리즘 이름은 `polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5`이다.
 
 1. Polar scan 순서를 유지한 채 인접 점 사이의 cartesian gap을 계산한다.
 2. range에 따라 gap threshold를 조정하고 0/360도 wrap-around cluster를 병합한다.
@@ -25,10 +25,11 @@ Archive viewer는 recorded `/scan`에서 만든 `preview_scan.json`, `analysis.j
 5. 길고 얇은 cluster는 wall segment로 분류한다. 같은 방향의 wall fragment가 일정 lateral distance와 endpoint gap 안에 있으면 하나의 wall로 병합한다.
 6. wall이 아닌 작은 cluster는 centroid/radius/density를 구해 object 후보로 분류한다. 작고 조밀한 후보는 과수 주행에서 나무 기둥 후보로 `trunk` label을 붙인다.
 7. object 후보는 track velocity로 예측한 위치와 matching한다.
-8. 로버 이동으로 고정 물체가 센서 좌표계에서 움직여 보여도 예측 gate, 반경 변화, 순간 속도 제한을 통과할 때만 같은 object로 보고 history와 velocity를 갱신한다.
-9. 4초 동안 갱신되지 않은 track은 제거한다.
+8. wall로 판정된 segment 주변 orchard 후보는 wall proximity suppression으로 제거한다. 이 단계는 확실한 벽 line 위에 red tree circle이 찍히는 문제를 줄이기 위한 보수 gate다.
+9. 로버 이동으로 고정 물체가 센서 좌표계에서 움직여 보여도 예측 gate, 반경 변화, 순간 속도 제한을 통과할 때만 같은 object로 보고 history와 velocity를 갱신한다.
+10. 4초 동안 갱신되지 않은 track은 제거한다.
 
-v4에서는 이 로직을 `dashboard_server/lidar_analysis.py`로 분리해 live bridge와 data recorder가 같은 함수를 사용한다. Archive segment API도 저장 당시 overlay를 그대로 믿지 않고 segment 구간을 v4로 재분석해 오래된 긴 track이 다시 표시되지 않게 한다.
+v5에서는 이 로직을 `dashboard_server/lidar_analysis.py`로 분리해 live bridge와 data recorder가 같은 함수를 사용한다. Archive segment API도 저장 당시 overlay를 그대로 믿지 않고 segment 구간을 v5로 재분석해 오래된 긴 track이 다시 표시되지 않게 한다.
 
 ## 좌표계
 

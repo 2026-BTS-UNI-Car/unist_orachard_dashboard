@@ -18,6 +18,12 @@ from urllib.parse import parse_qs, urlparse
 import cv2
 import numpy as np
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from dashboard_server.camera_analysis import CameraOverlayStabilizer, analyze_camera_image
+
 
 @dataclass
 class CameraState:
@@ -227,6 +233,7 @@ async def serve_websocket(state: CameraState, host: str, port: int, path: str):
             return
         settings = client_settings(actual_path)
         interval = 1.0 / settings["fps"]
+        stabilizer = CameraOverlayStabilizer()
         bridge_log("client_open", path=actual_path, **settings)
         try:
             await websocket.send(json.dumps({"type": "socket", "ok": True, "message": "camera websocket connected"}, separators=(",", ":")))
@@ -256,6 +263,7 @@ async def serve_websocket(state: CameraState, host: str, port: int, path: str):
                 frame = snap["frame_bgr"]
                 if frame is not None:
                     out = cv2.resize(frame, (settings["width"], settings["height"]), interpolation=cv2.INTER_AREA)
+                    overlay = stabilizer.update(analyze_camera_image(out), snap["stamp"] or time.time())
                     ok, encoded = cv2.imencode(".jpg", out, [int(cv2.IMWRITE_JPEG_QUALITY), settings["quality"]])
                     if ok:
                         await websocket.send(
@@ -272,6 +280,7 @@ async def serve_websocket(state: CameraState, host: str, port: int, path: str):
                                     "stamp": snap["stamp"],
                                     "frame_count": snap["frame_count"],
                                     "source_fps": snap["source_fps"],
+                                    "overlay": overlay,
                                 },
                                 separators=(",", ":"),
                             )

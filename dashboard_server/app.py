@@ -184,6 +184,13 @@ DOCS_CATALOG = [
         "file": "orchard_tree_detection_fusion.md",
     },
     {
+        "slug": "orchard-tree-algorithm-report",
+        "title": "과수 인식 알고리즘 보고서",
+        "category": "Research",
+        "summary": "참고 문헌, 수식, 코드 위치, 시행착오, archive 결과를 정리한 논문용 보고서",
+        "file": "orchard_tree_algorithm_report.md",
+    },
+    {
         "slug": "rover-control-todo",
         "title": "Rover Control TODO",
         "category": "Data",

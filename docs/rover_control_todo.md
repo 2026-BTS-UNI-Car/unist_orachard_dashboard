@@ -17,15 +17,20 @@
 - Recording 상태는 `/api/recordings/status`와 telemetry로 복원한다.
 - Archive는 timeline segment API로 현재 재생 구간을 cache하며 LiDAR/Camera preview를 동영상처럼 재생한다.
 - LiDAR archive view는 `LiDAR`, `LiDAR+Overlay`, `Overlay` 모드를 지원한다.
+- Camera live/archive view는 `Camera`, `Camera+Overlay`, `Overlay` 모드를 지원한다.
+- Perception source는 `2D Objects`, `Camera`, `Fusion Trees`를 Connections/Rover Control/Archive에서 동일하게 적용한다.
+- Archive `Fusion Trees` LiDAR overlay는 현재 frame LiDAR orchard 후보를 anchor로 쓰고, final orchard map tree는 matching/confidence 보조로 사용한다.
+- Archive orchard map은 playback timeline에 맞춰 current rover marker를 움직인다.
 
 ## 알고리즘 TODO
 
-- `polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v4`를 주행 테스트 bag 기준으로 wall merge threshold와 track gate를 계속 tuning한다.
+- `polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5`를 주행 테스트 bag 기준으로 wall proximity suppression threshold와 track gate를 계속 tuning한다.
 - `20260708T053333Z_both`, `20260708T054036Z_both` 자동 후보를 수동 label과 비교해 precision/recall을 계산한다.
 - 벽과 과수 줄기 cluster가 섞이는 케이스를 RANSAC line fitting 또는 temporal scan accumulation으로 더 분리한다.
 - `/tf`, odometry, IMU를 기록해 scan frame을 world frame으로 누적한다.
-- Camera object detection 결과와 LiDAR cluster를 time sync해서 object class label을 붙인다.
+- Camera object detection 결과는 frame overlay bbox로 저장하고 LiDAR cluster와 time sync해 fusion confidence에 반영한다.
 - Track matching을 nearest-neighbor에서 Kalman filter 기반으로 바꿔 속도 추정 noise를 줄인다.
+- LiDAR-camera extrinsic calibration을 수행해 현재 nearest-frame support를 image ROI projection 기반 fusion으로 교체한다.
 
 ## 주행 테스트 전 확인
 

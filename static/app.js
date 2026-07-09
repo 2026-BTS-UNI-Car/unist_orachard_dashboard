@@ -13,13 +13,14 @@ const LIDAR_OVERLAY_MODE_KEY = "ubts-lidar-overlay-mode-v1";
 const ARCHIVE_OVERLAY_MODE_KEY = "ubts-archive-overlay-mode-v1";
 const ARCHIVE_OVERLAY_VISIBLE_KEY = "ubts-archive-overlay-visible-v1";
 const ARCHIVE_RANGE_KEY = "ubts-archive-lidar-range-v1";
-const ARCHIVE_SEGMENT_SECONDS = 8;
+const ARCHIVE_SEGMENT_SECONDS = 12;
 const PERCEPTION_OVERLAY_KEY = "ubts-perception-overlay-mode-v1";
 const LIDAR_SPEC_MAX_POINTS = 3200;
 const LIDAR_COORDINATE_FRAME = "lidar_bridge_xy_v1";
 const LIDAR_RECONNECT_DEBOUNCE_MS = 650;
 const CAMERA_RESOLUTION_KEY = "ubts-camera-resolution-v1";
 const CAMERA_FPS_KEY = "ubts-camera-fps-v1";
+const CAMERA_OVERLAY_MODE_KEY = "ubts-camera-overlay-mode-v1";
 const CAMERA_RECONNECT_DEBOUNCE_MS = 500;
 const ROVER_SPEED_KEY = "ubts-rover-speed-v1";
 const ROVER_FADE_START_KEY = "ubts-rover-fade-start-v1";
@@ -37,6 +38,11 @@ const DEFAULT_CAMERA_MODES = [
   { resolution: "640x480", width: 640, height: 480, fps: [30], label: "480p 4:3" },
   { resolution: "320x240", width: 320, height: 240, fps: [30], label: "240p 4:3" },
   { resolution: "1280x1024", width: 1280, height: 1024, fps: [30], label: "1024p 5:4" },
+];
+const ORCHARD_MAP_LAYERS = [
+  { id: "lidar", canvasId: "roverOrchardMapLidarCanvas", statsId: "roverOrchardMapLidarStats", label: "LiDAR-only", color: "#38d8ff" },
+  { id: "camera", canvasId: "roverOrchardMapCameraCanvas", statsId: "roverOrchardMapCameraStats", label: "Camera-only", color: "#55e2b2" },
+  { id: "fusion", canvasId: "roverOrchardMapFusionCanvas", statsId: "roverOrchardMapFusionStats", label: "Weighted Fusion", color: "#2f76ff" },
 ];
 
 const state = {
@@ -112,10 +118,13 @@ const state = {
     settingsInFlight: false,
     settingsError: "",
     lastFrameAt: null,
+    lastOverlay: null,
+    lastFrameSize: null,
   },
   cameraModes: DEFAULT_CAMERA_MODES,
   cameraModesSignature: JSON.stringify(DEFAULT_CAMERA_MODES),
   cameraModesSource: "fallback",
+  cameraOverlayMode: "both",
 	  roverControl: {
 	    speedPct: 25,
 	    linear: 0,
@@ -165,9 +174,10 @@ const state = {
 	    loadingSegments: new Map(),
 	    lastLidarRenderKey: "",
 	    lastCameraRenderKey: "",
+	    lastCameraOverlayRenderKey: "",
 	  },
   perceptionOverlayMode: "fusion",
-  orchardMapView: { scale: 1, offsetX: 0, offsetY: 0, dragging: false, lastX: 0, lastY: 0 },
+  orchardMapView: { scale: 1, offsetX: 0, offsetY: 0, dragging: false, dragMoved: false, lastX: 0, lastY: 0 },
   selectedContainerId: null,
   containerDetail: null,
   containerLogs: null,
@@ -331,10 +341,12 @@ function renderRoute() {
   }
   if (route === "/connection") {
     renderActiveLidarMap();
+    renderLiveCameraOverlays();
     if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
     if (!state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
 	  } else if (route === "/rover-control") {
 	    renderActiveLidarMap();
+	    renderLiveCameraOverlays();
 	    renderRoverControl(state.telemetry || {});
 	    renderRecordingStatus();
 	    maybeRefreshRecordingStatus();
@@ -466,6 +478,8 @@ function initCameraLive() {
   try {
     state.cameraLive.resolution = localStorage.getItem(CAMERA_RESOLUTION_KEY) || state.cameraLive.resolution;
     state.cameraLive.fps = Number(localStorage.getItem(CAMERA_FPS_KEY) || state.cameraLive.fps);
+    const storedOverlayMode = localStorage.getItem(CAMERA_OVERLAY_MODE_KEY);
+    if (["raw", "both", "overlay"].includes(storedOverlayMode)) state.cameraOverlayMode = storedOverlayMode;
   } catch (_) {
     // Camera controls remain usable without localStorage.
   }
@@ -478,8 +492,12 @@ function initCameraLive() {
     fps.value = String(state.cameraLive.fps);
     fps.addEventListener("change", () => setCameraSettings({ fps: Number(fps.value) }));
   });
+  document.querySelectorAll("[data-camera-overlay-mode]").forEach((button) => {
+    button.addEventListener("click", () => setCameraOverlayMode(button.dataset.cameraOverlayMode, true));
+  });
   $("cameraLiveButton")?.addEventListener("click", toggleCameraLive);
   updateCameraControls();
+  setCameraOverlayMode(state.cameraOverlayMode, false);
   renderCameraLiveState();
 }
 
@@ -640,6 +658,23 @@ function updateCameraControls() {
     syncSelectOptions(fps, cameraFpsOptions().map((value) => ({ value: String(value), label: `${value} fps` })));
     if (document.activeElement !== fps) fps.value = String(state.cameraLive.fps);
   });
+}
+
+function setCameraOverlayMode(mode, persist = false) {
+  state.cameraOverlayMode = ["raw", "both", "overlay"].includes(mode) ? mode : "both";
+  if (persist) {
+    try {
+      localStorage.setItem(CAMERA_OVERLAY_MODE_KEY, state.cameraOverlayMode);
+    } catch (_) {
+      // Ignore storage failures.
+    }
+  }
+  document.querySelectorAll("[data-camera-overlay-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.cameraOverlayMode === state.cameraOverlayMode);
+  });
+  state.archivePlayback.lastCameraOverlayRenderKey = "";
+  renderLiveCameraOverlays();
+  renderArchiveFrame();
 }
 
 function syncSelectOptions(select, options) {
@@ -1361,6 +1396,11 @@ function handleCameraLiveMessage(raw) {
     state.cameraLive.sourceHeight = payload.source_height;
     state.cameraLive.frameId = payload.frame_id || state.cameraLive.frameId;
     state.cameraLive.lastFrameAt = Date.now();
+    state.cameraLive.lastOverlay = payload.overlay || null;
+    state.cameraLive.lastFrameSize = {
+      width: Number(payload.width || payload.source_width || 0),
+      height: Number(payload.height || payload.source_height || 0),
+    };
     state.cameraLive.error = "";
     const src = payload.data ? `data:${payload.mime || "image/jpeg"};base64,${payload.data}` : "";
     const image = $("cameraLiveImage");
@@ -1373,6 +1413,7 @@ function handleCameraLiveMessage(raw) {
     const modeText = source === output ? source : `source ${source} · output ${output}`;
     setCameraResult("ok", `실시간 수신 중 · ${modeText} · ${cameraFpsLabel(rate)}`);
     renderCameraLiveState();
+    renderLiveCameraOverlays();
     renderLiveSensorLinks();
     return;
   }
@@ -1423,6 +1464,183 @@ function renderCameraLiveState(overrideLabel) {
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
     { label: "Observed FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
+}
+
+function renderLiveCameraOverlays() {
+  drawCameraOverlayOnCanvas($("cameraLiveOverlayCanvas"), state.cameraLive.lastOverlay, {
+    frameSize: state.cameraLive.lastFrameSize,
+  });
+  drawCameraOverlayOnCanvas($("roverCameraOverlayCanvas"), state.cameraLive.lastOverlay, {
+    frameSize: state.cameraLive.lastFrameSize,
+  });
+}
+
+function renderArchiveCameraOverlay(cameraFrame) {
+  drawCameraOverlayOnCanvas($("roverArchiveCameraOverlayCanvas"), cameraFrame?.overlay || null, {
+    frameSize: { width: cameraFrame?.width || cameraFrame?.source_width, height: cameraFrame?.height || cameraFrame?.source_height },
+    overlayVisible: state.archivePlayback.overlayVisible,
+  });
+}
+
+function shouldShowCameraOverlay() {
+  return ["camera", "fusion"].includes(state.perceptionOverlayMode) && state.cameraOverlayMode !== "raw";
+}
+
+function drawCameraOverlayOnCanvas(canvas, overlay, options = {}) {
+  if (!canvas) return;
+  const frame = canvas.closest(".camera-frame, .rover-camera-frame, .archive-camera-frame");
+  const mode = options.overlayVisible === false || !shouldShowCameraOverlay() ? "raw" : state.cameraOverlayMode;
+  frame?.classList.toggle("overlay-only", mode === "overlay");
+  const prepared = prepareCanvas(canvas);
+  if (!prepared) return;
+  const { ctx, w, h } = prepared;
+  ctx.clearRect(0, 0, w, h);
+  if (mode === "raw") return;
+
+  const detections = (overlay?.detections || [])
+    .filter((item) => Number(item?.confidence) >= 0.12 && Array.isArray(item?.bbox))
+    .slice(0, 16);
+  const imageInfo = overlay?.image || options.frameSize || {};
+  const imageW = Number(imageInfo.width || options.frameSize?.width || 0);
+  const imageH = Number(imageInfo.height || options.frameSize?.height || 0);
+  if (!imageW || !imageH) return;
+  const scale = Math.min(w / imageW, h / imageH);
+  const drawW = imageW * scale;
+  const drawH = imageH * scale;
+  const offsetX = (w - drawW) / 2;
+  const offsetY = (h - drawH) / 2;
+  const labelBoxes = [];
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(offsetX, offsetY, drawW, drawH);
+  ctx.clip();
+  if (mode === "overlay") {
+    ctx.fillStyle = "rgba(2, 6, 23, 0.7)";
+    ctx.fillRect(offsetX, offsetY, drawW, drawH);
+  }
+  for (const detection of detections) {
+    const [bx, by, bw, bh] = detection.bbox.map((value) => Number(value) || 0);
+    const x = offsetX + bx * scale;
+    const y = offsetY + by * scale;
+    const boxW = bw * scale;
+    const boxH = bh * scale;
+    const confidence = Math.max(0, Math.min(1, Number(detection.confidence) || 0));
+    const color = cameraConfidenceColor(confidence);
+    ctx.globalAlpha = 0.96;
+    ctx.strokeStyle = color.stroke;
+    ctx.fillStyle = color.fill;
+    ctx.lineWidth = Math.max(2, Math.min(4, 2 + confidence * 2));
+    drawCameraDetectionShape(ctx, detection, { offsetX, offsetY, scale, color, x, y, boxW, boxH, confidence });
+    drawCameraConfidenceLabel(ctx, `${Math.round(confidence * 100)}%`, x, y, boxW, color, labelBoxes);
+  }
+  ctx.restore();
+}
+
+function drawCameraDetectionShape(ctx, detection, viewport) {
+  if (Array.isArray(detection.contour) && detection.contour.length >= 3) {
+    drawCameraContour(ctx, detection.contour, viewport);
+    return;
+  }
+  if (Array.isArray(detection.line) && detection.line.length >= 4) {
+    drawCameraLine(ctx, detection, viewport);
+    return;
+  }
+  ctx.beginPath();
+  ctx.rect(viewport.x, viewport.y, viewport.boxW, viewport.boxH);
+  ctx.fill();
+  ctx.stroke();
+}
+
+function cameraOverlayPoint(point, viewport) {
+  return {
+    x: viewport.offsetX + (Number(point?.[0]) || 0) * viewport.scale,
+    y: viewport.offsetY + (Number(point?.[1]) || 0) * viewport.scale,
+  };
+}
+
+function drawCameraContour(ctx, contour, viewport) {
+  ctx.save();
+  ctx.globalAlpha = 0.18 + viewport.confidence * 0.16;
+  ctx.fillStyle = viewport.color.fill;
+  ctx.beginPath();
+  contour.forEach((point, index) => {
+    const p = cameraOverlayPoint(point, viewport);
+    if (index === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 0.95;
+  ctx.strokeStyle = viewport.color.stroke;
+  ctx.lineWidth = Math.max(2.4, Math.min(5, 2.4 + viewport.confidence * 2.3));
+  ctx.lineJoin = "round";
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawCameraLine(ctx, detection, viewport) {
+  const [x1, y1, x2, y2] = detection.line.map((value) => Number(value) || 0);
+  const a = cameraOverlayPoint([x1, y1], viewport);
+  const b = cameraOverlayPoint([x2, y2], viewport);
+  const lineWidth = Math.max(4, Math.min(12, (Number(detection.line_width_px) || 7) * viewport.scale));
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = viewport.color.fill;
+  ctx.globalAlpha = 0.42;
+  ctx.lineWidth = lineWidth + 5;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.strokeStyle = viewport.color.stroke;
+  ctx.globalAlpha = 0.96;
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function cameraConfidenceColor(confidence) {
+  if (confidence >= 0.78) return { stroke: cssVar("--chart-blue", "#2f76ff"), fill: "rgba(47,118,255,0.17)" };
+  if (confidence >= 0.58) return { stroke: cssVar("--chart-good", "#55e2b2"), fill: "rgba(85,226,178,0.14)" };
+  return { stroke: cssVar("--chart-amber", "#f4bd4f"), fill: "rgba(244,189,79,0.12)" };
+}
+
+function drawCameraConfidenceLabel(ctx, label, x, y, boxW, color, placed) {
+  ctx.save();
+  ctx.font = "900 11px Inter, Arial, sans-serif";
+  const labelW = Math.ceil(ctx.measureText(label).width) + 10;
+  const labelH = 18;
+  let lx = Math.max(4, x + 4);
+  let ly = Math.max(4, y + 4);
+  if (lx + labelW > x + boxW - 2) lx = Math.max(4, x + boxW - labelW - 4);
+  const rect = { x: lx, y: ly, w: labelW, h: labelH };
+  const overlaps = placed.some((item) => rectsOverlap(rect, item));
+  if (overlaps) {
+    ctx.fillStyle = color.stroke;
+    ctx.beginPath();
+    ctx.arc(x + Math.min(Math.max(8, boxW - 8), 16), y + 10, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  placed.push(rect);
+  ctx.fillStyle = "rgba(2, 6, 23, 0.82)";
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.strokeStyle = color.stroke;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.fillStyle = "#ffffff";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, rect.x + 5, rect.y + rect.h / 2 + 0.5);
+  ctx.restore();
+}
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
 function setCameraResult(kind, message) {
@@ -3096,6 +3314,7 @@ function initRoverControl() {
   $("roverFadeStopToggle")?.addEventListener("change", (event) => setRoverFadeOption("stop", event.target.checked, true));
   $("roverArchivePlayButton")?.addEventListener("click", toggleArchivePlayback);
   $("roverArchiveScrubber")?.addEventListener("input", (event) => setArchiveTime(Number(event.target.value), { pause: true }));
+  $("roverOrchardMapScrubber")?.addEventListener("input", (event) => setArchiveTime(Number(event.target.value), { pause: true }));
   $("roverArchiveSyncToggle")?.addEventListener("change", (event) => {
     state.archivePlayback.sync = Boolean(event.target.checked);
     state.archivePlayback.lastCameraRenderKey = "";
@@ -3259,7 +3478,9 @@ function setPerceptionOverlayMode(mode, persist) {
     button.classList.toggle("active", button.dataset.perceptionOverlay === state.perceptionOverlayMode);
   });
   state.archivePlayback.lastLidarRenderKey = "";
+  state.archivePlayback.lastCameraOverlayRenderKey = "";
   renderActiveLidarMap();
+  renderLiveCameraOverlays();
   renderArchiveFrame();
   drawOrchardMap();
 }
@@ -3276,6 +3497,7 @@ function setArchiveOverlayVisible(visible, persist) {
     }
   }
   state.archivePlayback.lastLidarRenderKey = "";
+  state.archivePlayback.lastCameraOverlayRenderKey = "";
   renderArchiveFrame();
 }
 
@@ -3684,7 +3906,9 @@ async function loadRecordingOrchardMap(id) {
   if (id !== state.recordings.selectedId) return;
   state.recordings.orchardMap = payload?.map || null;
   resetOrchardMapView();
+  state.archivePlayback.lastLidarRenderKey = "";
   drawOrchardMap();
+  renderArchiveFrame();
 }
 
 function timelineShellFromRecording(payload) {
@@ -3805,6 +4029,10 @@ async function ensureArchiveSegmentForTime(timeS, options = {}) {
   if ((state.archivePlayback.playing || nearSegmentEnd) && nextStart < state.archivePlayback.durationS + 0.25) {
     loadArchiveTimelineSegment(id, nextStart, segmentDuration).catch((err) => debugLog("archive", "segment prefetch failed", err));
   }
+  const secondNextStart = nextStart + segmentDuration;
+  if (state.archivePlayback.playing && secondNextStart < state.archivePlayback.durationS + 0.25) {
+    loadArchiveTimelineSegment(id, secondNextStart, segmentDuration).catch((err) => debugLog("archive", "segment prefetch failed", err));
+  }
 }
 
 async function loadArchiveTimelineSegment(id, startS, durationS, options = {}) {
@@ -3869,8 +4097,8 @@ function warmArchiveCameraCache(frame) {
   const frames = state.archivePlayback.cache.cameraFrames;
   const center = Number(frame.cacheIndex);
   if (!Number.isFinite(center)) return;
-  const start = Math.max(0, center - 2);
-  const end = Math.min(frames.length - 1, center + 3);
+  const start = Math.max(0, center - 3);
+  const end = Math.min(frames.length - 1, center + 8);
   for (let index = start; index <= end; index += 1) archiveCameraFrameSrc(frames[index]);
 }
 
@@ -3962,6 +4190,12 @@ function setupArchivePlayback(payload, fallbackPreview) {
     scrubber.value = String(Math.min(Number(scrubber.value) || 0, state.archivePlayback.durationS));
     scrubber.disabled = !timeline;
   }
+  const mapScrubber = $("roverOrchardMapScrubber");
+  if (mapScrubber) {
+    mapScrubber.max = String(Math.max(0, state.archivePlayback.durationS));
+    mapScrubber.value = String(Math.min(Number(mapScrubber.value) || 0, state.archivePlayback.durationS));
+    mapScrubber.disabled = !timeline;
+  }
   const play = $("roverArchivePlayButton");
   if (play) play.disabled = !timeline;
   renderArchiveFrame();
@@ -4020,9 +4254,13 @@ function renderArchiveFrame() {
   const cameraFrame = timeline && state.archivePlayback.sync ? nearestTimelineFrame(cache.cameraFrames || [], timeS) : null;
   const lidarResult = lidarFrame?.result || state.archivePlayback.fallbackPreview;
   const overlayMode = archiveOverlayRenderMode();
+  const fusedTrees = archiveFusedTreesForTime(timeS, state.archivePlayback.range, lidarResult);
   const lidarRenderKey = [
     lidarFrame ? `frame:${lidarFrame.cacheIndex}` : "fallback",
     overlayMode,
+    state.perceptionOverlayMode,
+    fusedTrees ? `fused:${fusedTrees.length}:${state.recordings.orchardMap?.algorithm || ""}` : "frame-fusion",
+    `local:${lidarResult?.analysis?.orchard?.trees?.length || 0}`,
     state.archivePlayback.overlayVisible ? "overlay-on" : "overlay-off",
     fmtNumber(state.archivePlayback.range, 2),
   ].join(":");
@@ -4030,6 +4268,7 @@ function renderArchiveFrame() {
     drawLidarMapOnCanvas($("roverArchiveLidarCanvas"), lidarResult, lidarResult?.analysis, {
       mode: overlayMode,
       range: state.archivePlayback.range,
+      fusedTrees,
     });
     state.archivePlayback.lastLidarRenderKey = lidarRenderKey;
   }
@@ -4047,15 +4286,139 @@ function renderArchiveFrame() {
     image.removeAttribute("src");
     state.archivePlayback.lastCameraRenderKey = "";
   }
+  const cameraOverlayKey = [
+    cameraFrame ? `frame:${cameraFrame.cacheIndex}` : "none",
+    state.cameraOverlayMode,
+    state.perceptionOverlayMode,
+    state.archivePlayback.overlayVisible ? "overlay-on" : "overlay-off",
+    cameraFrame?.overlay?.algorithm || "no-overlay",
+    cameraFrame?.overlay?.detections?.length || 0,
+  ].join(":");
+  if (cameraOverlayKey !== state.archivePlayback.lastCameraOverlayRenderKey) {
+    renderArchiveCameraOverlay(cameraFrame);
+    state.archivePlayback.lastCameraOverlayRenderKey = cameraOverlayKey;
+  }
   const cameraCaption = cameraFrame
     ? `${cameraFrame.frame_id || "camera"} · ${fmtClock(cameraFrame.t_s)} · ${cameraFrame.source_width || cameraFrame.width}x${cameraFrame.source_height || cameraFrame.height}`
     : state.archivePlayback.sync ? "camera preview 없음" : "동시 재생 꺼짐";
   text("roverArchiveCameraCaption", cameraCaption);
   text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
+  text("roverOrchardMapTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   const scrubber = $("roverArchiveScrubber");
   if (scrubber && document.activeElement !== scrubber) scrubber.value = String(timeS);
+  const mapScrubber = $("roverOrchardMapScrubber");
+  if (mapScrubber && document.activeElement !== mapScrubber) mapScrubber.value = String(timeS);
   const play = $("roverArchivePlayButton");
   if (play) play.textContent = state.archivePlayback.playing ? "일시정지" : "재생";
+  drawOrchardMap();
+}
+
+function archiveFusedTreesForTime(timeS, range, lidarResult = null) {
+  const maxRange = Number(range) || state.archivePlayback.range || 25;
+  const localTrees = archiveLocalOrchardTreesForFrame(lidarResult, maxRange);
+  const projectedTrees = archiveProjectedMapTreesForTime(timeS, maxRange);
+  if (localTrees.length) return archiveFrameAnchoredFusionTrees(localTrees, projectedTrees, maxRange);
+  return projectedTrees;
+}
+
+function archiveLocalOrchardTreesForFrame(lidarResult, range) {
+  const trees = lidarResult?.analysis?.orchard?.trees || lidarResult?.analysis?.trees || [];
+  return (trees || [])
+    .map((tree) => {
+      const center = tree.center || tree;
+      const x = Number(center.x_m);
+      const y = Number(center.y_m);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      const distance = Math.hypot(x, y);
+      return {
+        ...tree,
+        center: { x_m: x, y_m: y },
+        distance_m: distance,
+        source: "archive_frame_lidar_orchard",
+      };
+    })
+    .filter((tree) => tree && tree.distance_m <= range + 1.5)
+    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0));
+}
+
+function archiveProjectedMapTreesForTime(timeS, range) {
+  const map = state.recordings.orchardMap;
+  if (!map?.ok || !Array.isArray(map.trees) || !map.trees.length) return null;
+  const pose = nearestMapPathPose(map.path || [], timeS);
+  if (!pose) return null;
+  const heading = Number.isFinite(Number(pose.theta_rad))
+    ? Number(pose.theta_rad)
+    : (Number(pose.heading_deg) || 0) * Math.PI / 180;
+  const cosH = Math.cos(heading);
+  const sinH = Math.sin(heading);
+  const px = Number(pose.x_m) || 0;
+  const py = Number(pose.y_m) || 0;
+  return map.trees
+    .map((tree) => {
+      const dx = (Number(tree.x_m) || 0) - px;
+      const dy = (Number(tree.y_m) || 0) - py;
+      const localX = cosH * dx + sinH * dy;
+      const localY = -sinH * dx + cosH * dy;
+      const distance = Math.hypot(localX, localY);
+      return {
+        ...tree,
+        center: { x_m: localX, y_m: -localY },
+        distance_m: distance,
+        source: "orchard_map_fused",
+      };
+    })
+    .filter((tree) => tree.distance_m <= range + 1.5)
+    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))
+    .slice(0, 48);
+}
+
+function archiveFrameAnchoredFusionTrees(localTrees, projectedTrees, range) {
+  const projected = Array.isArray(projectedTrees) ? projectedTrees : [];
+  const used = new Set();
+  const rows = [];
+  for (const local of localTrees) {
+    const localCenter = local.center || {};
+    let bestIndex = -1;
+    let bestDistance = Infinity;
+    projected.forEach((tree, index) => {
+      if (used.has(index)) return;
+      const center = tree.center || {};
+      const distance = Math.hypot(Number(localCenter.x_m) - Number(center.x_m), Number(localCenter.y_m) - Number(center.y_m));
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    const gate = Math.max(0.55, Math.min(1.3, 0.32 + 0.045 * Math.max(0, Number(local.distance_m) || 0)));
+    const matched = bestIndex >= 0 && bestDistance <= gate ? projected[bestIndex] : null;
+    if (matched) used.add(bestIndex);
+    const confidence = Math.max(
+      Number(local.confidence) || 0,
+      matched ? Number(matched.confidence) || 0 : 0,
+    );
+    if (!matched && confidence < 0.7 && local.kind !== "trunk_like") continue;
+    rows.push({
+      ...(matched || {}),
+      ...local,
+      center: local.center,
+      radius_m: Number(local.radius_m || matched?.radius_m || 0.22),
+      confidence: Math.min(0.98, confidence),
+      map_confidence: matched?.confidence,
+      frame_confidence: local.confidence,
+      source: matched ? "archive_frame_anchored_fusion" : "archive_frame_lidar_orchard",
+      match_error_m: matched ? Number(bestDistance.toFixed(3)) : null,
+    });
+  }
+  if (!rows.length && projected.length) return projected.slice(0, 16);
+  return rows
+    .filter((tree) => Number(tree.distance_m || 0) <= range + 1.5)
+    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))
+    .slice(0, 18);
+}
+
+function nearestMapPathPose(path, timeS) {
+  if (!Array.isArray(path) || !path.length) return null;
+  return nearestTimelineFrame(path, timeS);
 }
 
 function nearestTimelineFrame(frames, timeS) {
@@ -4076,36 +4439,59 @@ function nearestTimelineFrame(frames, timeS) {
 }
 
 function initOrchardMapCanvas() {
-  const canvas = $("roverOrchardMapCanvas");
-  if (!canvas) return;
-  canvas.addEventListener("pointerdown", (event) => {
-    state.orchardMapView.dragging = true;
-    state.orchardMapView.lastX = event.clientX;
-    state.orchardMapView.lastY = event.clientY;
-    canvas.classList.add("dragging");
-    canvas.setPointerCapture?.(event.pointerId);
+  document.querySelectorAll("[data-orchard-map-layer]").forEach((canvas) => {
+    canvas.addEventListener("pointerdown", (event) => {
+      state.orchardMapView.dragging = true;
+      state.orchardMapView.dragMoved = false;
+      state.orchardMapView.lastX = event.clientX;
+      state.orchardMapView.lastY = event.clientY;
+      canvas.classList.add("dragging");
+      canvas.setPointerCapture?.(event.pointerId);
+    });
+    canvas.addEventListener("pointermove", (event) => {
+      if (!state.orchardMapView.dragging) return;
+      const dx = event.clientX - state.orchardMapView.lastX;
+      const dy = event.clientY - state.orchardMapView.lastY;
+      if (Math.hypot(dx, dy) > 2) state.orchardMapView.dragMoved = true;
+      state.orchardMapView.offsetX += dx;
+      state.orchardMapView.offsetY += dy;
+      state.orchardMapView.lastX = event.clientX;
+      state.orchardMapView.lastY = event.clientY;
+      drawOrchardMap();
+    });
+    const endDrag = (event) => {
+      const shouldSeek = state.orchardMapView.dragging && !state.orchardMapView.dragMoved && event?.type === "pointerup";
+      state.orchardMapView.dragging = false;
+      document.querySelectorAll("[data-orchard-map-layer]").forEach((item) => item.classList.remove("dragging"));
+      if (event?.pointerId !== undefined) canvas.releasePointerCapture?.(event.pointerId);
+      if (shouldSeek) seekArchiveFromOrchardMapPointer(event, canvas);
+    };
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+    canvas.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      zoomOrchardMap(event.deltaY < 0 ? 1.1 : 1 / 1.1);
+    }, { passive: false });
   });
-  canvas.addEventListener("pointermove", (event) => {
-    if (!state.orchardMapView.dragging) return;
-    const dx = event.clientX - state.orchardMapView.lastX;
-    const dy = event.clientY - state.orchardMapView.lastY;
-    state.orchardMapView.offsetX += dx;
-    state.orchardMapView.offsetY += dy;
-    state.orchardMapView.lastX = event.clientX;
-    state.orchardMapView.lastY = event.clientY;
-    drawOrchardMap();
-  });
-  const endDrag = (event) => {
-    state.orchardMapView.dragging = false;
-    canvas.classList.remove("dragging");
-    if (event?.pointerId !== undefined) canvas.releasePointerCapture?.(event.pointerId);
-  };
-  canvas.addEventListener("pointerup", endDrag);
-  canvas.addEventListener("pointercancel", endDrag);
-  canvas.addEventListener("wheel", (event) => {
-    event.preventDefault();
-    zoomOrchardMap(event.deltaY < 0 ? 1.1 : 1 / 1.1);
-  }, { passive: false });
+}
+
+function seekArchiveFromOrchardMapPointer(event, canvas) {
+  const map = state.recordings.orchardMap;
+  const path = map?.path || [];
+  if (!canvas || !map?.ok || path.length < 2) return;
+  const projection = orchardMapProjection(canvas, map);
+  if (!projection) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  let best = null;
+  for (const pose of path) {
+    const p = projection.project(Number(pose.x_m) || 0, Number(pose.y_m) || 0);
+    const distance = Math.hypot(p.x - x, p.y - y);
+    if (!best || distance < best.distance) best = { pose, distance };
+  }
+  if (!best) return;
+  setArchiveTime(Number(best.pose.t_s) || 0, { pause: true });
 }
 
 function resetOrchardMapView() {
@@ -4120,30 +4506,48 @@ function zoomOrchardMap(factor) {
 }
 
 function drawOrchardMap() {
-  const canvas = $("roverOrchardMapCanvas");
-  if (!canvas) return;
+  const canvases = ORCHARD_MAP_LAYERS.map((layer) => ({ ...layer, canvas: $(layer.canvasId) })).filter((layer) => layer.canvas);
+  if (!canvases.length) return;
+  const map = state.recordings.orchardMap;
+  if (!map?.ok) {
+    for (const layer of canvases) {
+      const prepared = prepareCanvas(layer.canvas);
+      if (!prepared) continue;
+      const { ctx, w, h } = prepared;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = cssVar("--chart-bg-bottom", "#0f172a");
+      ctx.fillRect(0, 0, w, h);
+      drawLidarEmpty(ctx, w, h, "과수 지도 생성 대기");
+      text(layer.statsId, "--");
+    }
+    text("roverOrchardMapStats", "archive를 선택하면 3-layer 지도 생성");
+    return;
+  }
+  for (const layer of canvases) {
+    drawOrchardMapLayer(layer, map);
+  }
+  const layers = orchardMapLayers(map);
+  const summary = ORCHARD_MAP_LAYERS.map((spec) => {
+    const layer = layers[spec.id];
+    const centerline = layer?.centerline || {};
+    return `${spec.label} ${layer?.tree_count || 0}T/${centerline.ok ? `${centerline.length_m || 0}m` : "no path"}`;
+  }).join(" · ");
+  text("roverOrchardMapStats", `${summary} · t ${fmtClock(state.archivePlayback.timeS)} · zoom ${fmtNumber(state.orchardMapView.scale, 2)}x`);
+}
+
+function drawOrchardMapLayer(spec, rootMap) {
+  const canvas = spec.canvas;
   const prepared = prepareCanvas(canvas);
   if (!prepared) return;
   const { ctx, w, h } = prepared;
-  const map = state.recordings.orchardMap;
+  const layers = orchardMapLayers(rootMap);
+  const map = layers[spec.id] || rootMap;
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = cssVar("--chart-bg-bottom", "#0f172a");
   ctx.fillRect(0, 0, w, h);
-  if (!map?.ok) {
-    drawLidarEmpty(ctx, w, h, "과수 지도 생성 대기");
-    text("roverOrchardMapStats", "archive를 선택하면 지도 생성");
-    return;
-  }
-  const bounds = map.bounds || { min_x: -5, max_x: 5, min_y: -5, max_y: 5 };
-  const spanX = Math.max(1, Number(bounds.max_x) - Number(bounds.min_x));
-  const spanY = Math.max(1, Number(bounds.max_y) - Number(bounds.min_y));
-  const baseScale = Math.min((w - 52) / spanX, (h - 52) / spanY);
-  const scale = baseScale * state.orchardMapView.scale;
-  const cx = w / 2 + state.orchardMapView.offsetX;
-  const cy = h / 2 + state.orchardMapView.offsetY;
-  const midX = (Number(bounds.min_x) + Number(bounds.max_x)) / 2;
-  const midY = (Number(bounds.min_y) + Number(bounds.max_y)) / 2;
-  const project = (x, y) => ({ x: cx + (x - midX) * scale, y: cy - (y - midY) * scale });
+  const projection = orchardMapProjection(canvas, rootMap, w, h);
+  if (!projection) return;
+  const { bounds, project, scale } = projection;
 
   drawOrchardMapGrid(ctx, w, h, project, bounds);
   const path = map.path || [];
@@ -4159,6 +4563,7 @@ function drawOrchardMap() {
     });
     ctx.stroke();
   }
+  drawOrchardCenterline(ctx, project, map.centerline);
   drawMapMarker(ctx, project, map.start, cssVar("--chart-good", "#55e2b2"), "S");
   drawMapMarker(ctx, project, map.end, cssVar("--chart-rose", "#f21b58"), "E");
   for (const tree of map.trees || []) {
@@ -4166,8 +4571,8 @@ function drawOrchardMap() {
     const r = Math.max(6, Math.min(24, (Number(tree.radius_m) || 0.3) * scale));
     const confidence = Math.max(0.25, Math.min(1, Number(tree.confidence) || 0.5));
     ctx.globalAlpha = 0.55 + confidence * 0.35;
-    ctx.fillStyle = "rgba(47,118,255,0.22)";
-    ctx.strokeStyle = cssVar("--chart-blue", "#2f76ff");
+    ctx.fillStyle = colorWithAlpha(spec.color, 0.2);
+    ctx.strokeStyle = spec.color;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -4175,7 +4580,84 @@ function drawOrchardMap() {
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
-  text("roverOrchardMapStats", `${map.tree_count || 0} trees · ${fmtNumber(path.length ? path[path.length - 1].t_s : 0, 1)}s · zoom ${fmtNumber(state.orchardMapView.scale, 2)}x`);
+  const currentPose = nearestMapPathPose(path, state.archivePlayback.timeS);
+  drawRoverPoseMarker(ctx, project, currentPose);
+  const centerline = map.centerline || {};
+  text(spec.statsId, `${map.tree_count || 0} trees · center ${centerline.ok ? `${fmtNumber(centerline.length_m || 0, 1)}m` : centerline.state || "--"} · gap ${centerline.row_gap_m ? `${fmtNumber(centerline.row_gap_m, 1)}m` : "--"}`);
+}
+
+function orchardMapLayers(map) {
+  const fallback = map?.ok ? {
+    id: "fusion",
+    label: "Weighted Fusion",
+    method: map.fusion?.method || "legacy fusion map",
+    tree_count: map.tree_count || 0,
+    trees: map.trees || [],
+    path: map.path || [],
+    start: map.start,
+    end: map.end,
+    bounds: map.bounds,
+    centerline: map.centerline || {},
+  } : null;
+  return {
+    lidar: map?.maps?.lidar || fallback,
+    camera: map?.maps?.camera || fallback,
+    fusion: map?.maps?.fusion || fallback,
+  };
+}
+
+function drawOrchardCenterline(ctx, project, centerline) {
+  const points = centerline?.points || [];
+  if (!points.length) return;
+  ctx.save();
+  ctx.strokeStyle = cssVar("--chart-yellow", "#f4bd4f");
+  ctx.lineWidth = 3.5;
+  ctx.globalAlpha = centerline.ok ? 0.95 : 0.55;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    const p = project(Number(point.x_m) || 0, Number(point.y_m) || 0);
+    if (index === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  });
+  ctx.stroke();
+  for (const point of points) {
+    const p = project(Number(point.x_m) || 0, Number(point.y_m) || 0);
+    ctx.fillStyle = "rgba(244, 189, 79, 0.92)";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function colorWithAlpha(hex, alpha) {
+  const value = String(hex || "#2f76ff").replace("#", "");
+  if (value.length !== 6) return `rgba(47, 118, 255, ${alpha})`;
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function orchardMapProjection(canvas, map, width, height) {
+  const rect = canvas.getBoundingClientRect();
+  const w = width || rect.width;
+  const h = height || rect.height;
+  if (!w || !h) return null;
+  const bounds = map.bounds || { min_x: -5, max_x: 5, min_y: -5, max_y: 5 };
+  const spanX = Math.max(1, Number(bounds.max_x) - Number(bounds.min_x));
+  const spanY = Math.max(1, Number(bounds.max_y) - Number(bounds.min_y));
+  const baseScale = Math.min((w - 52) / spanX, (h - 52) / spanY);
+  const scale = baseScale * state.orchardMapView.scale;
+  const cx = w / 2 + state.orchardMapView.offsetX;
+  const cy = h / 2 + state.orchardMapView.offsetY;
+  const midX = (Number(bounds.min_x) + Number(bounds.max_x)) / 2;
+  const midY = (Number(bounds.min_y) + Number(bounds.max_y)) / 2;
+  return {
+    bounds,
+    scale,
+    project: (x, y) => ({ x: cx + (x - midX) * scale, y: cy - (y - midY) * scale }),
+  };
 }
 
 function drawOrchardMapGrid(ctx, w, h, project, bounds) {
@@ -4224,11 +4706,40 @@ function drawMapMarker(ctx, project, pose, color, label) {
   ctx.restore();
 }
 
+function drawRoverPoseMarker(ctx, project, pose) {
+  if (!pose) return;
+  const p = project(Number(pose.x_m) || 0, Number(pose.y_m) || 0);
+  const heading = Number.isFinite(Number(pose.theta_rad))
+    ? Number(pose.theta_rad)
+    : (Number(pose.heading_deg) || 0) * Math.PI / 180;
+  const size = 15;
+  const nose = { x: p.x + Math.sin(heading) * size, y: p.y - Math.cos(heading) * size };
+  const left = { x: p.x + Math.sin(heading + 2.45) * size * 0.72, y: p.y - Math.cos(heading + 2.45) * size * 0.72 };
+  const right = { x: p.x + Math.sin(heading - 2.45) * size * 0.72, y: p.y - Math.cos(heading - 2.45) * size * 0.72 };
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = cssVar("--chart-cyan", "#38d8ff");
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(nose.x, nose.y);
+  ctx.lineTo(left.x, left.y);
+  ctx.lineTo(right.x, right.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(56, 216, 255, 0.18)";
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, size * 1.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function downloadOrchardMapPng() {
-  const canvas = $("roverOrchardMapCanvas");
+  const canvas = $("roverOrchardMapFusionCanvas") || $("roverOrchardMapLidarCanvas") || $("roverOrchardMapCameraCanvas");
   if (!canvas || !state.recordings.orchardMap?.ok) return;
   const link = document.createElement("a");
-  link.download = `${state.recordings.selectedId || "orchard-map"}.png`;
+  link.download = `${state.recordings.selectedId || "orchard-map"}_fusion_centerline.png`;
   link.href = canvas.toDataURL("image/png");
   link.click();
 }
@@ -4504,7 +5015,7 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
     ctx.restore();
   }
 
-  if (showOverlay) drawLidarOverlays(ctx, overlays, { cx, cy, radius, range, colors, perceptionMode: state.perceptionOverlayMode });
+  if (showOverlay) drawLidarOverlays(ctx, overlays, { cx, cy, radius, range, colors, perceptionMode: state.perceptionOverlayMode, fusedTrees: options.fusedTrees });
 
   ctx.save();
   ctx.fillStyle = cssVar("--text", "#f7f9ff");
@@ -4526,11 +5037,12 @@ function lidarCanvasPoint(point, viewport) {
 function drawLidarOverlays(ctx, overlays, viewport) {
   const walls = overlays?.walls || [];
   const objects = overlays?.objects || [];
-  const trees = overlays?.orchard?.trees || overlays?.trees || [];
+  const trees = Array.isArray(viewport.fusedTrees) ? viewport.fusedTrees : (overlays?.orchard?.trees || overlays?.trees || []);
   const mode = viewport.perceptionMode || "fusion";
+  if (mode === "camera") return;
   if (!walls.length && !objects.length && !trees.length) return;
   ctx.save();
-  if (mode !== "fusion") for (const wall of walls) {
+  if (mode === "lidar") for (const wall of walls) {
     const a = lidarCanvasPoint(wall.start || wall.a || {}, viewport);
     const b = lidarCanvasPoint(wall.end || wall.b || {}, viewport);
     ctx.strokeStyle = cssVar("--chart-amber", "#f4bd4f");
@@ -4589,20 +5101,58 @@ function drawObjectTrack(ctx, item, viewport) {
 }
 
 function drawOrchardTreeOverlay(ctx, trees, viewport) {
+  const labelBoxes = [];
   for (const tree of trees || []) {
     const center = lidarCanvasPoint(tree.center || tree, viewport);
     const radiusM = Math.max(0.16, Number(tree.radius_m) || 0.28);
     const r = Math.max(7, Math.min(20, (radiusM / viewport.range) * viewport.radius));
     const confidence = Math.max(0.2, Math.min(1, Number(tree.confidence) || 0.5));
-    ctx.globalAlpha = 0.78 + confidence * 0.2;
-    ctx.strokeStyle = cssVar("--chart-blue", "#2f76ff");
-    ctx.fillStyle = "rgba(47,118,255,0.18)";
+    const color = treeConfidenceColor(confidence);
+    ctx.globalAlpha = 0.74 + confidence * 0.22;
+    ctx.strokeStyle = color.stroke;
+    ctx.fillStyle = color.fill;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.arc(center.x, center.y, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+    drawLidarConfidenceMark(ctx, center.x, center.y, r, confidence, color, labelBoxes);
   }
+}
+
+function treeConfidenceColor(confidence) {
+  if (confidence >= 0.82) return { stroke: cssVar("--chart-blue", "#2f76ff"), fill: "rgba(47,118,255,0.2)" };
+  if (confidence >= 0.66) return { stroke: cssVar("--chart-good", "#55e2b2"), fill: "rgba(85,226,178,0.16)" };
+  return { stroke: cssVar("--chart-amber", "#f4bd4f"), fill: "rgba(244,189,79,0.13)" };
+}
+
+function drawLidarConfidenceMark(ctx, x, y, r, confidence, color, placed) {
+  const label = `${Math.round(confidence * 100)}%`;
+  ctx.save();
+  ctx.font = "900 10px Inter, Arial, sans-serif";
+  const w = Math.ceil(ctx.measureText(label).width) + 8;
+  const h = 16;
+  const rect = { x: x + r + 4, y: y - h / 2, w, h };
+  const overlaps = placed.some((item) => rectsOverlap(rect, item));
+  if (overlaps) {
+    ctx.fillStyle = color.stroke;
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    ctx.arc(x, y - r - 4, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  placed.push(rect);
+  ctx.fillStyle = "rgba(2, 6, 23, 0.82)";
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.strokeStyle = color.stroke;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.fillStyle = "#fff";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, rect.x + 4, rect.y + rect.h / 2 + 0.5);
+  ctx.restore();
 }
 
 function lidarRangeFor(result) {
@@ -4677,8 +5227,10 @@ function escapeHtml(value) {
 window.addEventListener("popstate", renderRoute);
 window.addEventListener("resize", () => {
   requestChartAnimation();
+  renderLiveCameraOverlays();
   if (currentRoute() === "/rover-control") {
     state.archivePlayback.lastLidarRenderKey = "";
+    state.archivePlayback.lastCameraOverlayRenderKey = "";
     renderArchiveFrame();
   }
 });

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-ALGORITHM_NAME = "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v4"
+ALGORITHM_NAME = "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5"
 LIDAR_COORDINATE_FRAME = "lidar_bridge_xy_v1"
 
 
@@ -48,7 +48,7 @@ def analyze_points(
 
     walls = merge_wall_fragments(walls)
     objects, tracks, next_track_id = update_tracks(objects, tracks, next_track_id, now)
-    orchard = detect_orchard_trees(points)
+    orchard = detect_orchard_trees(points, walls=walls, clusters=clusters)
     analysis = {
         "ok": True,
         "algorithm": ALGORITHM_NAME,
@@ -71,7 +71,7 @@ def empty_analysis() -> dict[str, Any]:
         "coordinate_frame": LIDAR_COORDINATE_FRAME,
         "walls": [],
         "objects": [],
-        "orchard": {"trees": [], "excluded_rear_candidates": 0, "method": "lidar_geometry_v2"},
+        "orchard": {"trees": [], "excluded_rear_candidates": 0, "wall_suppressed_candidates": 0, "method": "lidar_geometry_wall_suppressed_v3"},
         "tracking": {"drawable_tracks": 0, "object_tracks": 0, "method": "sensor_relative_predictive_tracks_v4"},
         "cluster_count": 0,
         "source_point_count": 0,
@@ -262,10 +262,19 @@ def object_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, Any] | None:
     }
 
 
-def detect_orchard_trees(points: list[dict[str, Any]]) -> dict[str, Any]:
+def detect_orchard_trees(
+    points: list[dict[str, Any]],
+    walls: list[dict[str, Any]] | None = None,
+    clusters: list[list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    clusters = clusters if clusters is not None else cluster_points(points)
+    if walls is None:
+        fitted_walls = [wall for cluster in clusters if (wall := fit_wall(cluster))]
+        walls = merge_wall_fragments(fitted_walls)
     trees: list[dict[str, Any]] = []
     excluded_rear = 0
-    for cluster in cluster_points(points):
+    wall_suppressed = 0
+    for cluster in clusters:
         candidate = orchard_candidate_from_cluster(cluster)
         if not candidate:
             continue
@@ -273,12 +282,17 @@ def detect_orchard_trees(points: list[dict[str, Any]]) -> dict[str, Any]:
         if is_rear_person_zone(center):
             excluded_rear += 1
             continue
+        wall_gate = candidate_wall_gate(candidate, walls)
+        if wall_gate:
+            wall_suppressed += 1
+            continue
         trees.append(candidate)
     trees = merge_orchard_candidates(trees)
     return {
-        "method": "lidar_geometry_v2",
+        "method": "lidar_geometry_wall_suppressed_v3",
         "trees": trees,
         "excluded_rear_candidates": excluded_rear,
+        "wall_suppressed_candidates": wall_suppressed,
     }
 
 
@@ -296,10 +310,16 @@ def orchard_candidate_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, A
     if radius < 0.035 or radius > 0.58:
         return None
     features = line_features(cluster)
+    if fit_wall(cluster):
+        return None
     aspect = float(features.get("aspect", 1.0)) if features else 1.0
     width = float(features.get("width", radius)) if features else radius
     length = float(features.get("length", radius * 2.0)) if features else radius * 2.0
     if aspect > 4.6 and length > 0.42 and width < 0.18:
+        return None
+    line_width_limit = max(0.09, min(0.24, 0.05 + distance * 0.013))
+    line_like_fragment = length >= 0.28 and aspect >= 2.75 and width <= line_width_limit
+    if line_like_fragment and (radius >= 0.11 or len(cluster) >= 5):
         return None
     if len(cluster) > 70 and distance < 1.35:
         return None
@@ -334,6 +354,58 @@ def orchard_candidate_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, A
         "density": round(density, 2),
         "distance_m": round(distance, 3),
     }
+
+
+def candidate_wall_gate(candidate: dict[str, Any], walls: list[dict[str, Any]]) -> dict[str, Any] | None:
+    center = candidate.get("center") or {}
+    try:
+        cx = float(center["x_m"])
+        cy = float(center["y_m"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    radius = float(candidate.get("radius_m") or 0.12)
+    distance = float(candidate.get("distance_m") or math.hypot(cx, cy))
+    gate_m = max(0.28, min(0.62, radius + 0.22 + distance * 0.014))
+    for wall in walls:
+        start = wall.get("start") or {}
+        end = wall.get("end") or {}
+        try:
+            sx = float(start["x_m"])
+            sy = float(start["y_m"])
+            ex = float(end["x_m"])
+            ey = float(end["y_m"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        wall_length = math.hypot(ex - sx, ey - sy)
+        if wall_length < 0.45:
+            continue
+        projection, lateral = point_segment_projection(cx, cy, sx, sy, ex, ey)
+        outside_m = 0.0
+        if projection < 0.0:
+            outside_m = -projection * wall_length
+        elif projection > 1.0:
+            outside_m = (projection - 1.0) * wall_length
+        if lateral <= gate_m and outside_m <= 0.42:
+            return {
+                "reason": "near_wall_segment",
+                "distance_m": round(lateral, 3),
+                "gate_m": round(gate_m, 3),
+                "wall_length_m": round(wall_length, 3),
+            }
+    return None
+
+
+def point_segment_projection(px: float, py: float, sx: float, sy: float, ex: float, ey: float) -> tuple[float, float]:
+    vx = ex - sx
+    vy = ey - sy
+    length_sq = vx * vx + vy * vy
+    if length_sq <= 1e-9:
+        return 0.0, math.hypot(px - sx, py - sy)
+    projection = ((px - sx) * vx + (py - sy) * vy) / length_sq
+    clamped = max(0.0, min(1.0, projection))
+    closest_x = sx + clamped * vx
+    closest_y = sy + clamped * vy
+    return projection, math.hypot(px - closest_x, py - closest_y)
 
 
 def is_rear_person_zone(center: dict[str, Any]) -> bool:

@@ -216,7 +216,7 @@ class DashboardApiTest(unittest.TestCase):
                     {
                         "ok": True,
                         "duration_s": 1.2,
-                        "algorithm": "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v4",
+                        "algorithm": "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5",
                         "coordinate_frame": "lidar_bridge_xy_v1",
                         "lidar": {"frames": [{"t_s": 0.0, "points": [{"x_m": 1.0, "y_m": 0.0, "distance_m": 1.0}], "overlay": {}}]},
                         "camera": {"frames": []},
@@ -233,14 +233,16 @@ class DashboardApiTest(unittest.TestCase):
             self.assertEqual(detail["recording"]["timeline_summary"]["lidar_frames"], 1)
             timeline = self.get_json("/api/recordings/unit_lidar_archive/timeline")
             self.assertTrue(timeline["ok"])
-            self.assertEqual(timeline["timeline"]["algorithm"], "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v4")
+            self.assertEqual(timeline["timeline"]["algorithm"], "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5")
             segment = self.get_json("/api/recordings/unit_lidar_archive/timeline?start_s=0&duration_s=0.5")
             self.assertTrue(segment["ok"])
             self.assertTrue(segment["timeline"]["segment"]["partial"])
             self.assertEqual(len(segment["timeline"]["lidar"]["frames"]), 1)
             orchard_map = self.get_json("/api/recordings/unit_lidar_archive/orchard-map")
             self.assertTrue(orchard_map["ok"])
-            self.assertEqual(orchard_map["map"]["algorithm"], "orchard_lidar_camera_scanmatch_fusion_v3")
+            self.assertEqual(orchard_map["map"]["algorithm"], "orchard_three_layer_weighted_centerline_v7")
+            self.assertEqual(set(orchard_map["map"]["maps"].keys()), {"lidar", "camera", "fusion"})
+            self.assertIn("centerline", orchard_map["map"]["maps"]["fusion"])
             with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/recordings/unit_lidar_archive/download", timeout=5) as res:
                 self.assertEqual(res.status, 200)
                 self.assertEqual(res.headers.get("Content-Type"), "application/gzip")
@@ -406,6 +408,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("rover-control-dashboard", slugs)
         self.assertIn("lidar-archive-analysis", slugs)
         self.assertIn("lidar-object-overlay", slugs)
+        self.assertIn("orchard-tree-algorithm-report", slugs)
         self.assertIn("rover-control-todo", slugs)
         sim_doc = self.get_json("/api/docs/simulation-run")
         self.assertTrue(sim_doc["ok"])
@@ -435,6 +438,9 @@ class DashboardApiTest(unittest.TestCase):
         todo_doc = self.get_json("/api/docs/rover-control-todo")
         self.assertTrue(todo_doc["ok"])
         self.assertIn("Rover Control TODO", todo_doc["markdown"])
+        report_doc = self.get_json("/api/docs/orchard-tree-algorithm-report")
+        self.assertTrue(report_doc["ok"])
+        self.assertIn("과수 인식 알고리즘 보고서", report_doc["markdown"])
         html = self.get_text("/docs/lidar-connection")
         self.assertIn("id=\"docMarkdown\"", html)
 
@@ -460,6 +466,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("id=\"containerRefreshButton\"", html)
         self.assertIn("id=\"cameraLiveButton\"", html)
         self.assertIn("id=\"cameraLiveImage\"", html)
+        self.assertIn("id=\"cameraLiveOverlayCanvas\"", html)
         self.assertIn("id=\"cameraResolutionSelect\"", html)
         self.assertIn("id=\"cameraFpsSelect\"", html)
         self.assertIn("data-route=\"/rover-control\"", html)
@@ -483,6 +490,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("id=\"roverArchivePlayButton\"", html)
         self.assertIn("id=\"roverArchiveScrubber\"", html)
         self.assertIn("id=\"roverArchiveCameraImage\"", html)
+        self.assertIn("id=\"roverArchiveCameraOverlayCanvas\"", html)
         self.assertIn("id=\"roverArchiveList\"", html)
         self.assertIn("id=\"roverArchiveLidarCanvas\"", html)
         self.assertNotIn("id=\"roverProxyFrame\"", html)
@@ -548,6 +556,9 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("/timeline", app_js)
         self.assertIn("/orchard-map", app_js)
         self.assertIn("PERCEPTION_OVERLAY_KEY", app_js)
+        self.assertIn("CAMERA_OVERLAY_MODE_KEY", app_js)
+        self.assertIn("drawCameraOverlayOnCanvas", app_js)
+        self.assertIn("archiveFusedTreesForTime", app_js)
         self.assertIn("drawOrchardMap", app_js)
         self.assertIn("ROVER_FADE_START_KEY", app_js)
         self.assertIn("drawLidarMapOnCanvas", app_js)
@@ -636,7 +647,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("file_command_active", rover_bridge_py)
         recorder_py = (Path(__file__).resolve().parents[1] / "scripts" / "data_recorder_service.py").read_text()
         lidar_analysis_py = (Path(__file__).resolve().parents[1] / "dashboard_server" / "lidar_analysis.py").read_text()
-        self.assertIn("polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v4", lidar_analysis_py)
+        self.assertIn("polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5", lidar_analysis_py)
         self.assertIn("timeline.json", recorder_py)
         self.assertIn("ros2\", \"bag\", \"record", recorder_py)
 
@@ -821,6 +832,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("rover-control-dashboard", slugs)
         self.assertIn("lidar-archive-analysis", slugs)
         self.assertIn("lidar-object-overlay", slugs)
+        self.assertIn("orchard-tree-algorithm-report", slugs)
         self.assertIn("rover-control-todo", slugs)
 
 

@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from dashboard_server.camera_analysis import CameraOverlayStabilizer, analyze_camera_image
 from dashboard_server.lidar_analysis import ALGORITHM_NAME, LIDAR_COORDINATE_FRAME, analyze_points, empty_analysis as shared_empty_analysis
 
 
@@ -68,6 +69,7 @@ class RecordingState:
         self.lidar_frames: list[dict[str, Any]] = []
         self.camera_frames: list[dict[str, Any]] = []
         self.tracks: dict[str, dict[str, Any]] = {}
+        self.camera_stabilizer = CameraOverlayStabilizer()
         self.next_track_id = 1
         self.next_lidar_sample_at = 0.0
         self.next_camera_sample_at = 0.0
@@ -196,6 +198,7 @@ class RecordingState:
             self.lidar_frames = []
             self.camera_frames = []
             self.tracks = {}
+            self.camera_stabilizer = CameraOverlayStabilizer()
             self.next_track_id = 1
             self.next_lidar_sample_at = 0.0
             self.next_camera_sample_at = 0.0
@@ -372,6 +375,7 @@ class RecordingState:
                 scale = preview_width / source_width
                 preview_height = max(1, int(source_height * scale))
                 frame = cv2.resize(frame, (preview_width, preview_height), interpolation=cv2.INTER_AREA)
+            overlay = self.camera_stabilizer.update(analyze_camera_image(frame), now - started_monotonic)
             ok, encoded = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), int(self.args.camera_jpeg_quality)])
             if not ok:
                 return
@@ -388,6 +392,7 @@ class RecordingState:
             "height": int(frame.shape[0]),
             "source_width": int(source_width),
             "source_height": int(source_height),
+            "overlay": overlay,
         }
         with self.lock:
             self.append_limited(self.camera_frames, payload)

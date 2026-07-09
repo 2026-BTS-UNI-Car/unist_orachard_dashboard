@@ -287,12 +287,18 @@
                 </div>
                 <div class="panel-actions">
                   <button id="cameraLiveButton" class="action-button secondary" type="button">실시간 연결</button>
+                  <div class="segmented-control camera-overlay-mode compact-control" aria-label="camera overlay mode">
+                    <button type="button" data-camera-overlay-mode="raw">Camera</button>
+                    <button type="button" data-camera-overlay-mode="both">Camera+Overlay</button>
+                    <button type="button" data-camera-overlay-mode="overlay">Overlay</button>
+                  </div>
                 </div>
               </div>
               <div id="cameraLiveResult" class="test-result">실시간 연결 대기 중</div>
               <div class="camera-live-layout">
                 <figure class="camera-frame">
                   <img id="cameraLiveImage" alt="ROS2 camera live frame" />
+                  <canvas id="cameraLiveOverlayCanvas" class="camera-overlay-canvas" width="1280" height="720"></canvas>
                   <figcaption id="cameraFrameCaption">ROS2 프레임 대기 중</figcaption>
                 </figure>
                 <div class="camera-controls">
@@ -670,6 +676,7 @@
               </div>
               <div class="rover-camera-frame">
                 <img id="roverCameraImage" alt="Rover camera stream" />
+                <canvas id="roverCameraOverlayCanvas" class="camera-overlay-canvas" width="1280" height="720"></canvas>
                 <span id="roverCameraCaption">stream 대기</span>
               </div>
               <div class="rover-sensor-controls">
@@ -687,6 +694,11 @@
                   </div>
                   <select id="roverCameraFpsSelect" data-camera-fps-select aria-label="Rover camera capture FPS"></select>
                 </div>
+              </div>
+              <div class="segmented-control camera-overlay-mode" aria-label="Rover camera overlay mode">
+                <button type="button" data-camera-overlay-mode="raw">Camera</button>
+                <button type="button" data-camera-overlay-mode="both">Camera+Overlay</button>
+                <button type="button" data-camera-overlay-mode="overlay">Overlay</button>
               </div>
               <div id="roverCameraStats" class="chart-readout"></div>
             </article>
@@ -799,6 +811,11 @@
                     <button type="button" data-archive-overlay-mode="both">LiDAR+Overlay</button>
                     <button type="button" data-archive-overlay-mode="overlay">Overlay</button>
                   </div>
+                  <div class="segmented-control camera-overlay-mode archive-camera-overlay-mode" aria-label="archive camera mode">
+                    <button type="button" data-camera-overlay-mode="raw">Camera</button>
+                    <button type="button" data-camera-overlay-mode="both">Camera+Overlay</button>
+                    <button type="button" data-camera-overlay-mode="overlay">Overlay</button>
+                  </div>
                   <div class="segmented-control perception-mode" aria-label="archive perception overlay source">
                     <button type="button" data-perception-overlay="lidar">2D Objects</button>
                     <button type="button" data-perception-overlay="camera">Camera</button>
@@ -810,6 +827,7 @@
                     </div>
                     <figure class="archive-camera-frame">
                       <img id="roverArchiveCameraImage" alt="Archived camera preview" />
+                      <canvas id="roverArchiveCameraOverlayCanvas" class="camera-overlay-canvas" width="1280" height="720"></canvas>
                       <figcaption id="roverArchiveCameraCaption">camera preview 대기</figcaption>
                     </figure>
                   </div>
@@ -824,10 +842,36 @@
                         <button id="roverOrchardMapZoomOut" type="button">−</button>
                         <button id="roverOrchardMapReset" type="button">Reset</button>
                         <button id="roverOrchardMapZoomIn" type="button">+</button>
-                        <button id="roverOrchardMapDownload" type="button">PNG</button>
+                        <button id="roverOrchardMapDownload" type="button">Fusion PNG</button>
                       </div>
                     </div>
-                    <canvas id="roverOrchardMapCanvas" class="orchard-map-canvas" width="980" height="520"></canvas>
+                    <div class="orchard-map-timeline">
+                      <input id="roverOrchardMapScrubber" class="archive-scrubber" type="range" min="0" max="0" step="0.01" value="0" aria-label="과수 위치 지도 재생 위치" />
+                      <span id="roverOrchardMapTime" class="tag">00:00 / 00:00</span>
+                    </div>
+                    <div class="orchard-map-grid">
+                      <article class="orchard-map-card">
+                        <div class="map-card-head">
+                          <span>LiDAR-only</span>
+                          <small id="roverOrchardMapLidarStats">--</small>
+                        </div>
+                        <canvas id="roverOrchardMapLidarCanvas" class="orchard-map-canvas" data-orchard-map-layer="lidar" width="720" height="520"></canvas>
+                      </article>
+                      <article class="orchard-map-card">
+                        <div class="map-card-head">
+                          <span>Camera-only</span>
+                          <small id="roverOrchardMapCameraStats">--</small>
+                        </div>
+                        <canvas id="roverOrchardMapCameraCanvas" class="orchard-map-canvas" data-orchard-map-layer="camera" width="720" height="520"></canvas>
+                      </article>
+                      <article class="orchard-map-card">
+                        <div class="map-card-head">
+                          <span>Weighted Fusion</span>
+                          <small id="roverOrchardMapFusionStats">--</small>
+                        </div>
+                        <canvas id="roverOrchardMapFusionCanvas" class="orchard-map-canvas" data-orchard-map-layer="fusion" width="720" height="520"></canvas>
+                      </article>
+                    </div>
                     <div id="roverOrchardMapStats" class="chart-readout compact"></div>
                   </div>
                   <div class="archive-download-actions">
