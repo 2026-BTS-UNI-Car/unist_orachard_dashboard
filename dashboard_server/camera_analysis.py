@@ -11,15 +11,17 @@ from urllib.request import Request, urlopen
 
 
 CAMERA_ALGORITHM_NAME = "opencv_orchard_scene_trunk_semantic_gate_v4"
-LOCAL_VISION_ALGORITHM_NAME = "local_orchard_vision_ai_worker_v1"
+LOCAL_VISION_ALGORITHM_NAME = "local_orchard_vision_ai_worker_v3"
+LOCAL_VISION_ANALYSIS_REVISION = "roboflow_yolo11n_seg_local_cache_conf020_r2"
 VISION_AI_URL = os.environ.get("ORCHARD_VISION_AI_URL", "").strip()
-VISION_AI_TIMEOUT_S = float(os.environ.get("ORCHARD_VISION_AI_TIMEOUT_S", "1.2"))
+VISION_AI_TIMEOUT_S = float(os.environ.get("ORCHARD_VISION_AI_TIMEOUT_S", "6.0"))
 
 
 def empty_camera_analysis(method: str = "unavailable", error: str = "") -> dict[str, Any]:
     return {
         "ok": False,
         "algorithm": LOCAL_VISION_ALGORITHM_NAME,
+        "revision": LOCAL_VISION_ANALYSIS_REVISION,
         "method": method,
         "error": error,
         "ai_required": True,
@@ -30,7 +32,7 @@ def empty_camera_analysis(method: str = "unavailable", error: str = "") -> dict[
 
 def analyze_camera_frame_payload(frame: dict[str, Any]) -> dict[str, Any]:
     existing = frame.get("overlay")
-    if isinstance(existing, dict) and current_camera_overlay_algorithm(existing.get("algorithm")):
+    if isinstance(existing, dict) and current_camera_overlay_algorithm(existing.get("algorithm"), existing.get("revision")):
         return existing
     data = frame.get("data")
     if not data:
@@ -38,8 +40,8 @@ def analyze_camera_frame_payload(frame: dict[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(_analyze_camera_data_cached(data))
 
 
-def current_camera_overlay_algorithm(algorithm: Any) -> bool:
-    return algorithm == LOCAL_VISION_ALGORITHM_NAME
+def current_camera_overlay_algorithm(algorithm: Any, revision: Any = None) -> bool:
+    return algorithm == LOCAL_VISION_ALGORITHM_NAME and revision == LOCAL_VISION_ANALYSIS_REVISION
 
 
 @lru_cache(maxsize=2048)
@@ -105,6 +107,11 @@ def analyze_camera_data_with_local_worker(data: str) -> dict[str, Any]:
         return empty_camera_analysis(
             "vision_ai_invalid_response",
             "Local vision AI worker response used an unexpected schema or algorithm.",
+        )
+    if result.get("revision") != LOCAL_VISION_ANALYSIS_REVISION:
+        return empty_camera_analysis(
+            "vision_ai_invalid_response",
+            "Local vision AI worker response used an unexpected analysis revision.",
         )
     result.setdefault("image", {})
     result.setdefault("detections", [])
@@ -549,7 +556,7 @@ class CameraOverlayStabilizer:
             detection["track_id"] = track["id"]
             detection["stable_hits"] = int(track.get("hits") or 1)
             detection["stable"] = int(track.get("hits") or 1) >= 2
-            if detection["stable"] or detection["confidence"] >= 0.82:
+            if detection["stable"] or detection["confidence"] >= 0.2:
                 rows.append(detection)
         self.tracks = [
             track for track in self.tracks

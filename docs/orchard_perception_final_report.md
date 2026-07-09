@@ -180,12 +180,12 @@ l_center,k = (l_left,k + l_right,k) / 2
 
 API key는 후보 모델 탐색과 초기 pseudo-label 생성에만 사용한다. 최종 주행 시스템은 외부 인터넷이 없어도 작동해야 하므로 다음 구조로 전환한다.
 
-중요한 제약도 있다. 이번 평가에서 가장 결과가 좋았던 Roboflow Universe 모델 `tree-trunk-detection-369pz-vm3hn/2`는 hosted inference에서는 좋은 baseline이지만, Universe 모델의 native `.pt` 파일을 일반적으로 직접 내려받아 Jetson에 넣는 방식은 지원되지 않는다. 따라서 offline 운영의 현실적인 경로는 두 가지다.
+중요한 제약도 있다. 이번 평가에서 가장 결과가 좋았던 Roboflow Universe 모델 `tree-trunk-detection-369pz-vm3hn/2`는 hosted inference에서는 좋은 baseline이지만, field 주행 장비에 API key와 외부 네트워크 의존성을 두면 안 된다. 따라서 현재 구현은 다음 두 단계를 분리했다.
 
-1. Roboflow Inference cache 방식: 개발/실험 환경에서 한 번 model weights를 cache한 뒤 field 장비에는 cache만 배포한다. 이 방식은 Roboflow Inference container 정책과 cache 만료 조건을 확인해야 한다.
-2. Ultralytics YOLO segmentation fine-tuning 방식: 우리가 직접 annotation한 orchard dataset으로 `YOLO11n-seg` 또는 `YOLO11s-seg`를 학습하고, `.pt`를 TensorRT `.engine`으로 export해 Jetson에 배포한다.
+1. 즉시 운영 가능한 baseline: 개발 머신에서 Roboflow ORT artifact를 한 번 받아 `runtime/roboflow_cache/tree-trunk-detection-369pz-vm3hn/2/`에 저장하고, Jetson에는 `weights.onnx`, `environment.json`, `class_names.txt`, `model_type.json`만 배포한다. Jetson worker는 API key 없이 이 cache만 읽는다.
+2. 최종 연구 모델: 우리가 직접 annotation한 orchard dataset으로 `YOLO11n-seg` 또는 `YOLO11s-seg`를 fine-tuning하고, `.pt`를 TensorRT `.engine`으로 export해 Jetson에 배포한다.
 
-본 대시보드 구현은 2번을 최종 경로로 채택한다. 이유는 field 주행 장비에 API key와 외부 네트워크 의존성을 두지 않고, 논문 재현성 측면에서도 학습 데이터, class 정의, weight version을 명확히 고정할 수 있기 때문이다.
+현재 대시보드에는 1번 baseline이 적용되어 있다. 2번은 논문 재현성과 field 안정성을 위한 최종 경로다. 즉 지금 UI와 fusion schema는 유지하면서, model backend만 Roboflow cache에서 자체 fine-tuned TensorRT engine으로 갈아끼울 수 있게 만들었다.
 
 ```mermaid
 flowchart LR
@@ -220,29 +220,39 @@ Dashboard 쪽 schema는 현재 `detections[].bbox`, `confidence`, `contour`, `li
 
 | 구성 | 파일 | 역할 |
 | --- | --- | --- |
-| AI worker service | `scripts/vision_ai_service.py` | local YOLO `.pt/.onnx/.engine` 또는 SegFormer local directory를 읽어 camera overlay schema 반환 |
-| AI worker image | `Dockerfile.vision_ai` | PyTorch/Ultralytics/Transformers 의존성을 dashboard와 분리 |
-| Compose service | `docker-compose.yml`의 `vision-ai-worker` profile | `docker compose --profile vision-ai up -d vision-ai-worker`로 별도 실행 |
+| AI worker service | `scripts/vision_ai_service.py` | Roboflow local cache, local YOLO `.pt/.onnx/.engine`, SegFormer local directory를 dashboard camera overlay schema로 변환 |
+| AI worker image | `Dockerfile.vision_ai` | Roboflow Inference/Ultralytics/Transformers 의존성을 dashboard와 분리하고, Jetson Roboflow image의 기존 entrypoint를 `ENTRYPOINT []`로 무효화 |
+| Compose service | `docker-compose.yml`의 `vision-ai-worker` | profile 없이 dashboard와 함께 실행. healthcheck는 `/health`의 `ok=true`를 요구 |
+| Roboflow cache preparation | `scripts/prepare_roboflow_offline_cache.py` | 개발 머신에서 Roboflow API key로 ONNX artifact를 받은 뒤 Jetson에는 cache만 배포 |
 | Model preparation | `scripts/prepare_local_vision_models.py` | HF snapshot download, YOLO base 준비, fine-tuned model TensorRT export |
 | Dashboard bridge | `dashboard_server/camera_analysis.py` | camera perception은 AI-only. `ORCHARD_VISION_AI_URL` 또는 worker가 없으면 오류 overlay를 반환하고 OpenCV fallback을 사용하지 않음 |
 
-실행 예:
+Roboflow cache baseline 실행 예:
 
 ```bash
-# 개발 머신 또는 인터넷 가능한 환경에서 모델 파일 준비
+# 인터넷 가능한 개발 머신에서 Roboflow cache 생성
 source /root/.env
-python3 scripts/prepare_local_vision_models.py --download-segformer
+python3 scripts/prepare_roboflow_offline_cache.py \
+  --model-id tree-trunk-detection-369pz-vm3hn/2 \
+  --cache-dir runtime/roboflow_cache
 
-# fine-tuning된 YOLO segmentation model이 생긴 뒤 Jetson에서 TensorRT export
-python3 scripts/prepare_local_vision_models.py --export-yolo-engine runs/segment/train/weights/best.pt --device 0
-
-# Jetson에서 API key 없이 local worker 실행
+# Jetson에는 API key 없이 cache만 배포한 뒤 실행
 export ORCHARD_VISION_AI_URL=http://127.0.0.1:8785/analyze
-export ORCHARD_YOLO_MODEL=/app/runtime/models/best.engine
-docker compose --profile vision-ai up -d vision-ai-worker dashboard
+export ORCHARD_VISION_BACKEND=roboflow
+export ORCHARD_ROBOFLOW_MODEL_ID=tree-trunk-detection-369pz-vm3hn/2
+export MODEL_CACHE_DIR=/app/runtime/roboflow_cache
+export USE_INFERENCE_MODELS=False
+export ONNXRUNTIME_EXECUTION_PROVIDERS=CPUExecutionProvider
+docker compose up -d --build
 ```
 
-`ORCHARD_VISION_AI_URL`이 설정되지 않았거나 worker가 응답하지 않으면 dashboard는 `algorithm=local_orchard_vision_ai_worker_v1`, `ok=false`, `method=vision_ai_url_required` 또는 `vision_ai_worker_unavailable`인 overlay를 반환한다. UI는 이를 `Camera AI unavailable`로 표시한다. 이 정책은 잘못된 OpenCV heuristic 결과가 연구 데이터에 조용히 섞이는 것을 막기 위한 fail-closed 설계다.
+검증 이미지:
+
+![Local Roboflow worker archive verification](assets/orchard_perception_models/local_roboflow_worker_archive_verification.jpg)
+
+이 샘플은 public archive segment API가 반환한 실제 frame과 `local_orchard_vision_ai_worker_v3 / roboflow_yolo11n_seg_local_cache_conf020_r2` overlay를 그대로 그린 것이다. `20260708T053333Z_both` 8.76s/11.46s와 `20260708T054036Z_both` 3.79s에서는 trunk contour가 반환된다. 반대로 `20260708T054036Z_both` 38.48s는 현재 공개 baseline의 false negative로 남아 있어 fine-tuning target으로 기록한다.
+
+`ORCHARD_VISION_AI_URL`이 설정되지 않았거나 worker가 응답하지 않으면 dashboard는 `algorithm=local_orchard_vision_ai_worker_v3`, `ok=false`, `method=vision_ai_url_required` 또는 `vision_ai_worker_unavailable`인 overlay를 반환한다. UI는 이를 `Camera AI unavailable`로 표시한다. 이 정책은 잘못된 OpenCV heuristic 결과가 연구 데이터에 조용히 섞이는 것을 막기 위한 fail-closed 설계다.
 
 ## 8. 남긴 시행착오
 

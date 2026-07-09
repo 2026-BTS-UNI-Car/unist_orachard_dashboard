@@ -198,6 +198,13 @@ DOCS_CATALOG = [
         "file": "orchard_perception_final_report.md",
     },
     {
+        "slug": "orchard-vision-ai-local-worker",
+        "title": "Orchard Vision AI Local Worker",
+        "category": "Research",
+        "summary": "Roboflow tree trunk 모델을 API 없이 local cache worker로 실행하고 검증하는 절차",
+        "file": "orchard_vision_ai_local_worker.md",
+    },
+    {
         "slug": "rover-control-todo",
         "title": "Rover Control TODO",
         "category": "Data",

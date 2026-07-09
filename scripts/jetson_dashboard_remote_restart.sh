@@ -21,7 +21,26 @@ cd '${APP_PATH}'
 python3 -m compileall dashboard_server scripts
 python3 -m unittest discover -s tests
 if command -v docker >/dev/null 2>&1; then
-  docker compose up -d --build || docker-compose up -d --build
+  if docker compose version >/dev/null 2>&1; then
+    docker compose up -d --build
+  else
+    if ! docker-compose up -d --build; then
+      echo 'docker-compose up failed; removing dashboard-managed containers and retrying' >&2
+      docker rm -f \
+        unist-orachard-dashboard \
+        unist-orachard-vision-ai \
+        unist-orachard-ros2-data-recorder \
+        unist-orachard-ros2-camera-bridge \
+        unist-orachard-ros2-lidar-bridge \
+        unist-orachard-ros2-rover-bridge \
+        unist-orachard-ros2-camera-driver \
+        unist-orachard-ros2-lidar-driver >/dev/null 2>&1 || true
+      docker ps -a --format '{{.Names}}' \
+        | grep -E '^[0-9a-f]+_unist-orachard-' \
+        | xargs -r docker rm -f >/dev/null 2>&1 || true
+      docker-compose up -d --build
+    fi
+  fi
 fi
 if [[ '${SYSTEMD_RESTART}' == '1' ]]; then
   sudo systemctl restart unist-orachard-dashboard.service

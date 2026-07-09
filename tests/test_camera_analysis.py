@@ -3,8 +3,10 @@ from __future__ import annotations
 import unittest
 
 from dashboard_server.camera_analysis import (
+    CameraOverlayStabilizer,
     CAMERA_ALGORITHM_NAME,
     LOCAL_VISION_ALGORITHM_NAME,
+    LOCAL_VISION_ANALYSIS_REVISION,
     analyze_camera_frame_payload,
     current_camera_overlay_algorithm,
 )
@@ -22,7 +24,29 @@ class CameraAnalysisPolicyTest(unittest.TestCase):
 
     def test_legacy_opencv_overlay_is_no_longer_current(self) -> None:
         self.assertFalse(current_camera_overlay_algorithm(CAMERA_ALGORITHM_NAME))
-        self.assertTrue(current_camera_overlay_algorithm(LOCAL_VISION_ALGORITHM_NAME))
+        self.assertFalse(current_camera_overlay_algorithm(LOCAL_VISION_ALGORITHM_NAME))
+        self.assertTrue(current_camera_overlay_algorithm(LOCAL_VISION_ALGORITHM_NAME, LOCAL_VISION_ANALYSIS_REVISION))
+
+    def test_stabilizer_keeps_single_frame_local_ai_detection_at_worker_threshold(self) -> None:
+        stabilizer = CameraOverlayStabilizer()
+
+        overlay = stabilizer.update(
+            {
+                "ok": True,
+                "image": {"width": 640, "height": 360},
+                "detections": [
+                    {
+                        "bbox": [100, 20, 40, 250],
+                        "confidence": 0.22,
+                        "label": "trunk",
+                    }
+                ],
+            },
+            now=1.0,
+        )
+
+        self.assertEqual(len(overlay["detections"]), 1)
+        self.assertEqual(overlay["detections"][0]["label"], "trunk")
 
 
 if __name__ == "__main__":

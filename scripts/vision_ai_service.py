@@ -2,8 +2,10 @@
 """Local vision inference worker for orchard tree extraction.
 
 This service is intentionally independent from the dashboard process so that
-PyTorch/TensorRT dependencies can live in a dedicated container. The dashboard
-can call POST /analyze and fall back to OpenCV when this worker is unavailable.
+PyTorch/TensorRT/Roboflow-Inference dependencies can live in a dedicated
+container. Camera perception is AI-only: if this worker is unavailable, the
+dashboard reports an explicit camera AI error instead of using an OpenCV
+heuristic result as a silent fallback.
 """
 
 from __future__ import annotations
@@ -12,13 +14,15 @@ import argparse
 import base64
 import json
 import os
+import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 
-ALGORITHM_NAME = "local_orchard_vision_ai_worker_v1"
+ALGORITHM_NAME = "local_orchard_vision_ai_worker_v3"
+ANALYSIS_REVISION = "roboflow_yolo11n_seg_local_cache_conf020_r2"
 TREE_CLASS_HINTS = {
     "tree",
     "trunk",
@@ -49,6 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backend", default=os.environ.get("ORCHARD_VISION_BACKEND", "auto"))
     parser.add_argument("--yolo-model", default=os.environ.get("ORCHARD_YOLO_MODEL", ""))
     parser.add_argument("--segformer-model", default=os.environ.get("ORCHARD_SEGFORMER_MODEL", ""))
+    parser.add_argument("--roboflow-model", default=os.environ.get("ORCHARD_ROBOFLOW_MODEL_ID", ""))
     parser.add_argument("--confidence", type=float, default=float(os.environ.get("ORCHARD_VISION_CONFIDENCE", "0.35")))
     parser.add_argument("--device", default=os.environ.get("ORCHARD_VISION_DEVICE", ""))
     return parser.parse_args()
@@ -118,6 +123,18 @@ class VisionAnalyzer:
                 self.backend_error = f"ultralytics: {exc}"
                 if requested in {"ultralytics", "yolo"}:
                     return
+        if requested in {"auto", "roboflow", "roboflow_cache"} and self.args.roboflow_model:
+            try:
+                self.backend = RoboflowInferenceBackend(
+                    self.args.roboflow_model,
+                    confidence=self.args.confidence,
+                )
+                self.backend_name = self.backend.name
+                return
+            except Exception as exc:
+                self.backend_error = f"{self.backend_error}; roboflow: {exc}".strip("; ")
+                if requested in {"roboflow", "roboflow_cache"}:
+                    return
         if requested in {"auto", "segformer"} and self.args.segformer_model:
             try:
                 self.backend = SegFormerBackend(self.args.segformer_model, confidence=self.args.confidence, device=self.args.device)
@@ -135,6 +152,7 @@ class VisionAnalyzer:
         return {
             "ok": self.backend is not None,
             "algorithm": ALGORITHM_NAME,
+            "revision": ANALYSIS_REVISION,
             "backend": self.backend_name,
             "model": getattr(self.backend, "model_path", "") if self.backend else "",
             "error": self.backend_error,
@@ -152,6 +170,7 @@ class VisionAnalyzer:
         started = time.time()
         result = self.backend.analyze(image_bgr)
         result["algorithm"] = ALGORITHM_NAME
+        result["revision"] = ANALYSIS_REVISION
         result["backend"] = self.backend_name
         result["elapsed_ms"] = round((time.time() - started) * 1000.0, 1)
         return result
@@ -304,6 +323,69 @@ class SegFormerBackend:
         }
 
 
+class RoboflowInferenceBackend:
+    name = "roboflow_inference_local_cache"
+
+    def __init__(self, model_id: str, confidence: float) -> None:
+        self.model_path = str(model_id)
+        self.model_id = str(model_id)
+        self.confidence = confidence
+        from inference import get_model  # type: ignore
+
+        api_key = os.environ.get("ROBOFLOW_API_KEY") or None
+        kwargs = {"model_id": self.model_id}
+        if api_key:
+            kwargs["api_key"] = api_key
+        self.model = get_model(**kwargs)
+
+    def analyze(self, image_bgr: Any) -> dict[str, Any]:
+        import cv2  # type: ignore
+
+        height, width = image_bgr.shape[:2]
+        with tempfile.NamedTemporaryFile(suffix=".jpg") as tmp:
+            ok, encoded = cv2.imencode(".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            if not ok:
+                raise RuntimeError("failed to encode image for Roboflow local inference")
+            tmp.write(encoded.tobytes())
+            tmp.flush()
+            raw_result = self.model.infer(tmp.name, confidence=max(0.05, min(0.99, float(self.confidence))))
+        detections = []
+        for prediction in roboflow_predictions(raw_result):
+            label = normalize_label(prediction_value(prediction, "class") or prediction_value(prediction, "class_name") or "")
+            confidence = float(prediction_value(prediction, "confidence") or 0.0)
+            if not should_keep_yolo_label(label, confidence):
+                continue
+            bbox = roboflow_bbox(prediction, width, height)
+            if not bbox:
+                continue
+            contour = roboflow_contour(prediction, width, height)
+            detections.append(
+                {
+                    "bbox": bbox,
+                    "confidence": round(max(0.0, min(0.99, confidence)), 3),
+                    "label": label or "tree",
+                    "render_shape": "contour" if contour else "bbox",
+                    "contour": contour,
+                    "source": "roboflow_inference_local_cache",
+                    "model": self.model_id,
+                }
+            )
+        detections = group_multi_stem_roots(detections, width, height)
+        top_confidence = max((float(item.get("confidence") or 0.0) for item in detections), default=0.0)
+        return {
+            "ok": True,
+            "revision": ANALYSIS_REVISION,
+            "method": "roboflow_inference_local_cache_with_multi_stem_grouping",
+            "confidence": round(top_confidence, 3),
+            "detections": detections[:12],
+            "image": {"width": int(width), "height": int(height)},
+            "legend": {
+                "contour": "local Roboflow Inference prediction converted to dashboard camera overlay schema",
+                "root_group_id": "nearby split stems grouped into one tree root candidate",
+            },
+        }
+
+
 def decode_image(image_data: str) -> Any | None:
     try:
         import cv2  # type: ignore
@@ -321,6 +403,7 @@ def empty_analysis(method: str, error: str = "") -> dict[str, Any]:
     return {
         "ok": False,
         "algorithm": ALGORITHM_NAME,
+        "revision": ANALYSIS_REVISION,
         "backend": "unavailable",
         "method": method,
         "error": error,
@@ -371,6 +454,75 @@ def simplify_contour_cv2(cv2: Any, contour: Any, width: int, height: int) -> lis
     perimeter = cv2.arcLength(contour, True)
     approx = cv2.approxPolyDP(contour, max(1.2, perimeter * 0.012), True)
     return simplify_polygon(approx.reshape(-1, 2).tolist(), width, height)
+
+
+def roboflow_predictions(result: Any) -> list[Any]:
+    if isinstance(result, list):
+        rows: list[Any] = []
+        for item in result:
+            rows.extend(roboflow_predictions(item))
+        return rows
+    if isinstance(result, dict):
+        predictions = result.get("predictions") or result.get("objects") or []
+        return list(predictions) if isinstance(predictions, list) else []
+    predictions = getattr(result, "predictions", None)
+    if predictions is not None:
+        return list(predictions)
+    return []
+
+
+def prediction_value(prediction: Any, key: str) -> Any:
+    if isinstance(prediction, dict):
+        return prediction.get(key)
+    return getattr(prediction, key, None)
+
+
+def roboflow_bbox(prediction: Any, width: int, height: int) -> list[int]:
+    x = prediction_value(prediction, "x")
+    y = prediction_value(prediction, "y")
+    bw = prediction_value(prediction, "width")
+    bh = prediction_value(prediction, "height")
+    if None not in {x, y, bw, bh}:
+        return xyxy_to_xywh(
+            [
+                float(x) - float(bw) / 2.0,
+                float(y) - float(bh) / 2.0,
+                float(x) + float(bw) / 2.0,
+                float(y) + float(bh) / 2.0,
+            ],
+            width,
+            height,
+        )
+    x1 = prediction_value(prediction, "x_min")
+    y1 = prediction_value(prediction, "y_min")
+    x2 = prediction_value(prediction, "x_max")
+    y2 = prediction_value(prediction, "y_max")
+    if None not in {x1, y1, x2, y2}:
+        return xyxy_to_xywh([float(x1), float(y1), float(x2), float(y2)], width, height)
+    return []
+
+
+def roboflow_contour(prediction: Any, width: int, height: int) -> list[list[int]]:
+    points = prediction_value(prediction, "points") or prediction_value(prediction, "polygon") or []
+    rows = []
+    for point in points or []:
+        if isinstance(point, dict):
+            px = point.get("x")
+            py = point.get("y")
+        elif hasattr(point, "x") and hasattr(point, "y"):
+            px = getattr(point, "x", None)
+            py = getattr(point, "y", None)
+        else:
+            try:
+                px = point[0] if len(point) > 0 else None
+                py = point[1] if len(point) > 1 else None
+            except TypeError:
+                px = None
+                py = None
+        if px is None or py is None:
+            continue
+        rows.append([float(px), float(py)])
+    return simplify_polygon(rows, width, height)
 
 
 def group_multi_stem_roots(detections: list[dict[str, Any]], width: int, height: int) -> list[dict[str, Any]]:

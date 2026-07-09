@@ -13,7 +13,7 @@ Last updated: 2026-07-09
   - [x] HF SegFormer ADE20K: tree/grass/wall/building semantic gate로는 유용하지만 trunk instance segmentation 용도는 아님.
 - [x] API key를 Jetson dashboard container에 넣지 않는 구조로 정리한다.
 - [x] AI 처리는 별도 local `vision-ai-worker` container로 분리한다.
-- [x] Dashboard camera analysis는 `ORCHARD_VISION_AI_URL`이 있으면 local worker 결과를 우선 사용하고, 실패 시 OpenCV baseline으로 fallback한다.
+- [x] Dashboard camera analysis는 `ORCHARD_VISION_AI_URL`이 있으면 local worker 결과만 사용하고, 실패 시 OpenCV fallback 없이 explicit AI error를 반환한다.
 - [x] Local worker는 Ultralytics YOLO `.pt/.onnx/.engine` segmentation 모델을 읽어 `bbox`, `confidence`, `contour`, `line`, `label` schema로 반환한다.
 - [x] Local worker는 여러 갈래 밑둥을 하나의 root group으로 묶을 수 있도록 `root_group_id`, `stem_count`를 반환한다.
 - [x] Local worker는 optional SegFormer local model directory를 semantic tree support로 사용할 수 있다.
@@ -31,6 +31,41 @@ Last updated: 2026-07-09
 - [x] Local AI worker가 응답하지 않으면 `vision_ai_worker_unavailable` 오류를 반환한다.
 - [x] UI camera overlay에 `Camera AI unavailable` 오류를 표시한다.
 - [x] AI-only 정책 회귀 테스트를 추가한다.
+
+## 2026-07-09 AI worker live 장애 복구 TODO
+
+- [x] 원인 1: `ORCHARD_VISION_AI_URL` 기본값이 비어 있어 dashboard가 AI worker를 호출하지 못하던 문제를 수정한다.
+- [x] 원인 2: `vision-ai-worker`가 docker compose profile 뒤에 있어 일반 `docker-compose up -d --build`에서 기동되지 않던 문제를 수정한다.
+- [x] Jetson Roboflow base image의 기존 entrypoint가 자체 서버를 띄우며 worker command를 무시하던 문제를 `ENTRYPOINT []`로 수정한다.
+- [x] Jetson ONNXRuntime이 TensorRT/CUDA provider를 우선 잡아 crash하던 문제를 `ONNXRUNTIME_EXECUTION_PROVIDERS=CPUExecutionProvider`로 우회한다.
+- [x] Roboflow 모델 `tree-trunk-detection-369pz-vm3hn/2`가 CPU provider에서 1회 로딩되는 것을 확인한다.
+- [x] 개발 머신에서 `weights.onnx`, `environment.json`, `class_names.txt`, `model_type.json` 오프라인 cache를 생성한다.
+- [x] `scripts/prepare_roboflow_offline_cache.py`로 Roboflow API key를 Jetson에 저장하지 않고 cache artifact만 재생성할 수 있게 한다.
+- [x] `docker-compose 1.29.2`와 Docker 29의 `ContainerConfig` 충돌 시 dashboard-managed container만 제거하고 재시도하는 fallback을 배포 스크립트에 추가한다.
+- [x] API key 없이 Roboflow cache만으로 정식 `unist-orachard-vision-ai` worker `/health`가 `ok: true`를 반환하는지 확인한다.
+- [x] Jetson cloudflared SSH `websocket: bad handshake` 복구 후 dashboard 잔여 컨테이너를 정리하고 `unist-orachard-dashboard`, `unist-orachard-vision-ai`를 재기동한다.
+- [x] Dashboard live API에서 `Camera AI unavailable / ORCHARD_VISION_AI_URL is not configured` 상태가 더 이상 worker 설정 문제로 발생하지 않는지 확인한다.
+- [x] Public `/api/health`, Jetson 내부 `/api/health`, worker `/health`가 모두 정상임을 확인한다.
+- [x] `20260708T053333Z_both`와 `20260708T054036Z_both` archive segment에서 `roboflow_inference_local_cache` camera overlay가 반환되는 것을 확인한다.
+- [x] 실제 archive frame과 local worker contour overlay 검증 이미지를 `docs/assets/orchard_perception_models/local_roboflow_worker_archive_verification.jpg`로 저장한다.
+- [x] 현재 공개 baseline이 놓치는 hard false-negative frame을 기록하고 fine-tuning target으로 분리한다.
+
+## 2026-07-09 Local Vision AI worker 최종 확인
+
+- [x] `Dockerfile.vision_ai`에서 Jetson Roboflow base image의 기본 entrypoint를 무효화한다.
+- [x] `docker-compose.yml`에서 `vision-ai-worker`를 profile 밖으로 빼서 일반 `docker compose up -d --build`에 포함한다.
+- [x] `USE_INFERENCE_MODELS=False`, `MODEL_CACHE_DIR=/app/runtime/roboflow_cache`로 API key 없이 local cache를 강제한다.
+- [x] `ORCHARD_VISION_CONFIDENCE=0.2`, dashboard timeout 6초로 CPU inference 환경을 반영한다.
+- [x] `CameraOverlayStabilizer`가 local Roboflow trunk detections를 단일 frame에서도 과도하게 숨기지 않도록 confidence 기준을 worker threshold와 맞춘다.
+- [x] `algorithm + revision`으로 archive camera overlay cache freshness를 판정해 오래된 OpenCV/stale overlay를 재사용하지 않게 한다.
+- [x] 문서: `docs/orchard_vision_ai_local_worker.md`를 추가하고 docs 탭 catalog에 등록한다.
+- [x] 문서: `docs/orchard_perception_final_report.md`의 offline 배포 절차를 실제 local cache worker 방식으로 갱신한다.
+
+## 남은 연구 작업
+
+- [ ] `20260708T054036Z_both` 38.5s처럼 현재 공개 Roboflow baseline이 놓치는 frame을 hard example로 모아 fine-tuning dataset에 포함한다.
+- [ ] 사람 하반신, 기둥, 벽, 테이블 다리, 플라스틱 edge를 hard negative class로 충분히 annotation한다.
+- [ ] 직접 fine-tuned YOLO11 segmentation weight를 TensorRT FP16 engine으로 export해 `ORCHARD_VISION_BACKEND=ultralytics` 경로로 교체 검증한다.
 
 ## 완료 조건
 

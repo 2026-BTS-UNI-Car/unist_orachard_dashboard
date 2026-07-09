@@ -1,0 +1,74 @@
+{
+  "samples": [
+    {
+      "recording": "20260708T053333Z_both",
+      "target_s": 8.76,
+      "frame_t_s": 8.756,
+      "ok": true,
+      "algorithm": "local_orchard_vision_ai_worker_v3",
+      "revision": "roboflow_yolo11n_seg_local_cache_conf020_r2",
+      "backend": "roboflow_inference_local_cache",
+      "method": "roboflow_inference_local_cache_with_multi_stem_grouping",
+      "detections": 3,
+      "labels": [
+        "trunk",
+        "trunk",
+        "trunk"
+      ],
+      "confidences": [
+        0.787,
+        0.539,
+        0.307
+      ]
+    },
+    {
+      "recording": "20260708T053333Z_both",
+      "target_s": 11.46,
+      "frame_t_s": 11.456,
+      "ok": true,
+      "algorithm": "local_orchard_vision_ai_worker_v3",
+      "revision": "roboflow_yolo11n_seg_local_cache_conf020_r2",
+      "backend": "roboflow_inference_local_cache",
+      "method": "roboflow_inference_local_cache_with_multi_stem_grouping",
+      "detections": 2,
+      "labels": [
+        "trunk",
+        "trunk"
+      ],
+      "confidences": [
+        0.818,
+        0.636
+      ]
+    },
+    {
+      "recording": "20260708T054036Z_both",
+      "target_s": 3.79,
+      "frame_t_s": 3.787,
+      "ok": true,
+      "algorithm": "local_orchard_vision_ai_worker_v3",
+      "revision": "roboflow_yolo11n_seg_local_cache_conf020_r2",
+      "backend": "roboflow_inference_local_cache",
+      "method": "roboflow_inference_local_cache_with_multi_stem_grouping",
+      "detections": 1,
+      "labels": [
+        "trunk"
+      ],
+      "confidences": [
+        0.631
+      ]
+    },
+    {
+      "recording": "20260708T054036Z_both",
+      "target_s": 38.5,
+      "frame_t_s": 38.475,
+      "ok": true,
+      "algorithm": "local_orchard_vision_ai_worker_v3",
+      "revision": "roboflow_yolo11n_seg_local_cache_conf020_r2",
+      "backend": "roboflow_inference_local_cache",
+      "method": "roboflow_inference_local_cache_with_multi_stem_grouping",
+      "detections": 0,
+      "labels": [],
+      "confidences": []
+    }
+  ]
+}
