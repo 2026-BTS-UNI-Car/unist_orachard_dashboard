@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import base64
 import hashlib
+import re
 import secrets
 import socket
 import threading
@@ -605,6 +606,12 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("LIDAR_SCAN_MAX_POINTS:-3200", compose)
         self.assertIn("./runtime:/app/runtime", compose)
         self.assertNotIn("LIDAR_BRIDGE_SOURCE:-auto", compose)
+        for service_name in ["dashboard", "ros2-camera-bridge", "ros2-data-recorder"]:
+            match = re.search(rf"^  {re.escape(service_name)}:\n(?P<block>.*?)(?=^  [\w-]+:|\Z)", compose, re.M | re.S)
+            self.assertIsNotNone(match, service_name)
+            service_block = match.group("block")
+            self.assertIn("ORCHARD_VISION_AI_URL", service_block, service_name)
+            self.assertIn("ORCHARD_VISION_AI_TIMEOUT_S", service_block, service_name)
         self.assertIn("stats?stream=false&one-shot=true", telemetry_py)
         self.assertIn("def docker_container_logs", telemetry_py)
         self.assertIn("def docker_container_action", telemetry_py)

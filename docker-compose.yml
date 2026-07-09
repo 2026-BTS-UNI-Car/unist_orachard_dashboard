@@ -229,6 +229,8 @@ services:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       CAMERA_IMAGE_TOPIC: "${CAMERA_IMAGE_TOPIC:-/camera/image_raw}"
       CAMERA_BRIDGE_STATUS_FILE: "/app/runtime/camera_bridge_status.json"
+      ORCHARD_VISION_AI_URL: "${ORCHARD_VISION_AI_URL:-http://127.0.0.1:8785/analyze}"
+      ORCHARD_VISION_AI_TIMEOUT_S: "${ORCHARD_VISION_AI_TIMEOUT_S:-6.0}"
     volumes:
       - ./runtime:/app/runtime
     command:
@@ -316,6 +318,8 @@ services:
       RECORDER_TIMELINE_MAX_FRAMES: "${RECORDER_TIMELINE_MAX_FRAMES:-1800}"
       RECORDER_CAMERA_PREVIEW_WIDTH: "${RECORDER_CAMERA_PREVIEW_WIDTH:-640}"
       RECORDER_CAMERA_JPEG_QUALITY: "${RECORDER_CAMERA_JPEG_QUALITY:-68}"
+      ORCHARD_VISION_AI_URL: "${ORCHARD_VISION_AI_URL:-http://127.0.0.1:8785/analyze}"
+      ORCHARD_VISION_AI_TIMEOUT_S: "${ORCHARD_VISION_AI_TIMEOUT_S:-6.0}"
     volumes:
       - ./runtime:/app/runtime
     command:

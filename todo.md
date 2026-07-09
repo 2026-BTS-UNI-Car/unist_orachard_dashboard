@@ -36,6 +36,7 @@ Last updated: 2026-07-09
 
 - [x] 원인 1: `ORCHARD_VISION_AI_URL` 기본값이 비어 있어 dashboard가 AI worker를 호출하지 못하던 문제를 수정한다.
 - [x] 원인 2: `vision-ai-worker`가 docker compose profile 뒤에 있어 일반 `docker-compose up -d --build`에서 기동되지 않던 문제를 수정한다.
+- [x] 원인 3: live camera overlay와 recorder overlay를 계산하는 `ros2-camera-bridge`, `ros2-data-recorder` 컨테이너에 `ORCHARD_VISION_AI_URL`이 전달되지 않아 화면에서는 계속 `vision_ai_url_required`가 발생하던 문제를 수정한다.
 - [x] Jetson Roboflow base image의 기존 entrypoint가 자체 서버를 띄우며 worker command를 무시하던 문제를 `ENTRYPOINT []`로 수정한다.
 - [x] Jetson ONNXRuntime이 TensorRT/CUDA provider를 우선 잡아 crash하던 문제를 `ONNXRUNTIME_EXECUTION_PROVIDERS=CPUExecutionProvider`로 우회한다.
 - [x] Roboflow 모델 `tree-trunk-detection-369pz-vm3hn/2`가 CPU provider에서 1회 로딩되는 것을 확인한다.
