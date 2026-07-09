@@ -27,6 +27,23 @@ class CameraAnalysisPolicyTest(unittest.TestCase):
         self.assertFalse(current_camera_overlay_algorithm(LOCAL_VISION_ALGORITHM_NAME))
         self.assertTrue(current_camera_overlay_algorithm(LOCAL_VISION_ALGORITHM_NAME, LOCAL_VISION_ANALYSIS_REVISION))
 
+    def test_failed_current_overlay_is_not_reused(self) -> None:
+        overlay = analyze_camera_frame_payload(
+            {
+                "data": "not-a-real-image",
+                "overlay": {
+                    "ok": False,
+                    "algorithm": LOCAL_VISION_ALGORITHM_NAME,
+                    "revision": LOCAL_VISION_ANALYSIS_REVISION,
+                    "method": "backend_unavailable",
+                    "error": "old worker failure",
+                },
+            }
+        )
+
+        self.assertEqual(overlay["method"], "vision_ai_url_required")
+        self.assertNotEqual(overlay["error"], "old worker failure")
+
     def test_stabilizer_keeps_single_frame_local_ai_detection_at_worker_threshold(self) -> None:
         stabilizer = CameraOverlayStabilizer()
 

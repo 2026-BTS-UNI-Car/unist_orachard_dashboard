@@ -37,6 +37,7 @@ Last updated: 2026-07-09
 - [x] 원인 1: `ORCHARD_VISION_AI_URL` 기본값이 비어 있어 dashboard가 AI worker를 호출하지 못하던 문제를 수정한다.
 - [x] 원인 2: `vision-ai-worker`가 docker compose profile 뒤에 있어 일반 `docker-compose up -d --build`에서 기동되지 않던 문제를 수정한다.
 - [x] 원인 3: live camera overlay와 recorder overlay를 계산하는 `ros2-camera-bridge`, `ros2-data-recorder` 컨테이너에 `ORCHARD_VISION_AI_URL`이 전달되지 않아 화면에서는 계속 `vision_ai_url_required`가 발생하던 문제를 수정한다.
+- [x] 원인 4: GitHub deploy workflow가 원격 `.env`를 삭제하면 `ORCHARD_ROBOFLOW_MODEL_ID`가 비어 local Roboflow cache worker가 `ok:false`가 되던 문제를 compose 기본값과 deploy health gate로 수정한다.
 - [x] Jetson Roboflow base image의 기존 entrypoint가 자체 서버를 띄우며 worker command를 무시하던 문제를 `ENTRYPOINT []`로 수정한다.
 - [x] Jetson ONNXRuntime이 TensorRT/CUDA provider를 우선 잡아 crash하던 문제를 `ONNXRUNTIME_EXECUTION_PROVIDERS=CPUExecutionProvider`로 우회한다.
 - [x] Roboflow 모델 `tree-trunk-detection-369pz-vm3hn/2`가 CPU provider에서 1회 로딩되는 것을 확인한다.
@@ -61,6 +62,21 @@ Last updated: 2026-07-09
 - [x] `algorithm + revision`으로 archive camera overlay cache freshness를 판정해 오래된 OpenCV/stale overlay를 재사용하지 않게 한다.
 - [x] 문서: `docs/orchard_vision_ai_local_worker.md`를 추가하고 docs 탭 catalog에 등록한다.
 - [x] 문서: `docs/orchard_perception_final_report.md`의 offline 배포 절차를 실제 local cache worker 방식으로 갱신한다.
+
+## 2026-07-09 Archive playback / fine-tuning 준비 TODO
+
+- [x] Archive 재생이 느린 원인을 재생 중 camera AI inference와 큰 segment payload로 확정한다.
+- [x] 실패한 stale overlay cache를 재사용하지 않도록 `ok=false` camera overlay는 같은 algorithm/revision이어도 다시 분석하게 수정한다.
+- [x] `scripts/precompute_archive_camera_overlays.py`를 추가해 archive camera overlay를 사전에 `timeline.json`에 저장한다.
+- [x] `20260708T053333Z_both` 93 frame, `20260708T054036Z_both` 125 frame을 local AI worker로 precompute하고 실패 0건을 확인한다.
+- [x] Archive segment chunk를 12초에서 4초로 줄이고 seek 후 segment load가 끝나면 즉시 다시 렌더링되게 수정한다.
+- [x] Precompute 이후 1.2초 segment 응답이 약 0.42-0.74초, 4초 segment 응답이 약 0.70-0.89초 범위인 것을 Jetson에서 재측정한다.
+- [x] Playwright로 archive camera preview와 overlay canvas가 실제 UI에서 표시되는 것을 검증하고 이미지를 보존한다.
+- [x] `scripts/export_orchard_finetune_dataset.py`를 추가해 현재 AI contour를 YOLO segmentation pre-label dataset으로 export한다.
+- [x] 두 archive에서 218 frame, labeled 131 frame, empty hard-negative 87 frame dataset을 생성한다.
+- [x] Fine-tuning 절차 문서 `docs/orchard_finetuning_workflow.md`를 추가하고 docs catalog에 등록한다.
+- [ ] 사용자가 수동 검수한 label로 YOLO segmentation fine-tuning을 수행한다.
+- [ ] Fine-tuned `best.pt`를 TensorRT FP16 engine으로 export하고 `ORCHARD_VISION_BACKEND=ultralytics` 경로에서 공개 Roboflow baseline과 비교한다.
 
 ## 남은 연구 작업
 

@@ -32,7 +32,11 @@ def empty_camera_analysis(method: str = "unavailable", error: str = "") -> dict[
 
 def analyze_camera_frame_payload(frame: dict[str, Any]) -> dict[str, Any]:
     existing = frame.get("overlay")
-    if isinstance(existing, dict) and current_camera_overlay_algorithm(existing.get("algorithm"), existing.get("revision")):
+    if (
+        isinstance(existing, dict)
+        and existing.get("ok") is True
+        and current_camera_overlay_algorithm(existing.get("algorithm"), existing.get("revision"))
+    ):
         return existing
     data = frame.get("data")
     if not data:

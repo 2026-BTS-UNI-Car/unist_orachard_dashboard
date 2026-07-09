@@ -109,6 +109,17 @@ curl -fsS \
 docs/assets/orchard_perception_models/local_roboflow_worker_archive_verification.json
 ```
 
+2026-07-09 재배포 검증에서는 dashboard timeline API가 반환한 `camera.frames[].data`와 `camera.frames[].overlay`만 사용해 아래 contact sheet를 생성했다. 즉 별도 스크립트가 모델을 직접 호출한 것이 아니라, 대시보드 archive 조회 경로가 local worker 결과를 실제로 표시하는지 확인한 산출물이다.
+
+![Dashboard local AI overlay validation](assets/orchard_perception_models/dashboard_local_ai_overlay_validation.jpg)
+
+검증 조건:
+
+- `curl http://127.0.0.1:8785/health`가 `backend=roboflow_inference_local_cache`, `model=tree-trunk-detection-369pz-vm3hn/2`, `ok=true`를 반환한다.
+- Live camera WebSocket frame overlay가 `ok=true`, `backend=roboflow_inference_local_cache`, `error=null`을 반환한다.
+- Archive `20260708T053333Z_both`, `20260708T054036Z_both` timeline segment에서 camera overlay가 `backend_unavailable` stale cache를 재사용하지 않고 local worker 결과로 재분석된다.
+- 실패 overlay는 cache로 재사용하지 않는다. `algorithm/revision`이 같더라도 `ok=false`이면 다시 worker에 요청한다.
+
 ## 7. 현재 한계와 fine-tuning 방향
 
 `tree-trunk-detection-369pz-vm3hn/2`는 현재 공개 후보 중 가장 나은 trunk contour baseline이다. 하지만 모든 frame을 완벽히 잡지는 못한다. 특히 `20260708T054036Z_both`의 약 38.5초 구간처럼 가지/잎 간섭과 거리 변화가 큰 frame에서는 local worker가 `ok=true`여도 detection이 0개일 수 있다.
@@ -138,4 +149,3 @@ yolo export model=runs/segment/train/weights/best.pt format=engine half=True img
 ```
 
 그 뒤 Jetson `.env`에서 `ORCHARD_VISION_BACKEND=ultralytics`, `ORCHARD_YOLO_MODEL=/app/runtime/models/best.engine`로 전환하면 된다.
-

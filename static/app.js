@@ -13,7 +13,7 @@ const LIDAR_OVERLAY_MODE_KEY = "ubts-lidar-overlay-mode-v1";
 const ARCHIVE_OVERLAY_MODE_KEY = "ubts-archive-overlay-mode-v1";
 const ARCHIVE_OVERLAY_VISIBLE_KEY = "ubts-archive-overlay-visible-v1";
 const ARCHIVE_RANGE_KEY = "ubts-archive-lidar-range-v1";
-const ARCHIVE_SEGMENT_SECONDS = 12;
+const ARCHIVE_SEGMENT_SECONDS = 4;
 const PERCEPTION_OVERLAY_KEY = "ubts-perception-overlay-mode-v1";
 const LIDAR_SPEC_MAX_POINTS = 3200;
 const LIDAR_COORDINATE_FRAME = "lidar_bridge_xy_v1";
@@ -4316,7 +4316,9 @@ function archivePlaybackTick(now = performance.now()) {
 function setArchiveTime(value, options = {}) {
   if (options.pause) stopArchivePlayback(false);
   state.archivePlayback.timeS = Math.max(0, Math.min(state.archivePlayback.durationS, Number(value) || 0));
-  ensureArchiveSegmentForTime(state.archivePlayback.timeS).catch((err) => debugLog("archive", "seek segment load failed", err));
+  ensureArchiveSegmentForTime(state.archivePlayback.timeS)
+    .then(() => renderArchiveFrame())
+    .catch((err) => debugLog("archive", "seek segment load failed", err));
   renderArchiveFrame();
 }
 

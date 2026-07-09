@@ -205,6 +205,13 @@ DOCS_CATALOG = [
         "file": "orchard_vision_ai_local_worker.md",
     },
     {
+        "slug": "orchard-finetuning-workflow",
+        "title": "과수 Segmentation Fine-Tuning 절차",
+        "category": "Research",
+        "summary": "Archive precompute, YOLO segmentation pre-label export, 수동 검수와 TensorRT 배포 절차",
+        "file": "orchard_finetuning_workflow.md",
+    },
+    {
         "slug": "rover-control-todo",
         "title": "Rover Control TODO",
         "category": "Data",
