@@ -191,6 +191,13 @@ DOCS_CATALOG = [
         "file": "orchard_tree_algorithm_report.md",
     },
     {
+        "slug": "orchard-perception-final-report",
+        "title": "Vision-LiDAR 과수 인식 최종 보고서",
+        "category": "Research",
+        "summary": "공개 모델 평가, multi-stem 처리, offline TensorRT 배포, 수동 annotation 절차",
+        "file": "orchard_perception_final_report.md",
+    },
+    {
         "slug": "rover-control-todo",
         "title": "Rover Control TODO",
         "category": "Data",

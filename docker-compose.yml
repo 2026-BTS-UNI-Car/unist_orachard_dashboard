@@ -34,6 +34,8 @@ services:
       RECORDER_API_URL: "http://127.0.0.1:8790"
       DATA_RECORDER_STATUS_FILE: "/app/runtime/data_recorder_status.json"
       RECORDING_ARCHIVE_DIR: "/app/runtime/recordings"
+      ORCHARD_VISION_AI_URL: "${ORCHARD_VISION_AI_URL:-}"
+      ORCHARD_VISION_AI_TIMEOUT_S: "${ORCHARD_VISION_AI_TIMEOUT_S:-1.2}"
       ROVER_NETWORK_ENABLED: "${ROVER_NETWORK_ENABLED:-0}"
       ROVER_BASE_URL: "${ROVER_BASE_URL:-http://192.168.4.1}"
       ROVER_DASHBOARD_URL: "${ROVER_DASHBOARD_URL:-http://192.168.4.1}"
@@ -61,6 +63,38 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  vision-ai-worker:
+    profiles:
+      - vision-ai
+    build:
+      context: .
+      dockerfile: Dockerfile.vision_ai
+      args:
+        VISION_AI_BASE_IMAGE: "${VISION_AI_BASE_IMAGE:-python:3.11-slim}"
+    image: unist-orachard-vision-ai:latest
+    container_name: unist-orachard-vision-ai
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    environment:
+      VISION_AI_HOST: "0.0.0.0"
+      VISION_AI_PORT: "8785"
+      ORCHARD_VISION_BACKEND: "${ORCHARD_VISION_BACKEND:-auto}"
+      ORCHARD_YOLO_MODEL: "${ORCHARD_YOLO_MODEL:-/app/runtime/models/orchard-yolo11-seg.engine}"
+      ORCHARD_SEGFORMER_MODEL: "${ORCHARD_SEGFORMER_MODEL:-}"
+      ORCHARD_VISION_CONFIDENCE: "${ORCHARD_VISION_CONFIDENCE:-0.35}"
+      ORCHARD_VISION_DEVICE: "${ORCHARD_VISION_DEVICE:-}"
+      TRANSFORMERS_OFFLINE: "${TRANSFORMERS_OFFLINE:-1}"
+      HF_HUB_OFFLINE: "${HF_HUB_OFFLINE:-1}"
+    volumes:
+      - ./runtime:/app/runtime
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json, urllib.request; json.load(urllib.request.urlopen('http://127.0.0.1:8785/health', timeout=3))"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   ros2-lidar-driver:
     build:

@@ -1,6 +1,26 @@
 # Rover Control Orchard Overlay TODO
 
-Last updated: 2026-07-08
+Last updated: 2026-07-09
+
+## 2026-07-09 Offline Vision AI Worker 목표
+
+- [x] 사용자가 제공한 Hugging Face/Roboflow token을 repo 밖 `/root/.env`에 저장하고, git 추적 대상이 아님을 확인한다.
+- [x] 공개 모델 후보를 archive frame으로 실제 비교한다.
+  - [x] Roboflow `tree-trunk-detection-369pz-vm3hn/2`: YOLO11 instance segmentation, contour mask 제공, 현재 best hosted baseline.
+  - [x] Roboflow `orchard-trunk-yolov5s/3`: bbox-only, confidence 낮고 mask가 없어 보조 후보로 격하.
+  - [x] Roboflow `trees-and-trunks/1`: bbox-only, edge false positive가 많아 비채택.
+  - [x] Roboflow `object-detection-isoz2/1`: archive sample에서 유효 prediction 없음.
+  - [x] HF SegFormer ADE20K: tree/grass/wall/building semantic gate로는 유용하지만 trunk instance segmentation 용도는 아님.
+- [x] API key를 Jetson dashboard container에 넣지 않는 구조로 정리한다.
+- [x] AI 처리는 별도 local `vision-ai-worker` container로 분리한다.
+- [x] Dashboard camera analysis는 `ORCHARD_VISION_AI_URL`이 있으면 local worker 결과를 우선 사용하고, 실패 시 OpenCV baseline으로 fallback한다.
+- [x] Local worker는 Ultralytics YOLO `.pt/.onnx/.engine` segmentation 모델을 읽어 `bbox`, `confidence`, `contour`, `line`, `label` schema로 반환한다.
+- [x] Local worker는 여러 갈래 밑둥을 하나의 root group으로 묶을 수 있도록 `root_group_id`, `stem_count`를 반환한다.
+- [x] Local worker는 optional SegFormer local model directory를 semantic tree support로 사용할 수 있다.
+- [x] 모델 준비 스크립트는 HF model snapshot과 YOLO base/fine-tuned model export 경로를 문서화한다.
+- [x] Notion `39726f49473a8088bb40d99517eb6eae`에는 최종 보고서 형태로 모델별 결과, 선택 이유, 계층형 구조, offline 배포, 수동 작업 방법을 정리한다.
+- [x] Local worker health endpoint는 모델이 없어도 JSON으로 상태를 반환한다.
+- [x] Python tests, docs API smoke, `git diff --check`를 통과한다.
 
 ## 완료 조건
 

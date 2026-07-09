@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import base64
 import copy
+import json
+import os
 from functools import lru_cache
 from typing import Any
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 
 CAMERA_ALGORITHM_NAME = "opencv_orchard_scene_trunk_semantic_gate_v4"
+LOCAL_VISION_ALGORITHM_NAME = "local_orchard_vision_ai_worker_v1"
+VISION_AI_URL = os.environ.get("ORCHARD_VISION_AI_URL", "").strip()
+VISION_AI_TIMEOUT_S = float(os.environ.get("ORCHARD_VISION_AI_TIMEOUT_S", "1.2"))
 
 
 def empty_camera_analysis(method: str = "unavailable") -> dict[str, Any]:
@@ -21,7 +28,7 @@ def empty_camera_analysis(method: str = "unavailable") -> dict[str, Any]:
 
 def analyze_camera_frame_payload(frame: dict[str, Any]) -> dict[str, Any]:
     existing = frame.get("overlay")
-    if isinstance(existing, dict) and existing.get("algorithm") == CAMERA_ALGORITHM_NAME:
+    if isinstance(existing, dict) and current_camera_overlay_algorithm(existing.get("algorithm")):
         return existing
     data = frame.get("data")
     if not data:
@@ -29,8 +36,17 @@ def analyze_camera_frame_payload(frame: dict[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(_analyze_camera_data_cached(data))
 
 
+def current_camera_overlay_algorithm(algorithm: Any) -> bool:
+    if VISION_AI_URL:
+        return algorithm == LOCAL_VISION_ALGORITHM_NAME
+    return algorithm in {CAMERA_ALGORITHM_NAME, LOCAL_VISION_ALGORITHM_NAME}
+
+
 @lru_cache(maxsize=2048)
 def _analyze_camera_data_cached(data: str) -> dict[str, Any]:
+    worker_result = analyze_camera_data_with_local_worker(data)
+    if worker_result is not None:
+        return worker_result
     try:
         import cv2  # type: ignore
         import numpy as np  # type: ignore
@@ -61,6 +77,9 @@ def analyze_camera_image(image_bgr: Any) -> dict[str, Any]:
     height, width = image_bgr.shape[:2]
     if height <= 0 or width <= 0:
         return empty_camera_analysis("empty_image")
+    worker_result = analyze_camera_image_with_local_worker(cv2, image_bgr)
+    if worker_result is not None:
+        return worker_result
 
     masks = camera_tree_masks(cv2, np, image_bgr)
     scene = masks.get("scene") or {}
@@ -96,6 +115,49 @@ def analyze_camera_image(image_bgr: Any) -> dict[str, Any]:
             "confidence": "conservative tree probability from bark/dark trunk evidence gated by image-level orchard context and local canopy support",
         },
     }
+
+
+def analyze_camera_image_with_local_worker(cv2: Any, image_bgr: Any) -> dict[str, Any] | None:
+    if not VISION_AI_URL:
+        return None
+    try:
+        ok, encoded = cv2.imencode(".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 86])
+    except Exception:
+        return None
+    if not ok:
+        return None
+    image_data = base64.b64encode(encoded.tobytes()).decode("ascii")
+    return analyze_camera_data_with_local_worker(image_data)
+
+
+def analyze_camera_data_with_local_worker(data: str) -> dict[str, Any] | None:
+    if not VISION_AI_URL:
+        return None
+    payload = {
+        "image": data,
+        "schema": "dashboard_camera_overlay_v1",
+        "prefer": "tree_trunk_instance_segmentation",
+    }
+    try:
+        raw = json.dumps(payload).encode("utf-8")
+        request = Request(
+            VISION_AI_URL,
+            data=raw,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=VISION_AI_TIMEOUT_S) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(result, dict) or result.get("algorithm") != LOCAL_VISION_ALGORITHM_NAME:
+        return None
+    if not result.get("ok") and not result.get("detections"):
+        return None
+    result.setdefault("image", {})
+    result.setdefault("detections", [])
+    result["source"] = "local_vision_ai_worker"
+    return result
 
 
 def camera_tree_masks(cv2: Any, np: Any, image_bgr: Any) -> dict[str, Any]:
