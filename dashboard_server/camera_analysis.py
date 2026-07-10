@@ -11,8 +11,8 @@ from urllib.request import Request, urlopen
 
 
 CAMERA_ALGORITHM_NAME = "opencv_orchard_scene_trunk_semantic_gate_v4"
-LOCAL_VISION_ALGORITHM_NAME = "local_orchard_vision_ai_worker_v3"
-LOCAL_VISION_ANALYSIS_REVISION = "roboflow_yolo11n_seg_local_cache_conf020_r2"
+LOCAL_VISION_ALGORITHM_NAME = "local_orchard_vision_ai_worker_v4"
+LOCAL_VISION_ANALYSIS_REVISION = "orchard_trunk_yolo11_trt_clip_ood_v1"
 VISION_AI_URL = os.environ.get("ORCHARD_VISION_AI_URL", "").strip()
 VISION_AI_TIMEOUT_S = float(os.environ.get("ORCHARD_VISION_AI_TIMEOUT_S", "6.0"))
 
@@ -514,9 +514,14 @@ class CameraOverlayStabilizer:
         if not overlay.get("ok"):
             return overlay
         now = 0.0 if now is None else float(now)
-        detections = [copy.deepcopy(item) for item in overlay.get("detections") or []]
+        detections = [
+            copy.deepcopy(item)
+            for item in overlay.get("detections") or []
+            if str(item.get("admission") or "accepted") == "accepted"
+        ]
         matched: set[int] = set()
         rows: list[dict[str, Any]] = []
+        pending = 0
         for detection in sorted(detections, key=lambda item: float(item.get("confidence") or 0.0), reverse=True):
             bbox = detection.get("bbox") or [0, 0, 0, 0]
             best_index = None
@@ -540,6 +545,8 @@ class CameraOverlayStabilizer:
                     "id": f"cam-tree-{self.next_id}",
                     "bbox": bbox,
                     "confidence": float(detection.get("confidence") or 0.0),
+                    "tree_probability": float(detection.get("tree_probability") or detection.get("confidence") or 0.0),
+                    "ood_score": float(detection.get("ood_score") or 0.0),
                     "hits": 1,
                     "last_seen_s": now,
                 }
@@ -553,15 +560,34 @@ class CameraOverlayStabilizer:
                 detection = transform_detection_geometry(detection, bbox, smooth_bbox)
                 track["bbox"] = smooth_bbox
                 track["confidence"] = round(float(track.get("confidence") or 0.0) * 0.55 + float(detection.get("confidence") or 0.0) * 0.45, 3)
+                track["tree_probability"] = round(
+                    float(track.get("tree_probability") or track.get("confidence") or 0.0) * 0.55
+                    + float(detection.get("tree_probability") or detection.get("confidence") or 0.0) * 0.45,
+                    3,
+                )
+                track["ood_score"] = round(
+                    float(track.get("ood_score") or 0.0) * 0.55 + float(detection.get("ood_score") or 0.0) * 0.45,
+                    3,
+                )
                 track["hits"] = int(track.get("hits") or 1) + 1
                 track["last_seen_s"] = now
             detection["bbox"] = [int(v) for v in track.get("bbox", bbox)]
             detection["confidence"] = round(max(float(detection.get("confidence") or 0.0), float(track.get("confidence") or 0.0)), 3)
+            detection["tree_probability"] = round(float(track.get("tree_probability") or detection["confidence"]), 3)
+            detection["ood_score"] = round(float(track.get("ood_score") or detection.get("ood_score") or 0.0), 3)
             detection["track_id"] = track["id"]
             detection["stable_hits"] = int(track.get("hits") or 1)
             detection["stable"] = int(track.get("hits") or 1) >= 2
-            if detection["stable"] or detection["confidence"] >= 0.2:
+            detection["display_admission"] = "accepted" if detection["stable"] or detection["tree_probability"] >= 0.72 else "pending"
+            detection["map_admission"] = (
+                "accepted"
+                if detection["stable"] and detection["tree_probability"] >= 0.28 and detection["ood_score"] <= 0.72
+                else "pending"
+            )
+            if detection["display_admission"] == "accepted":
                 rows.append(detection)
+            else:
+                pending += 1
         self.tracks = [
             track for track in self.tracks
             if now - float(track.get("last_seen_s", now)) <= self.max_age_s
@@ -569,7 +595,8 @@ class CameraOverlayStabilizer:
         output = copy.deepcopy(overlay)
         output["detections"] = rows[:8]
         output["stabilized"] = True
-        output["stabilizer"] = "iou_bbox_exponential_smoothing_v1"
+        output["stabilizer"] = "iou_bbox_exponential_smoothing_temporal_admission_v2"
+        output["pending_detections"] = pending
         output["confidence"] = max((float(item.get("confidence") or 0.0) for item in rows), default=0.0)
         return output
 

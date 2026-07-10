@@ -1,154 +1,202 @@
-# 과수 밑둥 Segmentation Fine-Tuning 작업 절차
+# 과수 Segmentation 수동 검수와 Fine-Tuning
 
-작성일: 2026-07-09
+Last updated: 2026-07-10
 
-## 1. 현재 상태
+## 1. 이미 준비된 것
 
-현재 camera vision은 local Roboflow cache worker가 `tree-trunk-detection-369pz-vm3hn/2` 모델을 API key 없이 실행한다. 이 모델은 줄기 contour를 꽤 잘 찾지만, 잎/가지 간섭이 심하거나 줄기가 멀고 얇은 frame에서는 놓치는 경우가 있다. 따라서 다음 단계는 현재 모델의 출력을 초벌 라벨로 사용해 사람이 수정하고, 우리 과수원 주행 데이터로 YOLO segmentation 모델을 fine-tuning하는 것이다.
-
-## 2. Archive 재생 속도 개선
-
-Archive 재생 중 AI inference를 매번 실행하면 영상 스트리밍처럼 부드럽게 재생할 수 없다. 해결 방식은 camera overlay를 사전에 계산해 `timeline.json`에 저장하는 것이다.
-
-```bash
-cd /home/unist/workspace/unist_orachard_dashboard
-export ORCHARD_VISION_AI_URL=http://127.0.0.1:8785/analyze
-python3 scripts/precompute_archive_camera_overlays.py \
-  --recording-id 20260708T053333Z_both \
-  --recording-id 20260708T054036Z_both \
-  --checkpoint-every 10
-```
-
-검증 결과:
-
-| Archive | Camera frames | Updated | Failed | Elapsed |
-| --- | ---: | ---: | ---: | ---: |
-| `20260708T053333Z_both` | 93 | 93 | 0 | 52.9 s |
-| `20260708T054036Z_both` | 125 | 125 | 0 | 106.7 s |
-
-Precompute 이후 `/timeline` segment 조회는 AI worker를 호출하지 않고 저장된 overlay를 읽는다. 1.2초 구간은 약 0.42-0.74초, 4초 구간은 약 0.70-0.89초 범위로 반환되었다. UI Playwright 검증에서도 archive camera preview와 overlay canvas가 정상 렌더링되었다.
-
-![Archive UI validation](assets/orchard_perception_models/dashboard_archive_ui_validation.png)
-
-## 3. Fine-tuning 데이터셋 export
-
-현재 AI overlay를 초벌 segmentation label로 내보낸다.
-
-```bash
-cd /home/unist/workspace/unist_orachard_dashboard
-python3 scripts/export_orchard_finetune_dataset.py \
-  --recording-id 20260708T053333Z_both \
-  --recording-id 20260708T054036Z_both \
-  --output-dir runtime/finetune_exports/orchard_trunk_20260708_prelabels \
-  --include-empty \
-  --overwrite \
-  --min-confidence 0.22
-```
-
-출력:
+Jetson에는 sample video 2개와 archive 2개를 합친 annotation package가 있다.
 
 ```text
-runtime/finetune_exports/orchard_trunk_20260708_prelabels/
-  data.yaml
-  manifest.json
-  images/train/*.jpg
-  images/val/*.jpg
-  labels/train/*.txt
-  labels/val/*.txt
+/home/unist/workspace/unist_orachard_dashboard/runtime/operational_readiness/
+  orchard_teacher_v1/
+  orchard_teacher_v1_review.tar.gz
 ```
 
-검증 결과:
-
-| 항목 | 수 |
+| 항목 | 값 |
 | --- | ---: |
-| 전체 frame | 218 |
-| pre-label이 있는 frame | 131 |
-| 빈 hard-negative frame | 87 |
-| 압축 파일 | `runtime/finetune_exports/orchard_trunk_20260708_prelabels.tar.gz` |
+| Frames | 321 |
+| Teacher masks | 981 |
+| Empty hard-negative frames | 31 |
+| Package size | 102.6 MiB |
 
-## 4. 사람이 수정해야 하는 것
+Teacher mask는 Grounding DINO `tree trunk.` proposal을 SAM2.1 Tiny로 segment한 뒤 CLIP OOD gate를 통과한 초안이다. 정답 GT가 아니므로 사람이 확인해야 한다.
 
-수동 작업의 목적은 모델이 놓친 줄기를 추가하고, 잘못 잡은 물체를 제거하는 것이다.
-
-반드시 수정할 항목:
-
-- 빠진 나무 줄기 mask 추가
-- 실제 나무가 아닌 벽, 건물 edge, 사람, 의자/테이블 다리, 전봇대/기둥, 플라스틱 edge 삭제
-- 여러 갈래로 갈라진 밑둥은 가능한 한 각 줄기 contour를 정확히 따기
-- 너무 큰 canopy 영역이 trunk label로 들어간 경우 줄기 영역만 남기기
-- 빈 hard-negative frame은 실제 나무 줄기가 없으면 label 파일을 빈 상태로 유지하기
-
-처음 fine-tuning은 class를 하나만 둔다.
-
-```text
-0: trunk
-```
-
-데이터가 충분히 늘어난 뒤에 아래처럼 class를 분리한다.
-
-```text
-0: trunk_base
-1: split_stem
-2: branch
-3: post_pole
-4: person
-5: wall_edge
-```
-
-## 5. 추천 annotation 도구
-
-가장 쉬운 경로는 CVAT이다.
-
-1. `orchard_trunk_20260708_prelabels.tar.gz`를 로컬 PC로 가져온다.
-2. CVAT에서 새 project를 만들고 label `trunk`를 추가한다.
-3. YOLO segmentation 형식으로 이미지를 import한다.
-4. 각 frame의 초벌 polygon을 확인한다.
-5. 놓친 줄기를 polygon으로 추가하고 오탐 polygon을 삭제한다.
-6. 수정 완료 후 YOLO segmentation 형식으로 export한다.
-
-Roboflow를 사용해도 되지만, 최종 학습/추론은 인터넷 없는 Jetson local runtime을 목표로 한다. Roboflow는 annotation UI나 dataset versioning 용도로만 사용하고, Jetson에는 API key를 넣지 않는다.
-
-## 6. 학습 명령
-
-수정이 끝난 dataset을 Jetson 또는 학습용 GPU PC에 둔다.
+## 2. Package 다시 만들기
 
 ```bash
-pip install ultralytics
+cd /home/unist/workspace/unist_orachard_dashboard
+python3 scripts/package_orchard_annotation_review.py \
+  --dataset runtime/operational_readiness/orchard_teacher_v1
+```
+
+Helper가 수행하는 일:
+
+- image/label/metadata pair 존재 확인
+- YOLO polygon token과 `[0,1]` 좌표 범위 확인
+- `review_queue.csv` 생성
+- `ANNOTATION_GUIDE.md` 생성
+- `review_validation.json` 생성
+- gzip level 1의 단일 review package 생성
+
+2026-07-10 검증은 missing file, invalid polygon 모두 0건이다.
+
+## 3. 검수 순서
+
+압축을 풀고 `review_queue.csv`의 rank 1부터 본다.
+
+| Priority | 의미 |
+| --- | --- |
+| 0 | Teacher/CLIP가 거부하거나 애매하다고 본 후보가 있는 frame |
+| 1 | 수용 mask가 0개인 frame; 실제 누락인지 hard negative인지 확인 |
+| 2 | mask가 6개 이상인 복잡한 frame |
+| 3 | 일반 확인 frame |
+
+Priority 0은 가능하면 두 사람이 독립 확인한다. 이 구간이 사람, pavilion post, pole, 가구 다리 오탐과 thin trunk 누락을 가장 많이 포함한다.
+
+## 4. 어떤 polygon을 남기는가
+
+Positive class는 먼저 하나로 유지한다.
+
+```yaml
+names:
+  0: orchard_trunk
+```
+
+포함:
+
+- 실제 과수/나무의 보이는 stem과 trunk
+- 기울거나 가는 줄기
+- 잎과 가지에 일부 가려진 줄기
+- 뿌리 근처에서 여러 갈래로 갈라진 stem
+
+삭제:
+
+- 사람과 사람 다리
+- pavilion/건물 기둥
+- utility pole와 표지 pole
+- 의자·테이블 다리
+- 벽, 도로, curb, 플라스틱 edge
+- 줄기 없이 잎/풀/관목만 있는 region
+- 그림자와 바닥 선
+
+여러 갈래 tree는 보이는 stem마다 polygon을 만든다. 같은 root에서 나온 stem이라는 사실은 CVAT attribute나 frame note에 같은 `root_group_id`로 기록한다. Runtime은 bottom-point proximity로 다시 group한다.
+
+## 5. CVAT 작업
+
+1. `orchard_teacher_v1_review.tar.gz`를 작업 PC로 가져온다.
+2. CVAT project를 만들고 `orchard_trunk` polygon label을 추가한다.
+3. `images/train`, `images/val`의 이미지를 각각 task로 import한다.
+4. 현재 YOLO segmentation label을 import한다. CVAT 버전에서 polygon import가 맞지 않으면 Ultralytics/Roboflow를 형식 변환에만 사용한다.
+5. `review_queue.csv` 순서로 polygon을 추가·수정·삭제한다.
+6. 나무가 없는 frame은 빈 label로 유지한다.
+7. 모든 frame 1회 검수 후 priority 0을 다시 본다.
+8. 최종 YOLO segmentation 형식으로 export한다.
+
+인터넷 기반 annotation UI를 사용해도 Jetson runtime에는 token이나 API key를 넣지 않는다.
+
+## 6. Split 원칙
+
+인접 video frame을 random split하면 거의 같은 화면이 train과 test에 동시에 들어가 성능이 부풀려진다.
+
+권장:
+
+- Train: archive 1 일부 + sample video 일부
+- Validation: 다른 시간 구간
+- Test: 다른 주행, 다른 위치 또는 다음 현장 촬영
+
+논문용 test는 threshold나 OOD prompt를 조정할 때 절대 보지 않는다. 가능하면 새로운 과수원 주행을 독립 test로 둔다.
+
+## 7. 학습
+
+Jetson 또는 별도 NVIDIA GPU에서 실행한다.
+
+```bash
 yolo task=segment mode=train \
   model=yolo11n-seg.pt \
-  data=/path/to/orchard_trunk_dataset/data.yaml \
+  data=/path/to/reviewed_orchard/data.yaml \
   imgsz=640 \
   epochs=100 \
   batch=8 \
-  device=0
+  device=0 \
+  project=runtime/training_runs \
+  name=orchard_trunk_reviewed_v2
 ```
 
-Jetson 배포용 TensorRT engine:
+초기에는 `YOLO11n-seg`를 유지해 Orin Nano latency를 보장한다. Recall이 부족하고 GPU 여유가 측정되면 동일 split에서 `YOLO11s-seg`를 비교한다.
+
+## 8. 반드시 계산할 지표
+
+Mask IoU:
+
+$$
+IoU = |M_pred intersection M_gt| / |M_pred union M_gt|
+$$
+
+Tree instance:
+
+$$
+Precision = TP / (TP + FP)
+$$
+
+$$
+Recall = TP / (TP + FN)
+$$
+
+추가 운영 지표:
+
+- false positive per frame
+- 사람/post/pole/furniture별 false positive 수
+- zero-detection frame 중 실제 tree가 있는 비율
+- multi-stem root 중 중복 count 비율
+- Jetson mean/p95 inference latency
+- confidence reliability diagram과 ECE
+
+## 9. TensorRT export
+
+검증을 통과한 `best.pt`만 Jetson에서 export한다.
 
 ```bash
 yolo export \
-  model=runs/segment/train/weights/best.pt \
+  model=runtime/training_runs/orchard_trunk_reviewed_v2/weights/best.pt \
   format=engine \
   half=True \
   imgsz=640 \
   device=0
 ```
 
-대시보드 worker 전환:
+Engine file만 교체하지 말고 revision도 올린다.
 
 ```bash
-ORCHARD_VISION_BACKEND=ultralytics
-ORCHARD_YOLO_MODEL=/app/runtime/models/best.engine
+ORCHARD_YOLO_MODEL=/app/runtime/training_runs/orchard_trunk_reviewed_v2/weights/best.engine
+ORCHARD_VISION_REVISION=orchard_trunk_reviewed_v2_trt_clip_ood_v1
 ```
 
-## 7. 수동 작업 체크리스트
+## 10. 배포 전 비교 gate
 
-- [ ] 두 archive에서 pre-label dataset을 export한다.
-- [ ] CVAT/Roboflow/Label Studio 중 하나에서 polygon을 검수한다.
-- [ ] 놓친 trunk를 추가하고 false positive를 삭제한다.
-- [ ] hard-negative frame을 충분히 유지한다.
-- [ ] train/val split이 같은 장소/시간에만 치우치지 않았는지 확인한다.
-- [ ] YOLO segmentation 형식으로 export한다.
-- [ ] `yolo train`으로 fine-tuning한다.
-- [ ] `best.pt`를 archive frame 전체에 다시 적용해 precision/recall을 계산한다.
-- [ ] Jetson에서는 TensorRT FP16 engine으로 변환해 local worker에 연결한다.
+새 모델은 현재 운영 모델과 같은 320-frame evaluator를 통과해야 한다.
+
+```bash
+docker exec unist-orachard-vision-ai python /app/scripts/evaluate_orchard_runtime_model.py \
+  --model /app/runtime/training_runs/orchard_trunk_reviewed_v2/weights/best.engine \
+  --clip-model /app/runtime/models/hf/hub/models--openai--clip-vit-base-patch32/snapshots/<revision> \
+  --video /app/runtime/operational_readiness/input/IMG_4469.mov \
+  --video /app/runtime/operational_readiness/input/IMG_4471.mov \
+  --timeline /app/runtime/recordings/20260708T053333Z_both/timeline.json \
+  --timeline /app/runtime/recordings/20260708T054036Z_both/timeline.json \
+  --output /app/runtime/analysis/operational_readiness/reviewed_v2_eval \
+  --device cuda
+```
+
+배포 조건:
+
+- 독립 GT의 recall과 precision이 현재 모델 이상
+- 사람/post/pole false positive가 증가하지 않음
+- archive/sample contact sheet 수동 감사 통과
+- TensorRT mean/p95가 실시간 budget 이내
+- worker health의 backend/revision/model 확인
+- 두 archive precompute 실패 0
+- 공개 dashboard browser smoke 통과
+
+## 11. 현재 모델을 바로 덮어쓰지 않는 이유
+
+현재 TensorRT 모델의 validation mask mAP50-95는 0.224이고 320-frame 운영 감사에서 927개 후보를 OOD로 거부했다. 수동 GT가 없는 새 모델이 raw detection 수만 늘리는 것은 개선 증거가 아니다. 독립 GT와 hard-negative false positive가 함께 좋아질 때만 승격한다.

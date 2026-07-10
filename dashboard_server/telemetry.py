@@ -19,9 +19,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import urllib.request
+from collections import OrderedDict
 
-from dashboard_server.camera_analysis import CameraOverlayStabilizer, analyze_camera_frame_payload
-from dashboard_server.lidar_analysis import analyze_points
+from dashboard_server.camera_analysis import CameraOverlayStabilizer, analyze_camera_frame_payload, current_camera_overlay_algorithm
+from dashboard_server.lidar_analysis import analyze_points, current_lidar_overlay_algorithm
 from dashboard_server.orchard_mapping import MAP_ALGORITHM_NAME, build_orchard_map
 
 
@@ -173,6 +174,9 @@ class TelemetryProvider:
         self._external_ip_next_refresh = 0.0
         self._last_lidar_test: dict[str, Any] | None = None
         self._last_lidar_scan: dict[str, Any] | None = None
+        self._timeline_cache: OrderedDict[str, tuple[int, int, dict[str, Any]]] = OrderedDict()
+        self._timeline_cache_lock = threading.RLock()
+        self._timeline_cache_limit = max(1, int(os.environ.get("ARCHIVE_TIMELINE_CACHE_COUNT", "2")))
         self._rover_status_cache: dict[str, Any] | None = None
         self._rover_status_next_refresh = 0.0
         self._rover_status_timeout_s = max(0.1, float(os.environ.get("ROVER_STATUS_TIMEOUT_S", "0.35")))
@@ -846,7 +850,7 @@ class TelemetryProvider:
         path = self.recording_archive_path(recording_id)
         if path is None or not path.exists():
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
-        timeline = _load_json(path / "timeline.json")
+        timeline = self._load_recording_timeline(path / "timeline.json")
         if not timeline:
             return {"ok": False, "error": "timeline_not_found", "id": recording_id}
         if start_s is not None or duration_s is not None:
@@ -862,7 +866,7 @@ class TelemetryProvider:
         cached = self._cached_orchard_map(cache_path, timeline_path)
         if cached:
             return cached
-        timeline = _load_json(timeline_path)
+        timeline = self._load_recording_timeline(timeline_path)
         if not timeline:
             return {"ok": False, "error": "timeline_not_found", "id": recording_id}
         payload = {"ok": True, "id": recording_id, "map": build_orchard_map(timeline)}
@@ -871,6 +875,28 @@ class TelemetryProvider:
         except OSError:
             pass
         return payload
+
+    def _load_recording_timeline(self, timeline_path: Path) -> dict[str, Any]:
+        try:
+            stat = timeline_path.stat()
+        except OSError:
+            return {}
+        key = str(timeline_path.resolve())
+        signature = (stat.st_mtime_ns, stat.st_size)
+        with self._timeline_cache_lock:
+            cached = self._timeline_cache.get(key)
+            if cached and cached[:2] == signature:
+                self._timeline_cache.move_to_end(key)
+                return cached[2]
+        timeline = _load_json(timeline_path)
+        if not timeline:
+            return {}
+        with self._timeline_cache_lock:
+            self._timeline_cache[key] = (signature[0], signature[1], timeline)
+            self._timeline_cache.move_to_end(key)
+            while len(self._timeline_cache) > self._timeline_cache_limit:
+                self._timeline_cache.popitem(last=False)
+        return timeline
 
     def _cached_orchard_map(self, cache_path: Path, timeline_path: Path) -> dict[str, Any] | None:
         if not cache_path.exists() or not timeline_path.exists():
@@ -923,6 +949,9 @@ class TelemetryProvider:
         rows: list[dict[str, Any]] = []
         for frame in frames:
             row = dict(frame)
+            if current_lidar_overlay_algorithm(row.get("overlay")):
+                rows.append(row)
+                continue
             points = row.get("points") or []
             try:
                 now = float(row.get("t_s") or 0.0)
@@ -938,6 +967,14 @@ class TelemetryProvider:
         stabilizer = CameraOverlayStabilizer()
         for frame in frames:
             row = dict(frame)
+            existing = row.get("overlay")
+            if (
+                isinstance(existing, dict)
+                and existing.get("ok") is True
+                and current_camera_overlay_algorithm(existing.get("algorithm"), existing.get("revision"))
+            ):
+                rows.append(row)
+                continue
             try:
                 row["overlay"] = stabilizer.update(analyze_camera_frame_payload(row), float(row.get("t_s") or 0.0))
             except Exception:

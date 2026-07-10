@@ -2090,6 +2090,18 @@ h2 {
   white-space: pre;
 }
 
+.markdown-body img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 760px;
+  margin: 8px auto 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--surface-2);
+}
+
 .markdown-body blockquote {
   padding: 10px 14px;
   border-left: 3px solid var(--cyan);

@@ -9,12 +9,15 @@ ENV TELEMETRY_FILE=/app/runtime/telemetry_snapshot.json
 WORKDIR /app
 
 COPY requirements.txt ./
+RUN python -m pip install --no-cache-dir -r requirements.txt
+
 COPY dashboard_server ./dashboard_server
 COPY static ./static
 COPY config ./config
 COPY docs ./docs
-
-RUN python -m pip install --no-cache-dir -r requirements.txt
+COPY scripts/precompute_archive_camera_overlays.py ./scripts/precompute_archive_camera_overlays.py
+COPY scripts/precompute_archive_lidar_overlays.py ./scripts/precompute_archive_lidar_overlays.py
+COPY scripts/precompute_orchard_maps.py ./scripts/precompute_orchard_maps.py
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends util-linux \

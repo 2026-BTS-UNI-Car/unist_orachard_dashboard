@@ -2079,6 +2079,14 @@ function normalizeLidarOverlay(analysis) {
         ...tree,
         center: overlayPoint(tree.center || tree),
       })),
+      confirmed_trees: (analysis.orchard.confirmed_trees || []).map((tree) => ({
+        ...tree,
+        center: overlayPoint(tree.center || tree),
+      })),
+      pending_trees: (analysis.orchard.pending_trees || []).map((tree) => ({
+        ...tree,
+        center: overlayPoint(tree.center || tree),
+      })),
     } : analysis.orchard,
     trees: (analysis.trees || []).map((tree) => ({
       ...tree,
@@ -2142,6 +2150,14 @@ function transformArchiveLegacyOverlay(analysis) {
     orchard: analysis.orchard ? {
       ...analysis.orchard,
       trees: (analysis.orchard.trees || []).map((tree) => ({
+        ...tree,
+        center: overlayPoint(tree.center || tree),
+      })),
+      confirmed_trees: (analysis.orchard.confirmed_trees || []).map((tree) => ({
+        ...tree,
+        center: overlayPoint(tree.center || tree),
+      })),
+      pending_trees: (analysis.orchard.pending_trees || []).map((tree) => ({
         ...tree,
         center: overlayPoint(tree.center || tree),
       })),
@@ -3255,6 +3271,10 @@ function renderMarkdownTable(header, rows) {
 function formatInline(value) {
   let textValue = escapeHtml(value);
   textValue = textValue.replace(/`([^`]+)`/g, "<code>$1</code>");
+  textValue = textValue.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, label, href) => {
+    const safe = safeDocAssetHref(href);
+    return safe ? `<img src="${escapeHtml(safe)}" alt="${label}" loading="lazy" decoding="async" />` : "";
+  });
   textValue = textValue.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
     const safe = safeDocHref(href);
     const external = /^https?:\/\//.test(safe) ? ' target="_blank" rel="noreferrer"' : "";
@@ -3263,6 +3283,14 @@ function formatInline(value) {
   textValue = textValue.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   textValue = textValue.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   return textValue;
+}
+
+function safeDocAssetHref(href) {
+  const raw = String(href || "").trim();
+  if (/^https:\/\//.test(raw) || raw.startsWith("/docs-assets/")) return raw;
+  const normalized = raw.replace(/^\.\//, "").replace(/^docs\//, "");
+  if (!normalized.startsWith("assets/") || normalized.includes("..")) return "";
+  return `/docs-assets/${normalized.slice("assets/".length).split("/").map(encodeURIComponent).join("/")}`;
 }
 
 function safeDocHref(href) {
@@ -4337,7 +4365,7 @@ function renderArchiveFrame() {
     overlayMode,
     state.perceptionOverlayMode,
     fusedTrees ? `fused:${fusedTrees.length}:${state.recordings.orchardMap?.algorithm || ""}` : "frame-fusion",
-    `local:${lidarResult?.analysis?.orchard?.trees?.length || 0}`,
+    `confirmed:${lidarResult?.analysis?.orchard?.confirmed_trees?.length ?? lidarResult?.analysis?.orchard?.trees?.length ?? 0}`,
     state.archivePlayback.overlayVisible ? "overlay-on" : "overlay-off",
     fmtNumber(state.archivePlayback.range, 2),
   ].join(":");
@@ -4399,7 +4427,10 @@ function archiveFusedTreesForTime(timeS, range, lidarResult = null) {
 }
 
 function archiveLocalOrchardTreesForFrame(lidarResult, range) {
-  const trees = lidarResult?.analysis?.orchard?.trees || lidarResult?.analysis?.trees || [];
+  const orchard = lidarResult?.analysis?.orchard;
+  const trees = Array.isArray(orchard?.confirmed_trees)
+    ? orchard.confirmed_trees
+    : (orchard?.trees || lidarResult?.analysis?.trees || []);
   return (trees || [])
     .map((tree) => {
       const center = tree.center || tree;
@@ -5114,7 +5145,9 @@ function lidarCanvasPoint(point, viewport) {
 function drawLidarOverlays(ctx, overlays, viewport) {
   const walls = overlays?.walls || [];
   const objects = overlays?.objects || [];
-  const trees = Array.isArray(viewport.fusedTrees) ? viewport.fusedTrees : (overlays?.orchard?.trees || overlays?.trees || []);
+  const trees = Array.isArray(viewport.fusedTrees)
+    ? viewport.fusedTrees
+    : (Array.isArray(overlays?.orchard?.confirmed_trees) ? overlays.orchard.confirmed_trees : (overlays?.orchard?.trees || overlays?.trees || []));
   const mode = viewport.perceptionMode || "fusion";
   if (mode === "camera") return;
   if (!walls.length && !objects.length && !trees.length) return;

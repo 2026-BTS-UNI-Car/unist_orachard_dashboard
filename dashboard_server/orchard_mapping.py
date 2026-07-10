@@ -5,11 +5,10 @@ from typing import Any
 
 from dashboard_server.camera_analysis import estimate_camera_orchard_support
 from dashboard_server.lidar_analysis import ALGORITHM_NAME, LIDAR_COORDINATE_FRAME, detect_orchard_trees, is_rear_person_zone
+from dashboard_server.lidar_odometry import ODOMETRY_ALGORITHM, estimate_relative_transform
 
 
-MAP_ALGORITHM_NAME = "orchard_three_layer_weighted_centerline_v7"
-SCAN_MATCH_GRID_M = 0.28
-SCAN_MATCH_FINE_GRID_M = 0.2
+MAP_ALGORITHM_NAME = "orchard_three_layer_weighted_centerline_v8"
 CAMERA_FOV_X_RAD = math.radians(78.0)
 CAMERA_ASSUMED_VISIBLE_TRUNK_HEIGHT_M = 1.35
 LIDAR_TREE_WEIGHT = 0.64
@@ -20,9 +19,11 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
     lidar_frames = timeline.get("lidar", {}).get("frames", []) or []
     camera_frames = timeline.get("camera", {}).get("frames", []) or []
     camera_index = camera_observation_index(camera_frames)
-    pose = {"x_m": 0.0, "y_m": 0.0, "theta_rad": 0.0}
-    path = [{"t_s": 0.0, "x_m": 0.0, "y_m": 0.0, "heading_deg": 0.0, "alignment_score": 1.0}]
+    pose = {"x_m": 0.0, "y_m": 0.0, "theta_rad": 0.0, "theta_total_rad": 0.0}
+    path: list[dict[str, Any]] = []
     previous_points: list[dict[str, Any]] = []
+    previous_t_s: float | None = None
+    motion_prior: dict[str, Any] | None = None
     lidar_hits: list[dict[str, Any]] = []
     frame_summaries: list[dict[str, Any]] = []
 
@@ -30,10 +31,22 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
         t_s = float(frame.get("t_s") or 0.0)
         points = frame.get("points") or []
         if previous_points:
-            transform = estimate_scan_transform(previous_points, points)
-            pose = compose_pose(pose, transform)
+            dt_s = max(0.05, t_s - float(previous_t_s if previous_t_s is not None else t_s - 0.6))
+            transform = estimate_scan_transform(previous_points, points, prior=motion_prior, dt_s=dt_s)
+            if transform.get("accepted"):
+                pose = compose_pose(pose, transform)
+                motion_prior = transform
         else:
-            transform = {"dx_m": 0.0, "dy_m": 0.0, "dtheta_rad": 0.0, "score": 1.0, "method": "initial_frame"}
+            transform = {
+                "dx_m": 0.0,
+                "dy_m": 0.0,
+                "dtheta_rad": 0.0,
+                "score": 1.0,
+                "pose_confidence": 1.0,
+                "accepted": True,
+                "turn_event": False,
+                "method": "initial_frame",
+            }
         orchard = detect_orchard_trees(points)
         local_trees = select_map_tree_candidates(orchard.get("trees") or [])
         path.append(
@@ -42,7 +55,10 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
                 "x_m": round(pose["x_m"], 3),
                 "y_m": round(pose["y_m"], 3),
                 "heading_deg": round(math.degrees(pose["theta_rad"]), 2),
+                "heading_unwrapped_deg": round(math.degrees(pose.get("theta_total_rad", pose["theta_rad"])), 2),
                 "alignment_score": round(float(transform.get("score") or 0.0), 3),
+                "pose_confidence": round(float(transform.get("pose_confidence") or 0.0), 3),
+                "turn_event": bool(transform.get("turn_event")),
             }
         )
         camera_support = nearest_camera_support(camera_index, t_s)
@@ -55,15 +71,26 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
                     "x_m": round(pose["x_m"], 3),
                     "y_m": round(pose["y_m"], 3),
                     "heading_deg": round(math.degrees(pose["theta_rad"]), 2),
+                    "heading_unwrapped_deg": round(math.degrees(pose.get("theta_total_rad", pose["theta_rad"])), 2),
                 },
                 "scan_match": transform,
                 "local_tree_count": len(local_trees),
                 "excluded_rear_candidates": orchard.get("excluded_rear_candidates", 0),
+                "lidar_ood": {
+                    "raw_candidates": orchard.get("raw_candidate_count", 0),
+                    "wall_suppressed": orchard.get("wall_suppressed_candidates", 0),
+                    "linear_context_suppressed": orchard.get("linear_context_suppressed_candidates", 0),
+                    "rear_operator_suppressed": orchard.get("excluded_rear_candidates", 0),
+                    "rejection_counts": orchard.get("rejection_counts", {}),
+                },
                 "camera_support": camera_support,
             }
         )
         previous_points = points
+        previous_t_s = t_s
 
+    if not path:
+        path = [{"t_s": 0.0, "x_m": 0.0, "y_m": 0.0, "heading_deg": 0.0, "heading_unwrapped_deg": 0.0, "alignment_score": 0.0, "pose_confidence": 0.0, "turn_event": False}]
     camera_hits = camera_global_tree_hits(camera_index, path)
     lidar_trees = spatial_thin_trees(merge_global_trees(lidar_hits, frame_count=len(lidar_frames)), min_spacing_m=0.82, max_count=36)
     camera_trees = spatial_thin_trees(merge_global_trees(camera_hits, frame_count=len(camera_index), source="camera"), min_spacing_m=1.05, max_count=42)
@@ -99,7 +126,7 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
         "tree_count": len(fusion_trees),
         "trees": fusion_trees,
         "path": path,
-        "start": path[0] if path else None,
+        "start": {**path[0], "t_s": 0.0} if path else None,
         "end": path[-1] if path else None,
         "bounds": bounds,
         "centerline": fusion_map["centerline"],
@@ -118,6 +145,22 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
             "weights": {"lidar": LIDAR_TREE_WEIGHT, "camera": CAMERA_TREE_WEIGHT},
             "note": "The current camera-only layer uses monocular geometric depth approximation. Add calibrated camera intrinsics/extrinsics or visual odometry for metric publication results.",
         },
+        "odometry": {
+            "algorithm": ODOMETRY_ALGORITHM,
+            "accepted_frames": sum(1 for frame in frame_summaries if frame.get("scan_match", {}).get("accepted")),
+            "rejected_frames": sum(1 for frame in frame_summaries if not frame.get("scan_match", {}).get("accepted")),
+            "turn_events": sum(1 for frame in frame_summaries if frame.get("scan_match", {}).get("turn_event")),
+            "heading_change_deg": round(float(path[-1].get("heading_unwrapped_deg") or 0.0) - float(path[0].get("heading_unwrapped_deg") or 0.0), 2),
+        },
+        "lidar_ood": {
+            "raw_candidates": sum(int(frame.get("lidar_ood", {}).get("raw_candidates") or 0) for frame in frame_summaries),
+            "geometry_candidates": sum(int(frame.get("local_tree_count") or 0) for frame in frame_summaries),
+            "confirmed_landmarks": len(lidar_trees),
+            "wall_suppressed": sum(int(frame.get("lidar_ood", {}).get("wall_suppressed") or 0) for frame in frame_summaries),
+            "linear_context_suppressed": sum(int(frame.get("lidar_ood", {}).get("linear_context_suppressed") or 0) for frame in frame_summaries),
+            "rear_operator_suppressed": sum(int(frame.get("lidar_ood", {}).get("rear_operator_suppressed") or 0) for frame in frame_summaries),
+            "temporal_policy": "minimum repeated global observations with confidence and time-span gate",
+        },
     }
 
 
@@ -135,6 +178,8 @@ def select_map_tree_candidates(trees: list[dict[str, Any]]) -> list[dict[str, An
             continue
         if confidence < 0.62:
             continue
+        if float(tree.get("structure_score") or 0.0) < 0.42:
+            continue
         if tree.get("kind") != "trunk_like" and confidence < 0.78:
             continue
         if int(tree.get("points") or 0) < 5 and distance > 7.5:
@@ -143,99 +188,13 @@ def select_map_tree_candidates(trees: list[dict[str, Any]]) -> list[dict[str, An
     return selected[:18]
 
 
-def estimate_scan_transform(previous_points: list[dict[str, Any]], current_points: list[dict[str, Any]]) -> dict[str, Any]:
-    previous = scan_match_points(previous_points)
-    current = scan_match_points(current_points)
-    if len(previous) < 80 or len(current) < 80:
-        return {"dx_m": 0.0, "dy_m": 0.0, "dtheta_rad": 0.0, "score": 0.0, "method": "insufficient_points"}
-    best = search_scan_transform(previous, current, 0.0, 0.0, 0.0, SCAN_MATCH_GRID_M, 0.24, math.radians(2.5), 0.72, math.radians(2.5))
-    best = search_scan_transform(previous, current, best["dx_m"], best["dy_m"], best["dtheta_rad"], SCAN_MATCH_FINE_GRID_M, 0.08, math.radians(0.5), 0.16, math.radians(0.5))
-    if float(best["score"]) < 0.28:
-        return {**best, "dx_m": 0.0, "dy_m": 0.0, "dtheta_rad": 0.0, "method": "scan_match_low_confidence"}
-    return {**best, "method": "occupancy_scan_match"}
-
-
-def scan_match_points(points: list[dict[str, Any]]) -> list[tuple[float, float]]:
-    rows: list[tuple[float, float]] = []
-    for point in points:
-        try:
-            x = float(point["x_m"])
-            y = float(point["y_m"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        distance = math.hypot(x, y)
-        if distance < 0.9 or distance > 12.0:
-            continue
-        if y < -0.3 and abs(x) < 4.8 and distance < 8.5:
-            continue
-        rows.append((x, y))
-    if len(rows) > 620:
-        step = max(1, len(rows) // 620)
-        rows = rows[::step]
-    return rows
-
-
-def search_scan_transform(
-    previous: list[tuple[float, float]],
-    current: list[tuple[float, float]],
-    center_dx: float,
-    center_dy: float,
-    center_theta: float,
-    resolution: float,
-    step_m: float,
-    step_theta: float,
-    span_m: float,
-    span_theta: float,
-) -> dict[str, float]:
-    previous_grid = occupancy_grid(previous, resolution)
-    best = {"dx_m": center_dx, "dy_m": center_dy, "dtheta_rad": center_theta, "score": -1.0}
-    dx_steps = range(-int(round(span_m / step_m)), int(round(span_m / step_m)) + 1)
-    theta_steps = range(-int(round(span_theta / step_theta)), int(round(span_theta / step_theta)) + 1)
-    for ti in theta_steps:
-        theta = center_theta + ti * step_theta
-        if abs(theta) > math.radians(4.0):
-            continue
-        cos_t = math.cos(theta)
-        sin_t = math.sin(theta)
-        rotated = [(cos_t * x - sin_t * y, sin_t * x + cos_t * y) for x, y in current]
-        for xi in dx_steps:
-            dx = center_dx + xi * step_m
-            if abs(dx) > 1.0:
-                continue
-            for yi in dx_steps:
-                dy = center_dy + yi * step_m
-                if abs(dy) > 1.0:
-                    continue
-                score = occupancy_score(previous_grid, rotated, dx, dy, resolution)
-                if score > best["score"]:
-                    best = {"dx_m": dx, "dy_m": dy, "dtheta_rad": theta, "score": score}
-    return {
-        "dx_m": round(best["dx_m"], 3),
-        "dy_m": round(best["dy_m"], 3),
-        "dtheta_rad": round(best["dtheta_rad"], 5),
-        "score": round(max(0.0, best["score"]), 3),
-    }
-
-
-def occupancy_grid(points: list[tuple[float, float]], resolution: float) -> set[tuple[int, int]]:
-    cells: set[tuple[int, int]] = set()
-    for x, y in points:
-        ix = round(x / resolution)
-        iy = round(y / resolution)
-        for ox in (-1, 0, 1):
-            for oy in (-1, 0, 1):
-                cells.add((ix + ox, iy + oy))
-    return cells
-
-
-def occupancy_score(previous_grid: set[tuple[int, int]], rotated_current: list[tuple[float, float]], dx: float, dy: float, resolution: float) -> float:
-    if not rotated_current:
-        return 0.0
-    hits = 0
-    for x, y in rotated_current:
-        if (round((x + dx) / resolution), round((y + dy) / resolution)) in previous_grid:
-            hits += 1
-    return hits / len(rotated_current)
+def estimate_scan_transform(
+    previous_points: list[dict[str, Any]],
+    current_points: list[dict[str, Any]],
+    prior: dict[str, Any] | None = None,
+    dt_s: float = 0.6,
+) -> dict[str, Any]:
+    return estimate_relative_transform(previous_points, current_points, prior=prior, dt_s=dt_s)
 
 
 def compose_pose(pose: dict[str, float], transform: dict[str, Any]) -> dict[str, float]:
@@ -246,10 +205,12 @@ def compose_pose(pose: dict[str, float], transform: dict[str, Any]) -> dict[str,
     cos_h = math.cos(heading)
     sin_h = math.sin(heading)
     next_heading = ((heading + dtheta + math.pi) % (math.tau)) - math.pi
+    next_total_heading = float(pose.get("theta_total_rad", heading)) + dtheta
     return {
         "x_m": float(pose.get("x_m") or 0.0) + cos_h * dx - sin_h * dy,
         "y_m": float(pose.get("y_m") or 0.0) + sin_h * dx + cos_h * dy,
         "theta_rad": next_heading,
+        "theta_total_rad": next_total_heading,
     }
 
 
@@ -262,6 +223,13 @@ def local_to_global_tree(tree: dict[str, Any], pose: dict[str, float], t_s: floa
         "y_m": round(gy, 3),
         "radius_m": tree.get("radius_m", 0.2),
         "confidence": round(lidar_score, 3),
+        "tree_probability": round(float(tree.get("tree_probability") or lidar_score), 3),
+        "ood_score": round(float(tree.get("ood_score") or (1.0 - lidar_score)), 3),
+        "structure_score": round(float(tree.get("structure_score") or 0.0), 3),
+        "wall_distance_m": tree.get("wall_distance_m"),
+        "nearest_wall_length_m": tree.get("nearest_wall_length_m"),
+        "admission": "temporal_pending",
+        "rejection_reasons": tree.get("rejection_reasons") or [],
         "lidar_confidence": round(lidar_score, 3),
         "camera_confidence": 0.0,
         "kind": tree.get("kind", "trunk_like"),
@@ -319,6 +287,10 @@ def camera_tree_local_candidates(frame: dict[str, Any]) -> list[dict[str, Any]]:
     focal_px = width / (2.0 * math.tan(CAMERA_FOV_X_RAD / 2.0))
     rows: list[dict[str, Any]] = []
     for detection in frame.get("detections") or []:
+        if str(detection.get("admission") or "accepted") == "rejected":
+            continue
+        if detection.get("map_admission") is not None and detection.get("map_admission") != "accepted":
+            continue
         bbox = detection.get("bbox") or []
         if len(bbox) < 4:
             continue
@@ -326,7 +298,7 @@ def camera_tree_local_candidates(frame: dict[str, Any]) -> list[dict[str, Any]]:
             x, y, bw, bh = [float(value) for value in bbox[:4]]
         except (TypeError, ValueError):
             continue
-        confidence = float(detection.get("confidence") or 0.0)
+        confidence = float(detection.get("tree_probability") or detection.get("confidence") or 0.0)
         if confidence < 0.62 or bw <= 0 or bh <= 0:
             continue
         bottom_ratio = max(0.0, min(1.0, (y + bh) / max(1.0, height)))
@@ -393,6 +365,9 @@ def merge_global_trees(hits: list[dict[str, Any]], frame_count: int | None = Non
         found["confidence"] = round(max(float(found.get("confidence") or 0.0), float(hit.get("confidence") or 0.0)), 3)
         found["lidar_confidence"] = round(max(float(found.get("lidar_confidence") or 0.0), float(hit.get("lidar_confidence") or 0.0)), 3)
         found["camera_confidence"] = round(max(float(found.get("camera_confidence") or 0.0), float(hit.get("camera_confidence") or 0.0)), 3)
+        found["structure_score"] = round(max(float(found.get("structure_score") or 0.0), float(hit.get("structure_score") or 0.0)), 3)
+        wall_distances = [value for value in (found.get("wall_distance_m"), hit.get("wall_distance_m")) if value is not None]
+        found["wall_distance_m"] = round(min(float(value) for value in wall_distances), 3) if wall_distances else None
         found["last_seen_s"] = max(float(found.get("last_seen_s") or 0.0), float(hit.get("last_seen_s") or 0.0))
         found["hits"] = hits_count
     filtered = []
@@ -414,6 +389,12 @@ def merge_global_trees(hits: list[dict[str, Any]], frame_count: int | None = Non
         elif hits >= 3 and camera_confidence >= 0.62 and confidence >= 0.78:
             filtered.append(tree)
     filtered.sort(key=lambda item: (-(int(item.get("hits") or 0)), -float(item.get("confidence") or 0.0)))
+    for tree in filtered:
+        tree["temporal_hits"] = int(tree.get("hits") or 0)
+        tree["temporal_persistence_s"] = round(float(tree.get("last_seen_s") or 0.0) - float(tree.get("first_seen_s") or 0.0), 3)
+        tree["admission"] = "temporal_confirmed"
+        tree["map_admission"] = "accepted"
+        tree["rejection_reasons"] = []
     return filtered[:80]
 
 

@@ -1,323 +1,308 @@
-# Vision-LiDAR 과수 밑둥 인식 및 행간 중심선 추정 보고서
+# 과수 인식 운영 검증 최종 보고서
 
-작성일: 2026-07-09
+작성일: 2026-07-10
 
-## 1. 요약
+실행 장치: NVIDIA Jetson Orin Nano
 
-본 연구의 목표는 과수원 주행 환경에서 2D LiDAR와 RGB camera를 결합해 주변 과수의 밑둥 위치를 인식하고, 과수 사이의 행간 중심선을 안정적으로 추정하는 것이다. LiDAR-only 방식은 조명 변화에 강하지만 벽, 가지, 잎, 여러 갈래로 갈라진 밑둥, 사람과 같은 clutter에 취약할 수 있다. Camera-only 방식은 줄기 외형과 canopy 문맥을 볼 수 있지만 단안 거리 추정과 false positive 문제가 크다. 따라서 최종 구조는 LiDAR-only, Camera-only, Weighted Fusion 세 지도를 동시에 만들고, fusion 지도에서 행간 중심선을 계산하는 방식으로 설계한다.
+운영 리비전: `orchard_trunk_yolo11_trt_clip_ood_v1` / `orchard_three_layer_weighted_centerline_v8`
 
-현재 API 기반 모델 호출은 모델 후보를 빠르게 비교하기 위한 실험용이다. 최종 시스템은 인터넷 없이 Jetson Orin Nano에서 TensorRT engine을 직접 실행하는 offline inference 구조로 전환한다.
+## 1. 결론
 
-## 2. 계층형 인식 구조
+카메라 과수 인식은 더 이상 OpenCV 규칙이나 외부 API를 사용하지 않는다. Jetson에 저장된 `YOLO11n-seg TensorRT FP16` 엔진이 줄기 instance mask를 만들고, 로컬 `CLIP ViT-B/32`가 사람·기둥·전봇대·가구 다리·벽·식생 덩어리와의 open-set 유사도를 계산해 OOD 후보를 거부한다. AI worker가 없으면 UI에 명시적 오류를 표시하는 fail-closed 정책이다.
 
-```mermaid
-flowchart TD
-  A[2D LiDAR scan] --> B[Gap clustering]
-  B --> C[Wall / object / trunk-like candidate]
-  C --> D[LiDAR-only tree map]
-  E[RGB camera frame] --> F[Tree trunk segmentation]
-  E --> G[Semantic negative gate]
-  F --> H[Stem and multi-stem grouping]
-  G --> H
-  H --> I[Camera-only tree map]
-  D --> J[Weighted Fusion map]
-  I --> J
-  J --> K[Row centerline]
-```
+LiDAR는 매 scan에서 보이는 작은 cluster를 곧바로 나무로 확정하지 않는다. 긴 선분, 벽 인접 조각, 주변 점들과 같은 직선 위에 놓인 조각, 로버 바로 뒤 사람 영역을 먼저 제거하고, world frame에서 반복 관측된 후보만 지도 landmark로 승격한다. 첫 번째 archive 후반의 회전은 기존 frame당 4도 제한을 제거한 360도 scan-context와 distance-field 정합으로 `45.0-51.4초 사이 186도`로 복원했다.
 
-계층은 다음 의미를 가진다.
+현재 상태는 **운영 가능한 연구 prototype**이다. 다만 사람 손으로 만든 독립 test GT가 없으므로 “나무 판별이 완벽하다”거나 논문용 precision/recall이 확정됐다고 표현할 수는 없다. 실제 주행 제어에 쓰기 전에는 과수원 GT, wheel odometry/IMU, LiDAR-camera extrinsic calibration이 필요하다.
 
-| 계층 | 입력 | 출력 | 역할 |
-| --- | --- | --- | --- |
-| Frame perception | 단일 LiDAR scan, 단일 camera frame | wall, object, stem mask, trunk candidate | 순간 관측값 |
-| Temporal tracking | 연속 frame 후보 | 안정화된 local object/stem track | 흔들림과 순간 noise 억제 |
-| Landmark mapping | local 후보 + pose | LiDAR-only, Camera-only tree map | 누적 과수 위치 |
-| Fusion mapping | 두 지도 | weighted tree landmark | 센서별 약점 보완 |
-| Path abstraction | tree landmark | 행간 중심선 | 주행 제어 목표 |
+## 2. 평가 범위
 
-## 3. LiDAR-only 방법
+모든 AI 추론, 학습, TensorRT export, LiDAR 재분석, 지도 생성은 Jetson에서 수행했다. 로버 구동 명령은 보내지 않았다.
 
-LiDAR scan point를 angle 순서로 보고, 인접 point 사이 거리로 cluster를 나눈다.
+| 입력 | 평가 방식 | Frame |
+| --- | --- | ---: |
+| `sample_video/IMG_4469.mov` | 2 Hz, 0.25초 offset | 53 |
+| `sample_video/IMG_4471.mov` | 2 Hz, 0.25초 offset | 49 |
+| `20260708T053333Z_both` camera | 전체 timeline | 93 |
+| `20260708T054036Z_both` camera | 전체 timeline | 125 |
+| Camera 합계 | 동일 TensorRT+CLIP evaluator | 320 |
+| 두 archive LiDAR | 전체 timeline | 216 scans / 196,280 points |
+
+재현 가능한 수치 원본은 `docs/assets/operational_readiness/readiness_summary.json`과 Jetson의 `runtime/analysis/operational_readiness/`에 보존한다.
+
+## 3. 계층형 구조
 
 ```text
-d_i = ||p_i - p_{i-1}||_2
-tau_i = max(0.13, 0.045 max(r_i, r_{i-1}))
-split if d_i > tau_i
+RGB frame
+  -> Grounding DINO tree-trunk proposal       [teacher only]
+  -> SAM 2.1 Tiny prompt mask                 [teacher only]
+  -> CLIP tree/non-tree semantic audit        [teacher + runtime OOD]
+  -> reviewed pseudo-label dataset
+  -> YOLO11n-seg student
+  -> TensorRT FP16 instance masks             [runtime]
+  -> geometry + CLIP OOD gate
+  -> two-hit temporal admission
+  -> camera landmarks
+
+2D LiDAR scan
+  -> polar gap clustering
+  -> wall fit and fragment merge
+  -> compact candidate geometry score
+  -> wall / linear-context / rear-person rejection
+  -> predictive local tracks
+  -> scan-context + distance-field odometry
+  -> repeated world-observation admission
+  -> LiDAR landmarks
+
+LiDAR landmarks + camera landmarks
+  -> LiDAR-only / Camera-only / Weighted Fusion maps
+  -> row split and per-layer centerline
+  -> timeline-synchronized rover pose
 ```
 
-각 cluster는 covariance 주축으로 선형성과 compactness를 계산한다.
+이 구조에서 단일 frame 원은 관측 후보이고, 지도 원은 여러 frame을 통과한 landmark다. 따라서 화면의 파란 원 수와 최종 지도 나무 수가 다른 것이 정상이다.
 
-```text
-Sigma = (1/N) sum_i (p_i - mu)(p_i - mu)^T
-theta = 0.5 atan2(2 sigma_xy, sigma_xx - sigma_yy)
-```
+## 4. 모델 선택과 시행착오
 
-긴 선형 cluster는 wall 후보로 분리하고, 작고 조밀한 cluster는 trunk-like candidate로 둔다. 벽이 scan noise로 여러 조각으로 끊기면 일부 조각이 과수처럼 보이는 문제가 있어 wall proximity suppression을 추가했다.
-
-```text
-d_wall = min_j distance(p_candidate, wall_segment_j)
-tau_wall = max(0.28, min(0.62, r_candidate + 0.22 + 0.014 range_candidate))
-suppress if d_wall <= tau_wall and projection is inside the wall segment
-```
-
-이 방식은 벽 오탐을 줄이지만, 실제 과수가 벽이나 긴 구조물 가까이에 붙어 있는 경우 recall이 낮아질 수 있다. 따라서 논문용 수치에서는 wall suppression threshold를 ground truth 기준으로 다시 조정해야 한다.
-
-## 4. Camera-only 방법
-
-현재 OpenCV baseline은 즉시 동작하는 보수적 fallback이다. 그러나 실제 camera overlay 품질을 archive 전체 frame으로 확인한 결과, OpenCV heuristic만으로는 나무와 유사한 수직 물체를 안정적으로 구분하기 어렵다. 따라서 최종 camera perception은 instance segmentation 기반으로 전환한다.
-
-### 공개 모델 평가 결과
-
-`20260708T053333Z_both`, `20260708T054036Z_both` archive camera frame으로 공개 모델을 실제 테스트했다.
-
-| 모델 | 방식 | 결과 요약 | 채택 판단 |
-| --- | --- | --- | --- |
-| `tree-trunk-detection-369pz-vm3hn/2` | YOLO11 instance segmentation | 218 frame 전체에서 trunk contour mask를 안정적으로 출력. 평균 confidence 0.61-0.65, hosted API 기준 약 408 ms/frame | 1순위 baseline |
-| `orchard-trunk-yolov5s/3` | YOLOv5 bbox detection | trunk bbox는 나오지만 mask가 없고 confidence가 낮음. 평균 confidence 약 0.48-0.50 | 보조 후보 |
-| `trees-and-trunks/1` | bbox detection | 일부 trunk/tree를 잡지만 bbox만 제공하고 edge false positive가 많음 | 비채택 |
-| `object-detection-isoz2/1` | generic segmentation | 샘플 archive에서 유효 tree prediction 없음 | 비채택 |
-| SegFormer ADE20K | semantic segmentation | tree/grass/building/wall 같은 장면 영역은 잘 분리하지만 줄기 instance를 직접 따지 못함 | negative semantic gate로 사용 |
-
-YOLO11 trunk segmentation이 가장 좋은 이유는 bbox가 아니라 줄기 contour mask를 제공하기 때문이다. 과수원에서는 밑둥이 여러 갈래로 갈라지거나 기울어진 줄기가 많기 때문에, 단순 bbox보다 mask와 skeleton/axis 정보가 중요하다.
-
-### 모델별 시각 결과
-
-아래 이미지는 `20260708T053333Z_both`, `20260708T054036Z_both` archive frame에서 실제 inference 결과를 contact sheet로 묶은 것이다.
-
-![Roboflow YOLO11 trunk segmentation result](assets/orchard_perception_models/rf_yolo11_trunk_seg.jpg)
-
-`tree-trunk-detection-369pz-vm3hn/2`는 줄기 contour mask를 직접 제공해 현재 후보 중 가장 연구 목적에 가깝다. 다만 hosted API 결과이므로 최종 field system에서는 같은 형태의 local segmentation model을 직접 fine-tuning/export해야 한다.
-
-![Roboflow orchard YOLOv5s bbox result](assets/orchard_perception_models/rf_orchard_yolov5s_det.jpg)
-
-`orchard-trunk-yolov5s/3`는 bbox-only라서 기울어진 줄기와 여러 갈래 밑둥의 실제 테두리를 설명하기 어렵다. 지도 생성에는 root point 추정 오차가 커질 수 있다.
-
-![Roboflow trees and trunks bbox result](assets/orchard_perception_models/rf_trees_and_trunks_det.jpg)
-
-`trees-and-trunks/1`은 일부 장면에서 줄기를 잡지만 edge false positive와 bbox-only 한계가 있어 채택하지 않았다.
-
-![Roboflow generic segmentation result](assets/orchard_perception_models/rf_generic_tree_wall_seg.jpg)
-
-`object-detection-isoz2/1`은 archive sample에서 유효 tree prediction이 거의 없어 비채택했다.
-
-![Hugging Face SegFormer ADE20K result](assets/orchard_perception_models/hf_segformer_ade20k.jpg)
-
-SegFormer ADE20K는 tree/grass/wall/building 같은 semantic context를 제공하지만 trunk instance detector가 아니다. 따라서 최종 tree mask가 아니라 negative semantic gate 또는 pseudo-label 검수 보조로 사용한다.
-
-### Multi-stem tree 처리
-
-과수 밑둥이 여러 갈래로 갈라지는 경우를 한 개의 tree root로 세기 위해 camera post-process는 stem instance와 root landmark를 분리한다.
-
-```text
-stem_i = {mask_i, bbox_i, bottom_point_i, axis_i, confidence_i}
-root group if:
-  distance(ground(stem_i), ground(stem_j)) < r_group
-  and |bottom_y_i - bottom_y_j| < gamma H
-  and axis directions are compatible
-```
-
-추천 기본값:
-
-```text
-r_group = max(0.35 m, 0.08 * distance_to_tree)
-gamma = 0.12
-```
-
-지도에는 `tree_root` 하나만 저장하되, 내부에는 `stem_observations[]`를 남긴다. 이렇게 하면 한 과수의 갈라진 줄기를 여러 나무로 중복 count하지 않으면서, 갈라진 밑둥 자체는 segmentation evidence로 활용할 수 있다.
-
-## 5. Weighted Fusion 지도
-
-동일 archive에서 세 개의 지도를 동시에 만든다.
-
-| 지도 | 입력 | 연구적 의미 |
+| 단계 | 결과 | 판단 |
 | --- | --- | --- |
-| LiDAR-only | LiDAR trunk-like cluster | baseline |
-| Camera-only | camera stem/root candidate | LiDAR 오류 보완 evidence |
-| Weighted Fusion | LiDAR map + Camera map | 최종 방법 |
+| OpenCV bark/line heuristic | 실내 가구 다리, 플라스틱 edge, 벽을 나무로 오인 | 폐기, fallback도 금지 |
+| 공개 Roboflow trunk model | contour baseline은 좋지만 일부 archive false negative와 CPU 병목 | teacher 비교 기준으로만 유지 |
+| AIHub 71697 broad tree masks | canopy/row/full-frame 비율이 높아 줄기 instance를 직접 학습하기 어려움 | 장면 다양성·보조 자료로 사용 |
+| archive pseudo-label만 재학습 | 기존 hard frame과 AIHub validation 성능이 함께 악화 | 배포하지 않음 |
+| Grounding DINO + SAM2 + CLIP teacher | open-vocabulary proposal, 정밀 mask, semantic negative audit 결합 | 최종 student dataset 생성에 사용 |
+| YOLO11n-seg + CLIP OOD | Jetson TensorRT 실시간 후보 생성과 비나무 거부를 동시에 만족 | 현재 운영 경로 |
 
-LiDAR tree와 camera tree가 world frame에서 가까우면 confidence 기반 평균가중치를 적용한다.
+Teacher dataset은 321개 frame에서 시작했다. CLIP audit 이후 981개 mask를 수용하고 1,535개를 거부했다. 거부 집합에는 건물 기둥 767건, 사람 163건과 식생·가구·pole 후보가 포함됐다. 이 hard negative를 학습·정책 설계에 함께 사용했다.
 
-```text
-w_l = 0.64 C_lidar
-w_c = 0.36 C_camera
-p_fusion = (w_l p_lidar + w_c p_camera) / (w_l + w_c)
-```
+### 시각 결과
 
-최종 tree probability는 다음 형태로 정리할 수 있다.
+초록 contour는 최종 수용된 tree mask다. 도로·손가락·나무가 없는 구간에서 빈 frame이 남는 것은 정상적인 fail-closed 결과다.
 
-```text
-P_tree = sigmoid(
-  alpha_l C_lidar
-  + alpha_c P_camera(tree | ROI)
-  + alpha_h log(1 + hits)
-  - alpha_w P_wall
-  - alpha_n P_negative_semantic
-)
-```
+![TensorRT accepted tree masks](assets/operational_readiness/trt_model_eval_v2/accepted_contact_sheet.jpg)
 
-여기서 `P_negative_semantic`은 wall, floor, table, chair, pole, person 영역과 겹칠 때 증가한다. SegFormer ADE20K는 이 항을 계산하는 보조 모델로 쓸 수 있다.
+아래 OOD audit에서는 수용 후보와 거부 후보를 함께 확인할 수 있다.
 
-## 6. 행간 중심선
+![TensorRT and CLIP OOD audit](assets/operational_readiness/trt_model_eval_v2/ood_audit_contact_sheet.jpg)
 
-각 지도 layer는 자기 tree set에서 독립적으로 행간 중심선을 만든다. 주행 방향 단위벡터를 `a`, 수직벡터를 `n`이라고 할 때 tree point를 station/lateral 좌표로 투영한다.
+## 5. Camera AI 수식과 정책
 
-```text
-s_i = (p_i - p_0) dot a
-l_i = (p_i - p_0) dot n
-```
+Segmentation 모델 confidence를 `p_seg`, CLIP image embedding을 `v`, text embedding을 `t_k`, temperature를 `tau`라고 둔다. 두 tree prompt의 확률 합을 semantic tree support로 사용한다.
 
-`l_i > 0`은 left row, `l_i < 0`은 right row로 두고, station을 2 m bin으로 나눈다.
+$$
+p_clip(tree) = sum_{k in tree prompts}
+  exp(v^T t_k / tau) / sum_j exp(v^T t_j / tau)
+$$
 
-```text
-l_left,k  = sum(C_i l_i) / sum(C_i)
-l_right,k = sum(C_j l_j) / sum(C_j)
+운영 tree probability는 다음 weighted score다.
+
+$$
+p_tree = clip(
+  0.70 p_seg + 0.30 p_clip(tree)
+  + 0.04 I(canopy_support >= 0.12)
+  + 0.025 I(h/w >= 1.5),
+  0, 0.995)
+$$
+
+점수만으로 수용하지 않고 다음 hard gate를 함께 적용한다.
+
+- `h/w < 0.82`: 수직 줄기 형상이 아님
+- bbox area가 화면의 20% 초과: 과도하게 큰 region
+- bbox bottom이 화면 높이의 32% 위: 지면에서 떠 있는 후보
+- `p_clip(tree) < 0.075`: 강한 semantic non-tree
+- `p_clip(tree) < 0.24`이면서 `p_seg < 0.58`: 애매한 후보
+- 구조물 negative가 가장 강하고 canopy support가 0.06 미만: post/column 거부
+- 화면 edge의 semantic support가 낮음: 잘린 플라스틱·벽 edge 거부
+
+수용 detection도 지도에 바로 넣지 않는다. `CameraOverlayStabilizer`가 연속 두 번 매칭된 후보만 `map_admission=accepted`로 바꾼다. 높은 confidence 후보는 화면에 즉시 보일 수 있지만 지도에는 temporal confirmation 전까지 들어가지 않는다.
+
+### Camera 정량 결과
+
+YOLO 학습 validation에서 mask mAP가 가장 높았던 epoch 23의 수치다.
+
+| Metric | Box | Mask |
+| --- | ---: | ---: |
+| Precision | 0.467 | 0.409 |
+| Recall | 0.537 | 0.479 |
+| mAP50 | 0.482 | 0.412 |
+| mAP50-95 | 0.307 | 0.224 |
+
+Jetson TensorRT+CLIP 전체 평가:
+
+| 항목 | 값 |
+| --- | ---: |
+| Frames | 320 |
+| Raw segmentation candidates | 2,820 |
+| Accepted | 1,893 |
+| Rejected | 927 |
+| Accepted 0개 frame | 22 |
+| TensorRT mean / p95 | 87.93 / 282.76 ms |
+
+주요 거부 이유는 CLIP 애매 후보 499건, 낮은 결합 probability 380건, 강한 non-tree 376건, edge 129건, canopy 없는 구조 post 28건이다. 거부 후보의 strongest negative는 건물 기둥 405건, 잎/풀/관목 198건, utility pole 126건, 사람 109건, 가구 다리 85건이었다.
+
+이 수치는 정책이 실제로 후보를 거른 횟수이지 GT precision/recall이 아니다. 논문 정확도는 마지막 절차에 따라 별도 GT로 측정해야 한다.
+
+## 6. LiDAR tree-only 인식
+
+인접 point gap은 거리 증가에 따라 완만하게 넓힌다.
+
+$$
+d_i = ||p_i - p_(i-1)||_2
+$$
+
+$$
+tau_i = max(0.16, min(0.62, 0.05 + 0.045 max(r_i, r_(i-1))))
+$$
+
+`d_i > tau_i`에서 cluster를 분할하고 0/360도 경계 cluster를 다시 병합한다. 각 cluster covariance의 고유축으로 길이, 폭, aspect, density를 계산한다. 길고 얇은 cluster는 wall로 분리하고 방향·lateral offset·endpoint gap이 비슷한 조각을 병합한다.
+
+Compact candidate는 다음 세 OOD gate를 통과해야 한다.
+
+1. `near_wall_segment`: wall segment와 projection이 겹치고 adaptive distance 이내면 거부
+2. `embedded_in_linear_structure`: candidate 주변 raw point가 긴 직선 문맥을 만들면 거부
+3. `rear_operator_exclusion_zone`: 두 archive에서 사람이 서 있던 로버 바로 뒤의 좁은 near-field만 거부
+
+그 뒤 local object track과 반복 world observation을 분리한다. Live overlay의 `confirmed_trees`는 최소 2회 local match가 필요하다. 최종 지도는 일반적으로 5회 이상 또는 충분한 time span과 높은 confidence를 요구한다.
+
+### LiDAR 전체 평가
+
+| 항목 | 값 |
+| --- | ---: |
+| Scans | 216 |
+| Raw compact candidates | 4,601 |
+| Geometry accepted observations | 3,523 |
+| Explicitly rejected | 889 |
+| Linear-context rejection | 347 |
+| Rear operator rejection | 300 |
+| Near-wall rejection | 242 |
+| Mean / p95 processing | 44.34 / 70.05 ms |
+
+![LiDAR wall and tree OOD audit](assets/operational_readiness/lidar_tree_ood_v1/lidar_tree_ood_contact_sheet.jpg)
+
+초록 원은 geometry candidate, 빨간 X는 OOD rejection, 청록 선은 wall이다. Frame-level geometry candidate가 수천 개여도 world-frame merge, 반복 관측, 최소 간격 thinning을 통과한 최종 LiDAR landmark는 각각 9개와 7개다.
+
+## 7. Scan matching과 180도 회전
+
+이 archive에는 wheel odometry, IMU, `/tf`가 없어서 2D scan만으로 pseudo-odometry를 계산한다. 기존의 frame당 4도 제한은 U-turn을 놓치므로 제거했다.
+
+1. 0.5 m ring 29개, 2도 sector 180개의 binary scan-context를 만든다.
+2. circular shift cosine score 상위 7개를 360도 rotation hypothesis로 사용한다.
+3. 이전 scan을 0.07 m resolution Euclidean distance field로 변환한다.
+4. 각 회전 hypothesis에서 translation을 0.20 m coarse step으로 찾고, 상위 4개를 0.06 m translation / 1도 rotation으로 refine한다.
+5. score 0.43, inlier ratio 0.30, RMSE 0.38 m gate를 통과하지 못한 transform은 누적하지 않는다.
+6. 12도 이상 회전은 descriptor/objective margin이 모두 작으면 ambiguous large rotation으로 거부한다.
+
+첫 archive는 92 pose 중 80개 transform을 수용하고 12개를 거부했다. `45.005초 102도`에서 `51.405초 288도`까지 `186도`가 누적돼 사용자가 설명한 후반 U-turn을 복원했다.
+
+![Archive 1 LiDAR trajectory with U-turn](assets/operational_readiness/lidar_odometry_v8/archive1_audit/trajectory.png)
+
+아래 contact sheet는 같은 timestamp의 실제 camera 방향과 추정 heading을 함께 보여준다.
+
+![Archive 1 camera and heading audit](assets/operational_readiness/lidar_odometry_v8/archive1_audit/camera_motion_contact_sheet.jpg)
+
+두 번째 archive는 124 pose 중 120개를 수용하고 4개를 거부했으며 최종 누적 heading은 -74도다.
+
+![Archive 2 LiDAR trajectory](assets/operational_readiness/lidar_odometry_v8/archive2_audit/trajectory.png)
+
+## 8. 세 지도와 행간 중심선
+
+| Layer | Archive 1 | Archive 2 | 의미 |
+| --- | ---: | ---: | --- |
+| LiDAR-only | 9 | 7 | 반복 확인된 LiDAR landmark |
+| Camera-only | 19 | 17 | temporal-confirmed mask의 단안 투영 |
+| Weighted Fusion | 14 | 9 | 가까운 두 landmark의 confidence 가중 병합 |
+
+LiDAR와 camera landmark가 gate 이내면 다음처럼 합친다.
+
+$$
+w_l = 0.64 C_l,  w_c = 0.36 C_c
+$$
+
+$$
+p_f = (w_l p_l + w_c p_c) / (w_l + w_c)
+$$
+
+Fusion 중심선은 LiDAR 중심선과 camera 중심선을 평균한 선이 아니다. 먼저 tree landmark를 융합한 뒤, fusion tree set에서 좌우 row를 다시 추정한다. 주행축 `a`, 수직축 `n`에 대해 station과 lateral coordinate를 계산한다.
+
+$$
+s_i = (p_i - p_0)^T a,  l_i = (p_i - p_0)^T n
+$$
+
+각 station bin에서 좌우 confidence-weighted row 위치의 중간을 중심선으로 둔다.
+
+$$
 l_center,k = (l_left,k + l_right,k) / 2
+$$
+
+카메라 거리는 현재 알려진 수평 FOV 78도와 보이는 줄기 높이 1.35 m 가정으로 근사한다. 따라서 Camera-only와 Fusion의 절대 meter 값은 calibration 전 연구용이며, LiDAR-camera extrinsic 이후에 논문용 metric으로 사용해야 한다.
+
+![Three map layers at archive start](assets/operational_readiness/dashboard_map_start.png)
+
+![Three map layers at 45 seconds](assets/operational_readiness/dashboard_map_45s.png)
+
+## 9. 재생과 배포 검증
+
+Camera와 LiDAR overlay는 전체 timeline 순서로 미리 계산한다. 4초 segment API는 최신 overlay를 다시 추론하지 않고 반환하며, compact JSON, gzip, 두 archive LRU cache, 다음 두 segment prefetch를 사용한다.
+
+| Archive | 4초 segment warm latency | gzip payload |
+| --- | ---: | ---: |
+| `20260708T053333Z_both` | 약 105 ms | 약 493 KiB |
+| `20260708T054036Z_both` | 약 122 ms | 약 583 KiB |
+
+Cloudflare 공개 경로의 archive 1 첫 구간도 약 0.90초에 전달됐다. 실제 브라우저에서는 두 archive 모두 camera image, contour overlay, LiDAR, 세 지도 canvas가 nonblank였고 5.2초 재생 동안 상단/지도 scrubber 오차가 최대 0.04초였다. 1920x1080과 390x844에서 horizontal overflow와 console error는 0이었다.
+
+![Deployed archive 1 dashboard validation](assets/operational_readiness/dashboard_archive1.png)
+
+AI worker health의 필수 값:
+
+```json
+{
+  "ok": true,
+  "algorithm": "local_orchard_vision_ai_worker_v4",
+  "revision": "orchard_trunk_yolo11_trt_clip_ood_v1",
+  "backend": "operational_yolo11_seg_clip_ood",
+  "device": "cuda",
+  "camera_policy": "AI-only; no OpenCV or remote API fallback"
+}
 ```
 
-중요한 점은 Fusion 중심선이 LiDAR 중심선과 Camera 중심선을 직접 평균낸 결과가 아니라는 것이다. 먼저 tree landmark를 fusion하고, fusion tree map에서 다시 중심선을 계산한다. 이렇게 해야 camera가 선을 임의로 밀어내는 것이 아니라, camera가 보완한 과수 landmark가 중심선에 반영된다.
+## 10. 코드 위치
 
-## 7. Offline inference 배포 계획
+| 기능 | 파일 |
+| --- | --- |
+| TensorRT segmentation + CLIP OOD worker | `scripts/vision_ai_service.py` |
+| Camera fail-closed client / temporal admission | `dashboard_server/camera_analysis.py` |
+| LiDAR wall, linear context, rear OOD, local tracks | `dashboard_server/lidar_analysis.py` |
+| 360도 scan-context와 distance-field 정합 | `dashboard_server/lidar_odometry.py` |
+| 3-layer map, temporal landmark, centerline | `dashboard_server/orchard_mapping.py` |
+| Camera/LiDAR archive precompute | `scripts/precompute_archive_camera_overlays.py`, `scripts/precompute_archive_lidar_overlays.py` |
+| Reproducible readiness summary | `scripts/build_operational_readiness_summary.py` |
 
-API key는 후보 모델 탐색과 초기 pseudo-label 생성에만 사용한다. 최종 주행 시스템은 외부 인터넷이 없어도 작동해야 하므로 다음 구조로 전환한다.
+## 11. 다음 수동 작업
 
-중요한 제약도 있다. 이번 평가에서 가장 결과가 좋았던 Roboflow Universe 모델 `tree-trunk-detection-369pz-vm3hn/2`는 hosted inference에서는 좋은 baseline이지만, field 주행 장비에 API key와 외부 네트워크 의존성을 두면 안 된다. 따라서 현재 구현은 다음 두 단계를 분리했다.
+### 11.1 논문용 GT
 
-1. 즉시 운영 가능한 baseline: 개발 머신에서 Roboflow ORT artifact를 한 번 받아 `runtime/roboflow_cache/tree-trunk-detection-369pz-vm3hn/2/`에 저장하고, Jetson에는 `weights.onnx`, `environment.json`, `class_names.txt`, `model_type.json`만 배포한다. Jetson worker는 API key 없이 이 cache만 읽는다.
-2. 최종 연구 모델: 우리가 직접 annotation한 orchard dataset으로 `YOLO11n-seg` 또는 `YOLO11s-seg`를 fine-tuning하고, `.pt`를 TensorRT `.engine`으로 export해 Jetson에 배포한다.
+1. `docs/orchard_finetuning_workflow.md` 절차로 현재 contour pre-label을 CVAT에 import한다.
+2. sample video와 두 archive에서 장소가 겹치지 않도록 train/validation/test를 나눈다.
+3. 놓친 줄기는 추가하고 사람, pavilion post, pole, table/chair leg, wall, plastic edge mask는 삭제한다.
+4. 여러 갈래 밑동은 보이는 stem별 polygon을 유지하고 같은 tree root group을 기록한다.
+5. 독립 test split에서 mask AP, tree-instance precision/recall, false positive per frame을 계산한다.
 
-현재 대시보드에는 1번 baseline이 적용되어 있다. 2번은 논문 재현성과 field 안정성을 위한 최종 경로다. 즉 지금 UI와 fusion schema는 유지하면서, model backend만 Roboflow cache에서 자체 fine-tuned TensorRT engine으로 갈아끼울 수 있게 만들었다.
+### 11.2 Pose와 calibration
 
-```mermaid
-flowchart LR
-  A[Archive / live camera] --> B[Local TensorRT YOLO11-seg engine]
-  B --> C[stem masks]
-  C --> D[multi-stem root grouping]
-  D --> E[camera tree candidates]
-  F[LiDAR scan] --> G[LiDAR candidates]
-  E --> H[fusion map]
-  G --> H
-  H --> I[row centerline]
-```
+1. 다음 기록부터 wheel odometry, IMU, `/tf`를 timeline에 저장한다.
+2. AprilTag/checkerboard를 여러 거리·각도에서 camera와 2D LiDAR에 동시에 기록한다.
+3. `T_camera_lidar`를 구해 LiDAR candidate를 image plane에 투영한다.
+4. Camera-only depth와 fusion match를 현재 단안 근사 대신 calibrated projection으로 교체한다.
+5. 실측 tree 위치와 row centerline GT로 lateral error를 비교한다.
 
-추천 실행 경로:
+## 12. 참고 문헌과 실제 활용
 
-1. Roboflow 또는 CVAT에서 `trunk_base`, `split_stem`, `branch`, `canopy`, `post_pole`, `person` class를 annotation한다.
-2. SAM 2는 mask 초안 생성용으로만 사용하고, 최종 label은 사람이 확인한다.
-3. YOLO11n-seg 또는 YOLO11s-seg를 fine-tuning한다.
-4. Jetson Orin Nano에서 TensorRT FP16 engine으로 export한다.
-5. Docker image에 `.engine` 파일과 inference worker만 포함해 offline 실행한다.
+- [Grounding DINO](https://arxiv.org/abs/2303.05499): open-set text-conditioned proposal을 teacher candidate 생성에 사용했다.
+- [SAM 2](https://arxiv.org/abs/2408.00714): Grounding DINO box를 정밀 mask로 바꾸고 영상 annotation 초안을 만드는 데 사용했다.
+- [CLIP](https://arxiv.org/abs/2103.00020): tree prompt와 non-tree prompt의 normalized embedding similarity를 runtime semantic OOD gate로 사용했다.
+- [Scan Context](https://doi.org/10.1109/IROS.2018.8593953): circular sector shift로 큰 회전 hypothesis를 찾는 발상을 2D binary descriptor에 적용했다.
+- [Real-Time Correlative Scan Matching](https://april.eecs.umich.edu/pdfs/olson2009icra.pdf): scan 정합을 전역 후보 탐색과 score 기반 품질 판단으로 구성하는 원리를 distance-field search에 반영했다.
+- [Ultralytics model export](https://docs.ultralytics.com/modes/export/): YOLO segmentation `.pt`를 Jetson용 TensorRT engine으로 export하는 절차를 사용했다.
+- [NVIDIA TensorRT Quick Start](https://docs.nvidia.com/deeplearning/tensorrt/latest/getting-started/quick-start-guide.html): engine을 target GPU에서 build하고 runtime에서 로드하는 배포 구조를 따랐다.
 
-예상 명령:
-
-```bash
-yolo task=segment mode=train model=yolo11n-seg.pt data=orchard.yaml imgsz=640 epochs=100 batch=8 device=0
-yolo export model=runs/segment/train/weights/best.pt format=engine half=True imgsz=640 device=0
-```
-
-Dashboard 쪽 schema는 현재 `detections[].bbox`, `confidence`, `contour`, `line`, `label`을 유지하므로, OpenCV baseline을 TensorRT worker로 교체해도 UI와 map/fusion 코드는 크게 바꾸지 않아도 된다.
-
-현재 repository에는 이 구조를 위한 local worker가 추가되어 있다.
-
-| 구성 | 파일 | 역할 |
-| --- | --- | --- |
-| AI worker service | `scripts/vision_ai_service.py` | Roboflow local cache, local YOLO `.pt/.onnx/.engine`, SegFormer local directory를 dashboard camera overlay schema로 변환 |
-| AI worker image | `Dockerfile.vision_ai` | Roboflow Inference/Ultralytics/Transformers 의존성을 dashboard와 분리하고, Jetson Roboflow image의 기존 entrypoint를 `ENTRYPOINT []`로 무효화 |
-| Compose service | `docker-compose.yml`의 `vision-ai-worker` | profile 없이 dashboard와 함께 실행. healthcheck는 `/health`의 `ok=true`를 요구 |
-| Roboflow cache preparation | `scripts/prepare_roboflow_offline_cache.py` | 개발 머신에서 Roboflow API key로 ONNX artifact를 받은 뒤 Jetson에는 cache만 배포 |
-| Model preparation | `scripts/prepare_local_vision_models.py` | HF snapshot download, YOLO base 준비, fine-tuned model TensorRT export |
-| Dashboard bridge | `dashboard_server/camera_analysis.py` | camera perception은 AI-only. `ORCHARD_VISION_AI_URL` 또는 worker가 없으면 오류 overlay를 반환하고 OpenCV fallback을 사용하지 않음 |
-
-Roboflow cache baseline 실행 예:
-
-```bash
-# 인터넷 가능한 개발 머신에서 Roboflow cache 생성
-source /root/.env
-python3 scripts/prepare_roboflow_offline_cache.py \
-  --model-id tree-trunk-detection-369pz-vm3hn/2 \
-  --cache-dir runtime/roboflow_cache
-
-# Jetson에는 API key 없이 cache만 배포한 뒤 실행
-export ORCHARD_VISION_AI_URL=http://127.0.0.1:8785/analyze
-export ORCHARD_VISION_BACKEND=roboflow
-export ORCHARD_ROBOFLOW_MODEL_ID=tree-trunk-detection-369pz-vm3hn/2
-export MODEL_CACHE_DIR=/app/runtime/roboflow_cache
-export USE_INFERENCE_MODELS=False
-export ONNXRUNTIME_EXECUTION_PROVIDERS=CPUExecutionProvider
-docker compose up -d --build
-```
-
-검증 이미지:
-
-![Local Roboflow worker archive verification](assets/orchard_perception_models/local_roboflow_worker_archive_verification.jpg)
-
-이 샘플은 public archive segment API가 반환한 실제 frame과 `local_orchard_vision_ai_worker_v3 / roboflow_yolo11n_seg_local_cache_conf020_r2` overlay를 그대로 그린 것이다. `20260708T053333Z_both` 8.76s/11.46s와 `20260708T054036Z_both` 3.79s에서는 trunk contour가 반환된다. 반대로 `20260708T054036Z_both` 38.48s는 현재 공개 baseline의 false negative로 남아 있어 fine-tuning target으로 기록한다.
-
-`ORCHARD_VISION_AI_URL`이 설정되지 않았거나 worker가 응답하지 않으면 dashboard는 `algorithm=local_orchard_vision_ai_worker_v3`, `ok=false`, `method=vision_ai_url_required` 또는 `vision_ai_worker_unavailable`인 overlay를 반환한다. UI는 이를 `Camera AI unavailable`로 표시한다. 이 정책은 잘못된 OpenCV heuristic 결과가 연구 데이터에 조용히 섞이는 것을 막기 위한 fail-closed 설계다.
-
-## 8. 남긴 시행착오
-
-처음에는 OpenCV 색상/선분 기반 heuristic으로 camera tree overlay를 만들었다. 그러나 실내 테이블 다리, 벽, 플라스틱 경계, 바닥 사선이 높은 confidence tree로 표시되는 문제가 반복되었다. 이후 orchard scene gate와 canopy support gate를 넣어 오탐을 줄였지만, archive frame을 직접 확인하면 여전히 실제 나무 contour를 안정적으로 따기에는 부족했다.
-
-따라서 결론은 다음과 같다.
-
-1. OpenCV baseline은 emergency fallback과 빠른 archive preview용으로만 유지한다.
-2. Camera tree 인식의 주 모델은 orchard-specific instance segmentation으로 교체한다.
-3. SegFormer ADE20K는 trunk instance detector가 아니라 negative semantic gate로 사용한다.
-4. LiDAR와 camera를 fusion하려면 extrinsic calibration을 반드시 수행해야 한다.
-
-## 9. 다음에 해야 할 일
-
-### 9.1 수동 annotation
-
-이 작업은 사람이 직접 해야 한다. 모델 성능을 논문에 쓸 수 있게 만들려면 ground truth가 필요하다.
-
-진행 방법:
-
-1. 두 archive에서 1초 간격으로 frame을 추출한다.
-2. 선명한 frame과 실패 frame을 섞어 최소 300-500장을 만든다.
-3. Roboflow 또는 CVAT에 업로드한다.
-4. class는 `trunk_base`, `split_stem`, `branch`, `canopy`, `post_pole`, `person`으로 시작한다.
-5. 갈라진 밑둥은 각 stem을 mask로 따되, 같은 root에서 나온 경우 metadata나 파일명 메모에 같은 group임을 표시한다.
-6. 벽, 테이블 다리, 플라스틱 경계, 기둥, 사람은 hard negative로 충분히 포함한다.
-7. train/valid/test를 같은 장소 frame이 한 split에 몰리지 않게 나눈다.
-
-### 9.2 LiDAR-camera calibration
-
-이 작업도 물리 측정이 필요하다.
-
-진행 방법:
-
-1. checkerboard 또는 AprilTag board를 준비한다.
-2. camera intrinsic calibration을 먼저 수행한다.
-3. LiDAR scan에서 보이는 평면 board edge와 camera image의 tag corner를 동시에 기록한다.
-4. 여러 위치와 거리에서 20-30쌍을 모은다.
-5. `T_camera_lidar`를 least squares로 추정한다.
-6. 추정된 transform으로 LiDAR candidate를 image plane에 project한다.
-7. projected ROI 내부 segmentation probability를 fusion confidence에 넣는다.
-
-### 9.3 정량 평가
-
-논문용 표는 다음 지표를 사용한다.
-
-```text
-precision = TP / (TP + FP)
-recall = TP / (TP + FN)
-F1 = 2 precision recall / (precision + recall)
-e_pos = ||p_pred - p_gt||_2
-e_centerline = lateral_distance(path_pred, path_gt)
-```
-
-비교표는 LiDAR-only, Camera-only, Weighted Fusion 세 layer를 반드시 분리한다. 연구 가설은 “LiDAR-only 중심선 오류를 camera evidence가 보완한다”이므로, fusion이 LiDAR-only보다 centerline lateral error를 줄이는지 보여줘야 한다.
-
-## 10. 참고 자료
-
-- TreeScope dataset and paper: https://arxiv.org/abs/2310.02162
-- Roboflow Tree Trunk Detection Segmentation: https://universe.roboflow.com/scholar/tree-trunk-detection-369pz-vm3hn
-- Roboflow Orchard-trunk-yolov5s: https://universe.roboflow.com/yeah-ty5xb/orchard-trunk-yolov5s
-- Roboflow Trees and Trunks: https://universe.roboflow.com/magnus-larsson-czfyf/trees-and-trunks
-- SegFormer paper: https://arxiv.org/abs/2105.15203
-- NVIDIA SegFormer ADE20K checkpoint: https://huggingface.co/nvidia/segformer-b0-finetuned-ade-512-512
-- Ultralytics YOLO11: https://docs.ultralytics.com/models/yolo11/
-- Ultralytics Jetson guide: https://docs.ultralytics.com/guides/nvidia-jetson/
-- Ultralytics TensorRT export: https://docs.ultralytics.com/integrations/tensorrt/
-- Meta SAM 2: https://ai.meta.com/research/sam2/
+> 이 문서의 candidate count와 OOD rejection count는 운영 파이프라인 감사 수치다. 독립 수동 GT가 없는 상태에서 논문 정확도로 해석하면 안 된다.

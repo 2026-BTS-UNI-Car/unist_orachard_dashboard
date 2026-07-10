@@ -1,6 +1,98 @@
 # Rover Control Orchard Overlay TODO
 
-Last updated: 2026-07-09
+Last updated: 2026-07-10
+
+## 2026-07-10 운영 배포 완성 및 OOD 검증 목표
+
+### 데이터와 평가 기준
+
+- [x] `sample_video/IMG_4469.mov`, `IMG_4471.mov`에서 2 Hz/0.25초 offset의 53+49 frame 평가 set을 Jetson에서 만든다.
+- [x] `20260708T053333Z_both`, `20260708T054036Z_both`의 camera 218 frame/LiDAR 216 scan 전체 timeline을 동일 evaluator로 재검증한다.
+- [x] 카메라 평가는 사람, 벽/도로, 가구 다리, 기둥, pole, foliage-only를 CLIP OOD hard negative로 별도 집계한다.
+- [x] LiDAR 평가는 compact 후보, 긴 벽, 벽 인접 fragment, 선형 문맥, 후방 사람 영역을 분리해 지도 전후 수를 기록한다.
+- [x] 평가 JSON/contact sheet와 v8 trajectory를 `runtime/analysis/operational_readiness/` 및 `docs/assets/operational_readiness/`에 보존한다.
+
+### Camera AI와 OOD 거부
+
+- [x] AIHub broad tree mask는 보조 데이터로 분리하고 Grounding DINO+SAM2+CLIP teacher로 local trunk student 후보를 생성한 뒤 OOD gate를 적용한다.
+- [x] mask ground contact, vertical shape, canopy support, 크기, edge truncation, structural-post hard rule로 비나무 후보를 거부한다.
+- [x] 단일 frame confidence만으로 지도에 넣지 않고 camera 2-hit, LiDAR 반복 world observation을 admission 조건으로 사용한다.
+- [x] 두 sample video 102 frame과 archive 218 frame에서 동일 TensorRT+CLIP threshold를 고정해 전체 평가한다.
+- [x] AI worker 응답에 `ood_score`, `tree_probability`, `admission`, `rejection_reasons`, `model_provenance`를 포함한다.
+
+### LiDAR tree-only 인식
+
+- [x] Wall fit/fragment merge와 주변 raw point linear-context gate로 벽/긴 선분 조각을 tree 후보에서 분리한다.
+- [x] 좁은 후방 operator zone과 시간적으로 지속되지 않는 compact object를 지도에서 제외한다.
+- [x] LiDAR tree 후보에 structure score, temporal persistence, wall distance와 OOD rejection reason을 포함한다.
+- [x] 두 archive raw 4,601 후보, 명시적 거부 889건, 최종 LiDAR landmark 9/7개의 근거를 JSON으로 추적한다.
+
+### 지도 자세와 타임라인
+
+- [x] 첫 LiDAR timestamp 이전에는 `(0,0,0deg)` start를 표시하고 path 길이를 LiDAR frame 수와 같게 해 중복 초기 pose를 제거한다.
+- [x] frame당 `4 degree` 제한을 제거하고 180-sector scan-context + distance-field coarse-to-fine search와 품질 gate를 적용한다.
+- [x] `20260708T053333Z_both`의 45.005-51.405초 구간에서 186도 회전을 복원하고 trajectory/camera contact sheet로 검증한다.
+- [x] 낮은 정합 신뢰도의 transform은 누적하지 않고 `pose_confidence`, `turn_event`, rejection reasons를 API에 노출한다.
+- [x] 지도에는 OOD gate와 temporal confirmation을 통과한 tree만 표시한다.
+
+### 통합, 배포, 보고서
+
+- [x] Jetson Python unit/integration/static contract 39개와 실제 두 archive 재분석을 통과한다.
+- [x] Jetson에서 AI worker CUDA/TensorRT, dashboard health, archive map API, sample/archive inference를 확인한다.
+- [x] `readiness_summary.json`에 latency, 검출/거부 수, 186도 회전, map count와 알려진 한계를 기록한다.
+- [x] Archive camera/LiDAR overlay를 미리 계산하고 compact JSON+gzip+LRU+4초 prefetch로 warm segment를 105-122ms까지 줄인다.
+- [x] 공개 dashboard에서 두 archive 재생, camera/LiDAR overlay, 3종 지도, 두 scrubber, desktop/mobile overflow를 Playwright로 검증한다.
+- [x] Docs 최종 보고서의 이미지 9개, 수식 8개, 독립 목록/본문 스크롤과 mobile layout을 browser로 검증한다.
+- [ ] 변경 사항을 CI/CD 경로로 배포하고 workflow와 실제 서비스 상태를 끝까지 추적한다.
+- [ ] Notion 기존 보고서와 이번 AIHub/OOD/LiDAR/지도 결과를 이미지 포함 최종 보고서로 통합한다.
+
+### 2026-07-10 검증 수치
+
+- Camera: 320 frames, raw 2,820, accepted 1,893, OOD rejected 927, TensorRT mean/p95 87.93/282.76ms.
+- LiDAR: 216 scans, raw 4,601, rejected 889 (`linear 347`, `rear 300`, `wall 242`), mean/p95 44.34/70.05ms.
+- Map 1: path 92, LiDAR/Camera/Fusion `9/19/14`, 80 accepted poses, 12 rejected poses, final 45s turn 186deg.
+- Map 2: path 124, LiDAR/Camera/Fusion `7/17/9`, 120 accepted poses, 4 rejected poses.
+- Manual review package: 321 frames, 981 masks, 31 empty hard negatives, validation errors 0, 102.6MiB.
+
+## 2026-07-10 AIHub orchard tree instance 적용 목표
+
+- [x] AIHub 71697/71700 승인이 완료된 상태에서 label-first 방식으로 `TL.zip`, `VL.zip`만 먼저 다운로드해 용량을 1.7GB 수준으로 제한했다.
+- [x] `SEG` 라벨 전체를 분석해 나무 class가 상당수 full-frame/tree-row/canopy context 라벨임을 확인했다.
+- [x] `BBX` 라벨 전체를 분석해 나무 class가 없고 장애물 bbox 중심임을 확인했다.
+- [x] `scripts/export_aihub_orchard_tree_dataset.py`를 추가해 AIHub SEG 라벨을 YOLO segmentation 형식으로 변환할 수 있게 했다.
+- [x] 변환 기본 정책은 full-frame/너무 큰 tree-row mask를 제외하고, 개체 단위 visible tree 후보만 `orchard_tree` class로 export한다.
+- [x] `scripts/render_aihub_tree_label_preview.py`를 추가해 원천 이미지와 SEG 라벨이 실제 개체 나무를 감싸는지 contact sheet로 검증할 수 있게 했다.
+- [x] `scripts/train_aihub_orchard_tree_yolo.sh`를 추가해 export된 YOLO segmentation dataset으로 보드 컨테이너 내부 fine-tuning을 재현 가능하게 했다.
+- [x] AIHub source zip을 전체 압축 해제하지 않고 필요한 이미지만 읽도록 export/preview 스크립트를 zip 입력 지원 방식으로 확장했다.
+- [x] Jetson Docker에는 `nvidia` runtime이 있으나 기본 runtime이 `runc`라 worker가 CUDA를 못 보던 상태를 확인했다.
+- [x] `vision-ai-worker` compose 설정에 `runtime: nvidia`, `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES`를 추가했다.
+- [x] Jetson `vision-ai-worker`와 `dashboard`를 재배포하고 Docker Compose v1 `ContainerConfig` 충돌로 생긴 stale container를 정리했다.
+- [x] Jetson worker `/health` OK, dashboard `/api/health` OK, `ORCHARD_VISION_AI_URL=http://127.0.0.1:8785/analyze`, PyTorch CUDA `True`, GPU 1개 인식까지 확인했다.
+- [x] 기존 local Roboflow cache worker로 실제 archive/debug frame `/analyze` 호출을 수행했다. 응답은 0.43~0.54초였으나 일부 frame은 detection 0개라 AIHub fine-tuning 필요성을 확인했다.
+- [x] `71697` 포도/감귤 Validation source `VS.zip` 44GB를 먼저 다운로드한다.
+- [x] 다운로드된 원천 이미지와 SEG 라벨을 매칭해 1,200 image / 2,417 object / 645MB YOLO segmentation subset을 export한다.
+- [x] export된 AIHub tree dataset으로 Jetson 내부 YOLO11 segmentation smoke fine-tuning을 수행했다.
+  - 결과: `runtime/training_runs/aihub_orchard_tree_smoke_v1/weights/best.pt`
+  - 학습 데이터: `71697` 포도/감귤 Validation subset 1,200 images / 2,417 tree instances
+  - AIHub validation sample에서는 `orchard_tree` 2개를 confidence 0.953 수준으로 검출했다.
+- [x] 결과 모델을 `vision-ai-worker`가 읽을 수 있는 `.pt` 경로로 배치하고 hybrid backend로 전환 검증했다.
+  - 현재 backend: `hybrid_ultralytics_aihub_and_roboflow_trunk`
+  - 현재 revision: `hybrid_roboflow_trunk_aihub71697_yolo11n_seg_v1`
+  - 현재 model: `/app/runtime/training_runs/aihub_orchard_tree_smoke_v1/weights/best.pt + tree-trunk-detection-369pz-vm3hn/2`
+  - AIHub YOLO 단독 전환도 가능하지만, archive frame의 hard false-negative가 아직 있어 Roboflow local trunk cache와 병합한 hybrid를 배포 기준으로 선택했다.
+- [x] Jetson 보드에 적용 후 `/health`, `/analyze`, dashboard 설정을 확인했다.
+  - `vision-ai-worker /health`: `ok: true`, backend `hybrid_ultralytics_aihub_and_roboflow_trunk`
+  - `dashboard /api/health`: `ok: true`, `ORCHARD_VISION_AI_URL=http://127.0.0.1:8785/analyze`
+  - container 내부 PyTorch CUDA: `true`, CUDA device 1개, Ultralytics import OK
+  - archive debug frame 검증: `20260708T053333Z_both_3` 1 detection, `20260708T054036Z_both_3` 2 detections, hard frame `*_7`, `*_39`는 0 detection으로 남아 수동 GT/fine-tuning target으로 분리
+  - `20260708T054036Z_both_39` threshold sweep: confidence `0.2/0.1/0.05`에서는 0개, `0.02`에서 2개 후보가 살아나지만 운영 threshold로 쓰기에는 false-positive 위험이 커 배포하지 않음
+- [x] 용량 사용량을 기록하고 불필요한 partial/cache/export 중간 산출물을 정리한다.
+  - Jetson runtime: `aihub_datasets` 651MB, `training_runs` 29MB, `finetune_exports` 22MB, `aihub_validation` 3.5MB, root filesystem 467GB 중 91GB 사용
+  - 로컬 AIHub probe: 47GB. 대부분은 `71697` Validation source zip이며, 전체 압축 해제 없이 subset export만 수행했다.
+  - `71700` 사과/배 source는 SEG label 분석 결과 개체 단위 후보가 너무 적어 현재 용량 대비 효율이 낮으므로 source 다운로드를 보류했다.
+- [x] pseudo-label 기반 추가 fine-tuning을 실험했지만 배포하지 않았다.
+  - `runtime/finetune_exports/orchard_trunk_20260708_prelabels` 218 images / 179 labels로 학습한 모델은 AIHub validation sample과 archive hard frame에서 성능이 떨어져 rollback했다.
+  - 다음 단계는 pseudo-label 자동 학습이 아니라, 놓친 frame 중심으로 사람이 mask를 검수한 GT를 만든 뒤 fine-tuning하는 것이다.
 
 ## 2026-07-09 Offline Vision AI Worker 목표
 
@@ -78,11 +170,13 @@ Last updated: 2026-07-09
 - [ ] 사용자가 수동 검수한 label로 YOLO segmentation fine-tuning을 수행한다.
 - [ ] Fine-tuned `best.pt`를 TensorRT FP16 engine으로 export하고 `ORCHARD_VISION_BACKEND=ultralytics` 경로에서 공개 Roboflow baseline과 비교한다.
 
-## 남은 연구 작업
+## 수동 GT 후속 연구 (현재 운영 배포 완료 조건 아님)
 
-- [ ] `20260708T054036Z_both` 38.5s처럼 현재 공개 Roboflow baseline이 놓치는 frame을 hard example로 모아 fine-tuning dataset에 포함한다.
+아래 항목은 사람이 polygon/tree-position GT를 만든 뒤 수행한다. 자동 teacher label을 정답으로 간주하지 않기 위해 의도적으로 미완료로 둔다. `orchard_teacher_v1_review.tar.gz`와 `docs/orchard_finetuning_workflow.md`까지 준비됐다.
+
+- [x] `20260708T054036Z_both` 38.5s를 포함한 archive 전체와 sample video 전체를 321-frame teacher/fine-tuning dataset에 포함한다.
 - [ ] 사람 하반신, 기둥, 벽, 테이블 다리, 플라스틱 edge를 hard negative class로 충분히 annotation한다.
-- [ ] 직접 fine-tuned YOLO11 segmentation weight를 TensorRT FP16 engine으로 export해 `ORCHARD_VISION_BACKEND=ultralytics` 경로로 교체 검증한다.
+- [x] Grounding DINO+SAM2+CLIP teacher로 fine-tuned YOLO11 segmentation을 Jetson TensorRT FP16 engine으로 export하고 `ORCHARD_VISION_BACKEND=operational` 경로로 교체 검증한다.
 
 ## 완료 조건
 

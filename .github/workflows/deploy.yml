@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install test dependencies
+        run: python3 -m pip install -r requirements.txt
       - name: Compile
         run: python3 -m compileall dashboard_server scripts
       - name: Unit tests
@@ -85,23 +87,38 @@ jobs:
           tar -xzf /tmp/unist_orachard_dashboard.tar.gz -C "$APP_DIR"
           chown -R unist:unist "$APP_DIR"
           cd "$APP_DIR"
+          test -s runtime/training_runs/orchard_trunk_teacher_ood_v1/weights/best.engine
+          test -d runtime/models/hf/hub/models--openai--clip-vit-base-patch32
+          bash scripts/configure_operational_vision_env.sh .env
           if docker compose version >/dev/null 2>&1; then
             COMPOSE="docker compose"
           else
             COMPOSE="docker-compose"
           fi
-          $COMPOSE down --remove-orphans >/dev/null 2>&1 || true
-          docker ps -aq --filter "name=unist-orachard-" | xargs -r docker rm -f >/dev/null 2>&1 || true
-          set +e
-          $COMPOSE up -d --build
-          compose_status=$?
-          set -e
-          if [ "$compose_status" -ne 0 ]; then
-            echo "docker compose up failed; removing compose-managed dashboard containers and retrying"
-            docker ps -aq --filter "label=com.docker.compose.project=unist_orachard_dashboard" | xargs -r docker rm -f >/dev/null 2>&1 || true
-            docker ps -aq --filter "name=unist-orachard-" | xargs -r docker rm -f >/dev/null 2>&1 || true
-            $COMPOSE up -d --build
-          fi
+          python3 -m compileall dashboard_server scripts
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          TARGET_SERVICES="vision-ai-worker ros2-camera-bridge ros2-lidar-bridge ros2-data-recorder dashboard"
+          $COMPOSE build $TARGET_SERVICES
+
+          # Compose 1.29 cannot inspect Docker 29's newer image metadata while
+          # recreating an existing container. Remove only the service being
+          # replaced; sensor drivers, rover bridge and Portainer stay running.
+          recreate_service() {
+            service="$1"
+            container="$2"
+            docker rm -f "$container" >/dev/null 2>&1 || true
+            docker ps -aq \
+              --filter "label=com.docker.compose.project=unist_orachard_dashboard" \
+              --filter "label=com.docker.compose.service=$service" \
+              | xargs -r docker rm -f >/dev/null 2>&1 || true
+            $COMPOSE up --no-deps -d "$service"
+          }
+
+          recreate_service vision-ai-worker unist-orachard-vision-ai
+          recreate_service ros2-camera-bridge unist-orachard-ros2-camera-bridge
+          recreate_service ros2-lidar-bridge unist-orachard-ros2-lidar-bridge
+          recreate_service ros2-data-recorder unist-orachard-ros2-data-recorder
+          recreate_service dashboard unist-orachard-dashboard
           $COMPOSE ps
           python3 - <<'PY'
           import json
@@ -118,6 +135,13 @@ jobs:
                   try:
                       payload = json.load(urllib.request.urlopen(url, timeout=3))
                       if payload.get("ok"):
+                          if name == "vision-ai-worker":
+                              if payload.get("backend") != "operational_yolo11_seg_clip_ood":
+                                  raise RuntimeError(f"unexpected vision backend: {payload}")
+                              if payload.get("revision") != "orchard_trunk_yolo11_trt_clip_ood_v1":
+                                  raise RuntimeError(f"unexpected vision revision: {payload}")
+                              if not str(payload.get("model") or "").endswith("best.engine + openai/clip-vit-base-patch32"):
+                                  raise RuntimeError(f"TensorRT/CLIP model not active: {payload}")
                           print(f"{name} ok: {json.dumps(payload, ensure_ascii=False)}")
                           break
                       last = json.dumps(payload, ensure_ascii=False)
@@ -129,4 +153,48 @@ jobs:
           PY
           docker exec unist-orachard-ros2-camera-bridge /bin/sh -lc 'test -n "$ORCHARD_VISION_AI_URL"'
           docker exec unist-orachard-ros2-data-recorder /bin/sh -lc 'test -n "$ORCHARD_VISION_AI_URL"'
+          docker exec unist-orachard-dashboard python /app/scripts/precompute_archive_camera_overlays.py \
+            --recording-id 20260708T053333Z_both \
+            --recording-id 20260708T054036Z_both
+          docker exec unist-orachard-dashboard python /app/scripts/precompute_archive_lidar_overlays.py \
+            --recording-id 20260708T053333Z_both \
+            --recording-id 20260708T054036Z_both
+          docker exec unist-orachard-dashboard python /app/scripts/precompute_orchard_maps.py \
+            --recording-id 20260708T053333Z_both \
+            --recording-id 20260708T054036Z_both
+          python3 scripts/build_operational_readiness_summary.py
+          python3 - <<'PY'
+          import gzip
+          import json
+          import time
+          import urllib.request
+
+          for recording_id, expected in {
+              "20260708T053333Z_both": {"path": 92, "layers": {"lidar": 9, "camera": 19, "fusion": 14}},
+              "20260708T054036Z_both": {"path": 124, "layers": {"lidar": 7, "camera": 17, "fusion": 9}},
+          }.items():
+              map_url = f"http://127.0.0.1:8080/api/recordings/{recording_id}/orchard-map"
+              orchard_map = json.load(urllib.request.urlopen(map_url, timeout=10))["map"]
+              assert orchard_map["algorithm"] == "orchard_three_layer_weighted_centerline_v8", orchard_map["algorithm"]
+              assert len(orchard_map["path"]) == expected["path"], len(orchard_map["path"])
+              actual_layers = {name: len(layer["trees"]) for name, layer in orchard_map["maps"].items()}
+              assert actual_layers == expected["layers"], actual_layers
+
+              segment_url = f"http://127.0.0.1:8080/api/recordings/{recording_id}/timeline?start_s=0&duration_s=4"
+              request = urllib.request.Request(segment_url, headers={"Accept-Encoding": "gzip"})
+              started = time.perf_counter()
+              with urllib.request.urlopen(request, timeout=10) as response:
+                  raw = response.read()
+                  assert response.headers.get("Content-Encoding") == "gzip", response.headers
+              payload = json.loads(gzip.decompress(raw))
+              assert time.perf_counter() - started < 1.5
+              assert len(raw) < 1_500_000
+              for frame in payload["timeline"]["camera"]["frames"]:
+                  overlay = frame.get("overlay") or {}
+                  assert overlay.get("algorithm") == "local_orchard_vision_ai_worker_v4", overlay
+                  assert overlay.get("revision") == "orchard_trunk_yolo11_trt_clip_ood_v1", overlay
+              for frame in payload["timeline"]["lidar"]["frames"]:
+                  overlay = frame.get("overlay") or {}
+                  assert overlay.get("algorithm") == "polar_gap_cluster_wall_context_tree_ood_predictive_tracks_v6", overlay
+          PY
           REMOTE

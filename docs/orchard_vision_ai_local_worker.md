@@ -1,151 +1,222 @@
 # Orchard Vision AI Local Worker
 
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
-이 문서는 camera tree/trunk overlay를 Roboflow API가 아니라 Jetson 내부 local worker로 실행하는 방법을 정리한다. 현재 기준 모델은 Roboflow Universe `tree-trunk-detection-369pz-vm3hn/2`이며, 개발 환경에서 한 번 받은 ONNX artifact를 `runtime/roboflow_cache`에 저장한 뒤 Jetson에는 API key 없이 cache만 배포한다.
+## 1. 운영 원칙
 
-## 1. 현재 결론
+카메라 인식은 Jetson 내부 AI-only 경로다. 외부 API, Hugging Face token, Roboflow token, OpenCV tree heuristic을 운영 중에 사용하지 않는다.
 
-Camera perception은 AI-only 정책이다. `ORCHARD_VISION_AI_URL`이 없거나 local worker가 실패하면 dashboard는 `Camera AI unavailable` 오류를 표시하고 OpenCV 기반 tree overlay를 사용하지 않는다. 이 정책은 실험 데이터에 heuristic false positive가 조용히 섞이는 것을 막기 위한 fail-closed 설계다.
+```text
+camera frame
+  -> localhost:8785/analyze
+  -> YOLO11n-seg TensorRT FP16
+  -> local CLIP ViT-B/32 OOD gate
+  -> contour + probability + rejection evidence
+  -> dashboard / recorder / archive
+```
 
-현재 배포 상태에서 확인한 worker health는 다음 조건을 만족해야 한다.
+AI worker가 없거나 model revision이 다르면 `ok=false`로 실패한다. Dashboard는 `Camera AI unavailable`을 표시하며 다른 알고리즘으로 조용히 대체하지 않는다.
+
+## 2. 현재 model artifact
+
+Jetson runtime:
+
+```text
+runtime/training_runs/orchard_trunk_teacher_ood_v1/weights/
+  best.pt       # 재학습/검증용 PyTorch weight
+  best.onnx     # 교환 및 TensorRT export 중간 형식
+  best.engine   # 현재 Jetson 운영 TensorRT FP16 engine
+
+runtime/models/hf/hub/models--openai--clip-vit-base-patch32/
+  snapshots/<revision>/
+```
+
+2026-07-10 확인 크기:
+
+| Artifact | Size |
+| --- | ---: |
+| `best.pt` | 5.70 MiB |
+| `best.onnx` | 11.09 MiB |
+| `best.engine` | 9.09 MiB |
+
+TensorRT engine은 target Jetson의 TensorRT/CUDA/GPU 조합에 종속될 수 있으므로 해당 Jetson에서 다시 build하는 것을 원칙으로 한다.
+
+## 3. 환경 변수
+
+Jetson repository의 `.env`에는 API token을 넣지 않는다. 다음 local path만 설정한다.
+
+```bash
+ORCHARD_VISION_AI_URL=http://127.0.0.1:8785/analyze
+ORCHARD_VISION_BACKEND=operational
+ORCHARD_YOLO_MODEL=/app/runtime/training_runs/orchard_trunk_teacher_ood_v1/weights/best.engine
+ORCHARD_CLIP_MODEL=openai/clip-vit-base-patch32
+ORCHARD_CLIP_FP16=1
+ORCHARD_VISION_REVISION=orchard_trunk_yolo11_trt_clip_ood_v1
+ORCHARD_VISION_CONFIDENCE=0.08
+ORCHARD_VISION_DEVICE=cuda
+HF_HOME=/app/runtime/models/hf
+```
+
+운영 값을 원격 `.env`에 보수적으로 반영하는 helper:
+
+```bash
+cd /home/unist/workspace/unist_orachard_dashboard
+./scripts/configure_operational_vision_env.sh .env
+```
+
+이 스크립트는 token을 만들거나 다운로드하지 않는다.
+
+## 4. Compose service
+
+`vision-ai-worker`는 dashboard와 분리된 NVIDIA runtime container다.
+
+```yaml
+runtime: nvidia
+network_mode: host
+ipc: host
+```
+
+Worker는 `127.0.0.1:8785`, dashboard는 `127.0.0.1:8080`을 사용한다. 외부 모델 API가 아니라 같은 Jetson의 loopback 통신이다.
+
+Jetson은 Docker 29와 `docker-compose 1.29.2` 조합이다. 오래된 Compose에서 `ContainerConfig` 오류가 나면 CI fallback은 `unist-orachard-*` 관리 container만 다시 만들고 `portainer`는 제거하지 않는다.
+
+## 5. Health contract
+
+```bash
+curl -fsS http://127.0.0.1:8785/health | python3 -m json.tool
+```
+
+필수 응답:
 
 ```json
 {
   "ok": true,
-  "algorithm": "local_orchard_vision_ai_worker_v3",
-  "revision": "roboflow_yolo11n_seg_local_cache_conf020_r2",
-  "backend": "roboflow_inference_local_cache",
-  "model": "tree-trunk-detection-369pz-vm3hn/2"
+  "algorithm": "local_orchard_vision_ai_worker_v4",
+  "revision": "orchard_trunk_yolo11_trt_clip_ood_v1",
+  "backend": "operational_yolo11_seg_clip_ood",
+  "model": "/app/runtime/training_runs/orchard_trunk_teacher_ood_v1/weights/best.engine + openai/clip-vit-base-patch32",
+  "device": "cuda",
+  "camera_policy": "AI-only; no OpenCV or remote API fallback"
 }
 ```
 
-## 2. Offline cache 구조
+다음 중 하나면 배포 실패로 처리한다.
 
-Roboflow token은 개발 머신의 repo 밖 `.env`에만 둔다. Jetson에는 아래 artifact만 복사한다.
+- `ok != true`
+- backend가 `operational_yolo11_seg_clip_ood`가 아님
+- revision이 다름
+- model path에 `best.engine` 또는 CLIP model이 없음
+- dashboard, camera bridge, recorder 중 `ORCHARD_VISION_AI_URL` 누락
 
-```text
-runtime/roboflow_cache/tree-trunk-detection-369pz-vm3hn/2/
-  class_names.txt
-  environment.json
-  model_type.json
-  weights.onnx
+## 6. Analyze schema
+
+Request:
+
+```json
+{
+  "image": "<base64 jpeg>",
+  "schema": "dashboard_camera_overlay_v1",
+  "prefer": "tree_trunk_instance_segmentation"
+}
 ```
 
-`class_names.txt`에는 현재 `post`, `sprinkler`, `trunk`가 들어간다. Worker는 `trunk`만 positive class로 사용하고 `post`, `sprinkler`, `person`, `wall`, `chair`, `table` 계열은 negative class로 필터링한다.
+Accepted detection 예:
 
-## 3. Cache 생성
-
-인터넷이 되는 개발 머신에서만 실행한다.
-
-```bash
-set -a
-. /root/.env
-set +a
-
-cd /root/unist_orachard_dashboard
-python3 scripts/prepare_roboflow_offline_cache.py \
-  --model-id tree-trunk-detection-369pz-vm3hn/2 \
-  --cache-dir runtime/roboflow_cache
+```json
+{
+  "label": "orchard_tree",
+  "bbox": [120, 80, 66, 310],
+  "contour": [[132, 84], [146, 211], [151, 383]],
+  "model_confidence": 0.82,
+  "tree_probability": 0.87,
+  "ood_score": 0.13,
+  "admission": "accepted",
+  "rejection_reasons": [],
+  "root_group_id": "root-1",
+  "stem_count": 2,
+  "model_provenance": {
+    "segmentation": "orchard_trunk_teacher_ood_yolo11_seg",
+    "semantic_ood": "openai_clip_vit_b32_offline"
+  }
+}
 ```
 
-이 스크립트는 Roboflow `/ort` artifact를 받아 `weights.onnx`, `environment.json`, `class_names.txt`, `model_type.json`으로 고정한다. 출력에는 token을 포함하지 않는다.
+Rejected candidate는 UI tree overlay나 지도에 들어가지 않지만 audit response에는 `rejected_detections[]`로 남는다.
 
-## 4. Jetson 배포 환경 변수
+## 7. OOD 정책
 
-Jetson의 dashboard `.env`에는 API key를 넣지 않는다. Worker는 local cache만 읽는다.
+Worker는 low threshold `0.08`에서 후보를 넓게 만든 뒤 다음 evidence로 거른다.
+
+- YOLO segmentation confidence
+- CLIP tree prompt probability
+- person, pole, building column, furniture leg, wall/road, foliage-only negative probability
+- mask aspect, area, bottom contact, edge truncation
+- scene vegetation ratio와 canopy support
+- canopy 없는 structural post hard rule
+
+최종 probability는 기본적으로 `0.70 * segmentation + 0.30 * CLIP`이고 shape/context bonus를 작게 더한다. 이 점수는 calibration된 확률이 아니라 운영 ranking score다. 논문에서 probability calibration을 주장하려면 별도 GT에서 reliability diagram과 ECE를 계산해야 한다.
+
+## 8. Archive precompute
+
+재생 중 추론하지 않도록 recording 완료 후 camera와 LiDAR overlay를 순서대로 저장하고 map을 생성한다.
 
 ```bash
-ORCHARD_VISION_AI_URL=http://127.0.0.1:8785/analyze
-ORCHARD_VISION_BACKEND=roboflow
-ORCHARD_ROBOFLOW_MODEL_ID=tree-trunk-detection-369pz-vm3hn/2
-MODEL_CACHE_DIR=/app/runtime/roboflow_cache
-VISION_AI_BASE_IMAGE=roboflow/roboflow-inference-server-jetson-6.0.0:1.3.2-rc1
-VISION_AI_INSTALL_REQUIREMENTS=0
-ONNXRUNTIME_EXECUTION_PROVIDERS=CPUExecutionProvider
-MODELS_CACHE_AUTH_ENABLED=False
-DISK_CACHE_CLEANUP=False
-USE_INFERENCE_MODELS=False
-ORCHARD_VISION_CONFIDENCE=0.2
-ORCHARD_VISION_AI_TIMEOUT_S=6.0
+docker exec unist-orachard-dashboard \
+  python /app/scripts/precompute_archive_camera_overlays.py \
+  --recording-id 20260708T053333Z_both \
+  --recording-id 20260708T054036Z_both
+
+docker exec unist-orachard-dashboard \
+  python /app/scripts/precompute_archive_lidar_overlays.py \
+  --recording-id 20260708T053333Z_both \
+  --recording-id 20260708T054036Z_both
+
+docker exec unist-orachard-dashboard \
+  python /app/scripts/precompute_orchard_maps.py \
+  --recording-id 20260708T053333Z_both \
+  --recording-id 20260708T054036Z_both
 ```
 
-중요한 설정은 `USE_INFERENCE_MODELS=False`다. 이 값이 켜져 있으면 Roboflow Inference가 registry/API 경로를 다시 찾으려 하며, API key 없는 offline Jetson에서 모델 로딩이 실패할 수 있다.
+2026-07-10 camera 218 frame와 LiDAR 216 frame precompute는 실패 0건이었다.
 
-## 5. Compose 실행
-
-`vision-ai-worker`는 더 이상 profile 뒤에 숨어 있지 않다. 일반 compose 실행으로 dashboard와 함께 올라와야 한다.
+## 9. 재배포 검증
 
 ```bash
-docker compose up -d --build
-```
-
-Jetson에 docker compose plugin이 없고 `docker-compose 1.29.2`를 쓰는 환경에서는 Docker 29와 `ContainerConfig` 충돌이 날 수 있다. 이때 `scripts/jetson_dashboard_remote_restart.sh`는 dashboard 관리 container만 제거하고 재시도한다. Portainer 같은 외부 container는 제거 대상이 아니다.
-
-## 6. 검증 명령
-
-Jetson 내부에서 확인한다.
-
-```bash
+docker ps --format '{{.Names}} {{.Status}}'
 curl -fsS http://127.0.0.1:8785/health
 curl -fsS http://127.0.0.1:8080/api/health
+python3 scripts/build_operational_readiness_summary.py
 ```
 
-Archive inference도 같은 worker를 사용한다.
+실제 browser smoke:
 
 ```bash
-curl -fsS \
-  "http://127.0.0.1:8080/api/recordings/20260708T053333Z_both/timeline?start_s=8&duration_s=4" \
-  | python3 -m json.tool
+python3 scripts/validate_dashboard_ui.py \
+  --base-url https://bts.sarihub.com \
+  --recording-id 20260708T053333Z_both
 ```
 
-검증 샘플 이미지는 아래 파일에 저장했다.
+이 browser test는 조종 명령을 보내지 않는다. Archive 선택, canvas pixel, 재생, 두 scrubber 동기화, mobile/wide overflow, console error만 검사한다.
 
-![Local Roboflow worker archive verification](assets/orchard_perception_models/local_roboflow_worker_archive_verification.jpg)
+## 10. 새 model 교체
 
-요약 JSON:
-
-```text
-docs/assets/orchard_perception_models/local_roboflow_worker_archive_verification.json
-```
-
-2026-07-09 재배포 검증에서는 dashboard timeline API가 반환한 `camera.frames[].data`와 `camera.frames[].overlay`만 사용해 아래 contact sheet를 생성했다. 즉 별도 스크립트가 모델을 직접 호출한 것이 아니라, 대시보드 archive 조회 경로가 local worker 결과를 실제로 표시하는지 확인한 산출물이다.
-
-![Dashboard local AI overlay validation](assets/orchard_perception_models/dashboard_local_ai_overlay_validation.jpg)
-
-검증 조건:
-
-- `curl http://127.0.0.1:8785/health`가 `backend=roboflow_inference_local_cache`, `model=tree-trunk-detection-369pz-vm3hn/2`, `ok=true`를 반환한다.
-- Live camera WebSocket frame overlay가 `ok=true`, `backend=roboflow_inference_local_cache`, `error=null`을 반환한다.
-- Archive `20260708T053333Z_both`, `20260708T054036Z_both` timeline segment에서 camera overlay가 `backend_unavailable` stale cache를 재사용하지 않고 local worker 결과로 재분석된다.
-- 실패 overlay는 cache로 재사용하지 않는다. `algorithm/revision`이 같더라도 `ok=false`이면 다시 worker에 요청한다.
-
-## 7. 현재 한계와 fine-tuning 방향
-
-`tree-trunk-detection-369pz-vm3hn/2`는 현재 공개 후보 중 가장 나은 trunk contour baseline이다. 하지만 모든 frame을 완벽히 잡지는 못한다. 특히 `20260708T054036Z_both`의 약 38.5초 구간처럼 가지/잎 간섭과 거리 변화가 큰 frame에서는 local worker가 `ok=true`여도 detection이 0개일 수 있다.
-
-다음 단계는 이 모델을 그대로 “최종 모델”로 믿는 것이 아니라, 같은 schema와 worker 구조를 유지한 채 우리 orchard dataset으로 fine-tuning하는 것이다.
-
-추천 class:
-
-```text
-trunk_base
-split_stem
-branch
-canopy
-post_pole
-sprinkler
-person
-wall
-```
-
-여러 갈래로 갈라지는 밑둥은 각 stem을 instance mask로 따되, 같은 root에서 나온 경우 `root_group_id`를 후처리로 묶는다. Worker schema는 이미 `root_group_id`, `stem_count`, `contour`, `bbox`, `confidence`를 받을 수 있으므로 대시보드 UI와 fusion map 코드는 유지할 수 있다.
-
-Fine-tuned YOLO segmentation model이 생기면 최종 field runtime은 Roboflow cache 대신 TensorRT engine을 권장한다.
+사람이 검수한 dataset으로 재학습한 뒤 Jetson에서 export한다.
 
 ```bash
-yolo task=segment mode=train model=yolo11n-seg.pt data=orchard.yaml imgsz=640 epochs=100 batch=8 device=0
-yolo export model=runs/segment/train/weights/best.pt format=engine half=True imgsz=640 device=0
+yolo task=segment mode=train \
+  model=yolo11n-seg.pt \
+  data=/path/to/orchard/data.yaml \
+  imgsz=640 epochs=100 batch=8 device=0
+
+yolo export \
+  model=runs/segment/train/weights/best.pt \
+  format=engine half=True imgsz=640 device=0
 ```
 
-그 뒤 Jetson `.env`에서 `ORCHARD_VISION_BACKEND=ultralytics`, `ORCHARD_YOLO_MODEL=/app/runtime/models/best.engine`로 전환하면 된다.
+새 engine을 별도 revision으로 배포하고 320-frame evaluator를 다시 통과하기 전에는 기존 운영 engine을 덮어쓰지 않는다.
+
+## 11. 참조
+
+- [Ultralytics export documentation](https://docs.ultralytics.com/modes/export/)
+- [NVIDIA TensorRT Quick Start](https://docs.nvidia.com/deeplearning/tensorrt/latest/getting-started/quick-start-guide.html)
+- [CLIP paper](https://arxiv.org/abs/2103.00020)

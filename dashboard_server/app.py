@@ -166,49 +166,49 @@ DOCS_CATALOG = [
         "slug": "lidar-archive-analysis",
         "title": "LiDAR Archive 분석",
         "category": "Data",
-        "summary": "LiDAR scan clustering, wall line fitting, object tracking overlay 알고리즘",
+        "summary": "v6 OOD overlay precompute, 4초 gzip streaming, v8 orchard map cache와 검증",
         "file": "lidar_archive_analysis.md",
     },
     {
         "slug": "lidar-object-overlay",
         "title": "LiDAR Object Overlay",
         "category": "Data",
-        "summary": "실시간/아카이브 LiDAR object overlay 표시 기준과 데이터 구조",
+        "summary": "벽·선형 문맥·후방 사람 OOD, predictive track, temporal tree admission",
         "file": "lidar_object_overlay.md",
     },
     {
         "slug": "orchard-tree-detection-fusion",
         "title": "과수 인식과 LiDAR-Camera Fusion",
         "category": "Research",
-        "summary": "2D LiDAR 과수 후보, camera support, fusion confidence, archive orchard map 설계",
+        "summary": "LiDAR-only, Camera-only, Weighted Fusion 지도와 행간 중심선 수식",
         "file": "orchard_tree_detection_fusion.md",
     },
     {
         "slug": "orchard-tree-algorithm-report",
-        "title": "과수 인식 알고리즘 보고서",
+        "title": "과수 인식 알고리즘 기술 부록",
         "category": "Research",
-        "summary": "참고 문헌, 수식, 코드 위치, 시행착오, archive 결과를 정리한 논문용 보고서",
+        "summary": "논문 연구 질문, 수식, ablation, GT 평가 설계와 재현 코드",
         "file": "orchard_tree_algorithm_report.md",
     },
     {
         "slug": "orchard-perception-final-report",
-        "title": "Vision-LiDAR 과수 인식 최종 보고서",
+        "title": "과수 인식 운영 검증 최종 보고서",
         "category": "Research",
-        "summary": "공개 모델 평가, multi-stem 처리, offline TensorRT 배포, 수동 annotation 절차",
+        "summary": "Jetson TensorRT+CLIP OOD, LiDAR v6, U-turn, 3종 지도와 운영 수치",
         "file": "orchard_perception_final_report.md",
     },
     {
         "slug": "orchard-vision-ai-local-worker",
         "title": "Orchard Vision AI Local Worker",
         "category": "Research",
-        "summary": "Roboflow tree trunk 모델을 API 없이 local cache worker로 실행하고 검증하는 절차",
+        "summary": "API 없는 YOLO11 TensorRT FP16+CLIP OOD worker의 배포와 health contract",
         "file": "orchard_vision_ai_local_worker.md",
     },
     {
         "slug": "orchard-finetuning-workflow",
         "title": "과수 Segmentation Fine-Tuning 절차",
         "category": "Research",
-        "summary": "Archive precompute, YOLO segmentation pre-label export, 수동 검수와 TensorRT 배포 절차",
+        "summary": "321-frame review package, CVAT 검수, GT split, 학습과 TensorRT 승격 gate",
         "file": "orchard_finetuning_workflow.md",
     },
     {
@@ -348,6 +348,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self._docs_index())
         elif path.startswith("/api/docs/"):
             self._send_json(self._doc_payload(path.removeprefix("/api/docs/")))
+        elif path.startswith("/docs-assets/"):
+            self._send_file(DOCS_ROOT / "assets" / path.removeprefix("/docs-assets/"), allowed_root=DOCS_ROOT / "assets")
         elif path.startswith("/rover-proxy/") or path == "/rover-proxy":
             self._proxy_rover_request(parsed)
         elif path.startswith("/static/"):
@@ -361,16 +363,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _send_json(self, payload):
         session_token = self._ensure_session(create=True)
-        body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        accepts_gzip = "gzip" in self.headers.get("Accept-Encoding", "").lower()
+        encoded = gzip.compress(body, compresslevel=1) if accepts_gzip and len(body) >= 1024 else body
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "close")
+        self.send_header("Vary", "Accept-Encoding")
+        if encoded is not body:
+            self.send_header("Content-Encoding", "gzip")
         self._send_session_cookie(session_token)
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         if self.command != "HEAD":
-            self.wfile.write(body)
+            self.wfile.write(encoded)
         self.close_connection = True
         self._log_served_json()
 
@@ -428,11 +435,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "url": f"/docs/{item['slug']}",
         }
 
-    def _send_file(self, path: Path):
+    def _send_file(self, path: Path, allowed_root: Path = STATIC_ROOT):
         session_token = self._ensure_session(create=True)
         try:
             resolved = path.resolve()
-            if STATIC_ROOT.resolve() not in resolved.parents and resolved != (STATIC_ROOT / "index.html").resolve():
+            root = allowed_root.resolve()
+            if root not in resolved.parents and resolved != root:
                 self.send_error(403, "Forbidden")
                 return
             body = resolved.read_bytes()

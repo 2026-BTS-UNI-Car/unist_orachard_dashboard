@@ -78,14 +78,20 @@ services:
     restart: unless-stopped
     network_mode: host
     ipc: host
+    runtime: nvidia
     environment:
       VISION_AI_HOST: "0.0.0.0"
       VISION_AI_PORT: "8785"
-      ORCHARD_VISION_BACKEND: "${ORCHARD_VISION_BACKEND:-roboflow}"
-      ORCHARD_YOLO_MODEL: "${ORCHARD_YOLO_MODEL:-}"
+      NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}"
+      ORCHARD_VISION_BACKEND: "${ORCHARD_VISION_BACKEND:-operational}"
+      ORCHARD_YOLO_MODEL: "${ORCHARD_YOLO_MODEL:-/app/runtime/training_runs/orchard_trunk_teacher_ood_v1/weights/best.engine}"
+      ORCHARD_CLIP_MODEL: "${ORCHARD_CLIP_MODEL:-openai/clip-vit-base-patch32}"
+      ORCHARD_CLIP_FP16: "${ORCHARD_CLIP_FP16:-1}"
+      ORCHARD_VISION_REVISION: "${ORCHARD_VISION_REVISION:-orchard_trunk_yolo11_trt_clip_ood_v1}"
       ORCHARD_SEGFORMER_MODEL: "${ORCHARD_SEGFORMER_MODEL:-}"
       ORCHARD_ROBOFLOW_MODEL_ID: "${ORCHARD_ROBOFLOW_MODEL_ID:-tree-trunk-detection-369pz-vm3hn/2}"
-      ORCHARD_VISION_CONFIDENCE: "${ORCHARD_VISION_CONFIDENCE:-0.2}"
+      ORCHARD_VISION_CONFIDENCE: "${ORCHARD_VISION_CONFIDENCE:-0.08}"
       ORCHARD_VISION_DEVICE: "${ORCHARD_VISION_DEVICE:-}"
       MODEL_CACHE_DIR: "${MODEL_CACHE_DIR:-/app/runtime/roboflow_cache}"
       ONNXRUNTIME_EXECUTION_PROVIDERS: "${ONNXRUNTIME_EXECUTION_PROVIDERS:-CPUExecutionProvider}"
@@ -94,6 +100,7 @@ services:
       USE_INFERENCE_MODELS: "${USE_INFERENCE_MODELS:-False}"
       TRANSFORMERS_OFFLINE: "${TRANSFORMERS_OFFLINE:-1}"
       HF_HUB_OFFLINE: "${HF_HUB_OFFLINE:-1}"
+      HF_HOME: "${HF_HOME:-/app/runtime/models/hf}"
     volumes:
       - ./runtime:/app/runtime
     healthcheck:

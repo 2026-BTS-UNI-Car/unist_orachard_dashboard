@@ -6,8 +6,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-ALGORITHM_NAME = "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5"
+ALGORITHM_NAME = "polar_gap_cluster_wall_context_tree_ood_predictive_tracks_v6"
 LIDAR_COORDINATE_FRAME = "lidar_bridge_xy_v1"
+
+
+def current_lidar_overlay_algorithm(overlay: Any) -> bool:
+    return isinstance(overlay, dict) and overlay.get("ok") is True and overlay.get("algorithm") == ALGORITHM_NAME
 
 
 def iso_now() -> str:
@@ -49,6 +53,7 @@ def analyze_points(
     walls = merge_wall_fragments(walls)
     objects, tracks, next_track_id = update_tracks(objects, tracks, next_track_id, now)
     orchard = detect_orchard_trees(points, walls=walls, clusters=clusters)
+    orchard = attach_orchard_temporal_state(orchard, objects)
     analysis = {
         "ok": True,
         "algorithm": ALGORITHM_NAME,
@@ -71,7 +76,14 @@ def empty_analysis() -> dict[str, Any]:
         "coordinate_frame": LIDAR_COORDINATE_FRAME,
         "walls": [],
         "objects": [],
-        "orchard": {"trees": [], "excluded_rear_candidates": 0, "wall_suppressed_candidates": 0, "method": "lidar_geometry_wall_suppressed_v3"},
+        "orchard": {
+            "trees": [],
+            "rejected_candidates": [],
+            "excluded_rear_candidates": 0,
+            "wall_suppressed_candidates": 0,
+            "linear_context_suppressed_candidates": 0,
+            "method": "lidar_tree_geometry_wall_context_ood_v4",
+        },
         "tracking": {"drawable_tracks": 0, "object_tracks": 0, "method": "sensor_relative_predictive_tracks_v4"},
         "cluster_count": 0,
         "source_point_count": 0,
@@ -272,27 +284,55 @@ def detect_orchard_trees(
         fitted_walls = [wall for cluster in clusters if (wall := fit_wall(cluster))]
         walls = merge_wall_fragments(fitted_walls)
     trees: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
     excluded_rear = 0
     wall_suppressed = 0
+    linear_suppressed = 0
+    raw_candidates = 0
     for cluster in clusters:
         candidate = orchard_candidate_from_cluster(cluster)
         if not candidate:
             continue
+        raw_candidates += 1
         center = candidate["center"]
         if is_rear_person_zone(center):
             excluded_rear += 1
+            rejected.append(rejected_orchard_candidate(candidate, "rear_operator_exclusion_zone"))
             continue
         wall_gate = candidate_wall_gate(candidate, walls)
         if wall_gate:
             wall_suppressed += 1
+            row = rejected_orchard_candidate(candidate, str(wall_gate.get("reason") or "near_wall_segment"))
+            row["wall_relation"] = wall_gate
+            rejected.append(row)
             continue
+        linear_gate = candidate_linear_context_gate(candidate, points)
+        if linear_gate:
+            linear_suppressed += 1
+            row = rejected_orchard_candidate(candidate, str(linear_gate.get("reason") or "embedded_in_linear_structure"))
+            row["linear_context"] = linear_gate
+            rejected.append(row)
+            continue
+        relation = nearest_wall_relation(candidate, walls)
+        candidate["wall_distance_m"] = relation.get("distance_m")
+        candidate["nearest_wall_length_m"] = relation.get("wall_length_m")
+        candidate["admission"] = "geometry_candidate"
+        candidate["rejection_reasons"] = []
         trees.append(candidate)
     trees = merge_orchard_candidates(trees)
+    rejection_counts: dict[str, int] = {}
+    for candidate in rejected:
+        for reason in candidate.get("rejection_reasons") or []:
+            rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
     return {
-        "method": "lidar_geometry_wall_suppressed_v3",
+        "method": "lidar_tree_geometry_wall_context_ood_v4",
         "trees": trees,
+        "rejected_candidates": rejected[:32],
+        "raw_candidate_count": raw_candidates,
         "excluded_rear_candidates": excluded_rear,
         "wall_suppressed_candidates": wall_suppressed,
+        "linear_context_suppressed_candidates": linear_suppressed,
+        "rejection_counts": rejection_counts,
     }
 
 
@@ -350,9 +390,17 @@ def orchard_candidate_from_cluster(cluster: list[dict[str, Any]]) -> dict[str, A
         "center": {"x_m": round(cx, 3), "y_m": round(cy, 3)},
         "radius_m": round(max(0.1, min(radius, 0.75)), 3),
         "confidence": round(min(0.98, confidence), 3),
+        "tree_probability": round(min(0.98, confidence), 3),
+        "ood_score": round(max(0.02, 1.0 - min(0.98, confidence)), 3),
+        "structure_score": round(max(0.0, min(0.99, 0.38 * compact_score + 0.24 * density_score + 0.24 * aspect_score + 0.14 * point_score)), 3),
         "points": len(cluster),
         "density": round(density, 2),
         "distance_m": round(distance, 3),
+        "shape": {
+            "aspect": round(aspect, 3),
+            "length_m": round(length, 3),
+            "width_m": round(width, 3),
+        },
     }
 
 
@@ -395,6 +443,129 @@ def candidate_wall_gate(candidate: dict[str, Any], walls: list[dict[str, Any]]) 
     return None
 
 
+def nearest_wall_relation(candidate: dict[str, Any], walls: list[dict[str, Any]]) -> dict[str, Any]:
+    center = candidate.get("center") or {}
+    try:
+        cx = float(center["x_m"])
+        cy = float(center["y_m"])
+    except (KeyError, TypeError, ValueError):
+        return {"distance_m": None, "wall_length_m": None}
+    nearest_distance = float("inf")
+    nearest_length = None
+    for wall in walls:
+        start = wall.get("start") or {}
+        end = wall.get("end") or {}
+        try:
+            sx, sy = float(start["x_m"]), float(start["y_m"])
+            ex, ey = float(end["x_m"]), float(end["y_m"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        _, distance = point_segment_projection(cx, cy, sx, sy, ex, ey)
+        if distance < nearest_distance:
+            nearest_distance = distance
+            nearest_length = math.hypot(ex - sx, ey - sy)
+    return {
+        "distance_m": round(nearest_distance, 3) if math.isfinite(nearest_distance) else None,
+        "wall_length_m": round(float(nearest_length), 3) if nearest_length is not None else None,
+    }
+
+
+def candidate_linear_context_gate(candidate: dict[str, Any], points: list[dict[str, Any]]) -> dict[str, Any] | None:
+    center = candidate.get("center") or {}
+    try:
+        cx = float(center["x_m"])
+        cy = float(center["y_m"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    distance = float(candidate.get("distance_m") or math.hypot(cx, cy))
+    neighborhood_radius = max(0.62, min(1.0, 0.58 + distance * 0.025))
+    neighbors = [
+        point
+        for point in points
+        if _finite(point.get("x_m"))
+        and _finite(point.get("y_m"))
+        and math.hypot(float(point["x_m"]) - cx, float(point["y_m"]) - cy) <= neighborhood_radius
+    ]
+    if len(neighbors) < 8:
+        return None
+    features = line_features(neighbors)
+    if not features:
+        return None
+    length = float(features["length"])
+    width = float(features["width"])
+    aspect = float(features["aspect"])
+    local_x = cx - float(features["mx"])
+    local_y = cy - float(features["my"])
+    lateral = abs(-local_x * float(features["dy"]) + local_y * float(features["dx"]))
+    width_limit = max(0.12, min(0.23, 0.085 + distance * 0.011))
+    if length >= 0.72 and aspect >= 4.1 and width <= width_limit and lateral <= width_limit + 0.08:
+        return {
+            "reason": "embedded_in_linear_structure",
+            "length_m": round(length, 3),
+            "width_m": round(width, 3),
+            "aspect": round(aspect, 3),
+            "lateral_distance_m": round(lateral, 3),
+            "neighbor_points": len(neighbors),
+        }
+    return None
+
+
+def rejected_orchard_candidate(candidate: dict[str, Any], reason: str) -> dict[str, Any]:
+    row = dict(candidate)
+    row["admission"] = "rejected"
+    row["rejection_reasons"] = sorted(set((row.get("rejection_reasons") or []) + [reason]))
+    row["ood_score"] = round(max(float(row.get("ood_score") or 0.0), 0.72), 3)
+    return row
+
+
+def attach_orchard_temporal_state(orchard: dict[str, Any], objects: list[dict[str, Any]]) -> dict[str, Any]:
+    confirmed = []
+    pending = []
+    for candidate in orchard.get("trees") or []:
+        row = dict(candidate)
+        center = row.get("center") or {}
+        cx = float(center.get("x_m") or 0.0)
+        cy = float(center.get("y_m") or 0.0)
+        nearest = None
+        nearest_distance = float("inf")
+        for obj in objects:
+            obj_center = obj.get("center") or {}
+            distance = math.hypot(cx - float(obj_center.get("x_m") or 0.0), cy - float(obj_center.get("y_m") or 0.0))
+            if distance < nearest_distance:
+                nearest = obj
+                nearest_distance = distance
+        gate = max(0.28, min(0.62, float(row.get("radius_m") or 0.12) + 0.24))
+        if nearest is not None and nearest_distance <= gate:
+            row["track_id"] = nearest.get("id")
+            row["temporal_hits"] = int(nearest.get("track_hits") or 0)
+            row["temporal_persistence_s"] = float(nearest.get("track_age_s") or 0.0)
+            row["temporal_confidence"] = float(nearest.get("track_confidence") or 0.0)
+            row["track_match_distance_m"] = round(nearest_distance, 3)
+            is_confirmed = (
+                int(nearest.get("track_hits") or 0) >= 2
+                and bool(nearest.get("track_drawable"))
+                and float(nearest.get("track_confidence") or 0.0) >= 0.46
+                and float(row.get("structure_score") or 0.0) >= 0.42
+            )
+        else:
+            row["temporal_hits"] = 0
+            row["temporal_persistence_s"] = 0.0
+            row["temporal_confidence"] = 0.0
+            row["track_match_distance_m"] = None
+            is_confirmed = False
+        row["admission"] = "temporal_confirmed" if is_confirmed else "temporal_pending"
+        row["map_admission"] = "accepted" if is_confirmed else "pending"
+        (confirmed if is_confirmed else pending).append(row)
+    output = dict(orchard)
+    output["trees"] = confirmed + pending
+    output["confirmed_trees"] = confirmed
+    output["pending_trees"] = pending
+    output["temporal_method"] = "predictive_object_track_two_hit_gate_v1"
+    output["confirmed_count"] = len(confirmed)
+    output["pending_count"] = len(pending)
+    return output
+
+
 def point_segment_projection(px: float, py: float, sx: float, sy: float, ex: float, ey: float) -> tuple[float, float]:
     vx = ex - sx
     vy = ey - sy
@@ -411,7 +582,7 @@ def point_segment_projection(px: float, py: float, sx: float, sy: float, ex: flo
 def is_rear_person_zone(center: dict[str, Any]) -> bool:
     x = float(center.get("x_m") or 0.0)
     y = float(center.get("y_m") or 0.0)
-    return y < -0.25 and abs(x) < 5.0 and math.hypot(x, y) < 9.0
+    return y < -0.35 and abs(x) < 1.6 and math.hypot(x, y) < 4.6
 
 
 def merge_orchard_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:

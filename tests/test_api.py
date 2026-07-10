@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import gzip
 import os
 from pathlib import Path
 import base64
@@ -40,6 +41,27 @@ class DashboardApiTest(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=3) as res:
             self.assertEqual(res.status, 200)
             return res.read().decode("utf-8")
+
+    def test_large_json_supports_compact_gzip_transport(self):
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/docs",
+            headers={"Accept-Encoding": "gzip"},
+        )
+        with urllib.request.urlopen(request, timeout=3) as res:
+            self.assertEqual(res.headers.get("Content-Encoding"), "gzip")
+            decoded = gzip.decompress(res.read())
+            self.assertIn("documents", json.loads(decoded))
+            self.assertNotIn(b"\n  ", decoded)
+
+    def test_docs_assets_are_served_but_path_traversal_is_blocked(self):
+        path = "/docs-assets/orchard_perception_models/rf_yolo11_trunk_seg.jpg"
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=3) as res:
+            self.assertEqual(res.status, 200)
+            self.assertEqual(res.headers.get("Content-Type"), "image/jpeg")
+            self.assertGreater(len(res.read()), 100)
+        with self.assertRaises(urllib.error.HTTPError) as context:
+            urllib.request.urlopen(f"http://127.0.0.1:{self.port}/docs-assets/../architecture.md", timeout=3)
+        self.assertIn(context.exception.code, {403, 404})
 
     def post_json(self, path: str, payload: dict | None = None) -> dict:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -241,7 +263,7 @@ class DashboardApiTest(unittest.TestCase):
             self.assertEqual(len(segment["timeline"]["lidar"]["frames"]), 1)
             orchard_map = self.get_json("/api/recordings/unit_lidar_archive/orchard-map")
             self.assertTrue(orchard_map["ok"])
-            self.assertEqual(orchard_map["map"]["algorithm"], "orchard_three_layer_weighted_centerline_v7")
+            self.assertEqual(orchard_map["map"]["algorithm"], "orchard_three_layer_weighted_centerline_v8")
             self.assertEqual(set(orchard_map["map"]["maps"].keys()), {"lidar", "camera", "fusion"})
             self.assertIn("centerline", orchard_map["map"]["maps"]["fusion"])
             with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/recordings/unit_lidar_archive/download", timeout=5) as res:
@@ -435,13 +457,13 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("polar_gap_cluster", analysis_doc["markdown"])
         overlay_doc = self.get_json("/api/docs/lidar-object-overlay")
         self.assertTrue(overlay_doc["ok"])
-        self.assertIn("Object text label", overlay_doc["markdown"])
+        self.assertIn("Object 글자는", overlay_doc["markdown"])
         todo_doc = self.get_json("/api/docs/rover-control-todo")
         self.assertTrue(todo_doc["ok"])
         self.assertIn("Rover Control TODO", todo_doc["markdown"])
         report_doc = self.get_json("/api/docs/orchard-tree-algorithm-report")
         self.assertTrue(report_doc["ok"])
-        self.assertIn("과수 인식 알고리즘 보고서", report_doc["markdown"])
+        self.assertIn("과수 인식 알고리즘 기술 부록", report_doc["markdown"])
         html = self.get_text("/docs/lidar-connection")
         self.assertIn("id=\"docMarkdown\"", html)
 
@@ -561,6 +583,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("drawCameraOverlayOnCanvas", app_js)
         self.assertIn("archiveFusedTreesForTime", app_js)
         self.assertIn("drawOrchardMap", app_js)
+        self.assertIn("safeDocAssetHref", app_js)
+        self.assertIn("/docs-assets/", app_js)
         self.assertIn("ARCHIVE_SEGMENT_SECONDS = 4", app_js)
         self.assertIn("ROVER_FADE_START_KEY", app_js)
         self.assertIn("drawLidarMapOnCanvas", app_js)
@@ -607,8 +631,10 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("LIDAR_SCAN_MAX_POINTS:-3200", compose)
         self.assertIn("VISION_AI_BASE_IMAGE:-roboflow/roboflow-inference-server-jetson-6.0.0:1.3.2-rc1", compose)
         self.assertIn("VISION_AI_INSTALL_REQUIREMENTS:-0", compose)
-        self.assertIn("ORCHARD_VISION_BACKEND:-roboflow", compose)
-        self.assertIn("ORCHARD_YOLO_MODEL:-}", compose)
+        self.assertIn("ORCHARD_VISION_BACKEND:-operational", compose)
+        self.assertIn("orchard_trunk_teacher_ood_v1/weights/best.engine", compose)
+        self.assertIn("ORCHARD_CLIP_MODEL:-openai/clip-vit-base-patch32", compose)
+        self.assertIn("HF_HOME:-/app/runtime/models/hf", compose)
         self.assertIn("ORCHARD_ROBOFLOW_MODEL_ID:-tree-trunk-detection-369pz-vm3hn/2", compose)
         self.assertIn("./runtime:/app/runtime", compose)
         self.assertNotIn("LIDAR_BRIDGE_SOURCE:-auto", compose)
@@ -616,8 +642,11 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("! -name .env", deploy_workflow)
         self.assertIn("http://127.0.0.1:8785/health", deploy_workflow)
         self.assertIn("ORCHARD_VISION_AI_URL", deploy_workflow)
-        self.assertIn("compose_status", deploy_workflow)
+        self.assertIn("recreate_service()", deploy_workflow)
+        self.assertIn("$COMPOSE up --no-deps -d \"$service\"", deploy_workflow)
+        self.assertNotIn("$COMPOSE down", deploy_workflow)
         self.assertIn("label=com.docker.compose.project=unist_orachard_dashboard", deploy_workflow)
+        self.assertIn("precompute_archive_lidar_overlays.py", deploy_workflow)
         for service_name in ["dashboard", "ros2-camera-bridge", "ros2-data-recorder"]:
             match = re.search(rf"^  {re.escape(service_name)}:\n(?P<block>.*?)(?=^  [\w-]+:|\Z)", compose, re.M | re.S)
             self.assertIsNotNone(match, service_name)
@@ -666,7 +695,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("file_command_active", rover_bridge_py)
         recorder_py = (Path(__file__).resolve().parents[1] / "scripts" / "data_recorder_service.py").read_text()
         lidar_analysis_py = (Path(__file__).resolve().parents[1] / "dashboard_server" / "lidar_analysis.py").read_text()
-        self.assertIn("polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5", lidar_analysis_py)
+        self.assertIn("polar_gap_cluster_wall_context_tree_ood_predictive_tracks_v6", lidar_analysis_py)
+        self.assertIn("structural_post_without_canopy", (Path(__file__).resolve().parents[1] / "scripts" / "vision_ai_service.py").read_text())
         self.assertIn("timeline.json", recorder_py)
         self.assertIn("ros2\", \"bag\", \"record", recorder_py)
 

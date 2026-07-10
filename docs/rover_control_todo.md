@@ -24,7 +24,7 @@
 
 ## 알고리즘 TODO
 
-- `polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5`를 주행 테스트 bag 기준으로 wall proximity suppression threshold와 track gate를 계속 tuning한다.
+- `polar_gap_cluster_wall_context_tree_ood_predictive_tracks_v6`를 독립 LiDAR tree/wall/person GT 기준으로 wall, linear-context, temporal admission threshold를 검증한다.
 - `20260708T053333Z_both`, `20260708T054036Z_both` 자동 후보를 수동 label과 비교해 precision/recall을 계산한다.
 - 벽과 과수 줄기 cluster가 섞이는 케이스를 RANSAC line fitting 또는 temporal scan accumulation으로 더 분리한다.
 - `/tf`, odometry, IMU를 기록해 scan frame을 world frame으로 누적한다.
