@@ -517,6 +517,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not raw:
             self.send_error(404, "Recording id required")
             return
+        if raw.endswith("/video"):
+            recording_id = unquote(raw.removesuffix("/video").strip("/"))
+            video = self.provider.recording_video(recording_id)
+            if not video:
+                self.send_error(404, "Recording video not found")
+                return
+            self._send_recording_video(video)
+            return
         if raw.endswith("/download"):
             recording_id = unquote(raw.removesuffix("/download").strip("/"))
             archive = self.provider.recording_archive_path(recording_id)
@@ -537,6 +545,76 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.recording_orchard_map(recording_id))
             return
         self._send_json(self.provider.recording_detail(unquote(raw)))
+
+    def _send_recording_video(self, video: dict[str, object]):
+        path = video.get("path")
+        if not isinstance(path, Path):
+            self.send_error(404, "Recording video not found")
+            return
+        try:
+            size = path.stat().st_size
+        except OSError:
+            self.send_error(404, "Recording video not found")
+            return
+        start, end, partial = self._requested_byte_range(size)
+        if start is None or end is None:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        length = end - start + 1
+        session_token = self._ensure_session(create=True)
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", str(video.get("mime") or "video/mp4"))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.send_header("Content-Disposition", f'inline; filename="{path.name}"')
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self._send_session_cookie(session_token)
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        try:
+            with path.open("rb") as handle:
+                handle.seek(start)
+                remaining = length
+                while remaining > 0:
+                    block = handle.read(min(1024 * 1024, remaining))
+                    if not block:
+                        break
+                    self.wfile.write(block)
+                    remaining -= len(block)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            self.close_connection = True
+
+    def _requested_byte_range(self, size: int) -> tuple[int | None, int | None, bool]:
+        header = str(self.headers.get("Range") or "").strip()
+        if not header:
+            return 0, max(0, size - 1), False
+        if not header.startswith("bytes=") or "," in header or size <= 0:
+            return None, None, True
+        value = header.removeprefix("bytes=").strip()
+        try:
+            raw_start, raw_end = value.split("-", 1)
+            if raw_start:
+                start = int(raw_start)
+                end = int(raw_end) if raw_end else size - 1
+            else:
+                suffix = int(raw_end)
+                if suffix <= 0:
+                    raise ValueError("invalid suffix")
+                start = max(0, size - suffix)
+                end = size - 1
+        except (TypeError, ValueError):
+            return None, None, True
+        if start < 0 or start >= size or end < start:
+            return None, None, True
+        return start, min(end, size - 1), True
 
     def _send_recording_archive_download(self, archive: Path, recording_id: str):
         filename = f"{archive.name}.tar.gz"

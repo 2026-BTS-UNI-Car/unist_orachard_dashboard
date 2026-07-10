@@ -66,6 +66,29 @@ def main() -> int:
             layer: page.locator(f"#roverOrchardMap{layer.title()}Stats").inner_text()
             for layer in ("lidar", "camera", "fusion")
         }
+        report["checks"]["map_orientation_start"] = page.evaluate(
+            """() => {
+              const canvas = document.querySelector('#roverOrchardMapFusionCanvas');
+              const map = state.recordings.orchardMap;
+              const projection = orchardMapProjection(canvas, map);
+              const start = map.path[0];
+              const end = map.path[map.path.length - 1];
+              const startPx = projection.project(start.x_m, start.y_m);
+              const endPx = projection.project(end.x_m, end.y_m);
+              const heading = Number(start.heading_deg || 0) * Math.PI / 180;
+              const ahead = projection.project(start.x_m + Math.cos(heading), start.y_m + Math.sin(heading));
+              const vectorHeading = Math.atan2(ahead.x - startPx.x, -(ahead.y - startPx.y));
+              const markerHeading = projection.projectHeading(heading);
+              const error = Math.abs(Math.atan2(Math.sin(vectorHeading - markerHeading), Math.cos(vectorHeading - markerHeading)));
+              return {
+                start_y_ratio: startPx.y / canvas.getBoundingClientRect().height,
+                end_y_ratio: endPx.y / canvas.getBoundingClientRect().height,
+                end_above_start: endPx.y < startPx.y,
+                heading_transform_error_rad: error,
+                orientation_deg: projection.orientationRad * 180 / Math.PI,
+              };
+            }"""
+        )
         start_map = page.locator("#roverOrchardMapFusionCanvas").evaluate("canvas => canvas.toDataURL()")
         page.locator(".orchard-map-panel").screenshot(path=str(output / "three_layer_map_start.png"))
 
@@ -90,6 +113,24 @@ def main() -> int:
             4,
         )
         end_map = page.locator("#roverOrchardMapFusionCanvas").evaluate("canvas => canvas.toDataURL()")
+        report["checks"]["map_orientation_seek"] = page.evaluate(
+            """() => {
+              const canvas = document.querySelector('#roverOrchardMapFusionCanvas');
+              const map = state.recordings.orchardMap;
+              const projection = orchardMapProjection(canvas, map);
+              const pose = nearestMapPathPose(map.path, state.archivePlayback.timeS);
+              const p = projection.project(pose.x_m, pose.y_m);
+              const heading = Number(pose.heading_deg || 0) * Math.PI / 180;
+              const ahead = projection.project(pose.x_m + Math.cos(heading), pose.y_m + Math.sin(heading));
+              const vectorHeading = Math.atan2(ahead.x - p.x, -(ahead.y - p.y));
+              const markerHeading = projection.projectHeading(heading);
+              return {
+                time_s: state.archivePlayback.timeS,
+                heading_transform_error_rad: Math.abs(Math.atan2(Math.sin(vectorHeading - markerHeading), Math.cos(vectorHeading - markerHeading))),
+                marker_heading_deg: markerHeading * 180 / Math.PI,
+              };
+            }"""
+        )
         report["checks"]["map_pose_changes_with_timeline"] = start_map != end_map
         report["checks"]["canvas"] = {
             selector: canvas_stats(page, selector)
@@ -126,6 +167,10 @@ def main() -> int:
         and report["checks"]["map_timeline_sync_error_s"] <= 0.08
         and report["checks"]["map_seek_sync_error_s"] <= 0.08
         and report["checks"]["map_pose_changes_with_timeline"]
+        and report["checks"]["map_orientation_start"]["start_y_ratio"] >= 0.65
+        and report["checks"]["map_orientation_start"]["end_above_start"]
+        and report["checks"]["map_orientation_start"]["heading_transform_error_rad"] <= 0.001
+        and report["checks"]["map_orientation_seek"]["heading_transform_error_rad"] <= 0.001
         and report["checks"]["desktop_overflow_px"] <= 2
         and report["checks"]["mobile_overflow_px"] <= 2
         and not console_errors

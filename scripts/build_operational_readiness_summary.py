@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import hashlib
 import json
 import shutil
 import time
@@ -13,6 +14,7 @@ from urllib.request import Request, urlopen
 
 
 ARCHIVES = ("20260708T053333Z_both", "20260708T054036Z_both")
+VIDEO_ARCHIVES = ("sample_IMG_4469_camera", "sample_IMG_4471_camera")
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,6 +101,35 @@ def map_summary(root: Path, recording_id: str) -> dict[str, Any]:
     }
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def video_archive_summary(root: Path, recording_id: str) -> dict[str, Any]:
+    archive = root / "runtime" / "recordings" / recording_id
+    metadata = load_json(archive / "metadata.json")
+    timeline = load_json(archive / "timeline.json")
+    frames = timeline.get("camera", {}).get("frames", [])
+    source = metadata.get("source_video") or {}
+    original = archive / str(source.get("original_file") or "")
+    return {
+        "kind": metadata.get("kind"),
+        "duration_s": metadata.get("duration_s"),
+        "timeline_frames": len(frames),
+        "sample_hz": timeline.get("sample_hz"),
+        "accepted_detections": sum(len((frame.get("overlay") or {}).get("detections") or []) for frame in frames),
+        "rejected_detections": sum(len((frame.get("overlay") or {}).get("rejected_detections") or []) for frame in frames),
+        "failed_overlays": sum((frame.get("overlay") or {}).get("ok") is not True for frame in frames),
+        "source_video": source,
+        "original_sha256_verified": bool(original.is_file() and sha256_file(original) == source.get("original_sha256")),
+        "streaming": benchmark_segment(recording_id),
+    }
+
+
 def main() -> int:
     args = parse_args()
     root = Path(args.root).resolve()
@@ -125,6 +156,7 @@ def main() -> int:
         "lidar": {"evaluation": lidar_eval},
         "maps": {recording_id: map_summary(root, recording_id) for recording_id in ARCHIVES},
         "archive_streaming": {recording_id: benchmark_segment(recording_id) for recording_id in ARCHIVES},
+        "video_only_archives": {recording_id: video_archive_summary(root, recording_id) for recording_id in VIDEO_ARCHIVES},
         "disk": {"total_bytes": disk.total, "used_bytes": disk.used, "free_bytes": disk.free},
         "safety_and_limits": [
             "No physical rover motion was commanded during validation.",

@@ -285,6 +285,75 @@ class DashboardApiTest(unittest.TestCase):
             cache = Path(__file__).resolve().parents[1] / "runtime" / "recording_downloads" / "unit_lidar_archive.tar.gz"
             cache.unlink(missing_ok=True)
 
+    def test_video_archive_detail_and_http_range_streaming(self):
+        root = Path(__file__).resolve().parents[1] / "runtime" / "recordings" / "unit_camera_video"
+        root.mkdir(parents=True, exist_ok=True)
+        video_bytes = bytes(range(256)) * 8
+        try:
+            (root / "video.mp4").write_bytes(video_bytes)
+            (root / "metadata.json").write_text(
+                json.dumps(
+                    {
+                        "id": "unit_camera_video",
+                        "kind": "camera",
+                        "state": "archived",
+                        "duration_s": 2.0,
+                        "timeline": {"lidar_frames": 0, "camera_frames": 2, "sample_hz": 1.0},
+                        "source_video": {"file": "video.mp4", "mime": "video/mp4", "fps": 60.0},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "analysis.json").write_text(json.dumps({"ok": True, "walls": [], "objects": []}), encoding="utf-8")
+            (root / "preview_scan.json").write_text(json.dumps({"ok": False, "points": []}), encoding="utf-8")
+            (root / "timeline.json").write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "duration_s": 2.0,
+                        "video": {"file": "video.mp4", "mime": "video/mp4"},
+                        "sync": {"native_video": True},
+                        "lidar": {"frames": []},
+                        "camera": {"frames": [{"t_s": 0.0, "data": "AA=="}, {"t_s": 1.0, "data": "AA=="}]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            detail = self.get_json("/api/recordings/unit_camera_video")
+            recording = detail["recording"]
+            self.assertEqual(recording["kind"], "camera")
+            self.assertEqual(recording["video_url"], f"/api/recordings/unit_camera_video/video?v={len(video_bytes)}")
+            self.assertEqual(recording["source_video"]["bytes"], len(video_bytes))
+            self.assertNotIn("path", recording["source_video"])
+
+            segment = self.get_json("/api/recordings/unit_camera_video/timeline?start_s=0&duration_s=2")
+            self.assertEqual(len(segment["timeline"]["camera"]["frames"]), 2)
+            self.assertNotIn("data", segment["timeline"]["camera"]["frames"][0])
+
+            range_request = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/api/recordings/unit_camera_video/video",
+                headers={"Range": "bytes=100-199"},
+            )
+            with urllib.request.urlopen(range_request, timeout=5) as res:
+                self.assertEqual(res.status, 206)
+                self.assertEqual(res.headers.get("Accept-Ranges"), "bytes")
+                self.assertEqual(res.headers.get("Content-Range"), f"bytes 100-199/{len(video_bytes)}")
+                self.assertEqual(res.read(), video_bytes[100:200])
+
+            head_request = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/api/recordings/unit_camera_video/video",
+                method="HEAD",
+            )
+            with urllib.request.urlopen(head_request, timeout=5) as res:
+                self.assertEqual(res.status, 200)
+                self.assertEqual(res.headers.get("Content-Type"), "video/mp4")
+                self.assertEqual(int(res.headers.get("Content-Length", 0)), len(video_bytes))
+        finally:
+            for child in root.glob("*"):
+                child.unlink(missing_ok=True)
+            root.rmdir()
+
     def test_lidar_bridge_status_file_marks_scan_live(self):
         status_file = Path(__file__).resolve().parents[1] / "runtime" / "test_lidar_bridge_status.json"
         status_file.parent.mkdir(parents=True, exist_ok=True)
@@ -583,6 +652,10 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("drawCameraOverlayOnCanvas", app_js)
         self.assertIn("archiveFusedTreesForTime", app_js)
         self.assertIn("drawOrchardMap", app_js)
+        self.assertIn("orchardMapDisplayFrame", app_js)
+        self.assertIn("projectHeading", app_js)
+        self.assertIn("roverArchiveCameraVideo", html)
+        self.assertIn("archiveNativeVideo", app_js)
         self.assertIn("safeDocAssetHref", app_js)
         self.assertIn("/docs-assets/", app_js)
         self.assertIn("ARCHIVE_SEGMENT_SECONDS = 4", app_js)
@@ -647,6 +720,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertNotIn("$COMPOSE down", deploy_workflow)
         self.assertIn("label=com.docker.compose.project=unist_orachard_dashboard", deploy_workflow)
         self.assertIn("precompute_archive_lidar_overlays.py", deploy_workflow)
+        self.assertIn("import_video_archive.py", (Path(__file__).resolve().parents[1] / "Dockerfile.vision_ai").read_text())
         for service_name in ["dashboard", "ros2-camera-bridge", "ros2-data-recorder"]:
             match = re.search(rf"^  {re.escape(service_name)}:\n(?P<block>.*?)(?=^  [\w-]+:|\Z)", compose, re.M | re.S)
             self.assertIsNotNone(match, service_name)

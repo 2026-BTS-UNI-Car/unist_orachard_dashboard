@@ -35,6 +35,15 @@ Last updated: 2026-07-10
 - [x] 낮은 정합 신뢰도의 transform은 누적하지 않고 `pose_confidence`, `turn_event`, rejection reasons를 API에 노출한다.
 - [x] 지도에는 OOD gate와 temporal confirmation을 통과한 tree만 표시한다.
 
+### 지도 표시 방향과 sample video 아카이브
+
+- [x] 3개 과수 지도 모두 start-to-end 축을 화면 위쪽으로 정규화해 시작점 `S`가 하단, 진행 경로가 위쪽에 오도록 한다.
+- [x] 로버 포인터 heading에 지도와 동일한 회전 변환을 적용하고 두 archive의 시작/45초/U-turn 구간을 browser pixel 좌표로 검증한다.
+- [x] `IMG_4469.mov`, `IMG_4471.mov`를 Jetson으로 전송하고 SHA-256 일치를 확인한다.
+- [x] 두 H.264 원본을 byte-identical MOV로 보존하고 960 px/30 fps/최대 1.5 Mbps MP4 fast-start proxy를 만들어 `camera` 종류의 video-only archive 두 개로 등록한다.
+- [x] native video API에 HTTP Range/HEAD를 지원하고 dashboard 재생바, 4 Hz AI overlay timeline, seek 상태를 동기화한다.
+- [x] 두 video-only archive의 목록, 60 fps 원본 보존, native proxy 재생, AI contour, seek, 다운로드를 공개 dashboard에서 검증한다.
+
 ### 통합, 배포, 보고서
 
 - [x] Jetson Python unit/integration/static contract 39개와 실제 두 archive 재분석을 통과한다.

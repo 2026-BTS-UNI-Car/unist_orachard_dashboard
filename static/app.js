@@ -175,6 +175,9 @@ const state = {
 	    lastLidarRenderKey: "",
 	    lastCameraRenderKey: "",
 	    lastCameraOverlayRenderKey: "",
+	    nativeVideoUrl: "",
+	    nativeVideoReady: false,
+	    nativeVideoError: "",
 	  },
   perceptionOverlayMode: "fusion",
   orchardMapView: { scale: 1, offsetX: 0, offsetY: 0, dragging: false, dragMoved: false, lastX: 0, lastY: 0 },
@@ -3981,7 +3984,7 @@ async function loadRecordings() {
 
 async function selectRecording(id) {
   state.recordings.selectedId = id;
-  stopArchivePlayback();
+  stopArchivePlayback(true);
   state.recordings.timeline = null;
   state.recordings.orchardMap = null;
   clearArchiveFrameCache();
@@ -4253,6 +4256,8 @@ function renderRecordings() {
 function renderRecordingDetail(detail) {
   const payload = detail?.recording || detail;
   const metadata = payload?.metadata || {};
+  const archiveMedia = document.querySelector(".archive-media-grid");
+  archiveMedia?.classList.toggle("camera-only", (metadata.kind || payload?.kind) === "camera");
   const analysis = payload?.analysis || {};
   const preview = payload?.preview_scan;
   const hasLidar = Boolean(preview?.points?.length);
@@ -4276,8 +4281,73 @@ function renderRecordingDetail(detail) {
   renderArchiveDownloadButton(payload, id);
 }
 
+function configureArchiveNativeVideo(payload) {
+  const video = $("roverArchiveCameraVideo");
+  const frame = video?.closest(".archive-camera-frame");
+  if (!video) return;
+  const url = String(payload?.video_url || "");
+  const changed = url !== state.archivePlayback.nativeVideoUrl;
+  if (changed) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    state.archivePlayback.nativeVideoUrl = url;
+    state.archivePlayback.nativeVideoReady = false;
+    state.archivePlayback.nativeVideoError = "";
+    const image = $("roverArchiveCameraImage");
+    if (url && image) image.removeAttribute("src");
+  }
+  frame?.classList.toggle("native-video", Boolean(url));
+  if (!url) return;
+  video.onloadedmetadata = () => {
+    if (url !== state.archivePlayback.nativeVideoUrl) return;
+    state.archivePlayback.nativeVideoReady = true;
+    state.archivePlayback.nativeVideoError = "";
+    const duration = Number(video.duration);
+    if (Number.isFinite(duration) && duration > 0) {
+      state.archivePlayback.durationS = Math.max(state.archivePlayback.durationS, duration);
+      syncArchiveScrubberBounds();
+    }
+    if (!state.archivePlayback.playing && Math.abs(video.currentTime - state.archivePlayback.timeS) > 0.08) {
+      video.currentTime = state.archivePlayback.timeS;
+    }
+    renderArchiveFrame();
+  };
+  video.onerror = () => {
+    if (url !== state.archivePlayback.nativeVideoUrl) return;
+    state.archivePlayback.nativeVideoReady = false;
+    state.archivePlayback.nativeVideoError = "native video decode failed";
+    renderArchiveFrame();
+  };
+  video.onended = () => {
+    if (!state.archivePlayback.playing) return;
+    state.archivePlayback.timeS = state.archivePlayback.durationS;
+    stopArchivePlayback(false);
+  };
+  if (changed) {
+    video.src = url;
+    video.load();
+  }
+}
+
+function archiveNativeVideo() {
+  const video = $("roverArchiveCameraVideo");
+  return state.archivePlayback.nativeVideoUrl && video ? video : null;
+}
+
+function syncArchiveScrubberBounds() {
+  for (const id of ["roverArchiveScrubber", "roverOrchardMapScrubber"]) {
+    const scrubber = $(id);
+    if (!scrubber) continue;
+    scrubber.max = String(Math.max(0, state.archivePlayback.durationS));
+    scrubber.value = String(Math.min(Number(scrubber.value) || 0, state.archivePlayback.durationS));
+    scrubber.disabled = !state.recordings.timeline;
+  }
+}
+
 function setupArchivePlayback(payload, fallbackPreview) {
   const timeline = state.recordings.timeline;
+  configureArchiveNativeVideo(payload);
   prepareArchiveTimelineCache(timeline);
   const metadata = payload?.metadata || {};
   const duration = Number(timeline?.duration_s || metadata.duration_s || 0);
@@ -4287,50 +4357,59 @@ function setupArchivePlayback(payload, fallbackPreview) {
   state.archivePlayback.durationS = Math.max(duration, lastFrameTime);
   state.archivePlayback.timeS = Math.min(state.archivePlayback.timeS || 0, state.archivePlayback.durationS);
   state.archivePlayback.fallbackPreview = fallbackPreview;
-  const scrubber = $("roverArchiveScrubber");
-  if (scrubber) {
-    scrubber.max = String(Math.max(0, state.archivePlayback.durationS));
-    scrubber.value = String(Math.min(Number(scrubber.value) || 0, state.archivePlayback.durationS));
-    scrubber.disabled = !timeline;
-  }
-  const mapScrubber = $("roverOrchardMapScrubber");
-  if (mapScrubber) {
-    mapScrubber.max = String(Math.max(0, state.archivePlayback.durationS));
-    mapScrubber.value = String(Math.min(Number(mapScrubber.value) || 0, state.archivePlayback.durationS));
-    mapScrubber.disabled = !timeline;
-  }
+  syncArchiveScrubberBounds();
   const play = $("roverArchivePlayButton");
   if (play) play.disabled = !timeline;
   renderArchiveFrame();
 }
 
-function toggleArchivePlayback() {
+async function toggleArchivePlayback() {
   if (state.archivePlayback.playing) {
     stopArchivePlayback(false);
     return;
   }
   if (!state.recordings.timeline) return;
   ensureArchiveSegmentForTime(state.archivePlayback.timeS).catch((err) => debugLog("archive", "initial segment load failed", err));
+  const startTime = state.archivePlayback.timeS >= state.archivePlayback.durationS ? 0 : state.archivePlayback.timeS;
+  const video = archiveNativeVideo();
+  if (video) {
+    try {
+      video.currentTime = startTime;
+      await video.play();
+    } catch (err) {
+      state.archivePlayback.nativeVideoError = err?.message || "native video play failed";
+      renderArchiveFrame();
+      return;
+    }
+  }
   state.archivePlayback.playing = true;
   state.archivePlayback.startedAt = performance.now();
-  state.archivePlayback.startTimeS = state.archivePlayback.timeS >= state.archivePlayback.durationS ? 0 : state.archivePlayback.timeS;
+  state.archivePlayback.startTimeS = startTime;
   archivePlaybackTick();
 }
 
 function stopArchivePlayback(reset = false) {
   state.archivePlayback.playing = false;
+  const video = archiveNativeVideo();
+  if (video && !video.paused) video.pause();
   if (state.archivePlayback.raf) {
     cancelAnimationFrame(state.archivePlayback.raf);
     state.archivePlayback.raf = null;
   }
-  if (reset) state.archivePlayback.timeS = 0;
+  if (reset) {
+    state.archivePlayback.timeS = 0;
+    if (video) {
+      try { video.currentTime = 0; } catch (_) { /* metadata is not ready yet */ }
+    }
+  }
   renderArchiveFrame();
 }
 
 function archivePlaybackTick(now = performance.now()) {
   if (!state.archivePlayback.playing) return;
+  const video = archiveNativeVideo();
   const elapsed = (now - state.archivePlayback.startedAt) / 1000;
-  const next = state.archivePlayback.startTimeS + elapsed;
+  const next = video ? Number(video.currentTime) : state.archivePlayback.startTimeS + elapsed;
   if (next >= state.archivePlayback.durationS) {
     state.archivePlayback.timeS = state.archivePlayback.durationS;
     stopArchivePlayback(false);
@@ -4344,6 +4423,10 @@ function archivePlaybackTick(now = performance.now()) {
 function setArchiveTime(value, options = {}) {
   if (options.pause) stopArchivePlayback(false);
   state.archivePlayback.timeS = Math.max(0, Math.min(state.archivePlayback.durationS, Number(value) || 0));
+  const video = archiveNativeVideo();
+  if (video && Math.abs(Number(video.currentTime || 0) - state.archivePlayback.timeS) > 0.04) {
+    try { video.currentTime = state.archivePlayback.timeS; } catch (_) { /* metadata is not ready yet */ }
+  }
   ensureArchiveSegmentForTime(state.archivePlayback.timeS)
     .then(() => renderArchiveFrame())
     .catch((err) => debugLog("archive", "seek segment load failed", err));
@@ -4379,7 +4462,8 @@ function renderArchiveFrame() {
   }
 
   const image = $("roverArchiveCameraImage");
-  if (image && cameraFrame?.data) {
+  const nativeVideo = archiveNativeVideo();
+  if (!nativeVideo && image && cameraFrame?.data) {
     warmArchiveCameraCache(cameraFrame);
     const src = archiveCameraFrameSrc(cameraFrame);
     const cameraRenderKey = `${cameraFrame.cacheIndex}:${src}`;
@@ -4387,7 +4471,7 @@ function renderArchiveFrame() {
       image.src = src;
       state.archivePlayback.lastCameraRenderKey = cameraRenderKey;
     }
-  } else if (image && !cameraFrame) {
+  } else if (!nativeVideo && image && !cameraFrame) {
     image.removeAttribute("src");
     state.archivePlayback.lastCameraRenderKey = "";
   }
@@ -4403,9 +4487,12 @@ function renderArchiveFrame() {
     renderArchiveCameraOverlay(cameraFrame);
     state.archivePlayback.lastCameraOverlayRenderKey = cameraOverlayKey;
   }
-  const cameraCaption = cameraFrame
-    ? `${cameraFrame.frame_id || "camera"} · ${fmtClock(cameraFrame.t_s)} · ${cameraFrame.source_width || cameraFrame.width}x${cameraFrame.source_height || cameraFrame.height}`
-    : state.archivePlayback.sync ? "camera preview 없음" : "동시 재생 꺼짐";
+  const sourceVideo = state.recordings.selected?.recording?.source_video || state.recordings.selected?.source_video || {};
+  const cameraCaption = state.archivePlayback.nativeVideoError
+    ? `video error · ${state.archivePlayback.nativeVideoError}`
+    : cameraFrame
+      ? `${nativeVideo ? `native ${fmtNumber(sourceVideo.fps || 0, 0)} fps · ` : ""}${cameraFrame.frame_id || "camera"} · ${fmtClock(timeS)} · ${cameraFrame.source_width || cameraFrame.width}x${cameraFrame.source_height || cameraFrame.height}`
+      : state.archivePlayback.sync ? "camera preview 없음" : "동시 재생 꺼짐";
   text("roverArchiveCameraCaption", cameraCaption);
   text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   text("roverOrchardMapTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
@@ -4655,9 +4742,9 @@ function drawOrchardMapLayer(spec, rootMap) {
   ctx.fillRect(0, 0, w, h);
   const projection = orchardMapProjection(canvas, rootMap, w, h);
   if (!projection) return;
-  const { bounds, project, scale } = projection;
+  const { bounds, project, projectDisplay, scale } = projection;
 
-  drawOrchardMapGrid(ctx, w, h, project, bounds);
+  drawOrchardMapGrid(ctx, w, h, projectDisplay, bounds);
   const path = map.path || [];
   if (path.length > 1) {
     ctx.strokeStyle = cssVar("--chart-good", "#55e2b2");
@@ -4689,7 +4776,7 @@ function drawOrchardMapLayer(spec, rootMap) {
   }
   ctx.globalAlpha = 1;
   const currentPose = nearestMapPathPose(path, state.archivePlayback.timeS);
-  drawRoverPoseMarker(ctx, project, currentPose);
+  drawRoverPoseMarker(ctx, projection, currentPose);
   const centerline = map.centerline || {};
   text(spec.statsId, `${map.tree_count || 0} trees · center ${centerline.ok ? `${fmtNumber(centerline.length_m || 0, 1)}m` : centerline.state || "--"} · gap ${centerline.row_gap_m ? `${fmtNumber(centerline.row_gap_m, 1)}m` : "--"}`);
 }
@@ -4752,7 +4839,8 @@ function orchardMapProjection(canvas, map, width, height) {
   const w = width || rect.width;
   const h = height || rect.height;
   if (!w || !h) return null;
-  const bounds = map.bounds || { min_x: -5, max_x: 5, min_y: -5, max_y: 5 };
+  const displayFrame = orchardMapDisplayFrame(map);
+  const bounds = displayFrame.bounds;
   const spanX = Math.max(1, Number(bounds.max_x) - Number(bounds.min_x));
   const spanY = Math.max(1, Number(bounds.max_y) - Number(bounds.min_y));
   const baseScale = Math.min((w - 52) / spanX, (h - 52) / spanY);
@@ -4761,11 +4849,82 @@ function orchardMapProjection(canvas, map, width, height) {
   const cy = h / 2 + state.orchardMapView.offsetY;
   const midX = (Number(bounds.min_x) + Number(bounds.max_x)) / 2;
   const midY = (Number(bounds.min_y) + Number(bounds.max_y)) / 2;
+  const projectDisplay = (x, y) => ({ x: cx + (x - midX) * scale, y: cy - (y - midY) * scale });
   return {
     bounds,
     scale,
-    project: (x, y) => ({ x: cx + (x - midX) * scale, y: cy - (y - midY) * scale }),
+    orientationRad: displayFrame.orientationRad,
+    origin: displayFrame.origin,
+    worldToDisplay: displayFrame.worldToDisplay,
+    projectDisplay,
+    project: (x, y) => {
+      const point = displayFrame.worldToDisplay(x, y);
+      return projectDisplay(point.x, point.y);
+    },
+    projectHeading: (heading) => displayFrame.orientationRad - Number(heading || 0),
   };
+}
+
+function orchardMapDisplayFrame(map) {
+  const path = Array.isArray(map?.path) ? map.path : [];
+  const start = path[0] || map?.start || { x_m: 0, y_m: 0, heading_deg: 0 };
+  const origin = { x: Number(start.x_m) || 0, y: Number(start.y_m) || 0 };
+  let target = path[path.length - 1] || map?.end || start;
+  let dx = (Number(target?.x_m) || 0) - origin.x;
+  let dy = (Number(target?.y_m) || 0) - origin.y;
+  if (Math.hypot(dx, dy) < 0.5 && path.length > 1) {
+    target = path.reduce((best, pose) => {
+      const distance = Math.hypot((Number(pose.x_m) || 0) - origin.x, (Number(pose.y_m) || 0) - origin.y);
+      return distance > best.distance ? { pose, distance } : best;
+    }, { pose: start, distance: 0 }).pose;
+    dx = (Number(target?.x_m) || 0) - origin.x;
+    dy = (Number(target?.y_m) || 0) - origin.y;
+  }
+  const fallbackHeading = Number(start.heading_deg || 0) * Math.PI / 180;
+  const orientationRad = Math.hypot(dx, dy) >= 0.2 ? Math.atan2(dy, dx) : fallbackHeading;
+  const sinH = Math.sin(orientationRad);
+  const cosH = Math.cos(orientationRad);
+  const worldToDisplay = (x, y) => {
+    const worldX = Number(x) - origin.x;
+    const worldY = Number(y) - origin.y;
+    return {
+      x: sinH * worldX - cosH * worldY,
+      y: cosH * worldX + sinH * worldY,
+    };
+  };
+  const displayPoints = orchardMapWorldPoints(map).map((point) => worldToDisplay(point.x_m, point.y_m));
+  displayPoints.push({ x: 0, y: 0 });
+  const xs = displayPoints.map((point) => point.x).filter(Number.isFinite);
+  const ys = displayPoints.map((point) => point.y).filter(Number.isFinite);
+  const pad = 2;
+  const bounds = xs.length && ys.length
+    ? {
+      min_x: Math.min(...xs) - pad,
+      max_x: Math.max(...xs) + pad,
+      min_y: Math.min(...ys) - pad,
+      max_y: Math.max(...ys) + pad,
+    }
+    : { min_x: -5, max_x: 5, min_y: -2, max_y: 8 };
+  return { origin, orientationRad, worldToDisplay, bounds };
+}
+
+function orchardMapWorldPoints(map) {
+  const rows = [];
+  const append = (items) => {
+    for (const item of items || []) {
+      const x = Number(item?.x_m);
+      const y = Number(item?.y_m);
+      if (Number.isFinite(x) && Number.isFinite(y)) rows.push({ x_m: x, y_m: y });
+    }
+  };
+  append(map?.path);
+  append(map?.trees);
+  append(map?.centerline?.points);
+  for (const layer of Object.values(map?.maps || {})) {
+    append(layer?.trees);
+    append(layer?.centerline?.points);
+  }
+  return rows;
 }
 
 function drawOrchardMapGrid(ctx, w, h, project, bounds) {
@@ -4814,12 +4973,13 @@ function drawMapMarker(ctx, project, pose, color, label) {
   ctx.restore();
 }
 
-function drawRoverPoseMarker(ctx, project, pose) {
+function drawRoverPoseMarker(ctx, projection, pose) {
   if (!pose) return;
-  const p = project(Number(pose.x_m) || 0, Number(pose.y_m) || 0);
-  const heading = Number.isFinite(Number(pose.theta_rad))
+  const p = projection.project(Number(pose.x_m) || 0, Number(pose.y_m) || 0);
+  const worldHeading = Number.isFinite(Number(pose.theta_rad))
     ? Number(pose.theta_rad)
     : (Number(pose.heading_deg) || 0) * Math.PI / 180;
+  const heading = projection.projectHeading(worldHeading);
   const size = 15;
   const nose = { x: p.x + Math.sin(heading) * size, y: p.y - Math.cos(heading) * size };
   const left = { x: p.x + Math.sin(heading + 2.45) * size * 0.72, y: p.y - Math.cos(heading + 2.45) * size * 0.72 };

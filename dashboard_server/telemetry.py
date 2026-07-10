@@ -833,6 +833,8 @@ class TelemetryProvider:
         analysis = _load_json(path / "analysis.json")
         preview_scan = _load_json(path / "preview_scan.json")
         timeline_summary = self._recording_timeline_summary(path, metadata, preview_scan=preview_scan)
+        source_video = self.recording_video(recording_id)
+        public_video = {key: value for key, value in (source_video or {}).items() if key != "path"}
         return {
             "ok": True,
             "recording": {
@@ -843,7 +845,37 @@ class TelemetryProvider:
                 "preview_scan": preview_scan,
                 "timeline_summary": timeline_summary,
                 "download_url": f"/api/recordings/{path.name}/download",
+                "source_video": public_video or None,
+                "video_url": (
+                    f"/api/recordings/{path.name}/video?v={source_video.get('bytes')}" if source_video else None
+                ),
             },
+        }
+
+    def recording_video(self, recording_id: str) -> dict[str, Any] | None:
+        archive = self.recording_archive_path(recording_id)
+        if archive is None or not archive.is_dir():
+            return None
+        metadata = _load_json(archive / "metadata.json")
+        source = metadata.get("source_video")
+        if not isinstance(source, dict):
+            return None
+        raw_name = str(source.get("file") or "")
+        filename = Path(raw_name).name
+        if not filename or filename != raw_name:
+            return None
+        path = (archive / filename).resolve()
+        try:
+            if archive.resolve() not in path.parents or not path.is_file():
+                return None
+        except OSError:
+            return None
+        return {
+            **source,
+            "file": filename,
+            "mime": str(source.get("mime") or "video/mp4"),
+            "bytes": path.stat().st_size,
+            "path": path,
         }
 
     def recording_timeline(self, recording_id: str, start_s: Any = None, duration_s: Any = None) -> dict[str, Any]:
@@ -935,7 +967,11 @@ class TelemetryProvider:
         lidar_frames = self._timeline_frames_between(timeline.get("lidar", {}).get("frames", []), start, end)
         payload["lidar"] = {"frames": self._reanalyze_lidar_segment_frames(lidar_frames)}
         camera_frames = self._timeline_frames_between(timeline.get("camera", {}).get("frames", []), start, end)
-        payload["camera"] = {"frames": self._analyze_camera_segment_frames(camera_frames)}
+        camera_rows = self._analyze_camera_segment_frames(camera_frames)
+        native_video = bool(timeline.get("video") or (timeline.get("sync") or {}).get("native_video"))
+        if native_video:
+            camera_rows = [{key: value for key, value in frame.items() if key != "data"} for frame in camera_rows]
+        payload["camera"] = {"frames": camera_rows}
         payload["sync"] = {
             **(timeline.get("sync") or {}),
             "segment_lidar_frames": len(payload["lidar"]["frames"]),

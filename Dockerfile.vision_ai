@@ -22,6 +22,7 @@ COPY scripts/vision_ai_service.py ./scripts/vision_ai_service.py
 COPY scripts/train_aihub_orchard_tree_yolo.sh ./scripts/train_aihub_orchard_tree_yolo.sh
 COPY scripts/validate_vision_worker_frames.py ./scripts/validate_vision_worker_frames.py
 COPY scripts/evaluate_orchard_runtime_model.py ./scripts/evaluate_orchard_runtime_model.py
+COPY scripts/import_video_archive.py ./scripts/import_video_archive.py
 
 RUN if [ "${VISION_AI_INSTALL_REQUIREMENTS}" = "1" ]; then \
     python -m pip install --no-cache-dir -r requirements.vision-ai.txt; \

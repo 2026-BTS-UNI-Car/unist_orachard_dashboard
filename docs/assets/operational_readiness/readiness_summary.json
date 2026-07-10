@@ -1,12 +1,12 @@
 {
-  "generated_at_unix": 1783692326.775,
+  "generated_at_unix": 1783708918.891,
   "generated_on": "Jetson Orin Nano",
   "status": "operational_research_prototype",
   "dashboard_health": {
     "ok": true,
     "service": "unist_orachard_dashboard",
     "mode": "live",
-    "uptime_s": 1027.1,
+    "uptime_s": 813.2,
     "host": "unist"
   },
   "vision_worker_health": {
@@ -260,7 +260,7 @@
   "archive_streaming": {
     "20260708T053333Z_both": {
       "cold_or_first": {
-        "latency_ms": 108.58,
+        "latency_ms": 556.85,
         "wire_bytes": 505065,
         "json_bytes": 1323794,
         "content_encoding": "gzip",
@@ -268,7 +268,7 @@
         "camera_frames": 8
       },
       "warm": {
-        "latency_ms": 104.64,
+        "latency_ms": 113.53,
         "wire_bytes": 505065,
         "json_bytes": 1323794,
         "content_encoding": "gzip",
@@ -278,7 +278,7 @@
     },
     "20260708T054036Z_both": {
       "cold_or_first": {
-        "latency_ms": 121.2,
+        "latency_ms": 665.47,
         "wire_bytes": 596521,
         "json_bytes": 1489107,
         "content_encoding": "gzip",
@@ -286,7 +286,7 @@
         "camera_frames": 8
       },
       "warm": {
-        "latency_ms": 122.43,
+        "latency_ms": 119.58,
         "wire_bytes": 596521,
         "json_bytes": 1489107,
         "content_encoding": "gzip",
@@ -295,10 +295,106 @@
       }
     }
   },
+  "video_only_archives": {
+    "sample_IMG_4469_camera": {
+      "kind": "camera",
+      "duration_s": 26.612,
+      "timeline_frames": 107,
+      "sample_hz": 4.0,
+      "accepted_detections": 290,
+      "rejected_detections": 42,
+      "failed_overlays": 0,
+      "source_video": {
+        "file": "video.mp4",
+        "mime": "video/mp4",
+        "original_name": "IMG_4469.mov",
+        "original_sha256": "69f1651f3dd9858b5bde3743220a9938f222f267ebd3d39b96205eea203c821a",
+        "original_file": "video_original.mov",
+        "original_bytes": 76067748,
+        "original_fps": 59.973696,
+        "original_frame_count": 1596,
+        "original_display_width": 1080,
+        "original_display_height": 1920,
+        "bytes": 5128147,
+        "fps": 30.0,
+        "frame_count": 798,
+        "duration_s": 26.6,
+        "display_width": 540,
+        "display_height": 960,
+        "stream_profile": "h264_960px_30fps_crf25_max1.5mbps_faststart"
+      },
+      "original_sha256_verified": true,
+      "streaming": {
+        "cold_or_first": {
+          "latency_ms": 151.44,
+          "wire_bytes": 32717,
+          "json_bytes": 148614,
+          "content_encoding": "gzip",
+          "lidar_frames": 0,
+          "camera_frames": 16
+        },
+        "warm": {
+          "latency_ms": 17.41,
+          "wire_bytes": 32717,
+          "json_bytes": 148614,
+          "content_encoding": "gzip",
+          "lidar_frames": 0,
+          "camera_frames": 16
+        }
+      }
+    },
+    "sample_IMG_4471_camera": {
+      "kind": "camera",
+      "duration_s": 24.312,
+      "timeline_frames": 98,
+      "sample_hz": 4.0,
+      "accepted_detections": 691,
+      "rejected_detections": 149,
+      "failed_overlays": 0,
+      "source_video": {
+        "file": "video.mp4",
+        "mime": "video/mp4",
+        "original_name": "IMG_4471.mov",
+        "original_sha256": "93ea60d4d47998856f141993210714f78537e1dbf808ee504f964b5769f5a91e",
+        "original_file": "video_original.mov",
+        "original_bytes": 69160533,
+        "original_fps": 59.971207,
+        "original_frame_count": 1458,
+        "original_display_width": 1920,
+        "original_display_height": 1080,
+        "bytes": 4722910,
+        "fps": 30.0,
+        "frame_count": 729,
+        "duration_s": 24.3,
+        "display_width": 960,
+        "display_height": 540,
+        "stream_profile": "h264_960px_30fps_crf25_max1.5mbps_faststart"
+      },
+      "original_sha256_verified": true,
+      "streaming": {
+        "cold_or_first": {
+          "latency_ms": 164.25,
+          "wire_bytes": 31677,
+          "json_bytes": 180083,
+          "content_encoding": "gzip",
+          "lidar_frames": 0,
+          "camera_frames": 16
+        },
+        "warm": {
+          "latency_ms": 18.38,
+          "wire_bytes": 31677,
+          "json_bytes": 180083,
+          "content_encoding": "gzip",
+          "lidar_frames": 0,
+          "camera_frames": 16
+        }
+      }
+    }
+  },
   "disk": {
     "total_bytes": 501386080256,
-    "used_bytes": 99227971584,
-    "free_bytes": 376613904384
+    "used_bytes": 100025151488,
+    "free_bytes": 375816724480
   },
   "safety_and_limits": [
     "No physical rover motion was commanded during validation.",

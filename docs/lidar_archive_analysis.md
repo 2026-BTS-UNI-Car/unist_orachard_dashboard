@@ -10,6 +10,8 @@ runtime/recordings/<recording-id>/
   timeline.json
   preview_scan.json
   analysis.json
+  video.mp4               # video-only archive의 960px/30fps streaming proxy
+  video_original.mov      # byte-identical 원본, video-only archive에만 존재
   rosbag2/                 # 기록 설정에 따라 존재
 ```
 
@@ -77,11 +79,33 @@ UI는 4초 segment만 요청한다.
 
 Public Cloudflare archive 1 첫 segment는 약 0.90초였다. 4초 playback보다 충분히 빠르며 prefetch buffer를 유지한다.
 
+### Video-only archive
+
+`sample_IMG_4469_camera`, `sample_IMG_4471_camera`는 Jetson에서 다음 방식으로 가져왔다.
+
+```bash
+docker exec unist-orachard-vision-ai \
+  python /app/scripts/import_video_archive.py \
+  --input /app/runtime/imports/sample_video/IMG_4469.mov \
+  --recording-id sample_IMG_4469_camera \
+  --sample-hz 4
+```
+
+- 원본 MOV는 hard-link 또는 exact copy로 보존하고 SHA-256을 metadata에 기록한다.
+- UI용 `video.mp4`는 긴 변 960 px, 30 fps, H.264 CRF 25, 최대 1.5 Mbps, fast-start proxy다.
+- `/api/recordings/<id>/video`는 `HEAD`, single HTTP byte range와 `206 Content-Range`를 지원한다.
+- 영상 픽셀은 MP4 Range stream으로 받고 timeline segment는 4 Hz AI contour만 받는다. Native archive segment에서는 중복 JPEG `data`를 제거한다.
+- 원본 60 fps 영상과 TensorRT AI overlay는 같은 `t_s` scrubber를 공유한다.
+
+Jetson 검증에서 4초 overlay payload는 약 31-32 KiB, warm 응답은 약 17 ms였다. 공개 browser startup은 133-134 ms, 3.2초 구간의 실재생 진행은 3.21초, 영상/재생바 오차는 12-14 ms, seek 오차는 0이었다.
+
 ## 5. 재생 동기화
 
 Scrubber 시간 `t`에서 LiDAR와 camera 각각 가장 가까운 frame을 선택한다. `동시 재생`을 끄면 camera가 독립적으로 갱신될 수 있지만 기본은 같은 time base다.
 
 상단 scrubber와 Orchard Map scrubber는 같은 state를 사용한다. 페이지를 나갔다 돌아와도 archive 자체는 immutable하고 segment cache는 다시 채운다.
+
+Map canvas는 start-to-end world vector를 화면 위쪽 축으로 회전한다. 따라서 시작점은 하단, 종점은 상단에 놓이며 rover heading도 같은 회전 행렬을 사용한다. 두 운영 archive에서 시작점은 canvas 높이의 79.6%, 73.2%에 표시됐고 heading vector와 pointer의 각도 오차는 browser pixel 검증에서 사실상 0이었다.
 
 ## 6. Orchard map cache
 
@@ -117,6 +141,11 @@ curl -I https://bts.sarihub.com/api/recordings/<id>/download
 python3 scripts/validate_dashboard_ui.py \
   --base-url https://bts.sarihub.com \
   --recording-id 20260708T053333Z_both
+
+python3 scripts/validate_video_archive_ui.py \
+  --base-url https://bts.sarihub.com \
+  --recording-id sample_IMG_4469_camera \
+  --output-dir runtime/analysis/video_archive_IMG_4469
 ```
 
 검사 항목:

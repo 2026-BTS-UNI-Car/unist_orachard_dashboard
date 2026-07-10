@@ -239,6 +239,19 @@ $$
 
 ![Three map layers at 45 seconds](assets/operational_readiness/dashboard_map_45s.png)
 
+화면 표시는 world 좌표를 start-to-end 축으로 정규화한다. 시작 `S`, 종료 `E`, world point `p`에 대해
+
+$$
+\theta_d = \operatorname{atan2}(E_y-S_y, E_x-S_x)
+$$
+
+$$
+u = \sin\theta_d\Delta x - \cos\theta_d\Delta y,\quad
+v = \cos\theta_d\Delta x + \sin\theta_d\Delta y
+$$
+
+로 두고 `v` 증가 방향을 canvas 위쪽으로 그린다. Rover world heading $\alpha$는 같은 좌표계에서 $\beta=\theta_d-\alpha$로 변환한다. 따라서 path와 pointer가 서로 다른 회전/반전을 쓰지 않는다. 공개 browser 검증에서 archive 1/2 시작점은 canvas 높이의 79.6%/73.2%, 끝점은 25.9%/14.0%였고 pointer와 투영된 heading vector 오차는 사실상 0 rad였다.
+
 ## 9. 재생과 배포 검증
 
 Camera와 LiDAR overlay는 전체 timeline 순서로 미리 계산한다. 4초 segment API는 최신 overlay를 다시 추론하지 않고 반환하며, compact JSON, gzip, 두 archive LRU cache, 다음 두 segment prefetch를 사용한다.
@@ -247,6 +260,12 @@ Camera와 LiDAR overlay는 전체 timeline 순서로 미리 계산한다. 4초 s
 | --- | ---: | ---: |
 | `20260708T053333Z_both` | 약 105 ms | 약 493 KiB |
 | `20260708T054036Z_both` | 약 122 ms | 약 583 KiB |
+
+두 sample video도 `sample_IMG_4469_camera`, `sample_IMG_4471_camera` camera-only archive로 등록했다. 60 fps 원본 MOV와 SHA-256은 그대로 보존하고, UI에는 960 px/30 fps/최대 1.5 Mbps H.264 fast-start proxy를 HTTP Range로 제공한다. AI는 4 Hz preview 205개 전체를 TensorRT+CLIP으로 precompute했으며 실패는 0건이다. Native archive의 4초 overlay payload는 31-32 KiB, warm 응답은 약 17 ms였다. 공개 browser startup은 133-134 ms, 3.2초 동안 3.21초가 진행됐고 video/scrubber 오차는 12-14 ms, seek 오차는 0이었다.
+
+![Portrait sample video-only archive](assets/operational_readiness/video_archive_IMG_4469.png)
+
+![Landscape sample video-only archive](assets/operational_readiness/video_archive_IMG_4471.png)
 
 Cloudflare 공개 경로의 archive 1 첫 구간도 약 0.90초에 전달됐다. 실제 브라우저에서는 두 archive 모두 camera image, contour overlay, LiDAR, 세 지도 canvas가 nonblank였고 5.2초 재생 동안 상단/지도 scrubber 오차가 최대 0.04초였다. 1920x1080과 390x844에서 horizontal overflow와 console error는 0이었다.
 
@@ -275,6 +294,7 @@ AI worker health의 필수 값:
 | 360도 scan-context와 distance-field 정합 | `dashboard_server/lidar_odometry.py` |
 | 3-layer map, temporal landmark, centerline | `dashboard_server/orchard_mapping.py` |
 | Camera/LiDAR archive precompute | `scripts/precompute_archive_camera_overlays.py`, `scripts/precompute_archive_lidar_overlays.py` |
+| Native video-only archive import/stream proxy | `scripts/import_video_archive.py` |
 | Reproducible readiness summary | `scripts/build_operational_readiness_summary.py` |
 
 ## 11. 다음 수동 작업

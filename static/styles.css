@@ -657,7 +657,8 @@ h2 {
 
 .camera-frame.overlay-only img,
 .rover-camera-frame.overlay-only img,
-.archive-camera-frame.overlay-only img {
+.archive-camera-frame.overlay-only img,
+.archive-camera-frame.overlay-only video {
   opacity: 0;
 }
 
@@ -1218,6 +1219,18 @@ h2 {
   align-items: stretch;
 }
 
+.archive-media-grid.camera-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.archive-media-grid.camera-only .lidar-map-stage {
+  display: none;
+}
+
+.archive-media-grid.camera-only .archive-camera-frame {
+  height: clamp(360px, 68vh, 760px);
+}
+
 .archive-camera-frame {
   position: relative;
   min-width: 0;
@@ -1237,6 +1250,23 @@ h2 {
   min-height: 260px;
   object-fit: contain;
   display: block;
+}
+
+.archive-camera-frame video {
+  display: none;
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+  object-fit: contain;
+  background: #020617;
+}
+
+.archive-camera-frame.native-video video {
+  display: block;
+}
+
+.archive-camera-frame.native-video img {
+  display: none;
 }
 
 .archive-download-actions {
