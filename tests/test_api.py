@@ -427,7 +427,10 @@ class DashboardApiTest(unittest.TestCase):
             self.assertEqual(camera["supported_view_modes_source"], "v4l2")
             self.assertEqual(camera["supported_view_modes"][0]["fps"], [30])
             self.assertEqual(camera["supported_view_modes"][1]["fps"], [60])
-            self.assertIn(payload["sensors"]["camera"]["state"], {"video_node_missing", "waiting_for_ros2", "frame_live"})
+            self.assertIn(
+                payload["sensors"]["camera"]["state"],
+                {"video_node_missing", "waiting_for_ros2", "waiting_for_frame", "frame_live"},
+            )
         finally:
             provider.camera_driver_status_file = old_provider_file
             if old is None:
