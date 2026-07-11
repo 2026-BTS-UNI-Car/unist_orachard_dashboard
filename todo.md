@@ -1,6 +1,6 @@
 # Rover Control Orchard Overlay TODO
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 ## 2026-07-10 운영 배포 완성 및 OOD 검증 목표
 
@@ -46,14 +46,14 @@ Last updated: 2026-07-10
 
 ### 통합, 배포, 보고서
 
-- [x] Jetson Python unit/integration/static contract 39개와 실제 두 archive 재분석을 통과한다.
+- [x] Jetson Python unit/integration/static contract 40개와 실제 두 archive 재분석을 통과한다.
 - [x] Jetson에서 AI worker CUDA/TensorRT, dashboard health, archive map API, sample/archive inference를 확인한다.
 - [x] `readiness_summary.json`에 latency, 검출/거부 수, 186도 회전, map count와 알려진 한계를 기록한다.
 - [x] Archive camera/LiDAR overlay를 미리 계산하고 compact JSON+gzip+LRU+4초 prefetch로 warm segment를 105-122ms까지 줄인다.
 - [x] 공개 dashboard에서 두 archive 재생, camera/LiDAR overlay, 3종 지도, 두 scrubber, desktop/mobile overflow를 Playwright로 검증한다.
-- [x] Docs 최종 보고서의 이미지 9개, 수식 8개, 독립 목록/본문 스크롤과 mobile layout을 browser로 검증한다.
-- [ ] 변경 사항을 CI/CD 경로로 배포하고 workflow와 실제 서비스 상태를 끝까지 추적한다.
-- [ ] Notion 기존 보고서와 이번 AIHub/OOD/LiDAR/지도 결과를 이미지 포함 최종 보고서로 통합한다.
+- [x] Docs 최종 보고서의 이미지 11개, 수식 10개, 독립 목록/본문 스크롤과 mobile layout을 browser로 검증한다.
+- [x] 변경 사항을 CI/CD 경로로 배포하고 smoke/deploy workflow 성공과 실제 서비스 상태를 끝까지 추적한다.
+- [x] Notion 기존 보고서와 이번 AIHub/OOD/LiDAR/지도 결과를 이미지 포함 최종 보고서로 통합하고 상위 페이지에 최신 보고서 링크를 고정한다.
 
 ### 2026-07-10 검증 수치
 
@@ -300,6 +300,6 @@ Last updated: 2026-07-10
 - [x] `20260708T054036Z_both` LiDAR wall-suppressed candidates 106개, v7 map LiDAR 7 / Camera 42 / Fusion 12 trees 확인.
 - [x] v7에서 1번 archive fusion centerline이 0인 이유를 docs에 기록했다: 보수적 wall suppression 후 양쪽 row 조건이 부족하다.
 - [x] SegFormer/ADE20K 기반 semantic segmentation을 바로 Docker runtime에 넣지 않고, 별도 inference container 또는 TensorRT fine-tuning 단계로 분리하는 연구 계획을 docs에 기록했다.
-- [ ] Jetson `10.64.151.247` v7 배포/API 확인: Docker build 중 SSH 연결이 끊긴 뒤 SSH/HTTP가 timeout이라 보드 복구 후 재시도해야 한다.
-- [ ] SegFormer-B0 ADE20K 또는 orchard-specific fine-tuned segmentation worker를 Jetson GPU runtime에서 별도 container로 검증한다.
+- [x] 과거 v7 배포 중 SSH timeout은 복구됐고, 후속 v8을 CI/CD로 Jetson에 배포해 health/API/browser 검증까지 완료했다.
+- [x] SegFormer-B0 대신 orchard-specific YOLO11n-seg TensorRT FP16 + CLIP OOD worker를 Jetson GPU 별도 container에서 검증했다.
 - [ ] 수동 annotation GT를 만들어 v7 LiDAR wall suppression과 camera v4 gate의 precision/recall을 계산한다.
