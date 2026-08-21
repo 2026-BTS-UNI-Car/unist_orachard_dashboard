@@ -1,7 +1,21 @@
 # 과수 인식과 LiDAR-Camera Fusion
 
-Last updated: 2026-07-10
-Map algorithm: `orchard_three_layer_weighted_centerline_v8`
+Last updated: 2026-08-21
+Map algorithm: `orchard_metric_anchor_semantic_fusion_local_frenet_v9`
+Cache revision: `v9_rep103_provenance_continuity_readiness_r3`
+
+## Current v9 contract (normative)
+
+1. The LiDAR coordinate convention is y-forward, x-left (REP-103 left-positive bearing), while image `u` increases rightward. Projection is therefore `u=cx-fx*tan(bearing)` and the inverse is `bearing=-atan((u-cx)/fx)`.
+2. The nominal camera model is 1920x1080, `fx=fy=1371.022086`, `cx=960`, `cy=540`, approximately 70-degree horizontal FOV. CameraInfo without an explicit validation flag is `camera_info_nominal_or_unverified`, not calibrated.
+3. Fusion metric position is always the LiDAR anchor. Camera contour/bbox evidence updates semantic probability and confidence with dynamic quality weighting. Missing or low-quality camera evidence never penalizes LiDAR.
+4. Camera-only monocular landmarks stay in the research camera layer. Metric promotion requires explicitly validated intrinsics, extrinsics, frame, and range. Calibrated and uncalibrated observations use separate tracks; every hit in a promoted camera track must have validated metric provenance.
+5. Centerline generation is trajectory-segmented local Frenet estimation with bilateral row support. A segment must straddle the vehicle, pass per-side span/bin and bilateral overlap gates, and contain a dense contiguous paired-bin run with at least 4 m span and sufficient coverage of the full bilateral overlap. Points are emitted only inside that run; otherwise the output is empty and fail-closed.
+6. Map computation success, evaluation data sufficiency, and navigation readiness are distinct fields. These self-consistency checks are not precision, recall, or centerline-error claims because the latest three recordings have no human ground truth.
+
+## Legacy v8 notes (historical, non-normative)
+
+The July 10 formulas and counts below describe the retired v8 prototype. In particular, 78-degree linear-FOV projection, confidence-weighted camera/LiDAR metric positions, a single global path axis, and exact layer counts are not current v9 behavior.
 
 ## 1. 세 지도
 

@@ -1,5 +1,7 @@
 # 과수 인식 알고리즘 기술 부록
 
+> **Historical v8 methods appendix (non-normative).** References below to Weighted Fusion describe the retired July 10 experiment, not the current runtime. The normative v9 contract is in `orchard_tree_detection_fusion.md` and uses LiDAR metric anchors plus camera semantic support; it does not average uncalibrated camera coordinates into metric positions.
+
 Last updated: 2026-07-10
 
 운영 수치, 모델 비교 이미지, OOD 결과, U-turn 복원, 배포 검증은 [과수 인식 운영 검증 최종 보고서](docs/orchard_perception_final_report.md)를 기준으로 한다. 이 문서는 논문 방법론에 옮길 핵심 변수와 비교 실험 설계를 간결히 정리한다.

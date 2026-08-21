@@ -166,7 +166,7 @@ DOCS_CATALOG = [
         "slug": "lidar-archive-analysis",
         "title": "LiDAR Archive 분석",
         "category": "Data",
-        "summary": "v6 OOD overlay precompute, 4초 gzip streaming, v8 orchard map cache와 검증",
+        "summary": "v6 OOD overlay precompute, 4초 gzip streaming, v9 metric-anchor orchard map cache와 검증",
         "file": "lidar_archive_analysis.md",
     },
     {
@@ -180,7 +180,7 @@ DOCS_CATALOG = [
         "slug": "orchard-tree-detection-fusion",
         "title": "과수 인식과 LiDAR-Camera Fusion",
         "category": "Research",
-        "summary": "LiDAR-only, Camera-only, Weighted Fusion 지도와 행간 중심선 수식",
+        "summary": "v9 LiDAR metric-anchor + camera semantic fusion과 fail-closed 행간 중심선",
         "file": "orchard_tree_detection_fusion.md",
     },
     {

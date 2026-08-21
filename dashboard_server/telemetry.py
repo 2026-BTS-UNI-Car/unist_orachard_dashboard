@@ -23,7 +23,7 @@ from collections import OrderedDict
 
 from dashboard_server.camera_analysis import CameraOverlayStabilizer, analyze_camera_frame_payload, current_camera_overlay_algorithm
 from dashboard_server.lidar_analysis import analyze_points, current_lidar_overlay_algorithm
-from dashboard_server.orchard_mapping import MAP_ALGORITHM_NAME, build_orchard_map
+from dashboard_server.orchard_mapping import MAP_ALGORITHM_NAME, build_orchard_map, current_orchard_map_cache
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -939,9 +939,7 @@ class TelemetryProvider:
         except OSError:
             return None
         payload = _load_json(cache_path)
-        if not payload.get("ok"):
-            return None
-        if payload.get("map", {}).get("algorithm") != MAP_ALGORITHM_NAME:
+        if not current_orchard_map_cache(payload):
             return None
         payload["cached"] = True
         return payload

@@ -1,10 +1,12 @@
 # 과수 인식 운영 검증 최종 보고서
 
+> **Historical v8 report (non-normative).** This July 10 snapshot documents the retired weighted-position v8 prototype and its old datasets. Current behavior is defined by `orchard_tree_detection_fusion.md`: v9 keeps LiDAR metric anchors fixed, uses REP-103 left-positive bearings, separates calibrated and uncalibrated camera tracks, and emits a centerline only from sufficiently covered bilateral evidence.
+
 작성일: 2026-07-10
 
 실행 장치: NVIDIA Jetson Orin Nano
 
-운영 리비전: `orchard_trunk_yolo11_trt_clip_ood_v1` / `orchard_three_layer_weighted_centerline_v8`
+당시 평가 리비전: `orchard_trunk_yolo11_trt_clip_ood_v1` / `orchard_three_layer_weighted_centerline_v8`
 
 ## 1. 결론
 

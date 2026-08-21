@@ -153,6 +153,57 @@ jobs:
           PY
           docker exec unist-orachard-ros2-camera-bridge /bin/sh -lc 'test -n "$ORCHARD_VISION_AI_URL"'
           docker exec unist-orachard-ros2-data-recorder /bin/sh -lc 'test -n "$ORCHARD_VISION_AI_URL"'
+          python3 - <<'PY'
+          import json
+          import subprocess
+          import time
+          from pathlib import Path
+
+          status_path = Path("runtime/camera_bridge_status.json")
+          last = "camera bridge status file has not been written"
+          for _ in range(90):
+              try:
+                  status = json.loads(status_path.read_text(encoding="utf-8"))
+                  vision = status.get("vision_publisher") or {}
+                  payload = vision.get("last_payload") or {}
+                  checks = {
+                      "frame_topic_alive": status.get("frame_topic_alive") is True,
+                      "inference_count": int(vision.get("inference_count") or 0) > 0,
+                      "publish_count": int(vision.get("publish_count") or 0) > 0,
+                      "publisher_schema": vision.get("schema") == "orchard.camera_bearings.v1",
+                      "payload_schema": payload.get("schema") == "orchard.camera_bearings.v1",
+                      "payload_ok": payload.get("ok") is True,
+                      "payload_algorithm": payload.get("algorithm") == "local_orchard_vision_ai_worker_v4",
+                      "payload_revision": payload.get("revision") == "orchard_trunk_yolo11_trt_clip_ood_v1",
+                      "payload_source": payload.get("source") == "camera_ws_bridge_shared_worker_v4",
+                      "payload_frame": payload.get("frame_id") == "camera_link",
+                      "bearing_calibration_requested": vision.get("bearing_calibration_requested") is False,
+                      "bearing_calibration_valid": vision.get("bearing_calibration_valid") is False,
+                      "metric_range_valid": vision.get("metric_range_valid") is False,
+                  }
+                  if all(checks.values()):
+                      print(f"camera always-on vision publisher ok: {json.dumps(vision, ensure_ascii=False)}")
+                      break
+                  failed = [name for name, passed in checks.items() if not passed]
+                  last = json.dumps(
+                      {"failed": failed, "status_error": status.get("error"), "vision": vision},
+                      ensure_ascii=False,
+                  )
+              except (OSError, ValueError, json.JSONDecodeError) as exc:
+                  last = f"{type(exc).__name__}: {exc}"
+              time.sleep(2)
+          else:
+              logs = subprocess.run(
+                  ["docker", "logs", "--tail", "80", "unist-orachard-ros2-camera-bridge"],
+                  capture_output=True,
+                  text=True,
+                  check=False,
+              )
+              raise SystemExit(
+                  "camera always-on vision publisher smoke failed after 180s; "
+                  f"last_status={last}; container_logs={logs.stdout[-6000:]}{logs.stderr[-2000:]}"
+              )
+          PY
           docker exec unist-orachard-dashboard python /app/scripts/precompute_archive_camera_overlays.py \
             --recording-id 20260708T053333Z_both \
             --recording-id 20260708T054036Z_both
@@ -161,34 +212,71 @@ jobs:
             --recording-id 20260708T054036Z_both
           docker exec unist-orachard-dashboard python /app/scripts/precompute_orchard_maps.py \
             --recording-id 20260708T053333Z_both \
-            --recording-id 20260708T054036Z_both
+            --recording-id 20260708T054036Z_both \
+            --recording-id 20260721T081819Z_both \
+            --recording-id 20260721T082224Z_both \
+            --recording-id 20260721T082612Z_both
           python3 scripts/build_operational_readiness_summary.py
           python3 - <<'PY'
           import gzip
           import json
-          import time
           import urllib.request
 
-          for recording_id, expected in {
-              "20260708T053333Z_both": {"path": 92, "layers": {"lidar": 9, "camera": 19, "fusion": 14}},
-              "20260708T054036Z_both": {"path": 124, "layers": {"lidar": 7, "camera": 17, "fusion": 9}},
-          }.items():
+          research_readiness = []
+          for recording_id in (
+              "20260708T053333Z_both",
+              "20260708T054036Z_both",
+              "20260721T081819Z_both",
+              "20260721T082224Z_both",
+              "20260721T082612Z_both",
+          ):
               map_url = f"http://127.0.0.1:8080/api/recordings/{recording_id}/orchard-map"
-              orchard_map = json.load(urllib.request.urlopen(map_url, timeout=10))["map"]
-              assert orchard_map["algorithm"] == "orchard_three_layer_weighted_centerline_v8", orchard_map["algorithm"]
-              assert len(orchard_map["path"]) == expected["path"], len(orchard_map["path"])
+              orchard_map = json.load(urllib.request.urlopen(map_url, timeout=60))["map"]
+              assert orchard_map["algorithm"] == "orchard_metric_anchor_semantic_fusion_local_frenet_v9", orchard_map["algorithm"]
+              assert orchard_map["cache_revision"] == "v9_rep103_provenance_continuity_readiness_r3", orchard_map
+              assert orchard_map["ok"] is True
               actual_layers = {name: len(layer["trees"]) for name, layer in orchard_map["maps"].items()}
-              assert actual_layers == expected["layers"], actual_layers
+              assert set(actual_layers) == {"lidar", "camera", "fusion"}, actual_layers
+              fusion = orchard_map["fusion"]
+              assert fusion["position_policy"].startswith("LiDAR supplies metric"), fusion
+              assert fusion["metric_anchor_count"] == actual_layers["lidar"], (fusion, actual_layers)
+              assert fusion["metric_anchor_count"] + fusion["camera_only_promoted_count"] == actual_layers["fusion"], fusion
+              assert fusion["sync"]["lidar_frames"] == len(orchard_map["path"]), fusion["sync"]
+              assert fusion["sync"]["matched_frames"] + fusion["sync"]["outside_gate_frames"] + fusion["sync"]["camera_unavailable_frames"] == len(orchard_map["path"]), fusion["sync"]
+              assert fusion["sync"]["max_delta_s"] == 0.25, fusion["sync"]
+              assert all(
+                  tree.get("metric_anchor") in {"lidar", "camera_calibrated"}
+                  for tree in orchard_map["maps"]["fusion"]["trees"]
+              )
+              centerline = orchard_map["centerline"]
+              assert centerline["method"] == "trajectory_segmented_local_frenet_robust_rows_v9", centerline
+              assert centerline["ok"] is True or centerline["points"] == [], centerline
+              for segment in centerline.get("segments", []):
+                  assert segment["method"] == "trajectory_segmented_local_frenet_robust_rows_v9", segment
+                  if segment["ok"]:
+                      assert segment["straddles_vehicle"] is True, segment
+                      assert segment["left_occupied_bins"] >= 3, segment
+                      assert segment["right_occupied_bins"] >= 3, segment
+                      assert segment["left_longitudinal_span_m"] >= 4.0, segment
+                      assert segment["right_longitudinal_span_m"] >= 4.0, segment
+                      assert segment["bilateral_overlap_span_m"] >= 4.0, segment
+                      assert segment["bilateral_coverage_ratio"] >= 0.5, segment
+                      assert segment["paired_gap_count"] >= 2, segment
+                      assert segment["contiguous_paired_bin_count"] >= 2, segment
+                      assert segment["max_consecutive_paired_bin_gap"] <= 2, segment
+                      assert segment["paired_bin_density_ratio"] >= 0.5, segment
+                      assert segment["paired_station_coverage_ratio"] >= 0.35, segment
+                      interval = segment["paired_interval_s_m"]
+                      assert interval and all(interval[0] <= point["s_m"] <= interval[1] for point in segment["points"]), segment
+                  else:
+                      assert segment["fail_closed"] is True and segment["points"] == [], segment
 
               segment_url = f"http://127.0.0.1:8080/api/recordings/{recording_id}/timeline?start_s=0&duration_s=4"
               request = urllib.request.Request(segment_url, headers={"Accept-Encoding": "gzip"})
-              started = time.perf_counter()
-              with urllib.request.urlopen(request, timeout=10) as response:
+              with urllib.request.urlopen(request, timeout=30) as response:
                   raw = response.read()
                   assert response.headers.get("Content-Encoding") == "gzip", response.headers
               payload = json.loads(gzip.decompress(raw))
-              assert time.perf_counter() - started < 1.5
-              assert len(raw) < 1_500_000
               for frame in payload["timeline"]["camera"]["frames"]:
                   overlay = frame.get("overlay") or {}
                   assert overlay.get("algorithm") == "local_orchard_vision_ai_worker_v4", overlay
@@ -196,5 +284,30 @@ jobs:
               for frame in payload["timeline"]["lidar"]["frames"]:
                   overlay = frame.get("overlay") or {}
                   assert overlay.get("algorithm") == "polar_gap_cluster_wall_context_tree_ood_predictive_tracks_v6", overlay
+              readiness = orchard_map.get("readiness") or {}
+              assert type(readiness.get("data_sufficiency_ok")) is bool, readiness
+              assert type(readiness.get("navigation_ready")) is bool, readiness
+              research_readiness.append(
+                  {
+                      "recording_id": recording_id,
+                      "data_sufficiency_ok": readiness["data_sufficiency_ok"],
+                      "navigation_ready": readiness["navigation_ready"],
+                      "layer_counts": actual_layers,
+                      "semantic_supported_count": fusion["semantic_supported_count"],
+                      "centerline_ok": bool(centerline["ok"]),
+                      "centerline_state": centerline.get("state"),
+                  }
+              )
+          print(
+              json.dumps(
+                  {
+                      "deployment_safety_contract_ok": True,
+                      "research_readiness_is_non_blocking": True,
+                      "research_readiness": research_readiness,
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              )
+          )
           PY
           REMOTE

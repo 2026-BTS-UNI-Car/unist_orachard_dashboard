@@ -18,6 +18,7 @@ COPY docs ./docs
 COPY scripts/precompute_archive_camera_overlays.py ./scripts/precompute_archive_camera_overlays.py
 COPY scripts/precompute_archive_lidar_overlays.py ./scripts/precompute_archive_lidar_overlays.py
 COPY scripts/precompute_orchard_maps.py ./scripts/precompute_orchard_maps.py
+COPY scripts/evaluate_orchard_fusion_v9.py ./scripts/evaluate_orchard_fusion_v9.py
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends util-linux \

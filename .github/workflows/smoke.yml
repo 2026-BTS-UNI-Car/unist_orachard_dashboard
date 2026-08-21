@@ -18,3 +18,16 @@ jobs:
         run: python3 -m compileall dashboard_server scripts
       - name: Unit tests
         run: python3 -m unittest discover -s tests
+      - name: Validate Compose model
+        run: docker compose config --quiet
+      - name: Build dashboard image
+        run: docker build --file Dockerfile --tag unist-orchard-dashboard:smoke .
+      - name: Build ROS2 runtime image
+        run: docker build --file Dockerfile.ros2 --tag unist-orchard-dashboard-ros2:smoke .
+      - name: ROS Iron camera bearing contract smoke
+        run: |
+          docker run --rm \
+            --volume "$PWD:/workspace:ro" \
+            --workdir /workspace \
+            unist-orchard-dashboard-ros2:smoke \
+            /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -m unittest discover -s tests -p "test_camera_ws_bridge.py"'

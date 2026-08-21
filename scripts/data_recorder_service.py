@@ -88,6 +88,7 @@ class RecordingState:
                 "kind": active.get("kind"),
                 "started_at": active.get("started_at"),
                 "duration_s": active.get("duration_s"),
+                "rosbag_topics": list(active.get("topics") or []),
                 "archive_dir": str(self.archive_dir),
                 "archive_count": len(self.list_recordings()["recordings"]),
                 "rosbag_pid": self.process.pid if self.process and self.process.poll() is None else None,
@@ -287,12 +288,20 @@ class RecordingState:
             return None
 
     def topics_for(self, kind: str) -> list[str]:
-        topics = [self.args.cmd_topic, self.args.rover_status_topic]
+        topics = [
+            self.args.cmd_topic,
+            self.args.rover_status_topic,
+            self.args.odom_topic,
+            self.args.imu_topic,
+            self.args.tf_topic,
+            self.args.tf_static_topic,
+            self.args.vision_topic,
+        ]
         if kind in {"lidar", "both"}:
             topics.append(self.args.scan_topic)
         if kind in {"camera", "both"}:
             topics.extend([self.args.camera_topic, self.args.camera_info_topic])
-        return topics
+        return list(dict.fromkeys(topic for topic in topics if str(topic or "").strip()))
 
     def observe_scan(self, msg: LaserScan) -> None:
         with self.lock:
@@ -620,6 +629,11 @@ def main() -> int:
     parser.add_argument("--camera-info-topic", default=os.environ.get("CAMERA_INFO_TOPIC", "/camera/camera_info"))
     parser.add_argument("--cmd-topic", default=os.environ.get("ROVER_CMD_TOPIC", "/cmd_vel"))
     parser.add_argument("--rover-status-topic", default=os.environ.get("ROVER_STATUS_TOPIC", "/rover/status"))
+    parser.add_argument("--odom-topic", default=os.environ.get("ODOM_TOPIC", "/odom"))
+    parser.add_argument("--imu-topic", default=os.environ.get("IMU_TOPIC", "/imu/data"))
+    parser.add_argument("--tf-topic", default=os.environ.get("TF_TOPIC", "/tf"))
+    parser.add_argument("--tf-static-topic", default=os.environ.get("TF_STATIC_TOPIC", "/tf_static"))
+    parser.add_argument("--vision-topic", default=os.environ.get("ORCHARD_VISION_BEARINGS_TOPIC", "/orchard/vision/tree_bearings"))
     parser.add_argument("--lidar-frame-id", default=os.environ.get("LIDAR_FRAME_ID", "laser"))
     parser.add_argument("--preview-max-points", type=int, default=int(os.environ.get("RECORDER_PREVIEW_MAX_POINTS", "1200")))
     parser.add_argument("--timeline-hz", type=float, default=float(os.environ.get("RECORDER_TIMELINE_HZ", "2.0")))

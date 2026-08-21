@@ -261,9 +261,15 @@ class DashboardApiTest(unittest.TestCase):
             self.assertTrue(segment["ok"])
             self.assertTrue(segment["timeline"]["segment"]["partial"])
             self.assertEqual(len(segment["timeline"]["lidar"]["frames"]), 1)
+            orchard_cache = root.parent.parent / "orchard_analysis" / "unit_lidar_archive_orchard_map.json"
+            orchard_cache.parent.mkdir(parents=True, exist_ok=True)
+            orchard_cache.write_text(
+                json.dumps({"ok": True, "id": "unit_lidar_archive", "map": {"algorithm": "orchard_three_layer_weighted_centerline_v8"}}),
+                encoding="utf-8",
+            )
             orchard_map = self.get_json("/api/recordings/unit_lidar_archive/orchard-map")
             self.assertTrue(orchard_map["ok"])
-            self.assertEqual(orchard_map["map"]["algorithm"], "orchard_three_layer_weighted_centerline_v8")
+            self.assertEqual(orchard_map["map"]["algorithm"], "orchard_metric_anchor_semantic_fusion_local_frenet_v9")
             self.assertEqual(set(orchard_map["map"]["maps"].keys()), {"lidar", "camera", "fusion"})
             self.assertIn("centerline", orchard_map["map"]["maps"]["fusion"])
             with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/recordings/unit_lidar_archive/download", timeout=5) as res:
@@ -284,6 +290,8 @@ class DashboardApiTest(unittest.TestCase):
             root.rmdir()
             cache = Path(__file__).resolve().parents[1] / "runtime" / "recording_downloads" / "unit_lidar_archive.tar.gz"
             cache.unlink(missing_ok=True)
+            orchard_cache = Path(__file__).resolve().parents[1] / "runtime" / "orchard_analysis" / "unit_lidar_archive_orchard_map.json"
+            orchard_cache.unlink(missing_ok=True)
 
     def test_video_archive_detail_and_http_range_streaming(self):
         root = Path(__file__).resolve().parents[1] / "runtime" / "recordings" / "unit_camera_video"
@@ -723,6 +731,14 @@ class DashboardApiTest(unittest.TestCase):
         self.assertNotIn("$COMPOSE down", deploy_workflow)
         self.assertIn("label=com.docker.compose.project=unist_orachard_dashboard", deploy_workflow)
         self.assertIn("precompute_archive_lidar_overlays.py", deploy_workflow)
+        self.assertIn("v9_rep103_provenance_continuity_readiness_r3", deploy_workflow)
+        self.assertIn("deployment_safety_contract_ok", deploy_workflow)
+        self.assertIn("research_readiness_is_non_blocking", deploy_workflow)
+        smoke_workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "smoke.yml").read_text()
+        self.assertIn("docker compose config --quiet", smoke_workflow)
+        self.assertIn("docker build --file Dockerfile ", smoke_workflow)
+        self.assertIn("docker build --file Dockerfile.ros2 ", smoke_workflow)
+        self.assertIn('test_camera_ws_bridge.py', smoke_workflow)
         self.assertIn("import_video_archive.py", (Path(__file__).resolve().parents[1] / "Dockerfile.vision_ai").read_text())
         for service_name in ["dashboard", "ros2-camera-bridge", "ros2-data-recorder"]:
             match = re.search(rf"^  {re.escape(service_name)}:\n(?P<block>.*?)(?=^  [\w-]+:|\Z)", compose, re.M | re.S)
@@ -771,11 +787,24 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("read_file_command", rover_bridge_py)
         self.assertIn("file_command_active", rover_bridge_py)
         recorder_py = (Path(__file__).resolve().parents[1] / "scripts" / "data_recorder_service.py").read_text()
+        camera_bridge_py = (Path(__file__).resolve().parents[1] / "scripts" / "camera_ws_bridge.py").read_text()
         lidar_analysis_py = (Path(__file__).resolve().parents[1] / "dashboard_server" / "lidar_analysis.py").read_text()
         self.assertIn("polar_gap_cluster_wall_context_tree_ood_predictive_tracks_v6", lidar_analysis_py)
         self.assertIn("structural_post_without_canopy", (Path(__file__).resolve().parents[1] / "scripts" / "vision_ai_service.py").read_text())
         self.assertIn("timeline.json", recorder_py)
         self.assertIn("ros2\", \"bag\", \"record", recorder_py)
+        for topic in ("/odom", "/imu/data", "/tf", "/tf_static", "/orchard/vision/tree_bearings"):
+            self.assertIn(topic, recorder_py)
+        self.assertIn("orchard.camera_bearings.v1", camera_bridge_py)
+        self.assertIn("pixel-right is negative", camera_bridge_py)
+        self.assertIn("vision_inference_thread", camera_bridge_py)
+        self.assertIn("std_msgs.msg import String", camera_bridge_py)
+        self.assertIn("ORCHARD_VISION_PUBLISH_HZ", compose)
+        self.assertIn("ORCHARD_VISION_BEARING_CALIBRATION_VALID", compose)
+        self.assertIn("ORCHARD_VISION_BEARINGS_TOPIC", compose)
+        deploy_workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "deploy.yml").read_text()
+        self.assertIn("camera always-on vision publisher smoke failed after 180s", deploy_workflow)
+        self.assertIn('"payload_source": payload.get("source") == "camera_ws_bridge_shared_worker_v4"', deploy_workflow)
 
     def test_lidar_websocket_requires_browser_session(self):
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")

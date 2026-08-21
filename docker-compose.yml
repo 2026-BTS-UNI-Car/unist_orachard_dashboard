@@ -235,9 +235,16 @@ services:
     environment:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       CAMERA_IMAGE_TOPIC: "${CAMERA_IMAGE_TOPIC:-/camera/image_raw}"
+      CAMERA_INFO_TOPIC: "${CAMERA_INFO_TOPIC:-/camera/camera_info}"
       CAMERA_BRIDGE_STATUS_FILE: "/app/runtime/camera_bridge_status.json"
       ORCHARD_VISION_AI_URL: "${ORCHARD_VISION_AI_URL:-http://127.0.0.1:8785/analyze}"
       ORCHARD_VISION_AI_TIMEOUT_S: "${ORCHARD_VISION_AI_TIMEOUT_S:-6.0}"
+      ORCHARD_VISION_BEARINGS_TOPIC: "${ORCHARD_VISION_BEARINGS_TOPIC:-/orchard/vision/tree_bearings}"
+      ORCHARD_VISION_PUBLISH_HZ: "${ORCHARD_VISION_PUBLISH_HZ:-5.0}"
+      ORCHARD_VISION_WIDTH: "${ORCHARD_VISION_WIDTH:-640}"
+      ORCHARD_VISION_FRAME_ID: "${ORCHARD_VISION_FRAME_ID:-camera_link}"
+      ORCHARD_VISION_BEARING_CALIBRATION_VALID: "${ORCHARD_VISION_BEARING_CALIBRATION_VALID:-0}"
+      CAMERA_FOV_DEG: "${CAMERA_FOV_DEG:-70.0}"
     volumes:
       - ./runtime:/app/runtime
     command:
@@ -249,6 +256,12 @@ services:
           --host 0.0.0.0 \
           --port 8770 \
           --topic "$${CAMERA_IMAGE_TOPIC}" \
+          --camera-info-topic "$${CAMERA_INFO_TOPIC}" \
+          --vision-topic "$${ORCHARD_VISION_BEARINGS_TOPIC}" \
+          --vision-hz "$${ORCHARD_VISION_PUBLISH_HZ}" \
+          --vision-width "$${ORCHARD_VISION_WIDTH}" \
+          --vision-output-frame "$${ORCHARD_VISION_FRAME_ID}" \
+          --vision-nominal-fov-deg "$${CAMERA_FOV_DEG}" \
           --status-file "$${CAMERA_BRIDGE_STATUS_FILE}"
 
   ros2-rover-bridge:
@@ -309,6 +322,7 @@ services:
     depends_on:
       - ros2-lidar-driver
       - ros2-camera-driver
+      - ros2-camera-bridge
     environment:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       RECORDER_HOST: "127.0.0.1"
@@ -320,6 +334,11 @@ services:
       CAMERA_INFO_TOPIC: "${CAMERA_INFO_TOPIC:-/camera/camera_info}"
       ROVER_CMD_TOPIC: "${ROVER_CMD_TOPIC:-/cmd_vel}"
       ROVER_STATUS_TOPIC: "${ROVER_STATUS_TOPIC:-/rover/status}"
+      ODOM_TOPIC: "${ODOM_TOPIC:-/odom}"
+      IMU_TOPIC: "${IMU_TOPIC:-/imu/data}"
+      TF_TOPIC: "${TF_TOPIC:-/tf}"
+      TF_STATIC_TOPIC: "${TF_STATIC_TOPIC:-/tf_static}"
+      ORCHARD_VISION_BEARINGS_TOPIC: "${ORCHARD_VISION_BEARINGS_TOPIC:-/orchard/vision/tree_bearings}"
       RECORDER_PREVIEW_MAX_POINTS: "${RECORDER_PREVIEW_MAX_POINTS:-1200}"
       RECORDER_TIMELINE_HZ: "${RECORDER_TIMELINE_HZ:-2.0}"
       RECORDER_TIMELINE_MAX_FRAMES: "${RECORDER_TIMELINE_MAX_FRAMES:-1800}"
@@ -343,4 +362,9 @@ services:
           --camera-topic "$${CAMERA_IMAGE_TOPIC}" \
           --camera-info-topic "$${CAMERA_INFO_TOPIC}" \
           --cmd-topic "$${ROVER_CMD_TOPIC}" \
-          --rover-status-topic "$${ROVER_STATUS_TOPIC}"
+          --rover-status-topic "$${ROVER_STATUS_TOPIC}" \
+          --odom-topic "$${ODOM_TOPIC}" \
+          --imu-topic "$${IMU_TOPIC}" \
+          --tf-topic "$${TF_TOPIC}" \
+          --tf-static-topic "$${TF_STATIC_TOPIC}" \
+          --vision-topic "$${ORCHARD_VISION_BEARINGS_TOPIC}"
