@@ -1,0 +1,18 @@
+# Dedicated local-only DHCP/DNS for the UBTS USB AP. This process is not a
+# NetworkManager shared-mode DNS instance and does not configure NAT.
+port=53
+interface=${AP_INTERFACE}
+listen-address=10.77.0.1
+bind-dynamic
+no-resolv
+no-hosts
+domain-needed
+bogus-priv
+dhcp-authoritative
+dhcp-leasefile=/tmp/ubts-offline-ap.leases
+dhcp-range=10.77.0.20,10.77.0.200,255.255.255.0,12h
+# Explicitly omit a default gateway. Clients receive only this local DNS.
+dhcp-option=3
+dhcp-option=6,10.77.0.1
+address=/bts.sarihub.com/10.77.0.1
+address=/bts-docker.sarihub.com/10.77.0.1

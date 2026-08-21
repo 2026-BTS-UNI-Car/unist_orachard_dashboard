@@ -1,0 +1,9 @@
+[Unit]
+Description=Ensure the fail-closed UBTS USB Wi-Fi access point is active
+After=NetworkManager.service docker.service
+ConditionPathExists=/etc/ubts-offline-ap/ap.conf
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/sbin/ubts-offline-ap ensure

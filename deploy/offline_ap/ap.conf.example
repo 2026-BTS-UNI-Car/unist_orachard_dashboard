@@ -1,0 +1,7 @@
+# This file contains no password. The referenced password file must be
+# root-owned, mode 0600, and contain one 12-63 character WPA2 passphrase.
+INTERFACE=wlx001122334455
+SSID=UBTS-Jetson
+PASSWORD_FILE=/etc/ubts-offline-ap/wpa2.pass
+PORTAINER_TLS_NAME=localhost
+PROXY_IMAGE=nginx:stable-alpine

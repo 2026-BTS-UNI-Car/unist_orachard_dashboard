@@ -1,0 +1,1560 @@
+#!/usr/bin/env bash
+set +x
+set -Eeuo pipefail
+umask 077
+
+export LC_ALL=C
+
+# Test overrides are accepted only while this file is sourced. Executing the
+# program with UBTS_OFFLINE_AP_TESTING=1 never enables test paths.
+TEST_MODE=0
+if [[ "${UBTS_OFFLINE_AP_TESTING:-0}" == "1" && "${BASH_SOURCE[0]}" != "$0" ]]; then
+  TEST_MODE=1
+fi
+
+AP_ADDRESS="10.77.0.1"
+AP_CIDR="10.77.0.1/24"
+INSTALL_DIR="/opt/ubts-offline-ap"
+CONFIG_DIR="/etc/ubts-offline-ap"
+SYS_CLASS_NET_ROOT="/sys/class/net"
+PROC_SYS_ROOT="/proc/sys"
+NM_RUNTIME_CONNECTION_DIR="/run/NetworkManager/system-connections"
+NM_PERSISTENT_CONNECTION_DIR="/etc/NetworkManager/system-connections"
+RUNTIME_STATE_DIR="/run/ubts-offline-ap"
+LOCK_FILE="/run/lock/ubts-offline-ap.lock"
+if ((TEST_MODE)); then
+  INSTALL_DIR="${UBTS_TEST_INSTALL_DIR:-$INSTALL_DIR}"
+  CONFIG_DIR="${UBTS_TEST_CONFIG_DIR:-$CONFIG_DIR}"
+  SYS_CLASS_NET_ROOT="${UBTS_TEST_SYS_CLASS_NET_ROOT:-$SYS_CLASS_NET_ROOT}"
+  PROC_SYS_ROOT="${UBTS_TEST_PROC_SYS_ROOT:-$PROC_SYS_ROOT}"
+  NM_RUNTIME_CONNECTION_DIR="${UBTS_TEST_NM_RUNTIME_DIR:-$NM_RUNTIME_CONNECTION_DIR}"
+  NM_PERSISTENT_CONNECTION_DIR="${UBTS_TEST_NM_PERSISTENT_DIR:-$NM_PERSISTENT_CONNECTION_DIR}"
+  RUNTIME_STATE_DIR="${UBTS_TEST_RUNTIME_STATE_DIR:-$RUNTIME_STATE_DIR}"
+  LOCK_FILE="${UBTS_TEST_LOCK_FILE:-$LOCK_FILE}"
+fi
+AUTO_CONFIG="${CONFIG_DIR}/ap.conf"
+PORTAINER_CA="${CONFIG_DIR}/portainer-ca.pem"
+TIMER_UNIT="ubts-offline-ap-ensure.timer"
+DNSMASQ_UNIT="ubts-offline-ap-dnsmasq.service"
+DNSMASQ_TEMPLATE="${INSTALL_DIR}/dnsmasq.conf.template"
+DNSMASQ_RUNTIME_CONFIG="${RUNTIME_STATE_DIR}/dnsmasq.conf"
+ROUTING_BASELINE_FILE="${RUNTIME_STATE_DIR}/routing.before"
+UPLINK_BASELINE_FILE="${RUNTIME_STATE_DIR}/uplink.before"
+TARGET_FORWARDING_BASELINE_FILE="${RUNTIME_STATE_DIR}/target-forwarding.before"
+TARGET_IPV6_FORWARDING_BASELINE_FILE="${RUNTIME_STATE_DIR}/target-ipv6-forwarding.before"
+
+DRY_RUN=0
+INTERFACE=""
+SSID="UBTS-Jetson"
+PASSWORD_FILE=""
+PORTAINER_TLS_NAME="localhost"
+PROXY_IMAGE="${UBTS_OFFLINE_PROXY_IMAGE:-nginx:stable-alpine}"
+BASELINE_ROUTING=""
+BASELINE_UPLINK=""
+BASELINE_TARGET_FORWARDING=""
+BASELINE_TARGET_IPV6_FORWARDING=""
+PROFILE_CREATED_BY_TRANSACTION=0
+PROFILE_FILE_CREATED_BY_TRANSACTION=0
+PROFILE_UUID_BY_TRANSACTION=""
+ROLLBACK_RUNNING=0
+
+log() { printf '[ubts-offline-ap] %s\n' "$*"; }
+warn() { printf '[ubts-offline-ap] WARNING: %s\n' "$*" >&2; }
+die() { printf '[ubts-offline-ap] ERROR: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  ubts-offline-ap preflight --interface IFACE
+  ubts-offline-ap activate --interface IFACE --password-file FILE
+      [--ssid SSID] [--portainer-tls-name NAME] [--dry-run]
+  ubts-offline-ap deactivate --interface IFACE [--ssid SSID]
+      [--portainer-tls-name NAME] [--dry-run]
+  ubts-offline-ap enable-auto --interface IFACE --password-file FILE
+      [--ssid SSID] [--portainer-tls-name NAME] [--dry-run]
+  ubts-offline-ap disable-auto [--dry-run]
+  ubts-offline-ap ensure
+  ubts-offline-ap status
+
+Activation accepts only a dedicated USB Wi-Fi device, loads one complete
+manual-address NetworkManager AP keyfile atomically, and starts a dedicated
+local-only dnsmasq (no gateway, DNS forwarding, NAT, or masquerade). It
+preserves every default route, policy rule, firewall/forwarding state, and
+uplink route-get result, then verifies AP DNS and both proxy backends. Any
+partial failure runs a verified fail-closed rollback.
+USAGE
+}
+
+print_command() { printf 'DRY-RUN:'; printf ' %q' "$@"; printf '\n'; }
+run() { if ((DRY_RUN)); then print_command "$@"; else "$@"; fi; }
+
+require_root() {
+  ((TEST_MODE)) && return 0
+  ((EUID == 0)) || die 'this command must run as root'
+}
+
+require_command() { command -v "$1" >/dev/null 2>&1 || die "required command is missing: $1"; }
+
+networkmanager_is_available() { nmcli general status >/dev/null 2>&1; }
+systemd_manager_is_available() { systemctl list-units --no-pager >/dev/null 2>&1; }
+
+acquire_operation_lock() {
+  require_command flock
+  if ((TEST_MODE)); then
+    mkdir -p -- "$(dirname -- "$LOCK_FILE")"
+  else
+    install -d -o root -g root -m 0755 "$(dirname -- "$LOCK_FILE")"
+  fi
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || die 'another offline-AP install/activation operation is running'
+}
+
+validate_interface_name() {
+  [[ -n "$INTERFACE" ]] || die '--interface is required'
+  [[ "$INTERFACE" =~ ^[A-Za-z0-9_.-]{1,15}$ ]] || die 'invalid network interface name'
+}
+
+validate_ssid() {
+  [[ "$SSID" =~ ^[A-Za-z0-9._-]{1,32}$ ]] ||
+    die 'SSID must use 1-32 safe ASCII characters'
+}
+
+validate_tls_name() {
+  [[ "$PORTAINER_TLS_NAME" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || die 'invalid Portainer TLS DNS name'
+  [[ "$PORTAINER_TLS_NAME" != .* && "$PORTAINER_TLS_NAME" != *. ]] ||
+    die 'Portainer TLS DNS name must not start or end with a dot'
+}
+
+validate_proxy_image() {
+  [[ "$PROXY_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$ ]] ||
+    die 'invalid offline proxy image reference'
+}
+
+validate_absolute_path() {
+  [[ "$1" =~ ^/[A-Za-z0-9._/-]+$ ]] || die "$2 must be an absolute path with safe characters"
+}
+
+file_mode_octal() {
+  local mode
+  mode="$(stat -c '%a' -- "$1")" || return 1
+  [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+  printf '%d\n' "$((8#$mode))"
+}
+
+assert_root_owned_file() {
+  [[ -f "$1" && ! -L "$1" ]] || die "required regular file is missing: $1"
+  if ((!TEST_MODE)); then
+    [[ "$(stat -c '%u' -- "$1")" == "0" ]] || die "file must be owned by root: $1"
+  fi
+}
+
+assert_root_owned_directory() {
+  local mode_value
+  [[ -d "$1" && ! -L "$1" ]] || die "required real directory is missing: $1"
+  if ((!TEST_MODE)); then
+    [[ "$(stat -c '%u' -- "$1")" == "0" ]] || die "directory must be owned by root: $1"
+  fi
+  mode_value="$(file_mode_octal "$1")" || die "could not inspect directory mode: $1"
+  (( (mode_value & 022) == 0 )) || die "directory must not be group- or other-writable: $1"
+}
+
+read_and_validate_password() {
+  local mode_value password
+  [[ -n "$PASSWORD_FILE" ]] || die '--password-file is required'
+  validate_absolute_path "$PASSWORD_FILE" 'password file'
+  assert_root_owned_file "$PASSWORD_FILE"
+  mode_value="$(file_mode_octal "$PASSWORD_FILE")" || die 'could not inspect password file mode'
+  (( (mode_value & 077) == 0 )) || die 'password file must have mode 0600'
+  password="$(<"$PASSWORD_FILE")"
+  [[ "$password" != *$'\n'* && "$password" != *$'\r'* ]] || die 'password must be one line'
+  [[ "$password" =~ ^[A-Za-z0-9._@%+=,-]{12,63}$ ]] || die 'invalid WPA2 password format'
+  printf '%s' "$password"
+}
+
+assert_portainer_ca() {
+  local mode_value
+  assert_root_owned_file "$PORTAINER_CA"
+  mode_value="$(file_mode_octal "$PORTAINER_CA")" || die 'could not inspect Portainer CA mode'
+  (( (mode_value & 022) == 0 )) || die 'Portainer CA must not be group- or other-writable'
+  grep -q -- '-----BEGIN CERTIFICATE-----' "$PORTAINER_CA" || die 'Portainer CA is not PEM'
+}
+
+normalize_ip_output() {
+  awk '{
+    output = ""
+    for (i = 1; i <= NF; i++) {
+      if ($i == "expires") { i++; continue }
+      output = output (output == "" ? "" : " ") $i
+    }
+    print output
+  }'
+}
+
+all_default_routes_snapshot() {
+  local ipv4 ipv6
+  ipv4="$(ip -4 route show table all default 2>/dev/null)" || return 1
+  ipv6="$(ip -6 route show table all default 2>/dev/null)" || return 1
+  {
+    awk '{ print "ipv4 " $0 }' <<<"$ipv4"
+    awk '{ print "ipv6 " $0 }' <<<"$ipv6"
+  } | normalize_ip_output | sort
+}
+
+all_default_route_uses_interface_named() {
+  local target="$1" family output
+  for family in -4 -6; do
+    output="$(ip "$family" route show table all default 2>/dev/null)" || return 2
+    if awk -v target="$target" '
+      { for (i = 1; i <= NF; i++) if ($i == "dev" && $(i + 1) == target) found = 1 }
+      END { exit(found ? 0 : 1) }
+    ' <<<"$output"; then return 0; fi
+  done
+  return 1
+}
+
+rules_snapshot() {
+  local ipv4 ipv6
+  ipv4="$(ip -4 rule show 2>/dev/null)" || return 1
+  ipv6="$(ip -6 rule show 2>/dev/null)" || return 1
+  {
+    awk '{ print "ipv4 " $0 }' <<<"$ipv4"
+    awk '{ print "ipv6 " $0 }' <<<"$ipv6"
+  } | normalize_ip_output | sort
+}
+
+rules_use_interface_named() {
+  local target="$1" family output
+  for family in -4 -6; do
+    output="$(ip "$family" rule show 2>/dev/null)" || return 2
+    if awk -v target="$target" '
+      { for (i = 1; i <= NF; i++) if (($i == "iif" || $i == "oif") && $(i + 1) == target) found = 1 }
+      END { exit(found ? 0 : 1) }
+    ' <<<"$output"; then return 0; fi
+  done
+  return 1
+}
+
+route_get_signature() {
+  local family="$1" destination="$2" output defaults
+  if ! output="$(ip "$family" route get "$destination" 2>/dev/null)"; then
+    defaults="$(ip "$family" route show table all default 2>/dev/null)" || return 1
+    [[ -z "$defaults" ]] || return 1
+    printf '%s unavailable\n' "$family"
+    return 0
+  fi
+  output="$(head -n 1 <<<"$output")"
+  if [[ -z "$output" ]]; then
+    defaults="$(ip "$family" route show table all default 2>/dev/null)" || return 1
+    [[ -z "$defaults" ]] || return 1
+    printf '%s unavailable\n' "$family"
+    return 0
+  fi
+  awk -v family="$family" '{
+    dev = "-"; src = "-"; via = "-"; table = "main"; type = "unicast"
+    if ($1 == "unreachable" || $1 == "prohibit" || $1 == "blackhole") type = $1
+    for (i = 1; i <= NF; i++) {
+      if ($i == "dev") dev = $(i + 1)
+      if ($i == "src") src = $(i + 1)
+      if ($i == "via") via = $(i + 1)
+      if ($i == "table") table = $(i + 1)
+    }
+    printf "%s type=%s dev=%s src=%s via=%s table=%s\n", family, type, dev, src, via, table
+  }' <<<"$output"
+}
+
+uplink_route_get_snapshot() {
+  local ipv4 ipv6
+  ipv4="$(route_get_signature -4 1.1.1.1)" || return 1
+  ipv6="$(route_get_signature -6 2606:4700:4700::1111)" || return 1
+  printf '%s\n%s\n' "$ipv4" "$ipv6" | sort
+}
+
+firewall_forwarding_snapshot() {
+  local iptables_state ip6tables_state nft_state
+  iptables_state="$(iptables-save)" || return 1
+  ip6tables_state="$(ip6tables-save)" || return 1
+  printf 'ipv4.ip_forward=%s\n' "$(<"${PROC_SYS_ROOT}/net/ipv4/ip_forward")"
+  printf 'ipv6.all.forwarding=%s\n' "$(<"${PROC_SYS_ROOT}/net/ipv6/conf/all/forwarding")"
+  printf '%s\n' '[iptables-save]'
+  printf '%s\n' "$iptables_state"
+  printf '%s\n' '[ip6tables-save]'
+  printf '%s\n' "$ip6tables_state"
+  if command -v nft >/dev/null 2>&1; then
+    nft_state="$(nft --stateless list ruleset)" || return 1
+    printf '%s\n' '[nft-stateless]'
+    printf '%s\n' "$nft_state"
+  else
+    printf '%s\n' '[nft-unavailable]'
+  fi
+}
+
+routing_state_snapshot() {
+  local defaults rules uplink firewall
+  defaults="$(all_default_routes_snapshot)" || return 1
+  rules="$(rules_snapshot)" || return 1
+  uplink="$(uplink_route_get_snapshot)" || return 1
+  firewall="$(firewall_forwarding_snapshot)" || return 1
+  printf '%s\n' '[default-routes]' "$defaults"
+  printf '%s\n' '[rules]' "$rules"
+  printf '%s\n' '[uplink-route-get]' "$uplink"
+  printf '%s\n' '[firewall-forwarding]' "$firewall"
+}
+
+assert_interface_has_no_policy_use() {
+  local status
+  if all_default_route_uses_interface_named "$1"; then
+    die "interface is used by a default route in some routing table: $1"
+  else
+    status=$?
+    [[ "$status" == 1 ]] || die "could not inspect all default routes for interface: $1"
+  fi
+  if rules_use_interface_named "$1"; then
+    die "interface is referenced by an IPv4/IPv6 rule: $1"
+  else
+    status=$?
+    [[ "$status" == 1 ]] || die "could not inspect IPv4/IPv6 policy rules for interface: $1"
+  fi
+  return 0
+}
+
+find_ap_address_conflicts() {
+  local allow_managed_target="${1:-0}"
+  ip -4 -o address show 2>/dev/null | awk \
+    -v target="$INTERFACE" -v allow="$allow_managed_target" '
+    function ip_number(ip, octets, count) {
+      count = split(ip, octets, ".")
+      if (count != 4) return -1
+      for (j = 1; j <= 4; j++) {
+        if (octets[j] !~ /^[0-9]+$/ || octets[j] < 0 || octets[j] > 255) return -1
+      }
+      return octets[1] * 16777216 + octets[2] * 65536 + octets[3] * 256 + octets[4]
+    }
+    function overlaps_ap(cidr, parts, prefix, address, common, divisor) {
+      split(cidr, parts, "/")
+      prefix = (parts[2] == "" ? 32 : parts[2] + 0)
+      address = ip_number(parts[1])
+      if (address < 0 || prefix < 0 || prefix > 32) return 0
+      common = (prefix < 24 ? prefix : 24)
+      divisor = 2 ^ (32 - common)
+      return int(address / divisor) == int(172818432 / divisor)
+    }
+    {
+      interface = $2
+      sub(/@.*/, "", interface)
+      for (i = 1; i <= NF; i++) {
+        if ($i != "inet") continue
+        cidr = $(i + 1)
+        if (!overlaps_ap(cidr)) continue
+        if (allow == 1 && interface == target && cidr == "10.77.0.1/24") continue
+        print $0
+      }
+    }
+  '
+}
+
+find_ap_route_conflicts() {
+  local allow_managed_target="${1:-0}"
+  ip -4 route show table all 2>/dev/null | awk \
+    -v target="$INTERFACE" -v allow="$allow_managed_target" '
+    function ip_number(ip, octets, count) {
+      count = split(ip, octets, ".")
+      if (count != 4) return -1
+      for (j = 1; j <= 4; j++) {
+        if (octets[j] !~ /^[0-9]+$/ || octets[j] < 0 || octets[j] > 255) return -1
+      }
+      return octets[1] * 16777216 + octets[2] * 65536 + octets[3] * 256 + octets[4]
+    }
+    function overlaps_ap(cidr, parts, prefix, address, common, divisor) {
+      split(cidr, parts, "/")
+      prefix = (parts[2] == "" ? 32 : parts[2] + 0)
+      address = ip_number(parts[1])
+      if (address < 0 || prefix < 0 || prefix > 32) return 0
+      common = (prefix < 24 ? prefix : 24)
+      divisor = 2 ^ (32 - common)
+      return int(address / divisor) == int(172818432 / divisor)
+    }
+    function expected_target_route(cidr, device, route_type, table, proto, scope, source) {
+      if (device != target || proto != "kernel" || source != "10.77.0.1") return 0
+      if (route_type == "unicast" && cidr == "10.77.0.0/24" && table == "main" && scope == "link") return 1
+      if (route_type == "local" && (cidr == "10.77.0.1" || cidr == "10.77.0.1/32") && table == "local" && scope == "host") return 1
+      if (route_type == "broadcast" &&
+          (cidr == "10.77.0.0" || cidr == "10.77.0.0/32" || cidr == "10.77.0.255" || cidr == "10.77.0.255/32") &&
+          table == "local" && scope == "link") return 1
+      return 0
+    }
+    $1 == "default" { next }
+    {
+      destination = ""; device = ""; route_type = "unicast"; table = "main"; proto = ""; scope = ""; source = ""
+      if ($1 == "local" || $1 == "broadcast") route_type = $1
+      for (i = 1; i <= NF; i++) {
+        if ($i == "dev") device = $(i + 1)
+        if ($i == "table") table = $(i + 1)
+        if ($i == "proto") proto = $(i + 1)
+        if ($i == "scope") scope = $(i + 1)
+        if ($i == "src") source = $(i + 1)
+        if (destination == "" && $i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?$/) destination = $i
+      }
+      if (destination == "" || !overlaps_ap(destination)) next
+      if (allow == 1 && expected_target_route(destination, device, route_type, table, proto, scope, source)) next
+      print $0
+    }
+  '
+}
+
+assert_ap_subnet_available() {
+  local allow_managed_target="${1:-0}" address_conflicts route_conflicts
+  if ! address_conflicts="$(find_ap_address_conflicts "$allow_managed_target")"; then
+    die 'could not inspect IPv4 addresses for AP subnet conflicts'
+  fi
+  [[ -z "$address_conflicts" ]] ||
+    die "AP subnet 10.77.0.0/24 overlaps an existing address: $address_conflicts"
+  if ! route_conflicts="$(find_ap_route_conflicts "$allow_managed_target")"; then
+    die 'could not inspect all IPv4 routing tables for AP subnet conflicts'
+  fi
+  [[ -z "$route_conflicts" ]] ||
+    die "AP subnet 10.77.0.0/24 overlaps an existing route: $route_conflicts"
+}
+
+connection_name() { printf 'ubts-offline-ap-%s\n' "$INTERFACE"; }
+profile_file_path() { printf '%s/%s.nmconnection\n' "$NM_RUNTIME_CONNECTION_DIR" "$(connection_name)"; }
+persistent_profile_file_path() {
+  printf '%s/%s.nmconnection\n' "$NM_PERSISTENT_CONNECTION_DIR" "$(connection_name)"
+}
+
+profile_path_exists() {
+  local profile
+  profile="$(profile_file_path)"
+  [[ -e "$profile" || -L "$profile" ]]
+}
+
+persistent_profile_path_exists() {
+  local profile
+  profile="$(persistent_profile_file_path)"
+  [[ -e "$profile" || -L "$profile" ]]
+}
+
+connection_exists() {
+  nmcli -t -f NAME connection show 2>/dev/null | grep -Fqx -- "$(connection_name)"
+}
+
+connection_is_active() {
+  nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null |
+    grep -Fqx -- "$(connection_name):${INTERFACE}"
+}
+
+# These strict helpers deliberately distinguish "not found" (1) from an
+# unreadable/ambiguous NetworkManager state (2/3).  Rollback must never treat a
+# failed nmcli query as proof that an AP is inactive or a profile is absent.
+strict_loaded_profile_uuid_for_name() {
+  local output
+  output="$(nmcli -t -f NAME,UUID connection show 2>/dev/null)" || return 2
+  awk -F: -v name="$(connection_name)" '
+    $1 == name { value = $2; count++ }
+    END {
+      if (count == 1) { print value; exit 0 }
+      if (count == 0) exit 1
+      exit 3
+    }
+  ' <<<"$output"
+}
+
+strict_active_record_on_interface() {
+  local output
+  output="$(nmcli -t -f NAME,UUID,DEVICE connection show --active 2>/dev/null)" || return 2
+  awk -F: -v interface="$INTERFACE" '
+    $3 == interface { print $1 ":" $2; count++ }
+    END {
+      if (count == 1) exit 0
+      if (count == 0) exit 1
+      exit 3
+    }
+  ' <<<"$output"
+}
+
+strict_interface_is_inactive() {
+  local status
+  if strict_active_record_on_interface >/dev/null; then return 1; else status=$?; fi
+  [[ "$status" == 1 ]]
+}
+
+active_connection_on_interface() {
+  local output
+  output="$(nmcli -g GENERAL.CONNECTION device show "$1" 2>/dev/null)" || return 2
+  printf '%s\n' "$output"
+}
+
+profile_file_uuid() {
+  local profile="${1:-$(profile_file_path)}"
+  [[ -f "$profile" && ! -L "$profile" ]] || return 1
+  awk -F= '$1 == "uuid" { print $2; exit }' "$profile"
+}
+
+managed_profile_uuid() { profile_file_uuid "$(profile_file_path)"; }
+
+loaded_profile_uuid() {
+  strict_loaded_profile_uuid_for_name 2>/dev/null || true
+}
+
+transaction_profile_is_loaded() {
+  local actual
+  [[ -n "$PROFILE_UUID_BY_TRANSACTION" ]] || return 1
+  actual="$(nmcli -g connection.uuid connection show "$PROFILE_UUID_BY_TRANSACTION" 2>/dev/null || true)"
+  [[ "$actual" == "$PROFILE_UUID_BY_TRANSACTION" ]]
+}
+
+remove_transaction_profile_file() {
+  local profile current_uuid
+  profile="$(profile_file_path)"
+  [[ -n "$PROFILE_UUID_BY_TRANSACTION" ]] || return 1
+  if [[ ! -e "$profile" && ! -L "$profile" ]]; then return 0; fi
+  current_uuid="$(profile_file_uuid "$profile" 2>/dev/null || true)"
+  [[ "$current_uuid" == "$PROFILE_UUID_BY_TRANSACTION" ]] || return 1
+  rm -f -- "$profile" || return 1
+  [[ ! -e "$profile" && ! -L "$profile" ]]
+}
+
+assert_managed_profile_file() {
+  local profile mode_value uuid actual expected
+  profile="$(profile_file_path)"
+  assert_root_owned_file "$profile"
+  mode_value="$(file_mode_octal "$profile")" || die 'could not inspect AP keyfile mode'
+  (( (mode_value & 077) == 0 )) || die 'AP keyfile must have mode 0600'
+  uuid="$(managed_profile_uuid)"
+  [[ "$uuid" =~ ^[0-9a-fA-F-]{36}$ ]] || die 'AP keyfile UUID is invalid'
+  actual="$(sed -E 's/^uuid=.*/uuid=<managed-uuid>/' "$profile")"
+  expected="$({
+    printf '%s\n' '[connection]' "id=$(connection_name)" 'uuid=<managed-uuid>' 'type=wifi' \
+      "interface-name=${INTERFACE}" 'autoconnect=false'
+    printf '\n%s\n' '[wifi]' "ssid=${SSID}" 'mode=ap' 'band=bg' 'powersave=2'
+    printf '\n%s\n' '[wifi-security]' 'key-mgmt=wpa-psk' 'psk-flags=2' \
+      'proto=rsn;' 'pairwise=ccmp;' 'group=ccmp;'
+    printf '\n%s\n' '[ipv4]' "address1=${AP_CIDR}" 'method=manual' 'never-default=true'
+    printf '\n%s\n' '[ipv6]' 'method=disabled' 'never-default=true'
+  })"
+  [[ "$actual" == "$expected" ]] || die 'AP keyfile content is not the exact fail-closed managed profile'
+}
+
+assert_profile_settings() {
+  local connection property actual loaded_uuid
+  assert_managed_profile_file
+  connection="$(managed_profile_uuid)"
+  if ! loaded_uuid="$(strict_loaded_profile_uuid_for_name)"; then
+    die 'managed AP profile is absent, duplicated, or NetworkManager state is unreadable'
+  fi
+  [[ "$loaded_uuid" == "$connection" ]] || die 'loaded profile UUID/keyfile UUID mismatch'
+  declare -A expected_values=(
+    [connection.id]="$(connection_name)"
+    [connection.interface-name]="$INTERFACE"
+    [connection.autoconnect]="no"
+    [802-11-wireless.mode]="ap"
+    [802-11-wireless.ssid]="$SSID"
+    [802-11-wireless.band]="bg"
+    [802-11-wireless-security.key-mgmt]="wpa-psk"
+    [ipv4.method]="manual"
+    [ipv4.never-default]="yes"
+    [ipv6.method]="disabled"
+    [ipv6.never-default]="yes"
+  )
+  for property in "${!expected_values[@]}"; do
+    actual="$(nmcli -g "$property" connection show "$connection")" || die "could not inspect $property"
+    [[ "$actual" == "${expected_values[$property]}" ]] || die "unsafe profile property ($property=$actual)"
+  done
+  actual="$(nmcli -g 802-11-wireless-security.psk-flags connection show "$connection")" || die 'no PSK flags'
+  [[ "$actual" == "2" || "$actual" == "2 (not saved)" ]] || die 'PSK must be not-saved'
+  actual="$(nmcli -g ipv4.addresses connection show "$connection")" || die 'no AP address'
+  [[ "$actual" == "$AP_CIDR" ]] || die "AP profile must use only $AP_CIDR"
+}
+
+wiphy_for_interface() { iw dev "$1" info 2>/dev/null | awk '$1 == "wiphy" { print $2; exit }'; }
+
+usb_physical_root_for_device_path() {
+  local current="$1"
+  while [[ "$current" != "/" && -n "$current" ]]; do
+    if [[ -f "$current/idVendor" && -f "$current/idProduct" ]]; then printf '%s\n' "$current"; return 0; fi
+    current="$(dirname -- "$current")"
+  done
+  return 1
+}
+
+related_usb_or_wiphy_interfaces() {
+  local target_device target_usb target_wiphy net_path candidate candidate_device candidate_usb candidate_wiphy
+  target_device="$(readlink -f -- "${SYS_CLASS_NET_ROOT}/${INTERFACE}/device")" || return 1
+  target_usb="$(usb_physical_root_for_device_path "$target_device")" || return 1
+  target_wiphy="$(wiphy_for_interface "$INTERFACE")"
+  for net_path in "${SYS_CLASS_NET_ROOT}"/*; do
+    [[ -d "$net_path" || -L "$net_path" ]] || continue
+    candidate="$(basename -- "$net_path")"
+    [[ -e "$net_path/device" ]] || continue
+    candidate_device="$(readlink -f -- "$net_path/device" 2>/dev/null || true)"
+    [[ -n "$candidate_device" ]] || continue
+    candidate_usb="$(usb_physical_root_for_device_path "$candidate_device" 2>/dev/null || true)"
+    candidate_wiphy=""
+    [[ -d "$net_path/wireless" ]] && candidate_wiphy="$(wiphy_for_interface "$candidate")"
+    if [[ "$candidate_usb" == "$target_usb" ||
+          ( -n "$target_wiphy" && "$candidate_wiphy" == "$target_wiphy" ) ]]; then
+      printf '%s\n' "$candidate"
+    fi
+  done | sort -u
+}
+
+assert_usb_wifi_ap_interface() {
+  local device_path usb_root wiphy phy_info related active_connection
+  local -a related_interfaces
+  validate_interface_name
+  [[ -d "${SYS_CLASS_NET_ROOT}/${INTERFACE}" ]] || die "interface does not exist: $INTERFACE"
+  [[ -d "${SYS_CLASS_NET_ROOT}/${INTERFACE}/wireless" ]] || die "interface is not Wi-Fi: $INTERFACE"
+  [[ -e "${SYS_CLASS_NET_ROOT}/${INTERFACE}/device" ]] || die 'interface has no sysfs device link'
+  device_path="$(readlink -f -- "${SYS_CLASS_NET_ROOT}/${INTERFACE}/device")" || die 'cannot resolve sysfs device'
+  [[ "$device_path" =~ /usb[0-9]+/ ]] || die "refusing non-USB Wi-Fi: $INTERFACE ($device_path)"
+  usb_root="$(usb_physical_root_for_device_path "$device_path")" || die 'cannot identify physical USB root'
+  assert_interface_has_no_policy_use "$INTERFACE"
+  wiphy="$(wiphy_for_interface "$INTERFACE")"
+  [[ "$wiphy" =~ ^[0-9]+$ ]] || die "cannot determine wiphy for $INTERFACE"
+  phy_info="$(iw phy "phy${wiphy}" info)" || die "cannot inspect phy${wiphy}"
+  grep -Eq '^[[:space:]]+\*[[:space:]]+AP([[:space:]]|$)' <<<"$phy_info" || die 'adapter lacks AP mode'
+  mapfile -t related_interfaces < <(related_usb_or_wiphy_interfaces)
+  ((${#related_interfaces[@]} > 0)) || die 'could not enumerate related USB/wiphy interfaces'
+  for related in "${related_interfaces[@]}"; do
+    assert_interface_has_no_policy_use "$related"
+    if ! active_connection="$(active_connection_on_interface "$related")"; then
+      die "could not inspect active NetworkManager connection on interface: $related"
+    fi
+    if [[ "$related" == "$INTERFACE" ]]; then
+      if [[ -n "$active_connection" && "$active_connection" != "--" &&
+            "$active_connection" != "$(connection_name)" ]]; then
+        die "target has another active connection: $active_connection"
+      fi
+    elif [[ -n "$active_connection" && "$active_connection" != "--" ]]; then
+      die "related USB/wiphy sibling $related is active: $active_connection"
+    fi
+  done
+  log "accepted dedicated USB AP $INTERFACE (root $usb_root, phy${wiphy}; checked ${related_interfaces[*]})"
+}
+
+DNSMASQ_CONFIG_CHANGED=0
+
+render_dnsmasq_config() {
+  local temp_config previous_hash="" next_hash
+  [[ -f "$DNSMASQ_TEMPLATE" ]] || die "dnsmasq template is missing: $DNSMASQ_TEMPLATE"
+  assert_root_owned_directory "$RUNTIME_STATE_DIR"
+  temp_config="$(mktemp "${RUNTIME_STATE_DIR}/.dnsmasq.XXXXXXXX")"
+  chmod 0600 "$temp_config"
+  awk -v interface="$INTERFACE" '{
+    gsub(/\$\{AP_INTERFACE\}/, interface)
+    print
+  }' "$DNSMASQ_TEMPLATE" >"$temp_config"
+  dnsmasq --test --conf-file="$temp_config" >/dev/null || {
+    rm -f -- "$temp_config"
+    die 'rendered dnsmasq configuration failed syntax validation'
+  }
+  [[ -f "$DNSMASQ_RUNTIME_CONFIG" ]] && previous_hash="$(sha256sum "$DNSMASQ_RUNTIME_CONFIG" | awk '{print $1}')"
+  next_hash="$(sha256sum "$temp_config" | awk '{print $1}')"
+  mv -- "$temp_config" "$DNSMASQ_RUNTIME_CONFIG"
+  if [[ "$previous_hash" != "$next_hash" ]]; then DNSMASQ_CONFIG_CHANGED=1; else DNSMASQ_CONFIG_CHANGED=0; fi
+}
+
+dnsmasq_is_active() { systemctl is-active --quiet "$DNSMASQ_UNIT"; }
+
+start_local_dnsmasq() {
+  systemd_manager_is_available || die 'systemd manager is unavailable'
+  render_dnsmasq_config
+  if dnsmasq_is_active; then
+    if ((DNSMASQ_CONFIG_CHANGED)); then systemctl restart "$DNSMASQ_UNIT"; fi
+  else
+    systemctl start "$DNSMASQ_UNIT"
+  fi
+  dnsmasq_is_active || die 'dedicated local dnsmasq did not become active'
+}
+
+stop_local_dnsmasq() {
+  systemd_manager_is_available || return 1
+  systemctl stop "$DNSMASQ_UNIT" >/dev/null 2>&1 || return 1
+  systemd_manager_is_available || return 1
+  if dnsmasq_is_active; then return 1; fi
+  rm -f -- "$DNSMASQ_RUNTIME_CONFIG"
+}
+
+runtime_transaction_state_exists() {
+  local path
+  [[ -L "$RUNTIME_STATE_DIR" ]] && return 0
+  for path in "$ROUTING_BASELINE_FILE" "$UPLINK_BASELINE_FILE" \
+              "$TARGET_FORWARDING_BASELINE_FILE" "$TARGET_IPV6_FORWARDING_BASELINE_FILE" \
+              "$DNSMASQ_RUNTIME_CONFIG"; do
+    if [[ -e "$path" || -L "$path" ]]; then return 0; fi
+  done
+  if [[ -d "$RUNTIME_STATE_DIR" ]] &&
+     { compgen -G "${RUNTIME_STATE_DIR}/*" >/dev/null ||
+       compgen -G "${RUNTIME_STATE_DIR}/.[!.]*" >/dev/null ||
+       compgen -G "${RUNTIME_STATE_DIR}/..?*" >/dev/null; }; then
+    return 0
+  fi
+  return 1
+}
+
+proxy_config_fingerprint() {
+  local image_id
+  local -a files=(
+    "${INSTALL_DIR}/compose.yaml"
+    "${INSTALL_DIR}/nginx/default.conf.template"
+    "${INSTALL_DIR}/render-and-run.sh"
+    "$PORTAINER_CA"
+  )
+  image_id="$(docker image inspect -f '{{.Id}}' "$PROXY_IMAGE" 2>/dev/null)" || return 1
+  [[ "$image_id" =~ ^sha256:[0-9a-fA-F]{12,}$ ]] || return 1
+  { sha256sum "${files[@]}"; printf 'proxy-image=%s\nproxy-image-id=%s\nportainer-tls-name=%s\n' \
+      "$PROXY_IMAGE" "$image_id" "$PORTAINER_TLS_NAME"; } |
+    sha256sum | awk '{print $1}'
+}
+
+compose_command() {
+  local fingerprint
+  local -a args=(docker compose -f "${INSTALL_DIR}/compose.yaml")
+  fingerprint="$(proxy_config_fingerprint 2>/dev/null || printf unavailable)"
+  if ((DRY_RUN)); then
+    print_command env "AP_ADDRESS=${AP_ADDRESS}" "PORTAINER_TLS_NAME=${PORTAINER_TLS_NAME}" \
+      "UBTS_PROXY_CONFIG_FINGERPRINT=${fingerprint}" \
+      "UBTS_OFFLINE_PROXY_IMAGE=${PROXY_IMAGE}" "${args[@]}" "$@"
+    return 0
+  fi
+  AP_ADDRESS="$AP_ADDRESS" PORTAINER_TLS_NAME="$PORTAINER_TLS_NAME" \
+  UBTS_PROXY_CONFIG_FINGERPRINT="$fingerprint" \
+  UBTS_OFFLINE_PROXY_IMAGE="$PROXY_IMAGE" "${args[@]}" "$@"
+}
+
+check_compose_configuration() {
+  local fingerprint
+  fingerprint="$(proxy_config_fingerprint)" || die 'could not fingerprint proxy files/image'
+  AP_ADDRESS="$AP_ADDRESS" PORTAINER_TLS_NAME="$PORTAINER_TLS_NAME" \
+  UBTS_PROXY_CONFIG_FINGERPRINT="$fingerprint" UBTS_OFFLINE_PROXY_IMAGE="$PROXY_IMAGE" \
+    docker compose -f "${INSTALL_DIR}/compose.yaml" config --quiet
+}
+
+proxy_is_running() {
+  [[ "$(docker inspect -f '{{.State.Running}}' ubts-offline-proxy 2>/dev/null || true)" == "true" ]]
+}
+
+proxy_container_exists() {
+  docker container inspect ubts-offline-proxy >/dev/null 2>&1
+}
+
+proxy_project_state_exists() {
+  docker ps -aq --filter label=com.docker.compose.project=ubts-offline-ap 2>/dev/null |
+    grep -q .
+}
+
+proxy_is_healthy() {
+  [[ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+      ubts-offline-proxy 2>/dev/null || true)" == "healthy" ]]
+}
+
+proxy_config_matches() {
+  local expected actual
+  expected="$(proxy_config_fingerprint)" || return 1
+  actual="$(docker inspect -f '{{index .Config.Labels "com.unist.ubts.offline-ap.config-sha256"}}' \
+    ubts-offline-proxy 2>/dev/null || true)"
+  [[ "$actual" == "$expected" ]]
+}
+
+test_nginx_configuration() {
+  local image
+  local -a command_args
+  image="$PROXY_IMAGE"
+  command_args=(
+    docker run --rm --network none --user 101:101
+    --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges:true
+    --entrypoint /opt/ubts-offline-ap/render-and-run.sh
+    --tmpfs "/etc/nginx/conf.d:uid=101,gid=101,mode=0755"
+    --tmpfs "/var/cache/nginx:uid=101,gid=101,mode=0755"
+    --tmpfs "/var/run:uid=101,gid=101,mode=0755"
+    --tmpfs "/tmp:uid=101,gid=101,mode=1777"
+    -e AP_ADDRESS=127.0.0.1 -e "PORTAINER_TLS_NAME=${PORTAINER_TLS_NAME}"
+    -e PORTAINER_CA_PATH=/etc/nginx/portainer-ca.pem
+    -v "${INSTALL_DIR}/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro"
+    -v "${INSTALL_DIR}/render-and-run.sh:/opt/ubts-offline-ap/render-and-run.sh:ro"
+    -v "${PORTAINER_CA}:/etc/nginx/portainer-ca.pem:ro" "$image" test
+  )
+  if ((DRY_RUN)); then print_command "${command_args[@]}"; else "${command_args[@]}"; fi
+}
+
+assert_port_80_available() {
+  local allow_existing_proxy="${1:-0}"
+  if proxy_container_exists; then
+    if ((allow_existing_proxy)) && proxy_is_running; then return 0; fi
+    die 'offline proxy container already exists; refusing another activation transaction'
+  fi
+  if ((!allow_existing_proxy)) && proxy_project_state_exists; then
+    die 'offline proxy Compose project already has container state'
+  fi
+  if ss -H -ltn | awk '$4 ~ /:80$/ { found = 1 } END { exit(found ? 0 : 1) }'; then
+    die 'host TCP port 80 is already in use'
+  fi
+}
+
+assert_local_backends() {
+  curl --fail --silent --show-error --max-time 3 --noproxy '*' \
+    http://127.0.0.1:8080/api/health >/dev/null || die 'dashboard backend is unhealthy'
+  curl --fail --silent --show-error --max-time 3 --noproxy '*' --cacert "$PORTAINER_CA" \
+    --resolve "${PORTAINER_TLS_NAME}:9443:127.0.0.1" \
+    "https://${PORTAINER_TLS_NAME}:9443/api/status" >/dev/null || die 'Portainer CA/SAN verification failed'
+}
+
+assert_proxy_prerequisites() {
+  local allow_existing_proxy="${1:-0}" image="$PROXY_IMAGE"
+  validate_proxy_image
+  [[ -f "${INSTALL_DIR}/compose.yaml" ]] || die 'offline proxy bundle is not installed'
+  [[ -f "${INSTALL_DIR}/nginx/default.conf.template" ]] || die 'nginx template is not installed'
+  [[ -f "${INSTALL_DIR}/render-and-run.sh" ]] || die 'nginx wrapper is not installed'
+  assert_portainer_ca
+  assert_port_80_available "$allow_existing_proxy"
+  docker compose version >/dev/null 2>&1 || die 'Docker Compose v2 is required'
+  docker image inspect "$image" >/dev/null 2>&1 || die "proxy image is not local: $image"
+  check_compose_configuration
+  test_nginx_configuration
+  assert_local_backends
+}
+
+assert_ap_dns() {
+  local name answers
+  for name in bts.sarihub.com bts-docker.sarihub.com; do
+    answers="$(dig +time=2 +tries=1 +short @"$AP_ADDRESS" "$name" A 2>/dev/null |
+      sed '/^[[:space:]]*$/d' | sort -u || true)"
+    [[ "$answers" == "$AP_ADDRESS" ]] || die "AP DNS did not map only $name to $AP_ADDRESS"
+  done
+}
+
+assert_proxy_health() {
+  proxy_is_running || die 'offline proxy is not running'
+  proxy_is_healthy || die 'offline proxy is not healthy'
+  proxy_config_matches || die 'offline proxy configuration fingerprint is stale'
+  curl --fail --silent --show-error --max-time 3 --noproxy '*' \
+    --resolve "bts.sarihub.com:80:${AP_ADDRESS}" "http://bts.sarihub.com/api/health" >/dev/null ||
+    die 'dashboard proxy health failed'
+  curl --fail --silent --show-error --max-time 3 --noproxy '*' \
+    --resolve "bts-docker.sarihub.com:80:${AP_ADDRESS}" "http://bts-docker.sarihub.com/api/status" >/dev/null ||
+    die 'Portainer proxy health failed'
+}
+
+preflight_common() {
+  local command allow_managed_target="${1:-0}"
+  validate_interface_name
+  for command in ip iw nmcli readlink stat grep awk sed sort dirname basename ln iptables-save ip6tables-save; do
+    require_command "$command"
+  done
+  [[ -r "${PROC_SYS_ROOT}/net/ipv4/ip_forward" ]] || die 'cannot read global IPv4 forwarding state'
+  [[ -r "${PROC_SYS_ROOT}/net/ipv6/conf/all/forwarding" ]] || die 'cannot read global IPv6 forwarding state'
+  [[ -r "${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding" ]] ||
+    die 'cannot read target-interface IPv4 forwarding state'
+  [[ -r "${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding" ]] ||
+    die 'cannot read target-interface IPv6 forwarding state'
+  routing_state_snapshot >/dev/null || die 'cannot snapshot complete routing/policy/uplink/firewall state'
+  networkmanager_is_available || die 'NetworkManager is unavailable'
+  assert_usb_wifi_ap_interface
+  assert_ap_subnet_available "$allow_managed_target"
+}
+
+preflight_for_new_activation() {
+  local command loaded_uuid status
+  preflight_common 0
+  for command in docker curl ss dig sha256sum uuidgen mktemp dnsmasq systemctl; do require_command "$command"; done
+  systemd_manager_is_available || die 'systemd manager is unavailable'
+  [[ -f "$DNSMASQ_TEMPLATE" ]] || die 'dedicated dnsmasq template is not installed'
+  validate_ssid
+  validate_tls_name
+  validate_proxy_image
+  read_and_validate_password >/dev/null
+  if loaded_uuid="$(strict_loaded_profile_uuid_for_name)"; then
+    die "same-name profile exists and was not deleted: $(connection_name) ($loaded_uuid)"
+  else
+    status=$?
+    [[ "$status" == 1 ]] || die 'same-name NetworkManager profile state is unreadable or duplicated'
+  fi
+  ! profile_path_exists || die "runtime AP keyfile exists: $(profile_file_path)"
+  ! persistent_profile_path_exists ||
+    die "persistent AP keyfile exists and was not modified: $(persistent_profile_file_path)"
+  ! runtime_transaction_state_exists ||
+    die "previous runtime transaction state requires manual recovery: $RUNTIME_STATE_DIR"
+  assert_proxy_prerequisites 0
+}
+
+create_profile_atomic() {
+  local connection profile temp_profile uuid loaded_uuid status
+  connection="$(connection_name)"; profile="$(profile_file_path)"
+  if loaded_uuid="$(strict_loaded_profile_uuid_for_name)"; then
+    warn "same-name profile/keyfile exists; refusing deletion or overwrite: $connection"
+    return 1
+  else
+    status=$?
+    if [[ "$status" != 1 ]]; then
+      warn 'could not prove same-name NetworkManager profile absence'
+      return 1
+    fi
+  fi
+  if profile_path_exists || persistent_profile_path_exists; then
+    warn "same-name profile/keyfile exists; refusing deletion or overwrite: $connection"
+    return 1
+  fi
+  if [[ -e "$NM_RUNTIME_CONNECTION_DIR" || -L "$NM_RUNTIME_CONNECTION_DIR" ]]; then
+    assert_root_owned_directory "$NM_RUNTIME_CONNECTION_DIR"
+  elif ((TEST_MODE)); then
+    mkdir -p -- "$NM_RUNTIME_CONNECTION_DIR"
+  else
+    install -d -o root -g root -m 0700 "$NM_RUNTIME_CONNECTION_DIR"
+  fi
+  temp_profile="$(mktemp "${NM_RUNTIME_CONNECTION_DIR}/.${connection}.XXXXXXXX")" || return 1
+  chmod 0600 "$temp_profile"
+  uuid="$(uuidgen)" || { rm -f -- "$temp_profile"; return 1; }
+  PROFILE_UUID_BY_TRANSACTION="$uuid"
+  {
+    printf '%s\n' '[connection]' "id=${connection}" "uuid=${uuid}" 'type=wifi' \
+      "interface-name=${INTERFACE}" 'autoconnect=false'
+    printf '\n%s\n' '[wifi]' "ssid=${SSID}" 'mode=ap' 'band=bg' 'powersave=2'
+    printf '\n%s\n' '[wifi-security]' 'key-mgmt=wpa-psk' 'psk-flags=2' \
+      'proto=rsn;' 'pairwise=ccmp;' 'group=ccmp;'
+    printf '\n%s\n' '[ipv4]' "address1=${AP_CIDR}" 'method=manual' 'never-default=true'
+    printf '\n%s\n' '[ipv6]' 'method=disabled' 'never-default=true'
+  } >"$temp_profile"
+  chmod 0600 "$temp_profile"
+  # Hard-link publication is atomic and refuses an existing destination. This
+  # closes the pre-check/publish race without ever clobbering another writer's
+  # same-name NetworkManager keyfile.
+  ln -- "$temp_profile" "$profile" || { rm -f -- "$temp_profile"; return 1; }
+  PROFILE_FILE_CREATED_BY_TRANSACTION=1
+  rm -f -- "$temp_profile" || return 1
+  if ! nmcli connection load "$profile"; then
+    transaction_profile_is_loaded && PROFILE_CREATED_BY_TRANSACTION=1
+    return 1
+  fi
+  PROFILE_CREATED_BY_TRANSACTION=1
+  (assert_profile_settings) || return 1
+}
+
+write_baseline_state() {
+  local routing_tmp uplink_tmp forwarding_tmp ipv6_forwarding_tmp
+  ! runtime_transaction_state_exists ||
+    die "refusing to overwrite existing runtime transaction state: $RUNTIME_STATE_DIR"
+  BASELINE_ROUTING="$(routing_state_snapshot)" || die 'could not capture complete routing/firewall baseline'
+  BASELINE_UPLINK="$(uplink_route_get_snapshot)" || die 'could not capture uplink route baseline'
+  BASELINE_TARGET_FORWARDING="$(<"${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding")"
+  BASELINE_TARGET_IPV6_FORWARDING="$(<"${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding")"
+  [[ "$BASELINE_TARGET_FORWARDING" =~ ^[01]$ && "$BASELINE_TARGET_IPV6_FORWARDING" =~ ^[01]$ ]] ||
+    die 'target-interface forwarding baseline is invalid'
+  if [[ -e "$RUNTIME_STATE_DIR" || -L "$RUNTIME_STATE_DIR" ]]; then
+    assert_root_owned_directory "$RUNTIME_STATE_DIR"
+  elif ((TEST_MODE)); then
+    mkdir -p -- "$RUNTIME_STATE_DIR"
+  else
+    install -d -o root -g root -m 0700 "$RUNTIME_STATE_DIR"
+  fi
+  routing_tmp="$(mktemp "${RUNTIME_STATE_DIR}/.routing.XXXXXXXX")"
+  uplink_tmp="$(mktemp "${RUNTIME_STATE_DIR}/.uplink.XXXXXXXX")"
+  forwarding_tmp="$(mktemp "${RUNTIME_STATE_DIR}/.forwarding.XXXXXXXX")"
+  ipv6_forwarding_tmp="$(mktemp "${RUNTIME_STATE_DIR}/.ipv6-forwarding.XXXXXXXX")"
+  chmod 0600 "$routing_tmp" "$uplink_tmp" "$forwarding_tmp" "$ipv6_forwarding_tmp"
+  printf '%s\n' "$BASELINE_ROUTING" >"$routing_tmp"
+  printf '%s\n' "$BASELINE_UPLINK" >"$uplink_tmp"
+  printf '%s\n' "$BASELINE_TARGET_FORWARDING" >"$forwarding_tmp"
+  printf '%s\n' "$BASELINE_TARGET_IPV6_FORWARDING" >"$ipv6_forwarding_tmp"
+  mv -- "$routing_tmp" "$ROUTING_BASELINE_FILE"
+  mv -- "$uplink_tmp" "$UPLINK_BASELINE_FILE"
+  mv -- "$forwarding_tmp" "$TARGET_FORWARDING_BASELINE_FILE"
+  mv -- "$ipv6_forwarding_tmp" "$TARGET_IPV6_FORWARDING_BASELINE_FILE"
+}
+
+load_baseline_state() {
+  local baseline_file mode_value
+  assert_root_owned_directory "$RUNTIME_STATE_DIR"
+  assert_root_owned_file "$ROUTING_BASELINE_FILE"
+  assert_root_owned_file "$UPLINK_BASELINE_FILE"
+  assert_root_owned_file "$TARGET_FORWARDING_BASELINE_FILE"
+  assert_root_owned_file "$TARGET_IPV6_FORWARDING_BASELINE_FILE"
+  for baseline_file in "$ROUTING_BASELINE_FILE" "$UPLINK_BASELINE_FILE" \
+                       "$TARGET_FORWARDING_BASELINE_FILE" "$TARGET_IPV6_FORWARDING_BASELINE_FILE"; do
+    mode_value="$(file_mode_octal "$baseline_file")" || die 'could not inspect runtime baseline mode'
+    (( (mode_value & 077) == 0 )) || die "runtime baseline must have mode 0600: $baseline_file"
+  done
+  BASELINE_ROUTING="$(<"$ROUTING_BASELINE_FILE")"
+  BASELINE_UPLINK="$(<"$UPLINK_BASELINE_FILE")"
+  BASELINE_TARGET_FORWARDING="$(<"$TARGET_FORWARDING_BASELINE_FILE")"
+  BASELINE_TARGET_IPV6_FORWARDING="$(<"$TARGET_IPV6_FORWARDING_BASELINE_FILE")"
+  [[ -n "$BASELINE_ROUTING" && -n "$BASELINE_UPLINK" &&
+     "$BASELINE_TARGET_FORWARDING" =~ ^[01]$ && "$BASELINE_TARGET_IPV6_FORWARDING" =~ ^[01]$ ]] ||
+    die 'routing/forwarding baseline is invalid'
+}
+
+remove_baseline_state() {
+  assert_root_owned_directory "$RUNTIME_STATE_DIR"
+  rm -f -- "$ROUTING_BASELINE_FILE" "$UPLINK_BASELINE_FILE" "$TARGET_FORWARDING_BASELINE_FILE" \
+    "$TARGET_IPV6_FORWARDING_BASELINE_FILE" "$DNSMASQ_RUNTIME_CONFIG"
+  rmdir -- "$RUNTIME_STATE_DIR" 2>/dev/null || true
+}
+
+disable_target_forwarding() {
+  local ipv4_path="${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding"
+  local ipv6_path="${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding"
+  printf '0\n' >"$ipv4_path" || return 1
+  printf '0\n' >"$ipv6_path" || return 1
+  [[ "$(<"$ipv4_path")" == "0" && "$(<"$ipv6_path")" == "0" ]]
+}
+
+target_forwarding_is_disabled() {
+  local ipv4_path="${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding"
+  local ipv6_path="${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding"
+  [[ -r "$ipv4_path" && -r "$ipv6_path" ]] || return 1
+  [[ "$(<"$ipv4_path")" == "0" && "$(<"$ipv6_path")" == "0" ]]
+}
+
+restore_target_forwarding() {
+  [[ "$BASELINE_TARGET_FORWARDING" =~ ^[01]$ && "$BASELINE_TARGET_IPV6_FORWARDING" =~ ^[01]$ ]] || return 1
+  if [[ -e "${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding" ]]; then
+    printf '%s\n' "$BASELINE_TARGET_FORWARDING" >"${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding" || return 1
+    [[ "$(<"${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding")" == "$BASELINE_TARGET_FORWARDING" ]] || return 1
+  fi
+  if [[ -e "${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding" ]]; then
+    printf '%s\n' "$BASELINE_TARGET_IPV6_FORWARDING" >"${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding" || return 1
+    [[ "$(<"${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding")" == "$BASELINE_TARGET_IPV6_FORWARDING" ]] || return 1
+  fi
+}
+
+assert_routing_matches_baseline() {
+  [[ "$(routing_state_snapshot)" == "$BASELINE_ROUTING" ]] ||
+    die 'default routes, policy rules, firewall, or global forwarding changed'
+  [[ "$(uplink_route_get_snapshot)" == "$BASELINE_UPLINK" ]] ||
+    die 'uplink route-get interface/source/gateway/table changed'
+}
+
+interface_has_no_active_connection() {
+  local active
+  active="$(active_connection_on_interface "$INTERFACE")" || return 2
+  [[ -z "$active" || "$active" == "--" ]]
+}
+
+rollback_activation() {
+  local connection profile current_routing current_uplink loaded_uuid active_record status
+  local teardown_ready=1 deletion_ready=1 loaded_exact=0
+  local -a failures=()
+  ((ROLLBACK_RUNNING == 0)) || return 70
+  ROLLBACK_RUNNING=1
+  connection="$(connection_name)"; profile="$(profile_file_path)"
+
+  if ! compose_command down --remove-orphans; then failures+=("compose-down"); teardown_ready=0; fi
+  if proxy_container_exists; then failures+=("proxy-container-still-present"); teardown_ready=0; fi
+  if ! stop_local_dnsmasq; then failures+=("dnsmasq-stop"); teardown_ready=0; fi
+  if ! disable_target_forwarding; then failures+=("target-forwarding-disable"); teardown_ready=0; fi
+
+  if ! networkmanager_is_available; then
+    failures+=("networkmanager-unavailable-before-down"); teardown_ready=0
+  else
+    if loaded_uuid="$(strict_loaded_profile_uuid_for_name)"; then
+      if [[ -n "$PROFILE_UUID_BY_TRANSACTION" && "$loaded_uuid" == "$PROFILE_UUID_BY_TRANSACTION" ]]; then
+        loaded_exact=1
+      else
+        failures+=("foreign-or-replaced-same-name-profile"); teardown_ready=0
+      fi
+    else
+      status=$?
+      if [[ "$status" != 1 ]]; then failures+=("profile-state-unreadable-or-duplicate"); teardown_ready=0; fi
+    fi
+
+    if active_record="$(strict_active_record_on_interface)"; then
+      if ((loaded_exact)) && [[ "$active_record" == "${connection}:${PROFILE_UUID_BY_TRANSACTION}" ]]; then
+        if ! nmcli connection down "$PROFILE_UUID_BY_TRANSACTION" >/dev/null 2>&1; then
+          failures+=("profile-down-command"); teardown_ready=0
+        fi
+      else
+        failures+=("foreign-or-ambiguous-active-connection"); teardown_ready=0
+      fi
+    else
+      status=$?
+      if [[ "$status" != 1 ]]; then failures+=("active-state-unreadable-or-duplicate"); teardown_ready=0; fi
+    fi
+  fi
+
+  if ! networkmanager_is_available; then
+    failures+=("networkmanager-unavailable-after-down"); teardown_ready=0
+  elif active_record="$(strict_active_record_on_interface)"; then
+    failures+=("ap-still-active:${active_record}"); teardown_ready=0
+  else
+    status=$?
+    if [[ "$status" != 1 ]]; then failures+=("inactive-state-unreadable"); teardown_ready=0; fi
+  fi
+
+  if ((teardown_ready == 0)); then
+    disable_target_forwarding || failures+=("fail-closed-forwarding-write")
+    target_forwarding_is_disabled || failures+=("fail-closed-forwarding-not-zero")
+    printf '[ubts-offline-ap] FATAL: rollback incomplete before profile deletion: %s\n' "${failures[*]}" >&2
+    ROLLBACK_RUNNING=0
+    return 70
+  fi
+
+  if loaded_uuid="$(strict_loaded_profile_uuid_for_name)"; then
+    if ((PROFILE_CREATED_BY_TRANSACTION)) && [[ "$loaded_uuid" == "$PROFILE_UUID_BY_TRANSACTION" ]]; then
+      if ! nmcli connection delete "$PROFILE_UUID_BY_TRANSACTION" >/dev/null 2>&1; then
+        failures+=("profile-delete-command"); deletion_ready=0
+      fi
+    else
+      failures+=("foreign-or-replaced-same-name-profile-before-delete"); deletion_ready=0
+    fi
+  else
+    status=$?
+    if [[ "$status" != 1 ]]; then failures+=("profile-state-unreadable-before-delete"); deletion_ready=0; fi
+  fi
+
+  if ((deletion_ready)); then
+    if loaded_uuid="$(strict_loaded_profile_uuid_for_name)"; then
+      failures+=("profile-still-loaded:${loaded_uuid}"); deletion_ready=0
+    else
+      status=$?
+      if [[ "$status" != 1 ]]; then failures+=("profile-state-unreadable-after-delete"); deletion_ready=0; fi
+    fi
+  fi
+
+  if ((deletion_ready)); then
+    if ((PROFILE_FILE_CREATED_BY_TRANSACTION)); then
+      if ! remove_transaction_profile_file; then
+        failures+=("profile-file-delete-or-ownership-check"); deletion_ready=0
+      fi
+    elif [[ -e "$profile" || -L "$profile" ]]; then
+      failures+=("foreign-profile-file-present"); deletion_ready=0
+    fi
+  fi
+
+  if ((deletion_ready == 0)); then
+    disable_target_forwarding || failures+=("fail-closed-forwarding-write-after-delete")
+    target_forwarding_is_disabled || failures+=("fail-closed-forwarding-not-zero-after-delete")
+    printf '[ubts-offline-ap] FATAL: rollback incomplete during profile deletion: %s\n' "${failures[*]}" >&2
+    ROLLBACK_RUNNING=0
+    return 70
+  fi
+
+  if ! networkmanager_is_available; then
+    failures+=("networkmanager-unavailable-final")
+  elif active_record="$(strict_active_record_on_interface)"; then
+    failures+=("active-connection-present-final:${active_record}")
+  else
+    status=$?
+    if [[ "$status" != 1 ]]; then failures+=("active-state-unreadable-final"); fi
+  fi
+  [[ ! -e "$profile" && ! -L "$profile" ]] || failures+=("profile-file-still-present")
+  proxy_container_exists && failures+=("proxy-container-still-present-final")
+
+  if ((${#failures[@]})); then
+    disable_target_forwarding || failures+=("fail-closed-forwarding-write-final-gate")
+    target_forwarding_is_disabled || failures+=("fail-closed-forwarding-not-zero-final-gate")
+    printf '[ubts-offline-ap] FATAL: rollback incomplete before forwarding restore: %s\n' "${failures[*]}" >&2
+    ROLLBACK_RUNNING=0
+    return 70
+  fi
+
+  restore_target_forwarding || failures+=("target-forwarding-restore")
+
+  if [[ -n "$BASELINE_ROUTING" && -n "$BASELINE_UPLINK" &&
+        "$BASELINE_TARGET_FORWARDING" =~ ^[01]$ && "$BASELINE_TARGET_IPV6_FORWARDING" =~ ^[01]$ ]]; then
+    current_routing="$(routing_state_snapshot)"
+    current_uplink="$(uplink_route_get_snapshot)"
+    [[ "$current_routing" == "$BASELINE_ROUTING" ]] || failures+=("routing-not-restored")
+    [[ "$current_uplink" == "$BASELINE_UPLINK" ]] || failures+=("uplink-route-get-not-restored")
+  else
+    failures+=("baseline-missing")
+  fi
+
+  if ((${#failures[@]})); then
+    printf '[ubts-offline-ap] FATAL: rollback incomplete: %s\n' "${failures[*]}" >&2
+    ROLLBACK_RUNNING=0
+    return 70
+  fi
+  if ! remove_baseline_state; then
+    printf '%s\n' '[ubts-offline-ap] FATAL: rollback state cleanup failed' >&2
+    ROLLBACK_RUNNING=0
+    return 70
+  fi
+  PROFILE_CREATED_BY_TRANSACTION=0; PROFILE_FILE_CREATED_BY_TRANSACTION=0
+  PROFILE_UUID_BY_TRANSACTION=""; ROLLBACK_RUNNING=0
+  log 'verified rollback complete: proxy/AP/profile removed and routing/uplink restored'
+}
+
+abort_activation() {
+  local reason="$1"
+  trap - HUP INT TERM
+  if rollback_activation; then die "$reason; verified rollback completed"; fi
+  printf '[ubts-offline-ap] FATAL: %s; rollback incomplete, local recovery required\n' "$reason" >&2
+  exit 70
+}
+
+activate_loaded_profile() {
+  local connection password passwd_tmp="" passwd_dir="/run"
+  ((TEST_MODE)) && passwd_dir="$RUNTIME_STATE_DIR"
+  cleanup_password_file() {
+    if [[ -n "$passwd_tmp" && "$passwd_tmp" == "${passwd_dir}/ubts-offline-ap-passwd."* ]]; then
+      rm -f -- "$passwd_tmp"; passwd_tmp=""
+    fi
+  }
+  connection="$(connection_name)"
+  password="$(read_and_validate_password)"
+  ((TEST_MODE)) && mkdir -p -- "$passwd_dir"
+  passwd_tmp="$(mktemp --tmpdir="$passwd_dir" ubts-offline-ap-passwd.XXXXXXXX)" || return 1
+  trap cleanup_password_file EXIT
+  trap 'cleanup_password_file; exit 130' HUP INT TERM
+  chmod 0600 "$passwd_tmp"
+  printf '802-11-wireless-security.psk:%s\n' "$password" >"$passwd_tmp"
+  unset password
+  if ! nmcli connection up "$connection" ifname "$INTERFACE" passwd-file "$passwd_tmp"; then
+    cleanup_password_file; trap - EXIT HUP INT TERM; return 1
+  fi
+  cleanup_password_file; trap - EXIT HUP INT TERM
+  connection_is_active
+}
+
+activate_ap_locked() {
+  local connection
+  preflight_for_new_activation
+  connection="$(connection_name)"
+  if ((DRY_RUN)); then
+    BASELINE_ROUTING="$(routing_state_snapshot)"
+    BASELINE_UPLINK="$(uplink_route_get_snapshot)"
+    BASELINE_TARGET_FORWARDING="$(<"${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding")"
+    BASELINE_TARGET_IPV6_FORWARDING="$(<"${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding")"
+    printf 'DRY-RUN: set %q and %q to 0 before loading or activating the AP\n' \
+      "${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding" \
+      "${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding"
+    printf 'DRY-RUN: atomically create root-only complete keyfile %q\n' "$(profile_file_path)"
+    print_command nmcli connection load "$(profile_file_path)"
+    print_command nmcli connection up "$connection" ifname "$INTERFACE" passwd-file '<root-only-temporary-file>'
+    print_command systemctl start "$DNSMASQ_UNIT"
+    print_command dig +time=2 +tries=1 +short @10.77.0.1 bts.sarihub.com A
+    print_command dig +time=2 +tries=1 +short @10.77.0.1 bts-docker.sarihub.com A
+    compose_command up -d --wait --wait-timeout 30
+    log 'dry-run completed; no profile, network, container, timer, or route changed'
+    return 0
+  fi
+  write_baseline_state
+  trap 'abort_activation "activation interrupted"' HUP INT TERM
+  disable_target_forwarding || abort_activation 'could not disable IPv4/IPv6 forwarding before AP profile creation'
+  create_profile_atomic || abort_activation 'atomic NetworkManager profile load/assert failed'
+  (activate_loaded_profile) || abort_activation 'NetworkManager AP activation failed or partially failed'
+  (assert_profile_settings) || abort_activation 'NetworkManager changed the fail-closed AP profile during activation'
+  target_forwarding_is_disabled || abort_activation 'AP activation changed target IPv4/IPv6 forwarding'
+  (assert_ap_subnet_available 1) || abort_activation 'AP address/route ownership is ambiguous after activation'
+  (assert_routing_matches_baseline) || abort_activation 'routing/policy/uplink changed after AP activation'
+  (start_local_dnsmasq) || abort_activation 'dedicated local DHCP/DNS service failed to start'
+  (assert_ap_dns) || abort_activation 'AP DNS verification failed'
+  compose_command up -d --wait --wait-timeout 30 || abort_activation 'reverse proxy failed to start'
+  (assert_proxy_health) || abort_activation 'dashboard/Portainer proxy health or config failed'
+  (assert_routing_matches_baseline) || abort_activation 'routing/policy/uplink changed after proxy start'
+  trap - HUP INT TERM
+  log "AP verified on $INTERFACE at $AP_CIDR; both local names and backends are healthy"
+}
+
+activate_ap() { require_root; acquire_operation_lock; activate_ap_locked; }
+
+deactivate_ap_locked() {
+  load_baseline_state
+  if connection_exists; then
+    assert_profile_settings
+    PROFILE_UUID_BY_TRANSACTION="$(managed_profile_uuid)"
+    PROFILE_CREATED_BY_TRANSACTION=1
+  elif profile_path_exists; then
+    die 'orphan same-name keyfile exists; refusing deletion without a matching loaded profile'
+  fi
+  profile_path_exists && PROFILE_FILE_CREATED_BY_TRANSACTION=1
+  if ((DRY_RUN)); then
+    compose_command down --remove-orphans
+    print_command systemctl stop "$DNSMASQ_UNIT"
+    if ((PROFILE_CREATED_BY_TRANSACTION)); then
+      print_command nmcli connection down "$PROFILE_UUID_BY_TRANSACTION"
+      print_command nmcli connection delete "$PROFILE_UUID_BY_TRANSACTION"
+    fi
+    if ((PROFILE_FILE_CREATED_BY_TRANSACTION)); then
+      print_command rm -f -- "$(profile_file_path)"
+    fi
+    printf 'DRY-RUN: restore %q to %q and %q to %q, then verify saved routing/firewall/uplink baseline\n' \
+      "${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding" "$BASELINE_TARGET_FORWARDING" \
+      "${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding" "$BASELINE_TARGET_IPV6_FORWARDING"
+    log 'deactivation dry-run completed; no profile, network, container, DNS, or route changed'
+    return 0
+  fi
+  rollback_activation || exit 70
+}
+
+deactivate_ap() {
+  local command
+  require_root; acquire_operation_lock
+  for command in ip nmcli docker sha256sum systemctl iptables-save ip6tables-save \
+                 stat grep awk sed sort; do
+    require_command "$command"
+  done
+  validate_interface_name; validate_ssid; validate_tls_name; validate_proxy_image
+  networkmanager_is_available || die 'NetworkManager is unavailable'
+  deactivate_ap_locked
+}
+
+write_auto_config() {
+  local temp_config
+  [[ ! -e "$AUTO_CONFIG" && ! -L "$AUTO_CONFIG" ]] ||
+    die "automatic AP config already exists: $AUTO_CONFIG"
+  if ((DRY_RUN)); then
+    printf 'DRY-RUN: atomically write root-only %q with no password value\n' "$AUTO_CONFIG"
+    return 0
+  fi
+  if [[ -e "$CONFIG_DIR" || -L "$CONFIG_DIR" ]]; then
+    assert_root_owned_directory "$CONFIG_DIR"
+  else
+    install -d -o root -g root -m 0700 "$CONFIG_DIR"
+  fi
+  temp_config="$(mktemp "${CONFIG_DIR}/.ap.conf.XXXXXXXX")"
+  chmod 0600 "$temp_config"
+  {
+    printf 'INTERFACE=%s\n' "$INTERFACE"
+    printf 'SSID=%s\n' "$SSID"
+    printf 'PASSWORD_FILE=%s\n' "$PASSWORD_FILE"
+    printf 'PORTAINER_TLS_NAME=%s\n' "$PORTAINER_TLS_NAME"
+    printf 'PROXY_IMAGE=%s\n' "$PROXY_IMAGE"
+  } >"$temp_config"
+  if ((!TEST_MODE)); then chown root:root "$temp_config"; fi
+  mv -T -- "$temp_config" "$AUTO_CONFIG"
+}
+
+load_auto_config() {
+  local key value mode_value
+  INTERFACE=""; SSID=""; PASSWORD_FILE=""; PORTAINER_TLS_NAME=""; PROXY_IMAGE="nginx:stable-alpine"
+  assert_root_owned_file "$AUTO_CONFIG"
+  mode_value="$(file_mode_octal "$AUTO_CONFIG")" || die 'could not inspect automatic config mode'
+  (( (mode_value & 077) == 0 )) || die 'automatic config must have mode 0600'
+  while IFS='=' read -r key value; do
+    [[ -z "$key" || "$key" == \#* ]] && continue
+    case "$key" in
+      INTERFACE) INTERFACE="$value" ;;
+      SSID) SSID="$value" ;;
+      PASSWORD_FILE) PASSWORD_FILE="$value" ;;
+      PORTAINER_TLS_NAME) PORTAINER_TLS_NAME="$value" ;;
+      PROXY_IMAGE) PROXY_IMAGE="$value" ;;
+      *) die "unknown automatic config key: $key" ;;
+    esac
+  done <"$AUTO_CONFIG"
+  validate_interface_name; validate_ssid
+  validate_absolute_path "$PASSWORD_FILE" 'password file'
+  validate_tls_name; validate_proxy_image
+}
+
+timer_is_enabled_or_active() {
+  systemctl is-enabled --quiet "$TIMER_UNIT" 2>/dev/null ||
+    systemctl is-active --quiet "$TIMER_UNIT" 2>/dev/null
+}
+
+enable_timer_transaction() {
+  if ! systemctl enable "$TIMER_UNIT"; then
+    systemctl disable --now "$TIMER_UNIT" >/dev/null 2>&1 || true
+    rm -f -- "$AUTO_CONFIG"; return 1
+  fi
+  if ! systemctl start "$TIMER_UNIT"; then
+    systemctl disable --now "$TIMER_UNIT" >/dev/null 2>&1 || true
+    rm -f -- "$AUTO_CONFIG"; return 1
+  fi
+  if ! systemctl is-enabled --quiet "$TIMER_UNIT" || ! systemctl is-active --quiet "$TIMER_UNIT"; then
+    systemctl disable --now "$TIMER_UNIT" >/dev/null 2>&1 || true
+    rm -f -- "$AUTO_CONFIG"; return 1
+  fi
+}
+
+enable_auto() {
+  require_root; acquire_operation_lock; require_command systemctl
+  timer_is_enabled_or_active && die 'automatic AP timer is already enabled or active'
+  [[ ! -e "$AUTO_CONFIG" && ! -L "$AUTO_CONFIG" ]] || die 'automatic AP config already exists'
+  preflight_for_new_activation
+  write_auto_config
+  if ((DRY_RUN)); then
+    print_command systemctl enable "$TIMER_UNIT"
+    print_command systemctl start "$TIMER_UNIT"
+    return 0
+  fi
+  enable_timer_transaction || die 'timer start failed; timer/config were rolled back'
+  log 'automatic retry enabled; activation stays serialized by the operation lock'
+}
+
+disable_auto() {
+  require_root; acquire_operation_lock; require_command systemctl
+  run systemctl disable --now "$TIMER_UNIT"
+  log 'automatic retry disabled; deactivate an active AP separately'
+}
+
+handle_absent_usb() {
+  require_command docker; require_command nmcli; require_command sha256sum; require_command systemctl
+  networkmanager_is_available || die 'NetworkManager is unavailable'
+  compose_command down --remove-orphans || die 'USB absent but proxy shutdown failed'
+  proxy_container_exists && die 'USB absent but proxy container still exists'
+  stop_local_dnsmasq || die 'USB absent but dedicated dnsmasq is still active'
+  if connection_exists; then
+    (assert_profile_settings) || die 'USB absent with untrusted same-name profile; refusing deletion'
+    PROFILE_UUID_BY_TRANSACTION="$(managed_profile_uuid)"
+    PROFILE_CREATED_BY_TRANSACTION=1; PROFILE_FILE_CREATED_BY_TRANSACTION=1
+    nmcli connection down "$PROFILE_UUID_BY_TRANSACTION" >/dev/null 2>&1 || true
+    nmcli connection delete "$PROFILE_UUID_BY_TRANSACTION" >/dev/null 2>&1 ||
+      die 'could not delete managed AP profile'
+    remove_transaction_profile_file || die 'could not safely remove the managed runtime keyfile'
+    PROFILE_CREATED_BY_TRANSACTION=0; PROFILE_FILE_CREATED_BY_TRANSACTION=0
+  elif profile_path_exists; then
+    die 'USB absent with orphan same-name keyfile; refusing implicit deletion'
+  fi
+  interface_has_no_active_connection || die 'USB absent but interface still reports an active connection'
+  if [[ -f "$ROUTING_BASELINE_FILE" && -f "$UPLINK_BASELINE_FILE" &&
+        -f "$TARGET_FORWARDING_BASELINE_FILE" && -f "$TARGET_IPV6_FORWARDING_BASELINE_FILE" ]]; then
+    load_baseline_state; restore_target_forwarding; assert_routing_matches_baseline; remove_baseline_state
+  elif runtime_transaction_state_exists; then
+    die 'USB absent with incomplete/unknown runtime transaction state; manual recovery required'
+  fi
+  log "USB adapter $INTERFACE is absent; proxy down and runtime profile cleared"
+}
+
+managed_transaction_state_is_exact() (
+  local active_record current_routing current_uplink loaded_uuid status
+  local current_ipv4_forwarding current_ipv6_forwarding
+  [[ ! -e "$(persistent_profile_file_path)" && ! -L "$(persistent_profile_file_path)" ]] || exit 1
+  connection_exists || exit 1
+  profile_path_exists || exit 1
+  load_baseline_state || exit 1
+  assert_profile_settings || exit 1
+  loaded_uuid="$(strict_loaded_profile_uuid_for_name)" || exit 1
+  [[ "$loaded_uuid" == "$(managed_profile_uuid)" ]] || exit 1
+  current_routing="$(routing_state_snapshot)" || exit 1
+  current_uplink="$(uplink_route_get_snapshot)" || exit 1
+  [[ "$current_routing" == "$BASELINE_ROUTING" ]] || exit 1
+  [[ "$current_uplink" == "$BASELINE_UPLINK" ]] || exit 1
+  if active_record="$(strict_active_record_on_interface)"; then
+    [[ "$active_record" == "$(connection_name):${loaded_uuid}" ]] || exit 1
+    target_forwarding_is_disabled || exit 1
+  else
+    status=$?
+    [[ "$status" == 1 ]] || exit 1
+    current_ipv4_forwarding="$(<"${PROC_SYS_ROOT}/net/ipv4/conf/${INTERFACE}/forwarding")"
+    current_ipv6_forwarding="$(<"${PROC_SYS_ROOT}/net/ipv6/conf/${INTERFACE}/forwarding")"
+    if [[ "$current_ipv4_forwarding" != 0 || "$current_ipv6_forwarding" != 0 ]]; then
+      [[ "$current_ipv4_forwarding" == "$BASELINE_TARGET_FORWARDING" ]] || exit 1
+      [[ "$current_ipv6_forwarding" == "$BASELINE_TARGET_IPV6_FORWARDING" ]] || exit 1
+    fi
+  fi
+)
+
+prepare_managed_transaction() {
+  load_baseline_state
+  assert_profile_settings
+  PROFILE_UUID_BY_TRANSACTION="$(managed_profile_uuid)"
+  PROFILE_CREATED_BY_TRANSACTION=1; PROFILE_FILE_CREATED_BY_TRANSACTION=1
+  [[ "$(strict_loaded_profile_uuid_for_name)" == "$PROFILE_UUID_BY_TRANSACTION" ]] ||
+    die 'managed transaction UUID changed while preparing recovery'
+}
+
+reconcile_active_ap() {
+  local command
+  if ((PROFILE_CREATED_BY_TRANSACTION == 0 || PROFILE_FILE_CREATED_BY_TRANSACTION == 0)); then
+    prepare_managed_transaction
+  fi
+  disable_target_forwarding || abort_activation 'could not enforce local-only AP forwarding policy'
+  (preflight_common 1) || abort_activation 'active AP failed USB, sibling, policy-route, or subnet preflight'
+  (
+    for command in docker curl dig sha256sum dnsmasq systemctl; do require_command "$command"; done
+    [[ -f "$DNSMASQ_TEMPLATE" ]] || die 'dedicated dnsmasq template is not installed'
+    validate_tls_name
+    read_and_validate_password >/dev/null
+    assert_portainer_ca
+    assert_local_backends
+  ) || abort_activation 'active AP dependency, credential, CA, or backend validation failed'
+  target_forwarding_is_disabled || abort_activation 'active AP target forwarding is not fail-closed'
+  (assert_ap_subnet_available 1) || abort_activation 'active AP no longer owns the AP subnet exclusively'
+  (assert_routing_matches_baseline) || abort_activation 'active AP no longer preserves routing/uplink state'
+  (start_local_dnsmasq) || abort_activation 'active AP dedicated DHCP/DNS reconciliation failed'
+  (assert_ap_dns) || abort_activation 'active AP DNS reconciliation failed'
+  (check_compose_configuration) || abort_activation 'active AP compose configuration is invalid'
+  if ! proxy_is_running || ! proxy_is_healthy || ! proxy_config_matches; then
+    compose_command down --remove-orphans || true
+    if ! compose_command up -d --wait --wait-timeout 30; then
+      abort_activation 'active AP proxy reconciliation failed'
+    fi
+  else
+    if ! compose_command up -d --wait --wait-timeout 30; then
+      abort_activation 'active AP compose reconciliation failed'
+    fi
+  fi
+  (assert_proxy_health) || {
+    abort_activation 'active AP backend health failed'
+  }
+  (assert_routing_matches_baseline) || {
+    abort_activation 'active AP no longer preserves routing/uplink state'
+  }
+  log 'AP, DNS, proxy fingerprint, dashboard, Portainer, routing and uplink are healthy'
+}
+
+ensure_ap() {
+  local command active_record status
+  require_root; acquire_operation_lock; load_auto_config
+  if [[ ! -d "${SYS_CLASS_NET_ROOT}/${INTERFACE}" ]]; then handle_absent_usb; return 0; fi
+  for command in nmcli docker sha256sum systemctl; do require_command "$command"; done
+  networkmanager_is_available || die 'NetworkManager is unavailable'
+
+  if active_record="$(strict_active_record_on_interface)"; then
+    [[ "$active_record" == "$(connection_name):"* ]] ||
+      die "target has an untrusted active connection; refusing mutation: $active_record"
+    if ! managed_transaction_state_is_exact >/dev/null 2>&1; then
+      die 'active same-name AP is not the exact managed UUID/keyfile/baseline; refusing mutation'
+    fi
+    prepare_managed_transaction
+    reconcile_active_ap
+    return 0
+  else
+    status=$?
+    [[ "$status" == 1 ]] || die 'could not prove a single active/inactive state for the AP interface'
+  fi
+
+  if connection_exists || profile_path_exists || persistent_profile_path_exists || runtime_transaction_state_exists; then
+    if ! managed_transaction_state_is_exact >/dev/null 2>&1; then
+      die 'inactive AP state is not the exact managed UUID/keyfile/baseline; refusing implicit deletion'
+    fi
+    prepare_managed_transaction
+    disable_target_forwarding || abort_activation 'could not fail-close inactive managed AP before recovery'
+    if ! rollback_activation; then exit 70; fi
+    log 'verified inactive managed AP state was cleaned after USB/NM interruption; activating afresh'
+  fi
+  activate_ap_locked
+}
+
+show_status() {
+  require_command ip; require_command nmcli
+  printf 'timer=%s\n' "$(systemctl is-enabled "$TIMER_UNIT" 2>/dev/null || true)"
+  printf 'proxy_running=%s\n' "$(docker inspect -f '{{.State.Running}}' ubts-offline-proxy 2>/dev/null || printf false)"
+  printf 'proxy_health=%s\n' "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+    ubts-offline-proxy 2>/dev/null || printf unavailable)"
+  printf '%s\n' '[all-default-routes]'; all_default_routes_snapshot
+  printf '%s\n' '[policy-rules]'; rules_snapshot
+  printf '%s\n' '[uplink-route-get]'; uplink_route_get_snapshot
+}
+
+parse_options() {
+  while (($#)); do
+    case "$1" in
+      --interface) (($# >= 2)) || die '--interface requires a value'; INTERFACE="$2"; shift 2 ;;
+      --ssid) (($# >= 2)) || die '--ssid requires a value'; SSID="$2"; shift 2 ;;
+      --password-file) (($# >= 2)) || die '--password-file requires a value'; PASSWORD_FILE="$2"; shift 2 ;;
+      --portainer-tls-name) (($# >= 2)) || die '--portainer-tls-name requires a value'; PORTAINER_TLS_NAME="$2"; shift 2 ;;
+      --dry-run) DRY_RUN=1; shift ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+}
+
+main() {
+  local command="${1:-}"
+  [[ -n "$command" ]] || { usage; exit 2; }
+  shift || true
+  case "$command" in
+    preflight) parse_options "$@"; require_root; preflight_common ;;
+    activate) parse_options "$@"; activate_ap ;;
+    deactivate) parse_options "$@"; deactivate_ap ;;
+    enable-auto) parse_options "$@"; enable_auto ;;
+    disable-auto) parse_options "$@"; disable_auto ;;
+    ensure) (($# == 0)) || die 'ensure does not accept options'; ensure_ap ;;
+    status) (($# == 0)) || die 'status does not accept options'; show_status ;;
+    -h|--help|help) usage ;;
+    *) die "unknown command: $command" ;;
+  esac
+}
+
+if ((TEST_MODE == 0)); then main "$@"; fi

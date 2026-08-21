@@ -1,0 +1,12 @@
+[Unit]
+Description=Retry UBTS USB Wi-Fi access point activation when its adapter appears
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=30s
+RandomizedDelaySec=5s
+AccuracySec=5s
+Unit=ubts-offline-ap-ensure.service
+
+[Install]
+WantedBy=timers.target

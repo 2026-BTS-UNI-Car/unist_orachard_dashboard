@@ -1,0 +1,50 @@
+name: ubts-offline-ap
+
+services:
+  proxy:
+    image: "${UBTS_OFFLINE_PROXY_IMAGE:-nginx:stable-alpine}"
+    pull_policy: never
+    container_name: ubts-offline-proxy
+    # The explicit helper/timer owns lifecycle; Docker daemon restart must not
+    # independently resurrect a host-network listener.
+    restart: "no"
+    network_mode: host
+    user: "101:101"
+    entrypoint:
+      - /opt/ubts-offline-ap/render-and-run.sh
+    command:
+      - serve
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      com.unist.ubts.offline-ap.config-sha256: "${UBTS_PROXY_CONFIG_FINGERPRINT:?helper must set proxy fingerprint}"
+    environment:
+      AP_ADDRESS: "${AP_ADDRESS:-10.77.0.1}"
+      PORTAINER_TLS_NAME: "${PORTAINER_TLS_NAME:-localhost}"
+      PORTAINER_CA_PATH: "/etc/nginx/portainer-ca.pem"
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./render-and-run.sh:/opt/ubts-offline-ap/render-and-run.sh:ro
+      - /etc/ubts-offline-ap/portainer-ca.pem:/etc/nginx/portainer-ca.pem:ro
+    tmpfs:
+      - /etc/nginx/conf.d:size=1m,uid=101,gid=101,mode=0755
+      - /var/cache/nginx:size=16m,uid=101,gid=101,mode=0755
+      - /var/run:size=1m,uid=101,gid=101,mode=0755
+      - /tmp:size=8m,uid=101,gid=101,mode=1777
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -O /dev/null --header='Host: bts.sarihub.com'
+          "http://$${AP_ADDRESS}/api/health" &&
+          wget -q -O /dev/null --header='Host: bts-docker.sarihub.com'
+          "http://$${AP_ADDRESS}/api/status"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

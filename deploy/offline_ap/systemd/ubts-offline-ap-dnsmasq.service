@@ -1,0 +1,22 @@
+[Unit]
+Description=Dedicated local-only DHCP/DNS for the UBTS USB Wi-Fi AP
+After=NetworkManager.service
+ConditionPathExists=/run/ubts-offline-ap/dnsmasq.conf
+
+[Service]
+Type=simple
+UMask=0077
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/run/ubts-offline-ap/dnsmasq.conf
+Restart=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_CHOWN
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID CAP_CHOWN
