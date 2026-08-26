@@ -54,7 +54,7 @@ LiDAR driver는 RPLIDAR serial device를 단독 소유하고 `/scan`을 publish�
 
 Camera driver는 UVC `/dev/video*` 장치를 단독 소유하고 `/camera/image_raw`, `/camera/camera_info`를 publish합니다. Camera bridge는 `/camera/image_raw`를 WebSocket JPEG stream으로 변환하고, Dashboard는 `/connection` 페이지에 있을 때만 `/ws/camera`를 열어 표시합니다.
 
-IMU driver는 BNO085 I2C 장치를 단독 소유하고 `/imu/data_raw`, `/imu/mag`를 publish합니다. Recorder는 녹화 시작 후 정지 구간에서 자세 기준과 gyro bias를 추정해 `/imu/data`를 추가로 publish하며, IMU bridge가 이 ROS2 토픽들을 `/ws/imu`로 변환합니다. Dashboard가 I2C 장치에 직접 접근하는 경로는 없습니다. 자세한 계약과 한계는 [docs/imu_ros2_recording.md](docs/imu_ros2_recording.md)를 참고하세요.
+IMU driver는 BNO085 I2C 장치를 단독 소유하고 sensor-native `/imu/data_raw`, `/imu/mag`를 publish합니다. Recorder는 녹화 시작 후 정지 구간에서 자세 기준과 gyro bias를 추정하고 Jetson 장착 yaw를 적용해 REP-103 `base_link` 기준 `/imu/data`를 추가로 publish하며, IMU bridge가 이 ROS2 토픽들을 `/ws/imu`로 변환합니다. Dashboard가 I2C 장치에 직접 접근하는 경로는 없습니다. 자세한 계약과 한계는 [docs/imu_ros2_recording.md](docs/imu_ros2_recording.md)를 참고하세요.
 
 WAVE ROVER는 Dashboard가 직접 UART를 열지 않고 `ros2-rover-bridge`가 `/cmd_vel`을 WAVE ROVER JSON 명령으로 변환하는 구조를 기준으로 합니다. `/rover-control`은 원본 Web UI proxy와 ROS2 rover bridge 상태 확인용입니다.
 

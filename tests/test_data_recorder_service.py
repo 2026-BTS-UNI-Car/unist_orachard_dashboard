@@ -44,6 +44,7 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
             imu_stationary_max_gyro_rad_s=0.08,
             imu_stationary_gravity_tolerance_m_s2=2.0,
             imu_stationary_max_accel_std_m_s2=0.35,
+            imu_body_yaw_offset_deg=90.0,
             cmd_topic="/cmd_vel",
             rover_status_topic="/rover/status",
             odom_topic="/odom",
@@ -218,7 +219,8 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
             self.assertIsNotNone(corrected)
             self.assertTrue(state.imu_calibrator.ready)
             self.assertGreater(len(state.imu_frames), 0)
-            self.assertEqual(corrected["frame_id"], "imu_link_recording_start")
+            self.assertEqual(corrected["frame_id"], "base_link")
+            self.assertEqual(corrected["mount_transform"]["body_yaw_offset_deg"], 90.0)
             self.assertAlmostEqual(corrected["angular_velocity"]["x"], 0.0, places=6)
             topics = state.topics_for("both")
             self.assertIn("/imu/data_raw", topics)

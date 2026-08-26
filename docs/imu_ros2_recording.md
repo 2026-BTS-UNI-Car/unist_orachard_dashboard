@@ -77,6 +77,43 @@ accel_corrected(t) = rotate(q_mount, accel_raw(t))
 
 이 방식의 핵심 가정은 **차량 자체는 녹화 시작 순간 수평이고 정지했으며, 센서 장착만 기울어져 있다**는 것이다. 경사면에서 시작하면 경사까지 장착 오차로 흡수되므로 별도 외부보정 전에는 절대 자세로 해석하면 안 된다.
 
+## Jetson 장착축과 `base_link` 변환
+
+2026-08-27 사용자가 확인한 기판의 물리 장착 방향은 다음과 같다.
+
+- 기판 `+X`: 차량 위쪽
+- 기판 `+Y`: 차량 왼쪽
+- 기판 `+Z`: 차량 뒤쪽
+
+ROS의 차량 기준은 REP-103에 따라 `base_link +X=전방`, `+Y=좌측`, `+Z=위쪽`이다.
+실제 `/imu/data_raw` 정지 표본은 약 `(0.54, -10.27, 0.61) m/s²`로, BNO085
+보고 좌표의 `-Y`가 현재 위쪽을 향한다. 따라서 기판 인쇄축을 raw 메시지에 바로
+대입하지 않는다. 정지 창에서 roll/pitch 장착 기울기를 추정한 뒤, 중력만으로는
+관측할 수 없는 수평축에 운영 설정 `RECORDER_IMU_BODY_YAW_OFFSET_DEG=90.0`을
+적용한다.
+
+기준 자세 $q_r$, raw 자세 $q_s$, raw yaw $q_{y,s}$, 고정 수평 장착 회전
+$q_m=R_z(90^\circ)$에 대해 다음처럼 계산한다.
+
+$$
+q_{s\rightarrow b}=q_m\left(q_{y,s}^{-1}q_r\right),\qquad
+q_{w\rightarrow b,r}=q_rq_{s\rightarrow b}^{-1}
+$$
+
+$$
+q_{b,local}=q_{w\rightarrow b,r}^{-1}\left(q_sq_{s\rightarrow b}^{-1}\right)
+$$
+
+가속도, gyro bias 제거 후 각속도, 자기장은 모두 같은
+`sensor_to_body_quaternion`으로 회전한다. 보정 출력 `/imu/data`의
+`header.frame_id`는 `base_link`이며, covariance도 같은 축 순서로 저장한다.
+Raw `/imu/data_raw`와 `/imu/mag` 원본은 변경하지 않는다.
+
+각 archive에는 사용자 확인 축, yaw offset, quaternion, reference와 검증 상태를
+`mount_transform`으로 남긴다. 정지 중력과 수학적 축 매핑은 검증했지만 실제 차량을
+전진·좌측 이동시킨 부호 시험은 아직 수행하지 않았으므로 `mapping_ready=false`를
+유지한다.
+
 ## Dashboard 수동 IMU 영점
 
 Dashboard의 `현재 자세를 0점으로` 버튼은 최신 `/imu/data_raw` 표본의 quaternion을
@@ -169,7 +206,10 @@ curl -s -X POST -H 'Content-Type: application/json' \
 - Dashboard 수동 영점 실제 검증에서 원본 자세 roll `-86.26°`, pitch `-2.73°`,
   yaw `40.20°`가 즉시 `(0°, 0°, 0°)`가 됐고 1초 뒤 drift는 각각 약
   `-0.049°`, `-0.019°`, `-0.006°`였다.
-- ROS Iron 컨테이너 전체 단위·통합·회귀 테스트 140개가 통과했다.
+- 사용자 확인 장착축을 반영한 v3 변환을 Jetson에 적용한 뒤 수동 영점 출력은
+  `frame_id=base_link`, 정지 가속도 `(0.032, 0.014, 10.298) m/s²`, 자세
+  `(0°, 0°, 0°)`였다. 수평축 중력 누설은 각 `0.04 m/s²` 미만이었다.
+- ROS Iron 컨테이너 전체 단위·통합·회귀 테스트 145개가 통과했다.
 
 검증 후 생성한 세 테스트 archive(약 1.04 GB)는 결과를 문서화한 뒤 제거했으며,
 기존 사용자 archive 19개는 그대로 보존했다.

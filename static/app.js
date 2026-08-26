@@ -1734,7 +1734,7 @@ function renderImuLiveState(overrideLabel) {
   const yaw = Number(euler.yaw);
   const calibration = state.imuLive.calibration || {};
   const calibrationState = calibration.state || (calibration.valid ? "ready" : "idle");
-  const sourceLabel = state.imuLive.correctedTopicAlive ? "start-corrected /imu/data" : "raw /imu/data_raw";
+  const sourceLabel = state.imuLive.correctedTopicAlive ? "base_link-corrected /imu/data" : "sensor-native raw /imu/data_raw";
   const statusLabel = overrideLabel || (state.imuLive.topicAlive ? sourceLabel : state.imuLive.error || "IMU 대기");
   const button = $("roverImuToggle");
   if (button) {
@@ -4967,7 +4967,7 @@ function renderArchiveFrame() {
     { label: "Magnetic field", value: imuFrame && vectorNorm(imuMagnetic) !== null ? `${fmtNumber(vectorNorm(imuMagnetic), 2)} µT` : "--", sub: imuFrame?.calibration_reference_id ? `reference ${imuFrame.calibration_reference_id}` : "magnetometer unavailable", color: colors.blue },
   ]);
   text("roverArchiveImuTime", imuFrame ? `IMU ${fmtNumber(imuFrame.t_s, 3)}s / Δ ${fmtNumber(imuSyncDeltaS, 3)}s` : "IMU -- / Δ --");
-  text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data corrected" : "/imu/data_raw"} · playback ${fmtNumber(timeS, 3)}s` : "동기 IMU sample 대기");
+  text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data · base_link corrected" : "/imu/data_raw · sensor-native"} · playback ${fmtNumber(timeS, 3)}s` : "동기 IMU sample 대기");
   drawImuAttitude($("roverArchiveImuCanvas"), Number(imuEuler.roll), Number(imuEuler.pitch), Number(imuEuler.yaw));
   text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   text("roverOrchardMapTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);

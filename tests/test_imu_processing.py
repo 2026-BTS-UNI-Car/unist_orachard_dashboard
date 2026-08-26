@@ -69,6 +69,47 @@ class ImuStartReferenceTests(unittest.TestCase):
         self.assertAlmostEqual(corrected["linear_acceleration"]["z"], 9.80665, places=5)
         self.assertEqual(corrected["calibration_revision"], IMU_CALIBRATION_REVISION)
 
+    def test_jetson_mount_yaw_restores_rep103_forward_left_up_axes(self):
+        calibrator = StartReferenceCalibrator(
+            ImuCalibrationConfig(
+                stationary_window_s=0.4,
+                min_samples=5,
+                body_yaw_offset_deg=90.0,
+            )
+        )
+        # The live BNO085 report is near roll=-90 degrees.  Its stationary
+        # acceleration lies on report -Y, while the operator-confirmed board
+        # mount needs the remaining horizontal +90 degree correction.
+        reference = quaternion_from_euler(-90.0, 0.0, -81.0)
+        raw_gravity = (0.0, -9.80665, 0.0)
+        calibrator.begin("jetson-mount", now_monotonic=0.0)
+        for index in range(5):
+            calibrator.observe(
+                sample(reference, gyro=(0.0, 0.0, 0.0), accel=raw_gravity),
+                now_monotonic=index * 0.1,
+            )
+
+        self.assertTrue(calibrator.ready)
+        transform = calibrator.calibration["sensor_to_body_quaternion"]
+        quaternion = tuple(transform[axis] for axis in ("x", "y", "z", "w"))
+        self.assertEqual(calibrator.calibration["covariance_frame"], "base_link")
+        self.assertEqual(calibrator.calibration["mount_transform"]["body_yaw_offset_deg"], 90.0)
+        self.assertAlmostEqual(rotate_vector(quaternion, (1.0, 0.0, 0.0))[1], 1.0, places=6)
+        self.assertAlmostEqual(rotate_vector(quaternion, (0.0, 1.0, 0.0))[2], -1.0, places=6)
+        self.assertAlmostEqual(rotate_vector(quaternion, (0.0, 0.0, 1.0))[0], -1.0, places=6)
+
+        corrected = calibrator.correct(
+            sample(reference, gyro=(0.0, 0.0, -1.0), accel=raw_gravity)
+        )
+        self.assertIsNotNone(corrected)
+        self.assertEqual(corrected["frame_id"], "base_link")
+        self.assertAlmostEqual(corrected["linear_acceleration"]["x"], 0.0, places=5)
+        self.assertAlmostEqual(corrected["linear_acceleration"]["y"], 0.0, places=5)
+        self.assertAlmostEqual(corrected["linear_acceleration"]["z"], 9.80665, places=5)
+        self.assertAlmostEqual(corrected["angular_velocity"]["x"], 1.0, places=5)
+        self.assertAlmostEqual(corrected["angular_velocity"]["y"], 0.0, places=5)
+        self.assertAlmostEqual(corrected["angular_velocity"]["z"], 0.0, places=5)
+
     def test_motion_resets_window_and_fails_closed_until_new_stationary_window(self):
         calibrator = self.make_calibrator()
         reference = quaternion_from_euler(4.0, 3.0, 0.0)
@@ -116,7 +157,7 @@ class ImuStartReferenceTests(unittest.TestCase):
 
         self.assertTrue(calibrator.ready)
         covariance = calibrator.calibration["gyro_variance"]
-        self.assertEqual(calibrator.calibration["covariance_frame"], "imu_link_recording_start")
+        self.assertEqual(calibrator.calibration["covariance_frame"], "base_link")
         self.assertAlmostEqual(covariance["x"], 0.0, places=12)
         self.assertAlmostEqual(covariance["y"], 0.0, places=12)
         self.assertGreater(covariance["z"], 0.0)

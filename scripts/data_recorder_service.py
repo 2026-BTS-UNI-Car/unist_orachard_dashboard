@@ -116,6 +116,7 @@ class RecordingState:
                 max_gyro_norm_rad_s=float(args.imu_stationary_max_gyro_rad_s),
                 gravity_tolerance_m_s2=float(args.imu_stationary_gravity_tolerance_m_s2),
                 max_accel_norm_std_m_s2=float(args.imu_stationary_max_accel_std_m_s2),
+                body_yaw_offset_deg=float(args.imu_body_yaw_offset_deg),
             )
         )
         self.imu_latest_raw: dict[str, Any] = {}
@@ -175,6 +176,8 @@ class RecordingState:
                     "corrected_published_count": self.imu_corrected_published_count,
                     "timeline_frame_count": self.imu_timeline_count,
                     "timeline_hz": float(self.args.imu_timeline_hz),
+                    "corrected_frame_id": "base_link",
+                    "mount_transform": self.imu_calibrator.mount_provenance(),
                     "latest_raw": dict(self.imu_latest_raw),
                     "latest_corrected": dict(self.imu_latest_corrected),
                     "latest_magnetic": dict(self.imu_latest_magnetic),
@@ -322,6 +325,8 @@ class RecordingState:
                     "imu_schema": IMU_TIMELINE_SCHEMA,
                     "imu_calibration_schema": IMU_CALIBRATION_SCHEMA,
                     "imu_calibration_revision": IMU_CALIBRATION_REVISION,
+                    "imu_corrected_frame_id": "base_link",
+                    "imu_mount_transform": self.imu_calibrator.mount_provenance(),
                     "imu_timeline_hz": self.args.imu_timeline_hz,
                     "imu_max_frames": self.args.imu_timeline_max_frames,
                 },
@@ -430,6 +435,8 @@ class RecordingState:
                     "imu_schema": IMU_TIMELINE_SCHEMA,
                     "imu_calibration_revision": IMU_CALIBRATION_REVISION,
                     "imu_calibration_valid": bool(self.imu_calibrator.ready),
+                    "imu_corrected_frame_id": "base_link",
+                    "imu_mount_transform": self.imu_calibrator.mount_provenance(),
                     "imu_timeline_hz": self.args.imu_timeline_hz,
                 },
             }
@@ -483,6 +490,8 @@ class RecordingState:
                 "mag_topic": self.args.imu_mag_topic,
                 "calibration_topic": self.args.imu_calibration_topic,
                 "sample_hz": float(self.args.imu_timeline_hz),
+                "corrected_frame_id": "base_link",
+                "mount_transform": self.imu_calibrator.mount_provenance(),
                 "frames": list(self.imu_frames),
                 "calibration": self.imu_calibrator.status(),
                 "calibration_events": copy.deepcopy(self.imu_calibration_events),
@@ -1341,6 +1350,7 @@ def main() -> int:
     parser.add_argument("--imu-stationary-max-gyro-rad-s", type=float, default=float(os.environ.get("RECORDER_IMU_STATIONARY_MAX_GYRO_RAD_S", "0.08")))
     parser.add_argument("--imu-stationary-gravity-tolerance-m-s2", type=float, default=float(os.environ.get("RECORDER_IMU_STATIONARY_GRAVITY_TOLERANCE_M_S2", "2.0")))
     parser.add_argument("--imu-stationary-max-accel-std-m-s2", type=float, default=float(os.environ.get("RECORDER_IMU_STATIONARY_MAX_ACCEL_STD_M_S2", "0.35")))
+    parser.add_argument("--imu-body-yaw-offset-deg", type=float, default=float(os.environ.get("RECORDER_IMU_BODY_YAW_OFFSET_DEG", "90.0")))
     parser.add_argument("--camera-preview-width", type=int, default=int(os.environ.get("RECORDER_CAMERA_PREVIEW_WIDTH", "640")))
     parser.add_argument("--camera-jpeg-quality", type=int, default=int(os.environ.get("RECORDER_CAMERA_JPEG_QUALITY", "68")))
     parser.add_argument(
@@ -1365,6 +1375,8 @@ def main() -> int:
     args.imu_timeline_max_frames = max(100, min(360_000, int(args.imu_timeline_max_frames)))
     args.imu_calibration_window_s = max(0.5, min(10.0, float(args.imu_calibration_window_s)))
     args.imu_calibration_min_samples = max(5, min(1000, int(args.imu_calibration_min_samples)))
+    if not math.isfinite(args.imu_body_yaw_offset_deg):
+        parser.error("--imu-body-yaw-offset-deg must be finite")
     args.camera_vision_sync_max_delta_s = max(0.01, min(0.5, args.camera_vision_sync_max_delta_s))
     args.camera_vision_wait_timeout_s = max(0.0, min(2.0, args.camera_vision_wait_timeout_s))
     args.camera_archive_flush_timeout_s = max(0.1, min(3.0, args.camera_archive_flush_timeout_s))

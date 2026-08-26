@@ -17,7 +17,7 @@ import numpy as np
 
 
 IMU_CALIBRATION_SCHEMA = "orchard.imu_start_reference.v1"
-IMU_CALIBRATION_REVISION = "static_level_mount_gyro_bias_body_covariance_v2"
+IMU_CALIBRATION_REVISION = "static_level_fixed_yaw_mount_gyro_bias_body_covariance_v3"
 IMU_TIMELINE_SCHEMA = "orchard.imu_timeline.v1"
 
 
@@ -100,6 +100,11 @@ def yaw_quaternion(q: Iterable[Any]) -> tuple[float, float, float, float]:
     return (0.0, 0.0, math.sin(yaw / 2.0), math.cos(yaw / 2.0))
 
 
+def yaw_offset_quaternion_deg(angle_deg: float) -> tuple[float, float, float, float]:
+    angle = math.radians(float(angle_deg))
+    return (0.0, 0.0, math.sin(angle / 2.0), math.cos(angle / 2.0))
+
+
 def markley_quaternion_mean(quaternions: Iterable[Iterable[Any]]) -> tuple[float, float, float, float] | None:
     rows = [normalize_quaternion(row) for row in quaternions]
     valid = [row for row in rows if row is not None]
@@ -129,6 +134,7 @@ class ImuCalibrationConfig:
     gravity_m_s2: float = 9.80665
     gravity_tolerance_m_s2: float = 2.0
     max_accel_norm_std_m_s2: float = 0.35
+    body_yaw_offset_deg: float = 0.0
 
 
 class StartReferenceCalibrator:
@@ -136,7 +142,47 @@ class StartReferenceCalibrator:
 
     def __init__(self, config: ImuCalibrationConfig | None = None):
         self.config = config or ImuCalibrationConfig()
+        self.body_yaw_offset_deg = float(self.config.body_yaw_offset_deg)
+        if not math.isfinite(self.body_yaw_offset_deg):
+            raise ValueError("body_yaw_offset_deg must be finite")
+        self.body_yaw_offset_quaternion = yaw_offset_quaternion_deg(self.body_yaw_offset_deg)
         self.reset()
+
+    def _mount_solution(
+        self,
+        reference: Iterable[Any],
+    ) -> tuple[
+        tuple[float, float, float, float],
+        tuple[float, float, float, float],
+        tuple[float, float, float, float],
+    ]:
+        """Return sensor yaw, sensor-to-body, and reference body orientation.
+
+        The stationary reference estimates the near-90-degree board tilt.  A
+        fixed operator-validated yaw then restores the vehicle forward/left
+        axes, which gravity alone cannot observe.
+        """
+
+        reference_q = normalize_quaternion(reference) or (0.0, 0.0, 0.0, 1.0)
+        reference_sensor_yaw = yaw_quaternion(reference_q)
+        sensor_to_level = quaternion_multiply(quaternion_conjugate(reference_sensor_yaw), reference_q)
+        sensor_to_body = quaternion_multiply(self.body_yaw_offset_quaternion, sensor_to_level)
+        reference_body = quaternion_multiply(reference_q, quaternion_conjugate(sensor_to_body))
+        return reference_sensor_yaw, sensor_to_body, reference_body
+
+    def mount_provenance(self) -> dict[str, Any]:
+        return {
+            "source": "operator_axis_mapping_plus_stationary_level_estimate",
+            "body_convention": "REP-103 base_link: +X forward, +Y left, +Z up",
+            "operator_reported_board_axes": {
+                "+X": "+base_Z/up",
+                "+Y": "+base_Y/left",
+                "+Z": "-base_X/rear",
+            },
+            "body_yaw_offset_deg": self.body_yaw_offset_deg,
+            "body_yaw_offset_quaternion": _quaternion_dict(self.body_yaw_offset_quaternion),
+            "validation": "stationary gravity validated; forward/lateral motion sign validation pending",
+        }
 
     def reset(self) -> None:
         self.recording_id: str | None = None
@@ -184,9 +230,10 @@ class StartReferenceCalibrator:
         self.reset()
         self.recording_id = str(reference_id)
         self.started_monotonic = now
-        reference_yaw = yaw_quaternion(quaternion)
-        sensor_to_body = quaternion_multiply(quaternion_conjugate(reference_yaw), quaternion)
+        reference_sensor_yaw, sensor_to_body, reference_body = self._mount_solution(quaternion)
+        reference_yaw = yaw_quaternion(reference_body)
         reference_euler = quaternion_to_euler_deg(quaternion)
+        reference_body_euler = quaternion_to_euler_deg(reference_body)
         accel_body = rotate_vector(sensor_to_body, accel)
         self.samples = [
             {
@@ -208,17 +255,21 @@ class StartReferenceCalibrator:
             "source": "dashboard_manual_zero",
             "manual_zero": True,
             "assumption": "operator_selected_current_pose_as_body_frame_zero",
-            "heading_policy": "manual_reference_roll_pitch_yaw_zero",
-            "raw_orientation_convention": "bno085_rotation_vector_sensor_native_requires_mount_validation",
+            "heading_policy": "manual_reference_body_roll_pitch_yaw_zero_after_mount_transform",
+            "raw_orientation_convention": "bno085_rotation_vector_sensor_native",
             "reference_quaternion": _quaternion_dict(quaternion),
             "reference_euler_deg": {key: round(value, 6) for key, value in reference_euler.items()},
+            "reference_body_quaternion": _quaternion_dict(reference_body),
+            "reference_body_euler_deg": {key: round(value, 6) for key, value in reference_body_euler.items()},
             "sensor_to_body_quaternion": _quaternion_dict(sensor_to_body),
+            "reference_sensor_yaw_quaternion": _quaternion_dict(reference_sensor_yaw),
             "reference_yaw_quaternion": _quaternion_dict(reference_yaw),
+            "mount_transform": self.mount_provenance(),
             "gyro_bias_rad_s": _vector_dict(gyro),
             "gyro_bias_frame": "sensor_native_single_sample",
             "gyro_variance": _vector_dict((0.0, 0.0, 0.0)),
             "accel_variance": _vector_dict((0.0, 0.0, 0.0)),
-            "covariance_frame": "imu_link_manual_reference",
+            "covariance_frame": "base_link",
             "covariance_estimated": False,
             "accel_norm_mean_m_s2": round(math.sqrt(sum(value * value for value in accel)), 8),
             "accel_norm_std_m_s2": None,
@@ -229,7 +280,7 @@ class StartReferenceCalibrator:
             "mapping_ready": False,
             "mapping_blockers": [
                 "manual_zero_is_not_a_stationary_covariance_estimate",
-                "imu_to_base_link_extrinsic_not_independently_measured",
+                "imu_to_base_link_forward_lateral_motion_sign_not_validated",
                 "time_alignment_and_wheel_odometry_not_validated",
             ],
         }
@@ -288,8 +339,8 @@ class StartReferenceCalibrator:
         if reference is None:
             self._reject("quaternion_mean_failed", reset_window=True)
             return False
-        reference_yaw = yaw_quaternion(reference)
-        sensor_to_body = quaternion_multiply(quaternion_conjugate(reference_yaw), reference)
+        reference_sensor_yaw, sensor_to_body, reference_body = self._mount_solution(reference)
+        reference_yaw = yaw_quaternion(reference_body)
         gyro_matrix = np.asarray([row["gyro"] for row in self.samples], dtype=np.float64)
         gyro_bias = tuple(float(value) for value in np.mean(gyro_matrix, axis=0))
         # Corrected vectors are expressed in the recording-start body frame, so
@@ -307,6 +358,7 @@ class StartReferenceCalibrator:
         gyro_variance = _variance(gyro_body_residuals)
         accel_variance = _variance(accel_body_samples)
         reference_euler = quaternion_to_euler_deg(reference)
+        reference_body_euler = quaternion_to_euler_deg(reference_body)
         self.calibration = {
             "schema": IMU_CALIBRATION_SCHEMA,
             "revision": IMU_CALIBRATION_REVISION,
@@ -316,17 +368,21 @@ class StartReferenceCalibrator:
             "stationary_span_s": round(elapsed, 6),
             "completed_monotonic": now,
             "assumption": "vehicle_stationary_and_level_at_recording_start",
-            "heading_policy": "recording_start_yaw_zero",
-            "raw_orientation_convention": "bno085_rotation_vector_sensor_native_requires_mount_validation",
+            "heading_policy": "recording_start_body_attitude_zero_after_mount_transform",
+            "raw_orientation_convention": "bno085_rotation_vector_sensor_native",
             "reference_quaternion": _quaternion_dict(reference),
             "reference_euler_deg": {key: round(value, 6) for key, value in reference_euler.items()},
+            "reference_body_quaternion": _quaternion_dict(reference_body),
+            "reference_body_euler_deg": {key: round(value, 6) for key, value in reference_body_euler.items()},
             "sensor_to_body_quaternion": _quaternion_dict(sensor_to_body),
+            "reference_sensor_yaw_quaternion": _quaternion_dict(reference_sensor_yaw),
             "reference_yaw_quaternion": _quaternion_dict(reference_yaw),
+            "mount_transform": self.mount_provenance(),
             "gyro_bias_rad_s": _vector_dict(gyro_bias),
             "gyro_bias_frame": "sensor_native",
             "gyro_variance": _vector_dict(gyro_variance),
             "accel_variance": _vector_dict(accel_variance),
-            "covariance_frame": "imu_link_recording_start",
+            "covariance_frame": "base_link",
             "accel_norm_mean_m_s2": round(float(np.mean(accel_norms)), 8),
             "accel_norm_std_m_s2": round(accel_norm_std, 8),
             "stationarity_thresholds": {
@@ -339,7 +395,7 @@ class StartReferenceCalibrator:
             "window_reset_count": self.reset_count,
             "mapping_ready": False,
             "mapping_blockers": [
-                "imu_to_base_link_extrinsic_not_independently_measured",
+                "imu_to_base_link_forward_lateral_motion_sign_not_validated",
                 "time_alignment_and_wheel_odometry_not_validated",
             ],
         }
@@ -360,19 +416,23 @@ class StartReferenceCalibrator:
         accel = _xyz_tuple(sample.get("linear_acceleration") or {})
         if raw_q is None or gyro is None or accel is None:
             return None
-        reference_yaw = _quaternion_tuple(self.calibration["reference_yaw_quaternion"])
         sensor_to_body = _quaternion_tuple(self.calibration["sensor_to_body_quaternion"])
+        reference_body = _quaternion_tuple(
+            self.calibration.get("reference_body_quaternion")
+            or self.calibration["reference_yaw_quaternion"]
+        )
         gyro_bias = _vector_tuple(self.calibration["gyro_bias_rad_s"])
+        current_body_q = quaternion_multiply(raw_q, quaternion_conjugate(sensor_to_body))
         local_body_q = quaternion_multiply(
-            quaternion_multiply(quaternion_conjugate(reference_yaw), raw_q),
-            quaternion_conjugate(sensor_to_body),
+            quaternion_conjugate(reference_body),
+            current_body_q,
         )
         corrected_gyro = rotate_vector(sensor_to_body, tuple(value - bias for value, bias in zip(gyro, gyro_bias)))
         corrected_accel = rotate_vector(sensor_to_body, accel)
         return {
             "schema": IMU_TIMELINE_SCHEMA,
             "revision": IMU_CALIBRATION_REVISION,
-            "frame_id": "imu_link_recording_start",
+            "frame_id": "base_link",
             "stamp": dict(sample.get("stamp") or {}),
             "orientation": _quaternion_dict(local_body_q),
             "euler_deg": {key: round(value, 6) for key, value in quaternion_to_euler_deg(local_body_q).items()},
@@ -387,6 +447,7 @@ class StartReferenceCalibrator:
             "calibration_revision": IMU_CALIBRATION_REVISION,
             "calibration_source": self.calibration.get("source", "recording_start_stationary_window"),
             "calibration_reference_id": self.recording_id,
+            "mount_transform": dict(self.calibration.get("mount_transform") or {}),
         }
 
     def correct_magnetic(self, magnetic: dict[str, Any]) -> dict[str, float] | None:
