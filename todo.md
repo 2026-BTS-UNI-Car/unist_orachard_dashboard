@@ -137,7 +137,7 @@ Last updated: 2026-07-11
 
 - [x] 원인 1: `ORCHARD_VISION_AI_URL` 기본값이 비어 있어 dashboard가 AI worker를 호출하지 못하던 문제를 수정한다.
 - [x] 원인 2: `vision-ai-worker`가 docker compose profile 뒤에 있어 일반 `docker-compose up -d --build`에서 기동되지 않던 문제를 수정한다.
-- [x] 원인 3: live camera overlay와 recorder overlay를 계산하는 `ros2-camera-bridge`, `ros2-data-recorder` 컨테이너에 `ORCHARD_VISION_AI_URL`이 전달되지 않아 화면에서는 계속 `vision_ai_url_required`가 발생하던 문제를 수정한다.
+- [x] 원인 3 (후속 구조로 대체): `ros2-camera-bridge`만 `ORCHARD_VISION_AI_URL`을 사용해 추론하고, `ros2-data-recorder`는 shared vision topic을 sensor stamp로 매칭한다. recorder에 독립 worker URL을 다시 넣지 않는다.
 - [x] 원인 4: GitHub deploy workflow가 원격 `.env`를 삭제하면 `ORCHARD_ROBOFLOW_MODEL_ID`가 비어 local Roboflow cache worker가 `ok:false`가 되던 문제를 compose 기본값과 deploy health gate로 수정한다.
 - [x] Jetson Roboflow base image의 기존 entrypoint가 자체 서버를 띄우며 worker command를 무시하던 문제를 `ENTRYPOINT []`로 수정한다.
 - [x] Jetson ONNXRuntime이 TensorRT/CUDA provider를 우선 잡아 crash하던 문제를 `ONNXRUNTIME_EXECUTION_PROVIDERS=CPUExecutionProvider`로 우회한다.

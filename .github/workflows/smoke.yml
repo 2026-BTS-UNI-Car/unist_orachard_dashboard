@@ -30,4 +30,4 @@ jobs:
             --volume "$PWD:/workspace:ro" \
             --workdir /workspace \
             unist-orchard-dashboard-ros2:smoke \
-            /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -m unittest discover -s tests -p "test_camera_ws_bridge.py"'
+            /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -m unittest discover -s tests -p "test_camera_ws_bridge.py" && python3 -m unittest discover -s tests -p "test_data_recorder_service.py"'

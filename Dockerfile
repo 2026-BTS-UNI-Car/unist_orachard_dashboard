@@ -15,10 +15,13 @@ COPY dashboard_server ./dashboard_server
 COPY static ./static
 COPY config ./config
 COPY docs ./docs
+COPY scripts/__init__.py ./scripts/__init__.py
 COPY scripts/precompute_archive_camera_overlays.py ./scripts/precompute_archive_camera_overlays.py
 COPY scripts/precompute_archive_lidar_overlays.py ./scripts/precompute_archive_lidar_overlays.py
 COPY scripts/precompute_orchard_maps.py ./scripts/precompute_orchard_maps.py
+COPY scripts/evaluate_orchard_fusion.py ./scripts/evaluate_orchard_fusion.py
 COPY scripts/evaluate_orchard_fusion_v9.py ./scripts/evaluate_orchard_fusion_v9.py
+COPY scripts/evaluate_orchard_fusion_v10.py ./scripts/evaluate_orchard_fusion_v10.py
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends util-linux \

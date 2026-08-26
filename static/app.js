@@ -22,6 +22,7 @@ const CAMERA_RESOLUTION_KEY = "ubts-camera-resolution-v1";
 const CAMERA_FPS_KEY = "ubts-camera-fps-v1";
 const CAMERA_OVERLAY_MODE_KEY = "ubts-camera-overlay-mode-v1";
 const CAMERA_RECONNECT_DEBOUNCE_MS = 500;
+const IMU_RECORD_ENABLED_KEY = "ubts-record-imu-enabled-v1";
 const ROVER_SPEED_KEY = "ubts-rover-speed-v1";
 const ROVER_FADE_START_KEY = "ubts-rover-fade-start-v1";
 const ROVER_FADE_STOP_KEY = "ubts-rover-fade-stop-v1";
@@ -121,6 +122,22 @@ const state = {
     lastOverlay: null,
     lastFrameSize: null,
   },
+  imuLive: {
+    enabled: false,
+    socket: null,
+    connected: false,
+    topicAlive: false,
+    correctedTopicAlive: false,
+    raw: {},
+    corrected: {},
+    magnetic: {},
+    calibration: { state: "idle", valid: false },
+    lastMessageAt: null,
+    lastImuAgeSec: null,
+    error: "",
+    userStopped: false,
+    reconnectTimer: null,
+  },
   cameraModes: DEFAULT_CAMERA_MODES,
   cameraModesSignature: JSON.stringify(DEFAULT_CAMERA_MODES),
   cameraModesSource: "fallback",
@@ -154,6 +171,7 @@ const state = {
 	    loading: false,
 	    actionInFlight: false,
 	    kind: "both",
+	    includeImu: true,
 	    lastStatusAt: 0,
 	  },
 	  archivePlayback: {
@@ -168,7 +186,7 @@ const state = {
 	    sync: true,
 	    range: 25,
 	    fallbackPreview: null,
-	    cache: { lidarFrames: [], cameraFrames: [], objectUrls: new Map(), imageElements: new Map() },
+	    cache: { lidarFrames: [], cameraFrames: [], imuFrames: [], lidarKeys: new Set(), cameraKeys: new Set(), imuKeys: new Set(), objectUrls: new Map(), imageElements: new Map() },
 	    segmentDurationS: ARCHIVE_SEGMENT_SECONDS,
 	    segmentCache: new Map(),
 	    loadingSegments: new Map(),
@@ -329,6 +347,10 @@ function routeSupportsCameraLive(route = currentRoute()) {
   return route === "/connection" || route === "/rover-control";
 }
 
+function routeSupportsImuLive(route = currentRoute()) {
+  return route === "/connection" || route === "/rover-control";
+}
+
 function renderRoute() {
   const route = currentRoute();
   document.querySelectorAll("[data-page]").forEach((page) => {
@@ -347,6 +369,7 @@ function renderRoute() {
     renderLiveCameraOverlays();
     if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
     if (!state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
+	    if (!state.imuLive.socket && !state.imuLive.userStopped) startImuLive();
 	  } else if (route === "/rover-control") {
 	    renderActiveLidarMap();
 	    renderLiveCameraOverlays();
@@ -354,6 +377,7 @@ function renderRoute() {
 	    renderRecordingStatus();
 	    maybeRefreshRecordingStatus();
 	    if (!state.recordings.items.length && !state.recordings.loading) loadRecordings().catch(console.error);
+	    if (!state.imuLive.socket && !state.imuLive.userStopped) startImuLive();
 	  } else if (state.lidarLive.socket || state.lidarLive.enabled) {
 	    closeLidarLive("Live 화면 밖에서는 LiDAR WebSocket을 닫습니다.", { userStopped: false });
 	  }
@@ -362,6 +386,9 @@ function renderRoute() {
 	  }
   if (!routeSupportsCameraLive(route) && (state.cameraLive.socket || state.cameraLive.enabled)) {
     closeCameraLive("Live 화면 밖에서는 Camera WebSocket을 닫습니다.", { userStopped: false });
+  }
+  if (!routeSupportsImuLive(route) && (state.imuLive.socket || state.imuLive.enabled)) {
+    closeImuLive("Live 화면 밖에서는 IMU WebSocket을 닫습니다.", { userStopped: false });
   }
   requestChartAnimation();
 }
@@ -1480,6 +1507,203 @@ function renderCameraLiveState(overrideLabel) {
     { label: "AI Vision", value: aiVisionValue, sub: aiVisionSub, color: aiVisionColor },
     { label: "Observed FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
+}
+
+function toggleImuLive() {
+  if (state.imuLive.connected || state.imuLive.socket) {
+    closeImuLive("사용자가 IMU 실시간 연결을 중지했습니다.", { userStopped: true });
+    return;
+  }
+  startImuLive();
+}
+
+function imuWebSocketUrl() {
+  if (window.UBTS_IMU_WS_URL) return String(window.UBTS_IMU_WS_URL);
+  const scheme = location.protocol === "https:" ? "wss" : "ws";
+  return `${scheme}://${location.host}/ws/imu`;
+}
+
+function startImuLive() {
+  if (!routeSupportsImuLive() || state.imuLive.socket) return;
+  if (state.imuLive.reconnectTimer) {
+    window.clearTimeout(state.imuLive.reconnectTimer);
+    state.imuLive.reconnectTimer = null;
+  }
+  state.imuLive.enabled = true;
+  state.imuLive.userStopped = false;
+  state.imuLive.error = "";
+  renderImuLiveState("연결 중");
+  try {
+    const socket = new WebSocket(imuWebSocketUrl());
+    state.imuLive.socket = socket;
+    socket.addEventListener("open", () => {
+      if (socket !== state.imuLive.socket) return;
+      state.imuLive.connected = true;
+      state.imuLive.error = "";
+      renderImuLiveState();
+    });
+    socket.addEventListener("message", (event) => {
+      if (socket !== state.imuLive.socket || !routeSupportsImuLive()) return;
+      handleImuLiveMessage(event.data);
+    });
+    socket.addEventListener("error", () => {
+      if (socket !== state.imuLive.socket) return;
+      state.imuLive.error = "IMU WebSocket 연결 오류";
+      renderImuLiveState();
+    });
+    socket.addEventListener("close", () => {
+      if (socket !== state.imuLive.socket) return;
+      const reconnect = state.imuLive.enabled && !state.imuLive.userStopped && routeSupportsImuLive();
+      state.imuLive.socket = null;
+      state.imuLive.connected = false;
+      state.imuLive.topicAlive = false;
+      renderImuLiveState(state.imuLive.error || "disconnected");
+      if (reconnect) {
+        state.imuLive.reconnectTimer = window.setTimeout(() => {
+          state.imuLive.reconnectTimer = null;
+          startImuLive();
+        }, 1500);
+      }
+    });
+  } catch (err) {
+    state.imuLive.socket = null;
+    state.imuLive.connected = false;
+    state.imuLive.error = err.message;
+    renderImuLiveState();
+  }
+}
+
+function closeImuLive(message = "disconnected", options = {}) {
+  const socket = state.imuLive.socket;
+  if (state.imuLive.reconnectTimer) window.clearTimeout(state.imuLive.reconnectTimer);
+  state.imuLive.reconnectTimer = null;
+  state.imuLive.enabled = false;
+  state.imuLive.userStopped = options.userStopped !== undefined ? Boolean(options.userStopped) : true;
+  state.imuLive.socket = null;
+  state.imuLive.connected = false;
+  state.imuLive.topicAlive = false;
+  if (socket) closeSocketAfterConnect(socket, message);
+  renderImuLiveState(message);
+}
+
+function handleImuLiveMessage(raw) {
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (_) {
+    state.imuLive.error = "잘못된 IMU WebSocket 메시지";
+    renderImuLiveState();
+    return;
+  }
+  if (payload.type === "socket") return;
+  if (payload.type !== "imu") return;
+  state.imuLive.topicAlive = Boolean(payload.imu_topic_alive);
+  state.imuLive.correctedTopicAlive = Boolean(payload.corrected_topic_alive);
+  state.imuLive.raw = payload.raw || {};
+  state.imuLive.corrected = payload.corrected || {};
+  state.imuLive.magnetic = payload.magnetic || {};
+  state.imuLive.calibration = payload.calibration || { state: "idle", valid: false };
+  state.imuLive.lastImuAgeSec = payload.last_imu_age_s;
+  state.imuLive.lastMessageAt = Date.now();
+  state.imuLive.error = payload.error || (payload.imu_topic_alive ? "" : "ROS 2 /imu/data_raw 대기 중");
+  renderImuLiveState();
+}
+
+function imuDisplaySample() {
+  return state.imuLive.correctedTopicAlive && state.imuLive.corrected?.orientation
+    ? state.imuLive.corrected
+    : state.imuLive.raw || {};
+}
+
+function vectorNorm(vector) {
+  const x = Number(vector?.x);
+  const y = Number(vector?.y);
+  const z = Number(vector?.z);
+  return [x, y, z].every(Number.isFinite) ? Math.hypot(x, y, z) : null;
+}
+
+function renderImuLiveState(overrideLabel) {
+  const sample = imuDisplaySample();
+  const euler = sample.euler_deg || {};
+  const roll = Number(euler.roll);
+  const pitch = Number(euler.pitch);
+  const yaw = Number(euler.yaw);
+  const calibration = state.imuLive.calibration || {};
+  const calibrationState = calibration.state || (calibration.valid ? "ready" : "idle");
+  const sourceLabel = state.imuLive.correctedTopicAlive ? "start-corrected /imu/data" : "raw /imu/data_raw";
+  const statusLabel = overrideLabel || (state.imuLive.topicAlive ? sourceLabel : state.imuLive.error || "IMU 대기");
+  const button = $("roverImuToggle");
+  if (button) {
+    button.textContent = state.imuLive.connected ? "IMU 중지" : "IMU 시작";
+    button.classList.toggle("active", state.imuLive.connected && state.imuLive.topicAlive);
+  }
+  text("roverImuCaption", statusLabel);
+  text("roverImuHeading", Number.isFinite(yaw) ? `${fmtNumber(yaw, 1)}°` : "--°");
+  text("roverImuCalibrationState", calibrationState);
+  const acceleration = sample.linear_acceleration || {};
+  const gyro = sample.angular_velocity || {};
+  const magnetic = state.imuLive.magnetic?.magnetic_field_uT || {};
+  const colors = chartColors();
+  renderReadout("roverImuStats", [
+    { label: "Roll / Pitch", value: Number.isFinite(roll) && Number.isFinite(pitch) ? `${fmtNumber(roll, 1)}° / ${fmtNumber(pitch, 1)}°` : "--", sub: sourceLabel, color: colors.cyan },
+    { label: "Acceleration", value: vectorNorm(acceleration) === null ? "--" : `${fmtNumber(vectorNorm(acceleration), 3)} m/s²`, sub: `x ${fmtNumber(acceleration.x, 2)} · y ${fmtNumber(acceleration.y, 2)} · z ${fmtNumber(acceleration.z, 2)}`, color: colors.good },
+    { label: "Angular velocity", value: vectorNorm(gyro) === null ? "--" : `${fmtNumber(vectorNorm(gyro), 4)} rad/s`, sub: `x ${fmtNumber(gyro.x, 3)} · y ${fmtNumber(gyro.y, 3)} · z ${fmtNumber(gyro.z, 3)}`, color: colors.amber },
+    { label: "Magnetic field", value: vectorNorm(magnetic) === null ? "--" : `${fmtNumber(vectorNorm(magnetic), 2)} µT`, sub: `calibration ${calibrationState}`, color: colors.blue },
+  ]);
+  drawImuAttitude($("roverImuCanvas"), roll, pitch, yaw);
+}
+
+function drawImuAttitude(canvas, roll, pitch, yaw) {
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(240, rect.width || 520);
+  const height = Math.max(180, rect.height || 220);
+  const dpr = Math.min(window.devicePixelRatio || 1, DPR_LIMIT);
+  const pixelWidth = Math.round(width * dpr);
+  const pixelHeight = Math.round(height * dpr);
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  if (![roll, pitch, yaw].every(Number.isFinite)) {
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("ROS 2 IMU 자세 데이터 대기", width / 2, height / 2);
+    return;
+  }
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate(-roll * Math.PI / 180);
+  const pitchOffset = Math.max(-height, Math.min(height, pitch / 45 * height * 0.45));
+  ctx.translate(0, pitchOffset);
+  ctx.fillStyle = "#1667a8";
+  ctx.fillRect(-width, -height * 2, width * 2, height * 2);
+  ctx.fillStyle = "#72502e";
+  ctx.fillRect(-width, 0, width * 2, height * 2);
+  ctx.strokeStyle = "#f8fafc";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-width, 0);
+  ctx.lineTo(width, 0);
+  ctx.stroke();
+  ctx.restore();
+  ctx.strokeStyle = "#f8fafc";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(width / 2 - 42, height / 2);
+  ctx.lineTo(width / 2 - 10, height / 2);
+  ctx.lineTo(width / 2, height / 2 + 8);
+  ctx.lineTo(width / 2 + 10, height / 2);
+  ctx.lineTo(width / 2 + 42, height / 2);
+  ctx.stroke();
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(`R ${fmtNumber(roll, 1)}°  P ${fmtNumber(pitch, 1)}°  Y ${fmtNumber(yaw, 1)}°`, width / 2, 18);
 }
 
 function renderLiveCameraOverlays() {
@@ -3324,6 +3548,7 @@ function serviceLabel(key) {
     lidar_bridge: "LiDAR Bridge",
     camera_bridge: "Camera Bridge",
     rover_bridge: "Rover Bridge",
+    imu_bridge: "IMU Bridge",
     data_recorder: "Data Recorder",
   }[key] || key;
 }
@@ -3336,6 +3561,15 @@ function renderRoverControl(data) {
     state.recordings.status = { ...(state.recordings.status || {}), ...services.data_recorder, ok: services.data_recorder.ok ?? state.recordings.status?.ok };
   }
   const recorder = state.recordings.status || services.data_recorder || {};
+  const imuSensor = data.sensors?.imu || data.connection?.sensors?.imu || {};
+  if (!state.imuLive.topicAlive && imuSensor.raw) {
+    state.imuLive.raw = imuSensor.raw || {};
+    state.imuLive.corrected = imuSensor.corrected || {};
+    state.imuLive.magnetic = imuSensor.magnetic || {};
+    state.imuLive.calibration = imuSensor.calibration || state.imuLive.calibration;
+    state.imuLive.topicAlive = Boolean(imuSensor.ok);
+    state.imuLive.lastImuAgeSec = imuSensor.last_imu_age_s;
+  }
   text("roverControlState", roverBridge.serial_open ? "open" : roverBridge.state || "대기");
   text("roverControlBase", roverBridge.serial_port || "--");
   text("roverProxyState", rover.mode || roverBridge.mode || "serial_only");
@@ -3372,6 +3606,13 @@ function renderRoverControl(data) {
       value: roverBridge.file_command_active ? "active" : "TTL 대기",
     },
     {
+      title: "ROS2 IMU",
+      sub: "/imu/data_raw → /imu/data",
+      ok: Boolean(imuSensor.ok || services.imu_bridge?.ok),
+      level: imuSensor.ok || services.imu_bridge?.ok ? "ok" : "warn",
+      value: imuSensor.state || services.imu_bridge?.state || "대기",
+    },
+    {
       title: "Data Recorder",
       sub: recorder.recording_id || recorder.status_url || "ros2-data-recorder",
       ok: Boolean(recorder.ok),
@@ -3380,6 +3621,7 @@ function renderRoverControl(data) {
     },
   ]);
   renderRoverMotionReadout();
+  renderImuLiveState();
   renderRecordingStatus();
 }
 
@@ -3391,6 +3633,7 @@ function initRoverControl() {
     const fadeStart = localStorage.getItem(ROVER_FADE_START_KEY);
     const fadeStop = localStorage.getItem(ROVER_FADE_STOP_KEY);
     const recordKind = localStorage.getItem(ROVER_RECORD_KIND_KEY);
+    const recordImu = localStorage.getItem(IMU_RECORD_ENABLED_KEY);
     const panelCollapsed = localStorage.getItem(ROVER_PANEL_COLLAPSED_KEY);
     const archiveRange = Number(localStorage.getItem(ARCHIVE_RANGE_KEY));
     const archiveOverlayVisible = localStorage.getItem(ARCHIVE_OVERLAY_VISIBLE_KEY);
@@ -3402,6 +3645,7 @@ function initRoverControl() {
     state.archivePlayback.overlayVisible = archiveOverlayVisible === null ? true : archiveOverlayVisible === "1";
     if (["lidar", "camera", "fusion"].includes(perceptionOverlay)) state.perceptionOverlayMode = perceptionOverlay;
     if (["lidar", "camera", "both"].includes(recordKind)) state.recordings.kind = recordKind;
+    state.recordings.includeImu = recordImu === null ? true : recordImu === "1";
   } catch (_) {
     // Speed defaults remain usable without localStorage.
   }
@@ -3410,6 +3654,8 @@ function initRoverControl() {
   $("roverDrivePanelToggle")?.addEventListener("click", () => setRoverDrivePanelCollapsed(!state.roverControl.panelCollapsed, true));
   $("roverCameraToggle")?.addEventListener("click", toggleCameraLive);
   $("roverLidarToggle")?.addEventListener("click", toggleLidarLive);
+  $("roverImuToggle")?.addEventListener("click", toggleImuLive);
+  $("roverRecordImuToggle")?.addEventListener("change", (event) => setRecordingImuEnabled(event.target.checked, true));
   $("roverRecordStartButton")?.addEventListener("click", () => startRecording(state.recordings.kind));
   document.querySelectorAll("[data-record-kind]").forEach((button) => {
     button.addEventListener("click", () => setRecordingKind(button.dataset.recordKind, true));
@@ -3462,6 +3708,7 @@ function initRoverControl() {
   setRoverFadeOption("stop", state.roverControl.fadeStop, false);
   setRoverDrivePanelCollapsed(state.roverControl.panelCollapsed, false);
   setRecordingKind(state.recordings.kind, false);
+  setRecordingImuEnabled(state.recordings.includeImu, false);
   setArchiveOverlayVisible(state.archivePlayback.overlayVisible, false);
   setArchiveRange(state.archivePlayback.range, false);
   initArchiveOverlayMode();
@@ -3543,6 +3790,20 @@ function setRecordingKind(kind, persist) {
   document.querySelectorAll("[data-record-kind]").forEach((button) => {
     button.classList.toggle("active", button.dataset.recordKind === state.recordings.kind);
   });
+  renderRecordingStatus();
+}
+
+function setRecordingImuEnabled(enabled, persist) {
+  state.recordings.includeImu = Boolean(enabled);
+  const toggle = $("roverRecordImuToggle");
+  if (toggle) toggle.checked = state.recordings.includeImu;
+  if (persist) {
+    try {
+      localStorage.setItem(IMU_RECORD_ENABLED_KEY, state.recordings.includeImu ? "1" : "0");
+    } catch (_) {
+      // IMU recording remains enabled for this session.
+    }
+  }
   renderRecordingStatus();
 }
 
@@ -3894,7 +4155,10 @@ async function startRecording(kind) {
   state.recordings.actionInFlight = true;
   renderRecordingStatus("기록 시작 중");
   try {
-	    const payload = await postJson("/api/recordings/start", { kind: kind || state.recordings.kind });
+	    const payload = await postJson("/api/recordings/start", {
+	      kind: kind || state.recordings.kind,
+	      include_imu: state.recordings.includeImu,
+	    });
 	    state.recordings.status = payload.status || payload;
 	    state.recordings.lastStatusAt = Date.now();
     renderRecordingStatus();
@@ -3933,8 +4197,13 @@ function renderRecordingStatus(override) {
   const status = state.recordings.status || {};
   const active = Boolean(status.active);
   const kind = recordingKindLabel(active ? status.kind : state.recordings.kind);
+  const includeImu = active ? status.include_imu !== false : state.recordings.includeImu;
+  const sensorLabel = includeImu ? `${kind}+IMU` : kind;
   const duration = recordingDurationSeconds(status);
-  const message = override || (active ? `${kind} 기록 중 · ${status.recording_id || ""}` : status.error || status.state || `${kind} 기록 대기`);
+  const calibrationState = status.imu_pipeline?.calibration?.state;
+  const message = override || (active
+    ? `${sensorLabel} 기록 중 · ${calibrationState === "collecting" ? "IMU 정지 자세 보정 중 · " : ""}${status.recording_id || ""}`
+    : status.error || status.state || `${sensorLabel} 기록 대기`);
   const target = $("roverRecordingStatus");
   if (target) {
     target.className = `test-result ${active || status.ok ? "ok" : status.error ? "bad" : "testing"}`;
@@ -3953,7 +4222,12 @@ function renderRecordingStatus(override) {
   if (stop) stop.disabled = state.recordings.actionInFlight || !active;
   text("roverRecordingTimer", active ? fmtClock(duration) : "00:00");
   text("roverRecorderState", active ? "recording" : status.ok ? "ready" : status.state || "--");
-  text("roverRecorderKind", active ? kind : status.archive_count !== undefined ? `${status.archive_count} archives` : "대기");
+  text("roverRecorderKind", active ? sensorLabel : status.archive_count !== undefined ? `${status.archive_count} archives` : "대기");
+  const imuToggle = $("roverRecordImuToggle");
+  if (imuToggle) {
+    imuToggle.checked = includeImu;
+    imuToggle.disabled = state.recordings.actionInFlight || active;
+  }
 }
 
 function recordingDurationSeconds(status) {
@@ -4023,7 +4297,8 @@ function timelineShellFromRecording(payload) {
   const durationS = Number(summary.duration_s || metadata.duration_s || payload?.duration_s || 0);
   const lidarFrames = Number(summary.lidar_frames || 0);
   const cameraFrames = Number(summary.camera_frames || 0);
-  if (!summary.ok && !lidarFrames && !cameraFrames) return null;
+  const imuFrames = Number(summary.imu_frames || 0);
+  if (!summary.ok && !lidarFrames && !cameraFrames && !imuFrames) return null;
   return {
     ok: true,
     id: payload?.id || metadata.id || state.recordings.selectedId,
@@ -4033,10 +4308,12 @@ function timelineShellFromRecording(payload) {
     duration_s: durationS,
     lidar: { frames: [] },
     camera: { frames: [] },
+    imu: { frames: [], calibration: metadata.timeline?.imu_calibration || {} },
     sync: {
       time_base: "seconds_since_recording_start",
       lidar_frames: lidarFrames,
       camera_frames: cameraFrames,
+      imu_frames: imuFrames,
     },
     streaming: true,
   };
@@ -4052,8 +4329,10 @@ function clearArchiveFrameCache() {
   state.archivePlayback.cache = {
     lidarFrames: [],
     cameraFrames: [],
+    imuFrames: [],
     lidarKeys: new Set(),
     cameraKeys: new Set(),
+    imuKeys: new Set(),
     objectUrls: new Map(),
     imageElements: new Map(),
   };
@@ -4071,6 +4350,13 @@ function prepareArchiveTimelineCache(timeline) {
 function mergeArchiveTimelineSegment(timeline) {
   if (!timeline) return;
   const cache = state.archivePlayback.cache;
+  if (state.recordings.timeline && timeline.imu) {
+    state.recordings.timeline.imu = {
+      ...(state.recordings.timeline.imu || {}),
+      ...Object.fromEntries(Object.entries(timeline.imu).filter(([key]) => key !== "frames")),
+      frames: [],
+    };
+  }
   const lidarFrames = (timeline.lidar?.frames || []).map((frame, index) => ({
     ...frame,
     index,
@@ -4113,6 +4399,20 @@ function mergeArchiveTimelineSegment(timeline) {
   cache.cameraFrames.forEach((frame, cacheIndex) => {
     frame.cacheIndex = cacheIndex;
   });
+  const imuFrames = (timeline.imu?.frames || []).map((frame, index) => ({
+    ...frame,
+    index,
+    t_s: Number(frame.t_s) || 0,
+  }));
+  for (const frame of imuFrames) {
+    const key = archiveFrameKey(frame, "imu");
+    if (cache.imuKeys.has(key)) continue;
+    cache.imuKeys.add(key);
+    frame.cacheKey = key;
+    cache.imuFrames.push(frame);
+  }
+  cache.imuFrames.sort((a, b) => a.t_s - b.t_s);
+  cache.imuFrames.forEach((frame, cacheIndex) => { frame.cacheIndex = cacheIndex; });
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
 }
@@ -4272,7 +4572,7 @@ function renderRecordingDetail(detail) {
   const rows = id ? [
     { title: "ID", sub: recordingKindLabel(metadata.kind || payload.kind), ok: true, level: "ok", value: id },
     { title: "Duration", sub: formatShortDate(metadata.started_at), ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
-    { title: "Timeline", sub: `${payload?.timeline_summary?.lidar_frames || state.recordings.timeline?.lidar?.frames?.length || 0} lidar · ${payload?.timeline_summary?.camera_frames || state.recordings.timeline?.camera?.frames?.length || 0} camera`, ok: Boolean(state.recordings.timeline), level: state.recordings.timeline ? "ok" : "warn", value: state.recordings.timeline ? "playable" : "preview only" },
+    { title: "Timeline", sub: `${payload?.timeline_summary?.lidar_frames || state.recordings.timeline?.lidar?.frames?.length || 0} lidar · ${payload?.timeline_summary?.camera_frames || state.recordings.timeline?.camera?.frames?.length || 0} camera · ${payload?.timeline_summary?.imu_frames || state.recordings.timeline?.imu?.frames?.length || 0} imu`, ok: Boolean(state.recordings.timeline), level: state.recordings.timeline ? "ok" : "warn", value: state.recordings.timeline ? "playable" : "preview only" },
     { title: "LiDAR Analysis", sub: `${analysis.walls?.length || 0} walls · ${analysis.objects?.length || 0} objects`, ok: hasLidar, level: hasLidar ? "ok" : "warn", value: hasLidar ? `${preview.points.length} pts` : "no scan" },
   ] : [
     { title: "Archive", sub: "기록을 선택하세요", ok: false, level: "warn", value: "--" },
@@ -4353,7 +4653,8 @@ function setupArchivePlayback(payload, fallbackPreview) {
   const duration = Number(timeline?.duration_s || metadata.duration_s || 0);
   const lidarFrames = state.archivePlayback.cache.lidarFrames || [];
   const cameraFrames = state.archivePlayback.cache.cameraFrames || [];
-  const lastFrameTime = Math.max(0, ...lidarFrames.map((frame) => Number(frame.t_s) || 0), ...cameraFrames.map((frame) => Number(frame.t_s) || 0));
+  const imuFrames = state.archivePlayback.cache.imuFrames || [];
+  const lastFrameTime = Math.max(0, ...lidarFrames.map((frame) => Number(frame.t_s) || 0), ...cameraFrames.map((frame) => Number(frame.t_s) || 0), ...imuFrames.map((frame) => Number(frame.t_s) || 0));
   state.archivePlayback.durationS = Math.max(duration, lastFrameTime);
   state.archivePlayback.timeS = Math.min(state.archivePlayback.timeS || 0, state.archivePlayback.durationS);
   state.archivePlayback.fallbackPreview = fallbackPreview;
@@ -4440,6 +4741,7 @@ function renderArchiveFrame() {
   const cache = state.archivePlayback.cache || {};
   const lidarFrame = timeline ? nearestTimelineFrame(cache.lidarFrames || [], timeS) : null;
   const cameraFrame = timeline && state.archivePlayback.sync ? nearestTimelineFrame(cache.cameraFrames || [], timeS) : null;
+  const imuFrame = timeline ? nearestTimelineFrame(cache.imuFrames || [], timeS) : null;
   const lidarResult = lidarFrame?.result || state.archivePlayback.fallbackPreview;
   const overlayMode = archiveOverlayRenderMode();
   const fusedTrees = archiveFusedTreesForTime(timeS, state.archivePlayback.range, lidarResult);
@@ -4494,6 +4796,18 @@ function renderArchiveFrame() {
       ? `${nativeVideo ? `native ${fmtNumber(sourceVideo.fps || 0, 0)} fps · ` : ""}${cameraFrame.frame_id || "camera"} · ${fmtClock(timeS)} · ${cameraFrame.source_width || cameraFrame.width}x${cameraFrame.source_height || cameraFrame.height}`
       : state.archivePlayback.sync ? "camera preview 없음" : "동시 재생 꺼짐";
   text("roverArchiveCameraCaption", cameraCaption);
+  const imuSample = imuFrame?.corrected || imuFrame?.raw || {};
+  const imuEuler = imuSample.euler_deg || {};
+  const imuCalibrationState = imuFrame?.calibration_state || timeline?.imu?.calibration?.state || "unavailable";
+  const colors = chartColors();
+  renderReadout("roverArchiveImuStats", [
+    {
+      label: "Archive IMU",
+      value: imuFrame ? `${fmtNumber(imuEuler.roll, 1)}° / ${fmtNumber(imuEuler.pitch, 1)}° / ${fmtNumber(imuEuler.yaw, 1)}°` : "--",
+      sub: imuFrame ? `${imuFrame.corrected ? "start-corrected" : "raw"} · t=${fmtNumber(imuFrame.t_s, 2)}s · calibration ${imuCalibrationState}` : "IMU frame 없음",
+      color: imuFrame?.corrected ? colors.good : colors.amber,
+    },
+  ]);
   text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   text("roverOrchardMapTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   const scrubber = $("roverArchiveScrubber");

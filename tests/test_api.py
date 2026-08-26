@@ -181,12 +181,15 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("lidar", connection)
         self.assertIn("camera", connection)
         self.assertIn("camera_bridge", connection)
+        self.assertIn("imu_bridge", connection)
         self.assertIn("rover_bridge", connection)
         self.assertIn("rover", connection)
         self.assertIn("data_recorder", connection["services"])
         self.assertIn("test_mode", connection["lidar"])
         self.assertEqual(connection["lidar"]["test_mode"], "ros2_subscribe_only")
         self.assertEqual(connection["camera"]["test_mode"], "ros2_subscribe_only")
+        self.assertEqual(connection["sensors"]["imu"]["dashboard_access"], "subscribe_only")
+        self.assertEqual(connection["sensors"]["imu"]["raw_topic"], "/imu/data_raw")
 
         lidar_test = self.post_json("/api/lidar/test")
         self.assertIn("status", lidar_test)
@@ -269,7 +272,7 @@ class DashboardApiTest(unittest.TestCase):
             )
             orchard_map = self.get_json("/api/recordings/unit_lidar_archive/orchard-map")
             self.assertTrue(orchard_map["ok"])
-            self.assertEqual(orchard_map["map"]["algorithm"], "orchard_metric_anchor_semantic_fusion_local_frenet_v9")
+            self.assertEqual(orchard_map["map"]["algorithm"], "orchard_metric_anchor_semantic_fusion_local_frenet_v10")
             self.assertEqual(set(orchard_map["map"]["maps"].keys()), {"lidar", "camera", "fusion"})
             self.assertIn("centerline", orchard_map["map"]["maps"]["fusion"])
             with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/recordings/unit_lidar_archive/download", timeout=5) as res:
@@ -507,6 +510,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("lidar-connection", slugs)
         self.assertIn("lidar-drive-test-recording", slugs)
         self.assertIn("usb-camera-connection", slugs)
+        self.assertIn("imu-ros2-recording", slugs)
+        self.assertIn("jetson-offline-access-20260827", slugs)
         self.assertIn("wave-rover-control", slugs)
         self.assertIn("rover-control-dashboard", slugs)
         self.assertIn("lidar-archive-analysis", slugs)
@@ -523,6 +528,14 @@ class DashboardApiTest(unittest.TestCase):
         camera_doc = self.get_json("/api/docs/usb-camera-connection")
         self.assertTrue(camera_doc["ok"])
         self.assertIn("/camera/image_raw", camera_doc["markdown"])
+        imu_doc = self.get_json("/api/docs/imu-ros2-recording")
+        self.assertTrue(imu_doc["ok"])
+        self.assertIn("/imu/data_raw", imu_doc["markdown"])
+        self.assertIn("Dashboard", imu_doc["markdown"])
+        offline_doc = self.get_json("/api/docs/jetson-offline-access-20260827")
+        self.assertTrue(offline_doc["ok"])
+        self.assertIn("wlP1p1s0", offline_doc["markdown"])
+        self.assertIn("jetson-ssh.sarihub.com", offline_doc["markdown"])
         drive_doc = self.get_json("/api/docs/lidar-drive-test-recording")
         self.assertTrue(drive_doc["ok"])
         self.assertIn("rosbag2", drive_doc["markdown"])
@@ -705,6 +718,12 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("DATA_RECORDER_STATUS_FILE", compose)
         self.assertIn("RECORDER_TIMELINE_HZ", compose)
         self.assertIn("RECORDER_CAMERA_PREVIEW_WIDTH", compose)
+        self.assertIn("ORCHARD_VISION_INFERENCE_WIDTH:-0", compose)
+        self.assertIn("ORCHARD_VISION_INFERENCE_JPEG_QUALITY:-86", compose)
+        self.assertIn("RECORDER_SHARED_VISION_SYNC_MAX_DELTA_S:-0.12", compose)
+        self.assertIn("RECORDER_SHARED_VISION_WAIT_TIMEOUT_S:-0.35", compose)
+        self.assertIn("--vision-inference-width", compose)
+        self.assertIn("--camera-vision-sync-max-delta-s", compose)
         self.assertIn("ROVER_NETWORK_ENABLED", compose)
         self.assertIn("--no-allow-network", compose)
         self.assertIn("--command-file", compose)
@@ -731,7 +750,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertNotIn("$COMPOSE down", deploy_workflow)
         self.assertIn("label=com.docker.compose.project=unist_orachard_dashboard", deploy_workflow)
         self.assertIn("precompute_archive_lidar_overlays.py", deploy_workflow)
-        self.assertIn("v9_rep103_provenance_continuity_readiness_r3", deploy_workflow)
+        self.assertIn("v10_rep103_robust_tracks_unique_semantics_row_model_native_input_r3", deploy_workflow)
         self.assertIn("deployment_safety_contract_ok", deploy_workflow)
         self.assertIn("research_readiness_is_non_blocking", deploy_workflow)
         smoke_workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "smoke.yml").read_text()
@@ -740,12 +759,17 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("docker build --file Dockerfile.ros2 ", smoke_workflow)
         self.assertIn('test_camera_ws_bridge.py', smoke_workflow)
         self.assertIn("import_video_archive.py", (Path(__file__).resolve().parents[1] / "Dockerfile.vision_ai").read_text())
-        for service_name in ["dashboard", "ros2-camera-bridge", "ros2-data-recorder"]:
+        for service_name in ["dashboard", "ros2-camera-bridge"]:
             match = re.search(rf"^  {re.escape(service_name)}:\n(?P<block>.*?)(?=^  [\w-]+:|\Z)", compose, re.M | re.S)
             self.assertIsNotNone(match, service_name)
             service_block = match.group("block")
             self.assertIn("ORCHARD_VISION_AI_URL", service_block, service_name)
             self.assertIn("ORCHARD_VISION_AI_TIMEOUT_S", service_block, service_name)
+        recorder_match = re.search(r"^  ros2-data-recorder:\n(?P<block>.*?)(?=^  [\w-]+:|\Z)", compose, re.M | re.S)
+        self.assertIsNotNone(recorder_match)
+        recorder_block = recorder_match.group("block")
+        self.assertNotIn("ORCHARD_VISION_AI_URL", recorder_block)
+        self.assertIn("RECORDER_SHARED_VISION_SYNC_MAX_DELTA_S", recorder_block)
         self.assertIn("stats?stream=false&one-shot=true", telemetry_py)
         self.assertIn("def docker_container_logs", telemetry_py)
         self.assertIn("def docker_container_action", telemetry_py)
@@ -798,6 +822,12 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("orchard.camera_bearings.v1", camera_bridge_py)
         self.assertIn("pixel-right is negative", camera_bridge_py)
         self.assertIn("vision_inference_thread", camera_bridge_py)
+        self.assertIn("single_slot_newest_frame_no_backlog", camera_bridge_py)
+        self.assertIn("camera_archive_worker", recorder_py)
+        self.assertIn("single_slot_archive_worker_and_dds_best_effort_keep_last_1", recorder_py)
+        self.assertIn('"inference_owner": "camera_ws_bridge"', recorder_py)
+        self.assertNotIn("analyze_camera_image(", recorder_py)
+        self.assertIn("depth=1", recorder_py)
         self.assertIn("std_msgs.msg import String", camera_bridge_py)
         self.assertIn("ORCHARD_VISION_PUBLISH_HZ", compose)
         self.assertIn("ORCHARD_VISION_BEARING_CALIBRATION_VALID", compose)
@@ -805,6 +835,15 @@ class DashboardApiTest(unittest.TestCase):
         deploy_workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "deploy.yml").read_text()
         self.assertIn("camera always-on vision publisher smoke failed after 180s", deploy_workflow)
         self.assertIn('"payload_source": payload.get("source") == "camera_ws_bridge_shared_worker_v4"', deploy_workflow)
+        self.assertIn('"no_backlog": vision.get("coalescing") == "single_slot_newest_frame_no_backlog"', deploy_workflow)
+        self.assertIn('"input_policy_revision": input_policy.get("revision") == "source_native_preview_decoupled_jpeg_v1"', deploy_workflow)
+        self.assertIn('"input_policy_mode": input_policy.get("mode") == "source_native"', deploy_workflow)
+        self.assertIn('"actual_input_jpeg_quality": int(actual_input.get("jpeg_quality") or 0) == 86', deploy_workflow)
+        self.assertIn('"actual_inference_is_source_width"', deploy_workflow)
+        self.assertIn('"camera_info_provenance_revision": vision.get("camera_info_provenance_revision") == "camera_info_image_header_integrity_v2"', deploy_workflow)
+        self.assertIn('"camera_info_provenance_valid": vision.get("camera_info_provenance_valid") is True', deploy_workflow)
+        self.assertIn("shared_vision_provenance_rejected_count", deploy_workflow)
+        self.assertIn("shared_vision_received_age_s", deploy_workflow)
 
     def test_lidar_websocket_requires_browser_session(self):
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
@@ -856,6 +895,100 @@ class DashboardApiTest(unittest.TestCase):
                 os.environ.pop("CAMERA_WS_UPSTREAM", None)
             else:
                 os.environ["CAMERA_WS_UPSTREAM"] = old_upstream
+
+    def test_imu_websocket_requires_browser_session(self):
+        key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+        sock = socket.create_connection(("127.0.0.1", self.port), timeout=3)
+        with sock:
+            sock.sendall(
+                (
+                    "GET /ws/imu HTTP/1.1\r\n"
+                    f"Host: 127.0.0.1:{self.port}\r\n"
+                    "Upgrade: websocket\r\n"
+                    "Connection: Upgrade\r\n"
+                    f"Sec-WebSocket-Key: {key}\r\n"
+                    "Sec-WebSocket-Version: 13\r\n\r\n"
+                ).encode("ascii")
+            )
+            raw = b""
+            while b"\r\n\r\n" not in raw:
+                raw += sock.recv(1024)
+            self.assertIn("403", raw.decode("iso-8859-1"))
+
+    def test_imu_websocket_proxy_graceful_without_bridge(self):
+        old_upstream = os.environ.get("IMU_WS_UPSTREAM")
+        os.environ["IMU_WS_UPSTREAM"] = "ws://127.0.0.1:1/ws/imu"
+        try:
+            sock, leftover = self.open_dashboard_ws("/ws/imu")
+            with sock:
+                payload = json.loads(self.read_ws_text(sock, leftover))
+                self.assertEqual(payload["type"], "imu")
+                self.assertFalse(payload["imu_topic_alive"])
+                self.assertIn("bridge unavailable", payload["error"])
+        finally:
+            if old_upstream is None:
+                os.environ.pop("IMU_WS_UPSTREAM", None)
+            else:
+                os.environ["IMU_WS_UPSTREAM"] = old_upstream
+
+    def test_imu_websocket_proxy_relays_ros2_bridge_frame(self):
+        upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        upstream.bind(("127.0.0.1", 0))
+        upstream.listen(1)
+        upstream_port = upstream.getsockname()[1]
+        captured_request_line = []
+
+        def serve_once():
+            conn, _ = upstream.accept()
+            with conn:
+                request = b""
+                while b"\r\n\r\n" not in request:
+                    request += conn.recv(1024)
+                request_lines = request.decode("iso-8859-1").split("\r\n")
+                captured_request_line.append(request_lines[0])
+                key_line = next(line for line in request_lines if line.lower().startswith("sec-websocket-key:"))
+                upstream_key = key_line.split(":", 1)[1].strip()
+                accept = base64.b64encode(
+                    hashlib.sha1(
+                        (upstream_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+                    ).digest()
+                ).decode("ascii")
+                frame = {
+                    "type": "imu",
+                    "schema": "orchard.imu_websocket.v1",
+                    "imu_topic_alive": True,
+                    "raw": {"frame_id": "imu_link", "orientation": {"x": 0, "y": 0, "z": 0, "w": 1}},
+                }
+                conn.sendall(
+                    (
+                        "HTTP/1.1 101 Switching Protocols\r\n"
+                        "Upgrade: websocket\r\n"
+                        "Connection: Upgrade\r\n"
+                        f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+                    ).encode("ascii")
+                    + self.ws_frame(frame)
+                )
+                time.sleep(0.2)
+            upstream.close()
+
+        thread = threading.Thread(target=serve_once, daemon=True)
+        thread.start()
+        old_upstream = os.environ.get("IMU_WS_UPSTREAM")
+        os.environ["IMU_WS_UPSTREAM"] = f"ws://127.0.0.1:{upstream_port}/ws/imu"
+        try:
+            sock, leftover = self.open_dashboard_ws("/ws/imu")
+            with sock:
+                payload = json.loads(self.read_ws_text(sock, leftover))
+                self.assertEqual(payload["schema"], "orchard.imu_websocket.v1")
+                self.assertTrue(payload["imu_topic_alive"])
+                self.assertEqual(payload["raw"]["frame_id"], "imu_link")
+            self.assertEqual(captured_request_line, ["GET /ws/imu HTTP/1.1"])
+        finally:
+            if old_upstream is None:
+                os.environ.pop("IMU_WS_UPSTREAM", None)
+            else:
+                os.environ["IMU_WS_UPSTREAM"] = old_upstream
+            thread.join(timeout=2)
 
     def test_lidar_websocket_proxy_relays_upstream_frame(self):
         upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -989,6 +1122,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("lidar-object-overlay", slugs)
         self.assertIn("orchard-tree-algorithm-report", slugs)
         self.assertIn("rover-control-todo", slugs)
+        self.assertIn("imu-ros2-recording", slugs)
+        self.assertIn("jetson-offline-access-20260827", slugs)
 
 
 if __name__ == "__main__":

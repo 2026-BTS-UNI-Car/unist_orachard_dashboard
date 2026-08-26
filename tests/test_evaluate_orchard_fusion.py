@@ -5,10 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.evaluate_orchard_fusion_v9 import evaluate_timeline
+from scripts.evaluate_orchard_fusion import evaluate_timeline
+from scripts.evaluate_orchard_fusion_v10 import evaluate_timeline as evaluate_timeline_v10
+from scripts.evaluate_orchard_fusion_v9 import evaluate_timeline as evaluate_timeline_v9
 
 
-class OrchardFusionV9EvaluationReadinessTest(unittest.TestCase):
+class OrchardFusionEvaluationReadinessTest(unittest.TestCase):
     def evaluate(self, timeline: dict) -> dict:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "timeline.json"
@@ -32,6 +34,10 @@ class OrchardFusionV9EvaluationReadinessTest(unittest.TestCase):
             "insufficient_lidar_frames",
             result["readiness"]["data_sufficiency_reasons"],
         )
+
+    def test_versioned_entrypoints_delegate_to_generic_evaluator(self):
+        self.assertIs(evaluate_timeline_v9, evaluate_timeline)
+        self.assertIs(evaluate_timeline_v10, evaluate_timeline)
 
     def test_one_empty_lidar_frame_is_not_data_sufficient(self):
         result = self.evaluate(
@@ -66,10 +72,15 @@ class OrchardFusionV9EvaluationReadinessTest(unittest.TestCase):
         self.assertTrue(result["data_sufficiency_ok"], result)
         self.assertFalse(result["navigation_ready"])
         self.assertTrue(result["ok"], result)
-        self.assertEqual(
-            result["readiness"]["navigation_readiness_reasons"],
-            ["centerline_not_ready"],
-        )
+        reasons = result["readiness"]["navigation_readiness_reasons"]
+        self.assertIn("centerline_not_ready", reasons)
+        self.assertIn("ground_truth_validated_missing", reasons)
+        self.assertIn("lidar_base_extrinsics_validated_missing", reasons)
+        self.assertIn("camera_intrinsics_validated_missing", reasons)
+        self.assertIn("camera_lidar_extrinsics_validated_missing", reasons)
+        self.assertIn("trajectory_pose_validated_missing", reasons)
+        self.assertIn("full_rate_replay_validated_missing", reasons)
+        self.assertIn("sensor_header_clock_integrity_not_validated", reasons)
 
 
 if __name__ == "__main__":

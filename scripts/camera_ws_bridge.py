@@ -25,17 +25,23 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dashboard_server.camera_analysis import (
+    DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
     LOCAL_VISION_ALGORITHM_NAME,
     LOCAL_VISION_ANALYSIS_REVISION,
+    VISION_INFERENCE_INPUT_POLICY_REVISION,
     CameraOverlayStabilizer,
     analyze_camera_image,
     empty_camera_analysis,
+    prepare_camera_inference_frame,
+    scale_camera_overlay_geometry,
 )
 
 
 VISION_BEARINGS_SCHEMA = "orchard.camera_bearings.v1"
 VISION_TREE_CLASS = "orchard_tree_trunk"
 DEFAULT_VISION_TOPIC = "/orchard/vision/tree_bearings"
+CAMERA_INFO_IMAGE_PROVENANCE_REVISION = "camera_info_image_header_integrity_v2"
+DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S = 0.12
 
 
 def bridge_log(event: str, **fields: Any) -> None:
@@ -69,6 +75,32 @@ def finite_number(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def nonnegative_integer(value: Any) -> int | None:
+    """Return an exact non-negative integer without silently truncating metadata."""
+
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str):
+        candidate = value.strip()
+        if not candidate or not candidate.isdecimal():
+            return None
+        integer = int(candidate)
+        return integer if integer >= 0 else None
+    if isinstance(value, float):
+        if not math.isfinite(value) or value < 0.0 or not value.is_integer():
+            return None
+        return int(value)
+    try:
+        integer = int(value)
+        if integer < 0 or value != integer:
+            return None
+        return integer
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def probability(value: Any, default: float | None = None) -> float | None:
@@ -127,6 +159,121 @@ def camera_info_payload(msg: Any) -> dict[str, Any]:
     }
 
 
+def camera_info_image_provenance(
+    camera_info: dict[str, Any] | None,
+    *,
+    image_frame_id: str,
+    image_width: int,
+    image_height: int,
+    image_stamp_ns: int,
+    max_delta_s: float = DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
+    image_clock_integrity_ok: bool = True,
+    camera_info_clock_integrity_ok: bool = True,
+    image_clock_epoch: int = 0,
+    camera_info_clock_epoch: int = 0,
+    image_clock_regression_count: int = 0,
+    camera_info_clock_regression_count: int = 0,
+) -> dict[str, Any]:
+    """Validate that CameraInfo belongs to the image being inferred.
+
+    Operator calibration approval is necessary but not sufficient: header
+    identity, native dimensions, bounded sensor-stamp distance and monotonic
+    clock epochs must also agree.  Missing provenance always fails closed.
+    """
+
+    info = camera_info if isinstance(camera_info, dict) else {}
+    reasons: list[str] = []
+    image_frame = str(image_frame_id or "").strip()
+    info_frame_id = str(info.get("frame_id") or "").strip()
+    parsed_info_width = nonnegative_integer(info.get("width"))
+    parsed_info_height = nonnegative_integer(info.get("height"))
+    parsed_info_stamp_ns = nonnegative_integer(info.get("stamp_ns"))
+    parsed_image_width = nonnegative_integer(image_width)
+    parsed_image_height = nonnegative_integer(image_height)
+    parsed_image_stamp_ns = nonnegative_integer(image_stamp_ns)
+    info_width = parsed_info_width or 0
+    info_height = parsed_info_height or 0
+    info_stamp_ns = parsed_info_stamp_ns or 0
+    native_image_width = parsed_image_width or 0
+    native_image_height = parsed_image_height or 0
+    native_image_stamp_ns = parsed_image_stamp_ns or 0
+    requested_max_delta_s = finite_number(max_delta_s)
+    bounded_max_delta_s = max(
+        0.001,
+        min(
+            1.0,
+            requested_max_delta_s
+            if requested_max_delta_s is not None
+            else DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
+        ),
+    )
+    sync_delta_s = (
+        abs(info_stamp_ns - native_image_stamp_ns) / 1_000_000_000
+        if info_stamp_ns > 0 and native_image_stamp_ns > 0
+        else None
+    )
+    if not info:
+        reasons.append("camera_info_missing")
+    if parsed_info_width is None or parsed_info_height is None or parsed_info_stamp_ns is None:
+        reasons.append("camera_info_metadata_invalid")
+    if parsed_image_width is None or parsed_image_height is None or parsed_image_stamp_ns is None:
+        reasons.append("image_metadata_invalid")
+    if not image_frame or not info_frame_id or info_frame_id != image_frame:
+        reasons.append("frame_id_mismatch")
+    if (
+        native_image_width <= 0
+        or native_image_height <= 0
+        or info_width != native_image_width
+        or info_height != native_image_height
+    ):
+        reasons.append("native_dimensions_mismatch")
+    if native_image_stamp_ns <= 0 or info_stamp_ns <= 0:
+        reasons.append("sensor_stamp_missing")
+    elif sync_delta_s is None or sync_delta_s > bounded_max_delta_s:
+        reasons.append("camera_info_stale" if info_stamp_ns < native_image_stamp_ns else "camera_info_future")
+        reasons.append("sensor_stamp_outside_gate")
+    if not image_clock_integrity_ok:
+        reasons.append("image_clock_regression")
+    if not camera_info_clock_integrity_ok:
+        reasons.append("camera_info_clock_regression")
+    if int(image_clock_epoch) != int(camera_info_clock_epoch):
+        reasons.append("clock_epoch_mismatch")
+    raw_k = info.get("k") if isinstance(info.get("k"), list) else []
+    k = [finite_number(value) for value in raw_k[:9]]
+    if (
+        len(k) != 9
+        or any(value is None for value in k)
+        or float(k[0]) <= 0.0
+        or float(k[4]) <= 0.0
+        or not 0.0 <= float(k[2]) <= max(0.0, float(info_width))
+        or not 0.0 <= float(k[5]) <= max(0.0, float(info_height))
+    ):
+        reasons.append("intrinsics_invalid")
+    return {
+        "revision": CAMERA_INFO_IMAGE_PROVENANCE_REVISION,
+        "valid": not reasons,
+        "reason": reasons[0] if reasons else "validated",
+        "reasons": reasons,
+        "max_delta_s": bounded_max_delta_s,
+        "sync_delta_s": round(sync_delta_s, 9) if sync_delta_s is not None else None,
+        "gate": "strict_fail_closed",
+        "image_frame_id": image_frame,
+        "camera_info_frame_id": info_frame_id,
+        "image_width": native_image_width,
+        "image_height": native_image_height,
+        "camera_info_width": info_width,
+        "camera_info_height": info_height,
+        "image_stamp_ns": native_image_stamp_ns,
+        "camera_info_stamp_ns": info_stamp_ns,
+        "image_clock_integrity_ok": bool(image_clock_integrity_ok),
+        "camera_info_clock_integrity_ok": bool(camera_info_clock_integrity_ok),
+        "image_clock_epoch": int(image_clock_epoch),
+        "camera_info_clock_epoch": int(camera_info_clock_epoch),
+        "image_clock_regression_count": max(0, int(image_clock_regression_count)),
+        "camera_info_clock_regression_count": max(0, int(camera_info_clock_regression_count)),
+    }
+
+
 def projection_intrinsics(
     image_width: int,
     camera_info: dict[str, Any] | None,
@@ -164,6 +311,7 @@ def vision_tree_bearings_payload(
     stamp_nanosec: int,
     frame_id: str = "camera_link",
     camera_info: dict[str, Any] | None = None,
+    camera_info_provenance: dict[str, Any] | None = None,
     calibration_valid: bool = False,
     nominal_fov_deg: float = 70.0,
 ) -> dict[str, Any]:
@@ -179,7 +327,17 @@ def vision_tree_bearings_payload(
     overlay = overlay if isinstance(overlay, dict) else {}
     image = overlay.get("image") if isinstance(overlay.get("image"), dict) else {}
     image_width = int(image.get("width") or 0)
-    intrinsics = projection_intrinsics(image_width, camera_info, nominal_fov_deg, calibration_valid)
+    provenance = camera_info_provenance if isinstance(camera_info_provenance, dict) else {}
+    camera_info_valid = (
+        provenance.get("revision") == CAMERA_INFO_IMAGE_PROVENANCE_REVISION
+        and provenance.get("valid") is True
+    )
+    intrinsics = projection_intrinsics(
+        image_width,
+        camera_info if camera_info_valid else None,
+        nominal_fov_deg,
+        bool(calibration_valid and camera_info_valid),
+    )
     contract_ok = (
         overlay.get("ok") is True
         and overlay.get("algorithm") == LOCAL_VISION_ALGORITHM_NAME
@@ -223,7 +381,13 @@ def vision_tree_bearings_payload(
                 "ood_score": round(ood_score, 6),
                 "bbox": [round(value, 3) for value in bbox],
                 "calibrated_metric": False,
+                "map_admission": "accepted",
+                "stable": item.get("stable") is True,
+                "stable_hits": max(0, int(finite_number(item.get("stable_hits")) or 0)),
             }
+            track_id = str(item.get("track_id") or "").strip()
+            if track_id:
+                detection["track_id"] = track_id[:128]
             contour = contour_points(item.get("contour"))
             if contour:
                 detection["contour"] = contour
@@ -243,6 +407,15 @@ def vision_tree_bearings_payload(
         "calibration": {
             "bearing_valid": bool(intrinsics["bearing_valid"]),
             "metric_range_valid": False,
+            "operator_validation_requested": bool(calibration_valid),
+            "camera_info_provenance_valid": bool(camera_info_valid),
+            "camera_info_provenance_revision": provenance.get("revision"),
+            "camera_info_provenance_reason": provenance.get("reason") or "provenance_missing",
+            "camera_info_provenance_reasons": list(
+                provenance.get("reasons") or ([] if camera_info_valid else ["provenance_missing"])
+            ),
+            "camera_info_sync_delta_s": provenance.get("sync_delta_s"),
+            "camera_info_provenance": copy.deepcopy(provenance),
         },
         "detections": detections if contract_ok else [],
         "source": "camera_ws_bridge_shared_worker_v4",
@@ -254,38 +427,7 @@ def vision_tree_bearings_payload(
 
 
 def scale_overlay_geometry(overlay: dict[str, Any] | None, width: int, height: int) -> dict[str, Any]:
-    if not isinstance(overlay, dict):
-        return {}
-    output = copy.deepcopy(overlay)
-    image = output.get("image") if isinstance(output.get("image"), dict) else {}
-    source_width = int(image.get("width") or width)
-    source_height = int(image.get("height") or height)
-    sx = width / max(1, source_width)
-    sy = height / max(1, source_height)
-    for detection in output.get("detections") or []:
-        bbox = sanitized_bbox(detection.get("bbox"))
-        if bbox is not None:
-            detection["bbox"] = [
-                int(round(bbox[0] * sx)),
-                int(round(bbox[1] * sy)),
-                int(round(bbox[2] * sx)),
-                int(round(bbox[3] * sy)),
-            ]
-        contour = contour_points(detection.get("contour"))
-        if contour:
-            detection["contour"] = [[int(round(x * sx)), int(round(y * sy))] for x, y in contour]
-        line = detection.get("line")
-        if isinstance(line, (list, tuple)) and len(line) >= 4:
-            numbers = [finite_number(value) for value in line[:4]]
-            if all(value is not None for value in numbers):
-                detection["line"] = [
-                    int(round(float(numbers[0]) * sx)),
-                    int(round(float(numbers[1]) * sy)),
-                    int(round(float(numbers[2]) * sx)),
-                    int(round(float(numbers[3]) * sy)),
-                ]
-    output["image"] = {**image, "width": int(width), "height": int(height)}
-    return output
+    return scale_camera_overlay_geometry(overlay, width, height)
 
 
 @dataclass
@@ -304,6 +446,12 @@ class CameraState:
     source_fps: float | None = None
     camera_info: dict[str, Any] | None = None
     camera_info_count: int = 0
+    image_last_stamp_ns: int | None = None
+    camera_info_last_stamp_ns: int | None = None
+    image_clock_epoch: int = 0
+    camera_info_clock_epoch: int = 0
+    image_clock_regression_count: int = 0
+    camera_info_clock_regression_count: int = 0
     vision_overlay: dict[str, Any] | None = None
     vision_payload: dict[str, Any] | None = None
     vision_generation: int = 0
@@ -314,14 +462,24 @@ class CameraState:
     vision_publish_count: int = 0
     vision_last_duration_ms: float | None = None
     vision_last_inference_at: float | None = None
+    vision_last_success_at: float | None = None
+    vision_last_interval_ms: float | None = None
     vision_last_publish_at: float | None = None
+    vision_input_policy: dict[str, Any] | None = None
     client_count: int = 0
     error: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def update_frame(self, frame_id: str, stamp_sec: int, stamp_nanosec: int, frame_bgr: Any, encoding: str) -> None:
         with self.lock:
-            self.image_frame_id = frame_id or "camera_link_optical"
+            _, stamp_ns = ros_stamp_payload(stamp_sec, stamp_nanosec)
+            if self.image_last_stamp_ns is not None and stamp_ns <= self.image_last_stamp_ns:
+                self.image_clock_epoch += 1
+                self.image_clock_regression_count += 1
+            self.image_last_stamp_ns = stamp_ns
+            # Preserve a missing Image frame_id so the calibration gate cannot
+            # manufacture a match with the default optical frame.
+            self.image_frame_id = str(frame_id or "").strip()
             self.stamp_sec = int(stamp_sec)
             self.stamp_nanosec = int(stamp_nanosec)
             self.frame_bgr = frame_bgr
@@ -343,19 +501,46 @@ class CameraState:
 
     def update_camera_info(self, payload: dict[str, Any]) -> None:
         with self.lock:
-            self.camera_info = copy.deepcopy(payload)
+            row = copy.deepcopy(payload)
+            stamp_ns = nonnegative_integer(row.get("stamp_ns")) or 0
+            if self.camera_info_last_stamp_ns is not None and stamp_ns <= self.camera_info_last_stamp_ns:
+                self.camera_info_clock_epoch += 1
+                self.camera_info_clock_regression_count += 1
+            self.camera_info_last_stamp_ns = stamp_ns
+            row["_clock_epoch"] = self.camera_info_clock_epoch
+            self.camera_info = row
             self.camera_info_count += 1
 
-    def inference_input_after(self, processed_frame_count: int) -> dict[str, Any] | None:
+    def inference_input_after(
+        self,
+        processed_frame_count: int,
+        camera_info_sync_max_delta_s: float = DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
+    ) -> dict[str, Any] | None:
         with self.lock:
             if self.frame_bgr is None or self.frame_count <= processed_frame_count:
                 return None
+            _, image_stamp_ns = ros_stamp_payload(self.stamp_sec, self.stamp_nanosec)
+            provenance = camera_info_image_provenance(
+                self.camera_info,
+                image_frame_id=self.image_frame_id,
+                image_width=int(self.source_width or 0),
+                image_height=int(self.source_height or 0),
+                image_stamp_ns=image_stamp_ns,
+                max_delta_s=camera_info_sync_max_delta_s,
+                image_clock_integrity_ok=self.image_clock_regression_count == 0,
+                camera_info_clock_integrity_ok=self.camera_info_clock_regression_count == 0,
+                image_clock_epoch=self.image_clock_epoch,
+                camera_info_clock_epoch=int((self.camera_info or {}).get("_clock_epoch") or 0),
+                image_clock_regression_count=self.image_clock_regression_count,
+                camera_info_clock_regression_count=self.camera_info_clock_regression_count,
+            )
             return {
                 "frame_bgr": self.frame_bgr.copy(),
                 "frame_count": self.frame_count,
                 "stamp_sec": self.stamp_sec,
                 "stamp_nanosec": self.stamp_nanosec,
                 "camera_info": copy.deepcopy(self.camera_info),
+                "camera_info_provenance": provenance,
             }
 
     def update_vision(
@@ -365,8 +550,10 @@ class CameraState:
         processed_frame_count: int,
         duration_ms: float,
         skipped_frames: int,
+        input_policy: dict[str, Any] | None = None,
     ) -> None:
         with self.lock:
+            completed_at = time.time()
             self.vision_overlay = copy.deepcopy(overlay)
             self.vision_payload = copy.deepcopy(payload)
             self.vision_generation += 1
@@ -374,9 +561,14 @@ class CameraState:
             self.vision_inference_count += 1
             self.vision_dropped_frame_count += max(0, skipped_frames)
             self.vision_last_duration_ms = round(duration_ms, 1)
-            self.vision_last_inference_at = time.time()
+            if self.vision_last_inference_at is not None:
+                self.vision_last_interval_ms = round((completed_at - self.vision_last_inference_at) * 1000.0, 1)
+            self.vision_last_inference_at = completed_at
+            self.vision_input_policy = copy.deepcopy(input_policy or {})
             if payload.get("ok") is not True:
                 self.vision_failure_count += 1
+            else:
+                self.vision_last_success_at = completed_at
 
     def pending_vision(self, last_generation: int) -> tuple[int, dict[str, Any] | None]:
         with self.lock:
@@ -402,6 +594,7 @@ class CameraState:
             frame = None if not include_frame or self.frame_bgr is None else self.frame_bgr.copy()
             age = None if self.last_frame_at is None else round(time.time() - self.last_frame_at, 3)
             stamp, stamp_ns = ros_stamp_payload(self.stamp_sec, self.stamp_nanosec)
+            now = time.time()
             return {
                 "frame_id": self.image_frame_id,
                 "stamp": stamp,
@@ -415,6 +608,10 @@ class CameraState:
                 "frame_count": self.frame_count,
                 "source_fps": self.source_fps,
                 "camera_info_count": self.camera_info_count,
+                "image_clock_epoch": self.image_clock_epoch,
+                "camera_info_clock_epoch": self.camera_info_clock_epoch,
+                "image_clock_regression_count": self.image_clock_regression_count,
+                "camera_info_clock_regression_count": self.camera_info_clock_regression_count,
                 "vision_overlay": copy.deepcopy(self.vision_overlay),
                 "vision_generation": self.vision_generation,
                 "vision_processed_frame_count": self.vision_processed_frame_count,
@@ -424,7 +621,20 @@ class CameraState:
                 "vision_publish_count": self.vision_publish_count,
                 "vision_last_duration_ms": self.vision_last_duration_ms,
                 "vision_last_inference_at": self.vision_last_inference_at,
+                "vision_last_success_at": self.vision_last_success_at,
+                "vision_last_success_age_sec": (
+                    round(now - self.vision_last_success_at, 3)
+                    if self.vision_last_success_at is not None
+                    else None
+                ),
+                "vision_last_interval_ms": self.vision_last_interval_ms,
+                "vision_effective_hz": (
+                    round(1000.0 / self.vision_last_interval_ms, 3)
+                    if self.vision_last_interval_ms is not None and self.vision_last_interval_ms > 0.0
+                    else None
+                ),
                 "vision_last_publish_at": self.vision_last_publish_at,
+                "vision_input_policy": copy.deepcopy(self.vision_input_policy or {}),
                 "vision_detection_count": len((self.vision_payload or {}).get("detections") or []),
                 "vision_ok": (self.vision_payload or {}).get("ok") is True,
                 "vision_bearing_valid": bool(((self.vision_payload or {}).get("calibration") or {}).get("bearing_valid")),
@@ -435,6 +645,9 @@ class CameraState:
                 "vision_payload_source": (self.vision_payload or {}).get("source"),
                 "vision_payload_frame_id": (self.vision_payload or {}).get("frame_id"),
                 "vision_payload_error": (self.vision_payload or {}).get("error"),
+                "vision_camera_info_provenance": copy.deepcopy(
+                    ((self.vision_payload or {}).get("calibration") or {})
+                ),
                 "client_count": self.client_count,
                 "error": self.error,
             }
@@ -453,9 +666,13 @@ def status_payload(
     vision_topic: str,
     vision_hz: float,
     calibration_valid: bool,
+    inference_width: int = 0,
+    inference_jpeg_quality: int = DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
+    camera_info_sync_max_delta_s: float = DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
 ) -> dict[str, Any]:
     snap = state.snapshot(include_frame=False)
     alive = frame_topic_alive(snap)
+    camera_info_provenance = snap["vision_camera_info_provenance"]
     return {
         "type": "camera_bridge_status",
         "updated_at": time.time(),
@@ -476,21 +693,44 @@ def status_payload(
         "vision_publisher": {
             "always_on": True,
             "latest_only": True,
+            "coalescing": "single_slot_newest_frame_no_backlog",
             "target_hz": vision_hz,
             "schema": VISION_BEARINGS_SCHEMA,
             "algorithm": LOCAL_VISION_ALGORITHM_NAME,
             "revision": LOCAL_VISION_ANALYSIS_REVISION,
+            "input_policy": {
+                "revision": VISION_INFERENCE_INPUT_POLICY_REVISION,
+                "mode": "source_native" if int(inference_width) <= 0 else "bounded_width",
+                "requested_width": max(0, int(inference_width)),
+                "jpeg_quality": max(40, min(95, int(inference_jpeg_quality))),
+                "preview_decoupled": True,
+                "last_actual": snap["vision_input_policy"],
+            },
             "bearing_calibration_requested": bool(calibration_valid),
             "bearing_valid": snap["vision_bearing_valid"],
             "bearing_calibration_valid": snap["vision_bearing_valid"],
             "metric_range_valid": snap["vision_metric_range_valid"],
+            "camera_info_sync_max_delta_s": max(0.001, min(1.0, float(camera_info_sync_max_delta_s))),
+            "camera_info_provenance_valid": camera_info_provenance.get("camera_info_provenance_valid") is True,
+            "camera_info_provenance_revision": camera_info_provenance.get("camera_info_provenance_revision"),
+            "camera_info_provenance_reason": camera_info_provenance.get("camera_info_provenance_reason"),
+            "camera_info_provenance_reasons": camera_info_provenance.get("camera_info_provenance_reasons") or [],
+            "camera_info_sync_delta_s": camera_info_provenance.get("camera_info_sync_delta_s"),
+            "image_clock_regression_count": snap["image_clock_regression_count"],
+            "camera_info_clock_regression_count": snap["camera_info_clock_regression_count"],
             "camera_info_count": snap["camera_info_count"],
             "inference_count": snap["vision_inference_count"],
             "failure_count": snap["vision_failure_count"],
             "dropped_frame_count": snap["vision_dropped_frame_count"],
+            "processed_frame_count": snap["vision_processed_frame_count"],
+            "source_frame_count": snap["frame_count"],
             "publish_count": snap["vision_publish_count"],
             "last_duration_ms": snap["vision_last_duration_ms"],
+            "last_interval_ms": snap["vision_last_interval_ms"],
+            "effective_hz": snap["vision_effective_hz"],
             "last_inference_at": snap["vision_last_inference_at"],
+            "last_success_at": snap["vision_last_success_at"],
+            "last_success_age_sec": snap["vision_last_success_age_sec"],
             "last_publish_at": snap["vision_last_publish_at"],
             "detection_count": snap["vision_detection_count"],
             "ok": snap["vision_ok"],
@@ -563,9 +803,11 @@ def vision_inference_thread(
     *,
     target_hz: float,
     inference_width: int,
+    inference_jpeg_quality: int = DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
     output_frame: str,
     calibration_valid: bool,
     nominal_fov_deg: float,
+    camera_info_sync_max_delta_s: float = DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
 ) -> None:
     interval_s = 1.0 / max(0.1, target_hz)
     stabilizer = CameraOverlayStabilizer()
@@ -577,25 +819,35 @@ def vision_inference_thread(
             break
         if time.monotonic() < next_at:
             continue
-        sample = state.inference_input_after(last_processed)
+        sample = state.inference_input_after(last_processed, camera_info_sync_max_delta_s)
         if sample is None:
             stop.wait(0.02)
             continue
         frame_count = int(sample["frame_count"])
         frame = sample["frame_bgr"]
-        skipped = max(0, frame_count - last_processed - 1) if last_processed else 0
+        skipped = max(0, frame_count - last_processed - 1)
         started = time.perf_counter()
+        input_policy: dict[str, Any] = {
+            "revision": VISION_INFERENCE_INPUT_POLICY_REVISION,
+            "mode": "source_native" if int(inference_width) <= 0 else "bounded_width",
+            "requested_width": max(0, int(inference_width)),
+            "jpeg_quality": max(40, min(95, int(inference_jpeg_quality))),
+            "preview_decoupled": True,
+        }
         try:
-            source_height, source_width = frame.shape[:2]
-            width = min(max(160, int(inference_width)), max(160, int(source_width)))
-            height = max(1, int(round(source_height * width / max(1, source_width))))
-            inference_frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA) if width != source_width else frame
+            inference_frame, input_policy = prepare_camera_inference_frame(frame, inference_width)
+            input_policy["jpeg_quality"] = max(40, min(95, int(inference_jpeg_quality)))
+            height, width = inference_frame.shape[:2]
             stamp_s = int(sample["stamp_sec"]) + int(sample["stamp_nanosec"]) / 1_000_000_000
-            overlay = stabilizer.update(analyze_camera_image(inference_frame), stamp_s or time.time())
+            overlay = stabilizer.update(
+                analyze_camera_image(inference_frame, jpeg_quality=input_policy["jpeg_quality"]),
+                stamp_s or time.time(),
+            )
             if not isinstance(overlay.get("image"), dict):
                 overlay["image"] = {}
             overlay["image"].setdefault("width", width)
             overlay["image"].setdefault("height", height)
+            overlay["inference_input_policy"] = copy.deepcopy(input_policy)
         except Exception as exc:
             overlay = empty_camera_analysis("vision_loop_exception", str(exc))
             bridge_log("vision_inference_error", error=str(exc))
@@ -605,11 +857,13 @@ def vision_inference_thread(
             stamp_nanosec=sample["stamp_nanosec"],
             frame_id=output_frame,
             camera_info=sample["camera_info"],
+            camera_info_provenance=sample["camera_info_provenance"],
             calibration_valid=calibration_valid,
             nominal_fov_deg=nominal_fov_deg,
         )
+        payload["inference_input_policy"] = copy.deepcopy(input_policy)
         duration_ms = (time.perf_counter() - started) * 1000.0
-        state.update_vision(overlay, payload, frame_count, duration_ms, skipped)
+        state.update_vision(overlay, payload, frame_count, duration_ms, skipped, input_policy)
         last_processed = frame_count
         next_at = max(next_at + interval_s, time.monotonic())
         if state.vision_inference_count == 1 or state.vision_inference_count % max(1, int(target_hz * 10)) == 0:
@@ -833,9 +1087,26 @@ def main() -> int:
     parser.add_argument("--camera-info-topic", default=os.environ.get("CAMERA_INFO_TOPIC", "/camera/camera_info"))
     parser.add_argument("--vision-topic", default=os.environ.get("ORCHARD_VISION_BEARINGS_TOPIC", DEFAULT_VISION_TOPIC))
     parser.add_argument("--vision-hz", type=float, default=float(os.environ.get("ORCHARD_VISION_PUBLISH_HZ", "5.0")))
-    parser.add_argument("--vision-width", type=int, default=int(os.environ.get("ORCHARD_VISION_WIDTH", "640")))
+    parser.add_argument(
+        "--vision-inference-width",
+        "--vision-width",
+        dest="vision_inference_width",
+        type=int,
+        default=int(os.environ.get("ORCHARD_VISION_INFERENCE_WIDTH", os.environ.get("ORCHARD_VISION_WIDTH", "0"))),
+        help="Maximum AI inference width; 0 keeps the source/native resolution. --vision-width is a compatibility alias.",
+    )
+    parser.add_argument(
+        "--vision-inference-jpeg-quality",
+        type=int,
+        default=int(os.environ.get("ORCHARD_VISION_INFERENCE_JPEG_QUALITY", str(DEFAULT_VISION_INFERENCE_JPEG_QUALITY))),
+    )
     parser.add_argument("--vision-output-frame", default=os.environ.get("ORCHARD_VISION_FRAME_ID", "camera_link"))
     parser.add_argument("--vision-nominal-fov-deg", type=float, default=float(os.environ.get("CAMERA_FOV_DEG", "70.0")))
+    parser.add_argument(
+        "--camera-info-sync-max-delta-s",
+        type=float,
+        default=float(os.environ.get("ORCHARD_CAMERA_INFO_SYNC_MAX_DELTA_S", str(DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S))),
+    )
     parser.add_argument(
         "--bearing-calibration-valid",
         default=env_bool("ORCHARD_VISION_BEARING_CALIBRATION_VALID", False),
@@ -846,16 +1117,23 @@ def main() -> int:
     parser.add_argument("--status-interval-s", type=float, default=float(os.environ.get("CAMERA_BRIDGE_STATUS_INTERVAL_S", "0.5")))
     args = parser.parse_args()
     args.vision_hz = max(0.1, min(30.0, args.vision_hz))
-    args.vision_width = max(160, min(1920, args.vision_width))
+    args.vision_inference_width = 0 if args.vision_inference_width <= 0 else max(160, min(3840, args.vision_inference_width))
+    args.vision_inference_jpeg_quality = max(40, min(95, args.vision_inference_jpeg_quality))
+    args.camera_info_sync_max_delta_s = max(0.001, min(1.0, args.camera_info_sync_max_delta_s))
     bridge_log(
         "start",
         image_topic=args.topic,
         camera_info_topic=args.camera_info_topic,
         vision_topic=args.vision_topic,
         vision_hz=args.vision_hz,
-        vision_width=args.vision_width,
+        vision_inference_width=args.vision_inference_width,
+        vision_inference_mode="source_native" if args.vision_inference_width == 0 else "bounded_width",
+        vision_inference_jpeg_quality=args.vision_inference_jpeg_quality,
+        vision_input_policy_revision=VISION_INFERENCE_INPUT_POLICY_REVISION,
+        preview_decoupled=True,
         output_frame=args.vision_output_frame,
         bearing_calibration_valid=bool(args.bearing_calibration_valid),
+        camera_info_sync_max_delta_s=args.camera_info_sync_max_delta_s,
         metric_range_valid=False,
         status_file=args.status_file,
     )
@@ -868,6 +1146,9 @@ def main() -> int:
         "vision_topic": args.vision_topic,
         "vision_hz": args.vision_hz,
         "calibration_valid": bool(args.bearing_calibration_valid),
+        "inference_width": args.vision_inference_width,
+        "inference_jpeg_quality": args.vision_inference_jpeg_quality,
+        "camera_info_sync_max_delta_s": args.camera_info_sync_max_delta_s,
     }
     threads = [
         threading.Thread(
@@ -880,10 +1161,12 @@ def main() -> int:
             args=(state, stop),
             kwargs={
                 "target_hz": args.vision_hz,
-                "inference_width": args.vision_width,
+                "inference_width": args.vision_inference_width,
+                "inference_jpeg_quality": args.vision_inference_jpeg_quality,
                 "output_frame": args.vision_output_frame,
                 "calibration_valid": bool(args.bearing_calibration_valid),
                 "nominal_fov_deg": args.vision_nominal_fov_deg,
+                "camera_info_sync_max_delta_s": args.camera_info_sync_max_delta_s,
             },
             daemon=True,
         ),

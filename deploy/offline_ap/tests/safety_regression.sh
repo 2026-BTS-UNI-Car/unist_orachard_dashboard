@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 
 export LC_ALL=C
+umask 077
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TEST_ROOT="$(mktemp -d)"
@@ -206,7 +207,7 @@ if [[ -f "$MOCK_ROOT/dns-wrong" ]]; then printf "10.77.0.9\n"
 elif [[ -f "$MOCK_ROOT/dns-extra" ]]; then printf "10.77.0.1\n10.77.0.9\n"
 else printf "10.77.0.1\n"
 fi'
-write_mock ss '#!/usr/bin/env bash' 'exit 0'
+write_mock ss '#!/usr/bin/env bash' 'printf "LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n"'
 write_mock uuidgen '#!/usr/bin/env bash' 'printf "12345678-1234-4234-8234-123456789abc\n"'
 write_mock iptables-save '#!/usr/bin/env bash' '[[ ! -f "$MOCK_ROOT/iptables-save-fail" ]] || exit 42' 'cat "$MOCK_ROOT/iptables"'
 write_mock ip6tables-save '#!/usr/bin/env bash' 'cat "$MOCK_ROOT/ip6tables"'
@@ -468,7 +469,7 @@ test_auto_config_persists_proxy_image() {
   if grep -q 'StrongPass_123' "$AUTO_CONFIG"; then return 1; fi
 }
 
-test_dns_both_names_required() {
+test_dns_all_names_required() {
   reset_network
   assert_ap_dns
   touch "$MOCK_ROOT/dns-wrong"
@@ -515,6 +516,7 @@ test_manual_local_only_dhcp_dns() {
   render_dnsmasq_config
   grep -Fqx 'interface=wlxap' "$DNSMASQ_RUNTIME_CONFIG"
   grep -Fqx 'address=/bts-docker.sarihub.com/10.77.0.1' "$DNSMASQ_RUNTIME_CONFIG"
+  grep -Fqx 'address=/jetson-ssh.sarihub.com/10.77.0.1' "$DNSMASQ_RUNTIME_CONFIG"
 }
 
 test_target_forwarding_restored() {
@@ -819,7 +821,7 @@ run_test 'USB-absent path refuses partial runtime baseline' test_absent_usb_refu
 run_test 'timer start failure removes auto state' test_timer_start_rollback
 run_test 'timer enable failure removes partial timer/config state' test_timer_enable_rollback
 run_test 'auto config persists image reference but not password value' test_auto_config_persists_proxy_image
-run_test 'both AP DNS answers are mandatory' test_dns_both_names_required
+run_test 'all AP DNS answers are mandatory' test_dns_all_names_required
 run_test 'activation dry-run creates no runtime state' test_dry_run_writes_no_runtime_state
 run_test 'deactivation dry-run changes no managed state' test_deactivate_dry_run_changes_nothing
 run_test 'manual AP and local-only DHCP/DNS replace shared/NAT' test_manual_local_only_dhcp_dns

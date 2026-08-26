@@ -21,7 +21,7 @@ from typing import Any
 import urllib.request
 from collections import OrderedDict
 
-from dashboard_server.camera_analysis import CameraOverlayStabilizer, analyze_camera_frame_payload, current_camera_overlay_algorithm
+from dashboard_server.camera_analysis import CameraOverlayStabilizer, analyze_camera_frame_payload, current_source_native_camera_overlay
 from dashboard_server.lidar_analysis import analyze_points, current_lidar_overlay_algorithm
 from dashboard_server.orchard_mapping import MAP_ALGORITHM_NAME, build_orchard_map, current_orchard_map_cache
 
@@ -32,6 +32,8 @@ DEFAULT_TELEMETRY_FILE = ROOT / "runtime" / "telemetry_snapshot.json"
 DEFAULT_LIDAR_BRIDGE_STATUS_FILE = ROOT / "runtime" / "lidar_bridge_status.json"
 DEFAULT_CAMERA_DRIVER_STATUS_FILE = ROOT / "runtime" / "camera_driver_status.json"
 DEFAULT_CAMERA_BRIDGE_STATUS_FILE = ROOT / "runtime" / "camera_bridge_status.json"
+DEFAULT_IMU_DRIVER_STATUS_FILE = ROOT / "runtime" / "imu_driver_status.json"
+DEFAULT_IMU_BRIDGE_STATUS_FILE = ROOT / "runtime" / "imu_bridge_status.json"
 DEFAULT_CAMERA_SETTINGS_FILE = ROOT / "runtime" / "camera_settings.json"
 DEFAULT_ROVER_BRIDGE_STATUS_FILE = ROOT / "runtime" / "rover_bridge_status.json"
 DEFAULT_ROVER_COMMAND_FILE = ROOT / "runtime" / "rover_command.json"
@@ -142,6 +144,10 @@ class TelemetryProvider:
             os.environ.get("CAMERA_BRIDGE_STATUS_FILE", str(DEFAULT_CAMERA_BRIDGE_STATUS_FILE))
         )
         self.camera_bridge_status_file = camera_bridge_file if camera_bridge_file.is_absolute() else ROOT / camera_bridge_file
+        imu_driver_file = Path(os.environ.get("IMU_DRIVER_STATUS_FILE", str(DEFAULT_IMU_DRIVER_STATUS_FILE)))
+        self.imu_driver_status_file = imu_driver_file if imu_driver_file.is_absolute() else ROOT / imu_driver_file
+        imu_bridge_file = Path(os.environ.get("IMU_BRIDGE_STATUS_FILE", str(DEFAULT_IMU_BRIDGE_STATUS_FILE)))
+        self.imu_bridge_status_file = imu_bridge_file if imu_bridge_file.is_absolute() else ROOT / imu_bridge_file
         camera_settings_file = Path(
             os.environ.get("CAMERA_SETTINGS_FILE", str(DEFAULT_CAMERA_SETTINGS_FILE))
         )
@@ -222,16 +228,18 @@ class TelemetryProvider:
         external = external or (_load_json(self.telemetry_file) if self.telemetry_file.exists() else {})
         lidar_bridge = self._lidar_bridge_status()
         camera_bridge = self._camera_bridge_status()
+        imu_bridge = self._imu_bridge_status()
         rover_bridge = self._rover_bridge_status()
         return {
             "lidar": self.lidar_status(),
             "camera": self.camera_status(),
             "lidar_bridge": lidar_bridge,
             "camera_bridge": camera_bridge,
+            "imu_bridge": imu_bridge,
             "rover_bridge": rover_bridge,
             "rover": self.rover_status(),
-            "services": self._services(external, lidar_bridge, camera_bridge, rover_bridge),
-            "sensors": self._sensors(external, lidar_bridge, camera_bridge),
+            "services": self._services(external, lidar_bridge, camera_bridge, imu_bridge, rover_bridge),
+            "sensors": self._sensors(external, lidar_bridge, camera_bridge, imu_bridge),
         }
 
     def system(self) -> dict[str, Any]:
@@ -730,7 +738,9 @@ class TelemetryProvider:
         kind = str(payload.get("kind") or "").strip().lower()
         if kind not in {"lidar", "camera", "both"}:
             return {"ok": False, "state": "invalid_kind", "error": "kind must be lidar, camera, or both"}
-        result = self._recorder_post("/start", {"kind": kind})
+        raw_include_imu = payload.get("include_imu", True)
+        include_imu = raw_include_imu if isinstance(raw_include_imu, bool) else str(raw_include_imu).strip().lower() in {"1", "true", "yes", "on"}
+        result = self._recorder_post("/start", {"kind": kind, "include_imu": include_imu})
         if result.get("ok"):
             return result
         return {"ok": False, "state": "recorder_unavailable", "error": result.get("error"), "status": self.recording_status()}
@@ -955,7 +965,7 @@ class TelemetryProvider:
             duration = 8.0
         duration = max(0.5, min(60.0, duration))
         end = start + duration
-        payload = {key: value for key, value in timeline.items() if key not in {"lidar", "camera"}}
+        payload = {key: value for key, value in timeline.items() if key not in {"lidar", "camera", "imu"}}
         payload["segment"] = {
             "start_s": round(start, 3),
             "end_s": round(end, 3),
@@ -970,10 +980,16 @@ class TelemetryProvider:
         if native_video:
             camera_rows = [{key: value for key, value in frame.items() if key != "data"} for frame in camera_rows]
         payload["camera"] = {"frames": camera_rows}
+        imu_frames = self._timeline_frames_between(timeline.get("imu", {}).get("frames", []), start, end)
+        payload["imu"] = {
+            **{key: value for key, value in (timeline.get("imu") or {}).items() if key != "frames"},
+            "frames": imu_frames,
+        }
         payload["sync"] = {
             **(timeline.get("sync") or {}),
             "segment_lidar_frames": len(payload["lidar"]["frames"]),
             "segment_camera_frames": len(payload["camera"]["frames"]),
+            "segment_imu_frames": len(payload["imu"]["frames"]),
         }
         return payload
 
@@ -1002,15 +1018,14 @@ class TelemetryProvider:
         for frame in frames:
             row = dict(frame)
             existing = row.get("overlay")
-            if (
-                isinstance(existing, dict)
-                and existing.get("ok") is True
-                and current_camera_overlay_algorithm(existing.get("algorithm"), existing.get("revision"))
-            ):
+            if current_source_native_camera_overlay(existing, frame=row):
                 rows.append(row)
                 continue
             try:
-                row["overlay"] = stabilizer.update(analyze_camera_frame_payload(row), float(row.get("t_s") or 0.0))
+                row["overlay"] = stabilizer.update(
+                    analyze_camera_frame_payload(row, require_source_native_provenance=True),
+                    float(row.get("t_s") or 0.0),
+                )
             except Exception:
                 pass
             rows.append(row)
@@ -2005,9 +2020,13 @@ class TelemetryProvider:
                 "ok": False,
                 "state": "not_connected",
                 "topic": "/imu/data",
+                "raw_topic": "/imu/data_raw",
+                "mag_topic": "/imu/mag",
                 "frame_id": "imu_link",
                 "link": "imu_link",
                 "parent_link": "base_link",
+                "owner": "ros2_driver_and_recorder",
+                "dashboard_access": "subscribe_only",
             },
             "encoder": {"ok": False, "state": "not_connected", "topic": "/wheel/encoder", "frame_id": "base_link"},
             "mavlink": {"ok": False, "state": "not_connected"},
@@ -2018,6 +2037,7 @@ class TelemetryProvider:
         external: dict[str, Any],
         lidar_bridge: dict[str, Any] | None = None,
         camera_bridge: dict[str, Any] | None = None,
+        imu_bridge: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         sensors = self._default_sensors()
         for key, value in external.get("sensors", {}).items():
@@ -2106,6 +2126,36 @@ class TelemetryProvider:
         elif camera_status.get("present"):
             camera.update({"state": "waiting_for_ros2", "severity": "waiting"})
         sensors["camera"] = camera
+        bridge_imu = imu_bridge or self._imu_bridge_status()
+        driver_imu = self._imu_driver_status()
+        recorder_imu = (self.recording_status().get("imu_pipeline") or {})
+        imu = dict(sensors.get("imu", {}))
+        imu.update(
+            {
+                "driver_state": driver_imu.get("state", "not_connected"),
+                "driver_revision": driver_imu.get("revision"),
+                "sensor": driver_imu.get("sensor", "BNO085"),
+                "transport": driver_imu.get("transport", "i2c"),
+                "raw_topic": driver_imu.get("raw_topic", "/imu/data_raw"),
+                "corrected_topic": "/imu/data",
+                "mag_topic": driver_imu.get("mag_topic", "/imu/mag"),
+                "frame_id": driver_imu.get("frame_id") or (bridge_imu.get("raw") or {}).get("frame_id") or "imu_link",
+                "orientation_convention": driver_imu.get("orientation_convention", "sensor_native_unverified_mount"),
+                "rep145_ready": driver_imu.get("rep145_ready", False),
+                "rep145_blocker": driver_imu.get("rep145_blocker"),
+                "raw": bridge_imu.get("raw") or recorder_imu.get("latest_raw") or {},
+                "corrected": bridge_imu.get("corrected") or recorder_imu.get("latest_corrected") or {},
+                "magnetic": bridge_imu.get("magnetic") or recorder_imu.get("latest_magnetic") or {},
+                "calibration": bridge_imu.get("calibration") or recorder_imu.get("calibration") or {},
+                "last_imu_age_s": bridge_imu.get("last_imu_age_s", recorder_imu.get("last_raw_age_s")),
+                "sample_count": bridge_imu.get("raw_count", recorder_imu.get("raw_received_count", 0)),
+            }
+        )
+        if bridge_imu.get("imu_topic_alive") or recorder_imu.get("raw_topic_alive"):
+            imu.update({"ok": True, "connected": True, "state": "imu_live", "severity": "ok"})
+        elif bridge_imu.get("updated_at") or driver_imu.get("updated_at"):
+            imu.update({"ok": False, "connected": False, "state": "waiting_for_imu", "severity": "waiting"})
+        sensors["imu"] = imu
         return sensors
 
     def _mission_status(self) -> dict[str, Any]:
@@ -2121,6 +2171,7 @@ class TelemetryProvider:
         external: dict[str, Any],
         lidar_bridge: dict[str, Any] | None = None,
         camera_bridge: dict[str, Any] | None = None,
+        imu_bridge: dict[str, Any] | None = None,
         rover_bridge: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         services = {
@@ -2129,6 +2180,7 @@ class TelemetryProvider:
             "ros2_bridge": {"ok": False, "state": "not_connected"},
             "lidar_bridge": {"ok": False, "state": "not_connected", "topic": "/scan"},
             "camera_bridge": {"ok": False, "state": "not_connected", "topic": "/camera/image_raw"},
+            "imu_bridge": {"ok": False, "state": "not_connected", "topic": "/imu/data_raw"},
             "rover_bridge": {"ok": False, "state": "not_connected", "host": None, "mode": "serial_only"},
             "data_recorder": {"ok": False, "state": "not_connected"},
         }
@@ -2156,6 +2208,16 @@ class TelemetryProvider:
                 "resolution": self._resolution_text(camera.get("source_width"), camera.get("source_height")),
                 "source_fps": camera.get("source_fps"),
             }
+        imu = imu_bridge or self._imu_bridge_status()
+        services["imu_bridge"] = {
+            "ok": bool(imu.get("imu_topic_alive")),
+            "state": "imu_live" if imu.get("imu_topic_alive") else "bridge_online" if imu.get("updated_at") else "not_connected",
+            "topic": "/imu/data_raw",
+            "corrected_topic": "/imu/data",
+            "raw_count": imu.get("raw_count", 0),
+            "last_imu_age_s": imu.get("last_imu_age_s"),
+            "calibration_state": (imu.get("calibration") or {}).get("state", "idle"),
+        }
         rover = self.rover_status()
         rover_bridge = rover_bridge or self._rover_bridge_status()
         rover_bridge_ok = bool(rover_bridge.get("alive")) and (
@@ -2184,6 +2246,8 @@ class TelemetryProvider:
             "started_at": recorder.get("started_at"),
             "duration_s": recorder.get("duration_s"),
             "samples": recorder.get("samples"),
+            "include_imu": recorder.get("include_imu", True),
+            "imu_pipeline": recorder.get("imu_pipeline"),
             "status_url": recorder.get("status_url") or f"{self.recorder_api_url}/status",
         }
         return services
@@ -2245,6 +2309,48 @@ class TelemetryProvider:
             "error": None if frame_alive else data.get("error"),
             "updated_at": updated_at or None,
             "status_file": str(self.camera_bridge_status_file),
+        }
+
+    def _imu_driver_status(self) -> dict[str, Any]:
+        data = _load_json(self.imu_driver_status_file)
+        now = time.time()
+        try:
+            updated_at = float(data.get("updated_at", 0.0))
+        except (TypeError, ValueError):
+            updated_at = 0.0
+        age = round(now - updated_at, 3) if updated_at else None
+        alive = bool(age is not None and age <= 3.0 and data.get("alive"))
+        return {
+            **data,
+            "alive": alive,
+            "state": data.get("state") if age is not None and age <= 3.0 else "not_connected",
+            "status_age_sec": age,
+            "updated_at": updated_at or None,
+            "status_file": str(self.imu_driver_status_file),
+        }
+
+    def _imu_bridge_status(self) -> dict[str, Any]:
+        data = _load_json(self.imu_bridge_status_file)
+        now = time.time()
+        try:
+            updated_at = float(data.get("updated_at", 0.0))
+        except (TypeError, ValueError):
+            updated_at = 0.0
+        status_age = round(now - updated_at, 3) if updated_at else None
+        alive = status_age is not None and status_age <= 3.0
+        try:
+            sample_age = float(data.get("last_imu_age_s")) if data.get("last_imu_age_s") is not None else None
+        except (TypeError, ValueError):
+            sample_age = None
+        return {
+            **data,
+            "alive": alive,
+            "imu_topic_alive": bool(alive and sample_age is not None and sample_age < 1.0),
+            "corrected_topic_alive": bool(alive and data.get("corrected_topic_alive")),
+            "last_imu_age_s": round(sample_age, 4) if sample_age is not None else None,
+            "updated_at": updated_at or None,
+            "status_age_sec": status_age,
+            "status_file": str(self.imu_bridge_status_file),
         }
 
     def _rover_bridge_status(self) -> dict[str, Any]:

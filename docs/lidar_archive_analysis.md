@@ -1,14 +1,15 @@
 # LiDAR Archive 분석과 재생
 
-Last updated: 2026-08-21
+Last updated: 2026-08-22
 
-## Current v9 contract (normative)
+## Current v10 contract (normative)
 
-- Orchard map algorithm: `orchard_metric_anchor_semantic_fusion_local_frenet_v9`.
-- Cache identity is the algorithm plus `cache_revision=v9_rep103_provenance_continuity_readiness_r3` and timeline mtime. A missing or mismatched revision is stale even when the algorithm name is still v9; `--force` always recomputes.
-- Camera association is nearest-frame with a 250 ms offline gate. The nominal horizontal FOV is 70 degrees and remains uncalibrated unless validation is explicitly recorded.
+- Orchard map algorithm: `orchard_metric_anchor_semantic_fusion_local_frenet_v10`.
+- Cache identity is the algorithm plus `cache_revision=v10_rep103_robust_tracks_unique_semantics_row_model_native_input_r3` and timeline mtime. A missing or mismatched revision or source/native camera-input contract is stale even when the algorithm name is still v10; `--force` always recomputes.
+- Camera association uses common ROS header stamps, preserves original archive order, and performs bounded one-to-one maximum-cardinality/minimum-cost matching with a 250 ms offline gate. Relative timeline time is an archive-wide compatibility fallback only. Header regressions/duplicates are explicit diagnostics and prevent navigation readiness.
 - Fusion positions remain LiDAR metric anchors. Camera evidence changes semantic support only; calibrated and uncalibrated camera tracks are never averaged together, and uncalibrated monocular landmarks are not promoted to the metric fusion map.
-- Centerlines use trajectory-segmented local Frenet rows. They require bilateral station overlap, a contiguous paired-bin run, bounded consecutive gaps, sufficient pair density, at least 4 m paired span, and paired-span coverage of the bilateral overlap. Invalid evidence returns an empty fail-closed centerline.
+- Global landmarks are deterministic robust static tracks with one observation per frame. Centerlines combine trajectory-segmented global landmark rows with a separate time-local bilateral LiDAR corridor. Both channels require longitudinally diverse bilateral evidence and a 3--7 m row gap; invalid evidence returns an empty fail-closed centerline.
+- Only stabilized overlay detections are eligible for semantics. Low-trust stable pending detections require a temporal track identity and are capped to semantic-only support of an existing LiDAR anchor. Raw rejected detections are unused.
 - `ok` means the map computation completed. `readiness.data_sufficiency_ok` and `readiness.navigation_ready` are separate and must not be inferred from `ok`.
 
 The remaining July 10 material is a historical v8 operations snapshot. Any later references to a v8 cache key, 78-degree FOV, global start-to-end centerline axis, fixed landmark cap, or camera-weighted metric position are non-normative and must not be used for current deployment decisions.

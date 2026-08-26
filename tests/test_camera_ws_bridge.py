@@ -8,12 +8,18 @@ from unittest.mock import patch
 
 import numpy as np
 
-from dashboard_server.camera_analysis import LOCAL_VISION_ALGORITHM_NAME, LOCAL_VISION_ANALYSIS_REVISION
+from dashboard_server.camera_analysis import (
+    LOCAL_VISION_ALGORITHM_NAME,
+    LOCAL_VISION_ANALYSIS_REVISION,
+    VISION_INFERENCE_INPUT_POLICY_REVISION,
+)
 from scripts.camera_ws_bridge import (
+    CAMERA_INFO_IMAGE_PROVENANCE_REVISION,
     CameraState,
     VISION_BEARINGS_SCHEMA,
     VISION_TREE_CLASS,
     camera_info_payload,
+    camera_info_image_provenance,
     scale_overlay_geometry,
     status_payload,
     vision_inference_thread,
@@ -106,7 +112,8 @@ class CameraVisionBearingContractTests(unittest.TestCase):
         self.assertEqual(payload["schema"], VISION_BEARINGS_SCHEMA)
         self.assertFalse(payload["calibration"]["bearing_valid"])
         self.assertFalse(payload["calibration"]["metric_range_valid"])
-        self.assertEqual(payload["intrinsics_source"], "camera_info_nominal_or_unverified")
+        self.assertFalse(payload["calibration"]["camera_info_provenance_valid"])
+        self.assertEqual(payload["intrinsics_source"], "nominal_fov_70deg_unverified")
         self.assertEqual(len(payload["detections"]), 1)
         detection = payload["detections"][0]
         self.assertEqual(detection["class_name"], VISION_TREE_CLASS)
@@ -116,12 +123,26 @@ class CameraVisionBearingContractTests(unittest.TestCase):
         self.assertEqual(detection["contour"], [[405.0, 50.0], [435.0, 270.0]])
 
     def test_explicit_validation_is_required_before_bearing_valid(self):
-        info = {"width": 1920, "height": 1080, "k": [1371.022086, 0, 960, 0, 1371.022086, 540, 0, 0, 1]}
+        info = {
+            "width": 1920,
+            "height": 1080,
+            "k": [1371.022086, 0, 960, 0, 1371.022086, 540, 0, 0, 1],
+            "frame_id": "camera_link_optical",
+            "stamp_ns": 1_000_000_002,
+        }
+        provenance = camera_info_image_provenance(
+            info,
+            image_frame_id="camera_link_optical",
+            image_width=1920,
+            image_height=1080,
+            image_stamp_ns=1_000_000_002,
+        )
         unverified = vision_tree_bearings_payload(
             worker_overlay([accepted_detection(x=100)]),
             stamp_sec=1,
             stamp_nanosec=2,
             camera_info=info,
+            camera_info_provenance=provenance,
             calibration_valid=False,
         )
         verified = vision_tree_bearings_payload(
@@ -129,13 +150,185 @@ class CameraVisionBearingContractTests(unittest.TestCase):
             stamp_sec=1,
             stamp_nanosec=2,
             camera_info=info,
+            camera_info_provenance=provenance,
             calibration_valid=True,
         )
 
         self.assertFalse(unverified["calibration"]["bearing_valid"])
         self.assertTrue(verified["calibration"]["bearing_valid"])
+        self.assertTrue(verified["calibration"]["camera_info_provenance_valid"])
+        self.assertEqual(verified["calibration"]["camera_info_provenance_reasons"], [])
         self.assertEqual(verified["intrinsics_source"], "camera_info_operator_validated")
         self.assertGreater(verified["detections"][0]["bearing_rad"], 0.0, "pixel-left must be positive in REP-103")
+
+    def test_nanosecond_provenance_preserves_large_integer_stamps_exactly(self):
+        stamp_ns = 1_784_900_123_456_789_123
+        info = {
+            "width": 1920,
+            "height": 1080,
+            "k": [1371.0, 0.0, 960.0, 0.0, 1371.0, 540.0, 0.0, 0.0, 1.0],
+            "frame_id": "camera_link_optical",
+            "stamp_ns": stamp_ns,
+        }
+
+        result = camera_info_image_provenance(
+            info,
+            image_frame_id="camera_link_optical",
+            image_width=1920,
+            image_height=1080,
+            image_stamp_ns=stamp_ns,
+        )
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["image_stamp_ns"], stamp_ns)
+        self.assertEqual(result["camera_info_stamp_ns"], stamp_ns)
+
+    def test_camera_info_provenance_fails_closed_on_header_dimension_stamp_or_clock_mismatch(self):
+        info = {
+            "width": 1920,
+            "height": 1080,
+            "k": [1371.0, 0.0, 960.0, 0.0, 1371.0, 540.0, 0.0, 0.0, 1.0],
+            "frame_id": "camera_link_optical",
+            "stamp_ns": 10_000_000_000,
+        }
+        common = {
+            "image_frame_id": "camera_link_optical",
+            "image_width": 1920,
+            "image_height": 1080,
+            "image_stamp_ns": 10_020_000_000,
+            "max_delta_s": 0.12,
+        }
+
+        valid = camera_info_image_provenance(info, **common)
+        self.assertTrue(valid["valid"])
+        self.assertEqual(valid["revision"], CAMERA_INFO_IMAGE_PROVENANCE_REVISION)
+        self.assertEqual(valid["gate"], "strict_fail_closed")
+        cases = [
+            ({**info, "frame_id": "different_camera"}, {}, "frame_id_mismatch"),
+            ({**info, "width": 640}, {}, "native_dimensions_mismatch"),
+            ({**info, "stamp_ns": 9_000_000_000}, {}, "camera_info_stale"),
+            ({**info, "stamp_ns": 11_000_000_000}, {}, "camera_info_future"),
+            (info, {"image_clock_integrity_ok": False}, "image_clock_regression"),
+            (info, {"camera_info_clock_integrity_ok": False}, "camera_info_clock_regression"),
+            (info, {"image_clock_epoch": 1, "camera_info_clock_epoch": 0}, "clock_epoch_mismatch"),
+        ]
+        for candidate, updates, reason in cases:
+            with self.subTest(reason=reason):
+                result = camera_info_image_provenance(candidate, **common, **updates)
+                self.assertFalse(result["valid"])
+                self.assertIn(reason, result["reasons"])
+
+    def test_operator_validation_cannot_override_stale_mismatch_or_regression(self):
+        info = {
+            "width": 1920,
+            "height": 1080,
+            "k": [1371.0, 0.0, 960.0, 0.0, 1371.0, 540.0, 0.0, 0.0, 1.0],
+            "frame_id": "camera_link_optical",
+            "stamp_ns": 10_000_000_000,
+        }
+        common = {
+            "image_frame_id": "camera_link_optical",
+            "image_width": 1920,
+            "image_height": 1080,
+            "image_stamp_ns": 10_000_000_000,
+        }
+        cases = [
+            ({**info, "stamp_ns": 9_000_000_000}, {}, "camera_info_stale"),
+            ({**info, "frame_id": "another_camera"}, {}, "frame_id_mismatch"),
+            (info, {"image_clock_integrity_ok": False, "image_clock_regression_count": 1}, "image_clock_regression"),
+        ]
+
+        for candidate, updates, expected_reason in cases:
+            with self.subTest(reason=expected_reason):
+                provenance = camera_info_image_provenance(candidate, **common, **updates)
+                payload = vision_tree_bearings_payload(
+                    worker_overlay([accepted_detection(x=100)]),
+                    stamp_sec=10,
+                    stamp_nanosec=0,
+                    frame_id="camera_link",
+                    camera_info=candidate,
+                    camera_info_provenance=provenance,
+                    calibration_valid=True,
+                )
+
+                calibration = payload["calibration"]
+                self.assertFalse(calibration["bearing_valid"])
+                self.assertFalse(calibration["camera_info_provenance_valid"])
+                self.assertEqual(calibration["camera_info_provenance_reason"], expected_reason)
+                self.assertIn(expected_reason, calibration["camera_info_provenance_reasons"])
+                self.assertEqual(calibration["camera_info_provenance"], provenance)
+                self.assertEqual(payload["intrinsics_source"], "nominal_fov_70deg_unverified")
+
+    def test_missing_image_frame_id_is_preserved_and_fails_closed(self):
+        state = CameraState()
+        frame = np.zeros((108, 192, 3), dtype=np.uint8)
+        state.update_frame("", 10, 0, frame, "bgr8")
+        state.update_camera_info(
+            {
+                "width": 192,
+                "height": 108,
+                "k": [137.0, 0.0, 96.0, 0.0, 137.0, 54.0, 0.0, 0.0, 1.0],
+                "frame_id": "camera_link_optical",
+                "stamp_ns": 10_000_000_000,
+            }
+        )
+
+        sample = state.inference_input_after(0)
+
+        self.assertEqual(state.snapshot(include_frame=False)["frame_id"], "")
+        self.assertFalse(sample["camera_info_provenance"]["valid"])
+        self.assertIn("frame_id_mismatch", sample["camera_info_provenance"]["reasons"])
+
+    def test_malformed_camera_info_metadata_fails_closed_without_exception(self):
+        result = camera_info_image_provenance(
+            {
+                "width": "not-a-number",
+                "height": 1080.5,
+                "k": [1371.0, 0.0, 960.0, 0.0, 1371.0, 540.0, 0.0, 0.0, 1.0],
+                "frame_id": "camera_link_optical",
+                "stamp_ns": float("nan"),
+            },
+            image_frame_id="camera_link_optical",
+            image_width=1920,
+            image_height=1080,
+            image_stamp_ns=10_000_000_000,
+        )
+
+        self.assertFalse(result["valid"])
+        self.assertIn("camera_info_metadata_invalid", result["reasons"])
+        json.dumps(result, allow_nan=False)
+
+    def test_state_clock_regression_invalidates_future_camera_info_provenance(self):
+        state = CameraState()
+        frame = np.zeros((108, 192, 3), dtype=np.uint8)
+        state.update_frame("camera_link_optical", 10, 0, frame, "bgr8")
+        state.update_camera_info(
+            {
+                "width": 192,
+                "height": 108,
+                "k": [137.0, 0.0, 96.0, 0.0, 137.0, 54.0, 0.0, 0.0, 1.0],
+                "frame_id": "camera_link_optical",
+                "stamp_ns": 10_000_000_000,
+            }
+        )
+        self.assertTrue(state.inference_input_after(0)["camera_info_provenance"]["valid"])
+
+        state.update_frame("camera_link_optical", 9, 0, frame, "bgr8")
+        state.update_camera_info(
+            {
+                "width": 192,
+                "height": 108,
+                "k": [137.0, 0.0, 96.0, 0.0, 137.0, 54.0, 0.0, 0.0, 1.0],
+                "frame_id": "camera_link_optical",
+                "stamp_ns": 9_000_000_000,
+            }
+        )
+        sample = state.inference_input_after(1)
+
+        self.assertFalse(sample["camera_info_provenance"]["valid"])
+        self.assertIn("image_clock_regression", sample["camera_info_provenance"]["reasons"])
+        self.assertIn("camera_info_clock_regression", sample["camera_info_provenance"]["reasons"])
+        self.assertEqual(state.snapshot(include_frame=False)["image_clock_regression_count"], 1)
 
     def test_nominal_70_degree_pinhole_projection_and_edge_gate(self):
         payload = vision_tree_bearings_payload(
@@ -258,6 +451,108 @@ class CameraVisionBearingContractTests(unittest.TestCase):
         self.assertFalse(publisher["metric_range_valid"])
         self.assertEqual(publisher["last_payload"]["schema"], VISION_BEARINGS_SCHEMA)
         self.assertEqual(publisher["last_payload"]["source"], "camera_ws_bridge_shared_worker_v4")
+        self.assertEqual(publisher["coalescing"], "single_slot_newest_frame_no_backlog")
+        self.assertEqual(publisher["input_policy"]["revision"], VISION_INFERENCE_INPUT_POLICY_REVISION)
+
+    def test_vision_loop_propagates_stale_camera_info_as_fail_closed_provenance(self):
+        state = CameraState()
+        state.update_frame(
+            "camera_link_optical",
+            10,
+            0,
+            np.zeros((108, 192, 3), dtype=np.uint8),
+            "bgr8",
+        )
+        state.update_camera_info(
+            {
+                "width": 192,
+                "height": 108,
+                "k": [137.0, 0.0, 96.0, 0.0, 137.0, 54.0, 0.0, 0.0, 1.0],
+                "frame_id": "camera_link_optical",
+                "stamp_ns": 9_000_000_000,
+            }
+        )
+        stop = threading.Event()
+        overlay = worker_overlay([], image={"width": 192, "height": 108})
+        with patch("scripts.camera_ws_bridge.analyze_camera_image", return_value=overlay):
+            thread = threading.Thread(
+                target=vision_inference_thread,
+                args=(state, stop),
+                kwargs={
+                    "target_hz": 20.0,
+                    "inference_width": 0,
+                    "output_frame": "camera_link",
+                    "calibration_valid": True,
+                    "nominal_fov_deg": 70.0,
+                },
+            )
+            thread.start()
+            deadline = time.time() + 1.0
+            while state.snapshot(include_frame=False)["vision_inference_count"] < 1 and time.time() < deadline:
+                time.sleep(0.01)
+            stop.set()
+            thread.join(timeout=1.0)
+
+        _, payload = state.pending_vision(0)
+        self.assertIsNotNone(payload)
+        calibration = payload["calibration"]
+        self.assertFalse(calibration["bearing_valid"])
+        self.assertFalse(calibration["camera_info_provenance_valid"])
+        self.assertEqual(calibration["camera_info_provenance_reason"], "camera_info_stale")
+        self.assertEqual(
+            calibration["camera_info_provenance"]["revision"],
+            CAMERA_INFO_IMAGE_PROVENANCE_REVISION,
+        )
+
+    def test_native_inference_coalesces_to_newest_full_resolution_frame(self):
+        state = CameraState()
+        for value in (10, 20, 30):
+            state.update_frame(
+                "camera_link_optical",
+                value,
+                0,
+                np.full((108, 192, 3), value, dtype=np.uint8),
+                "bgr8",
+            )
+        stop = threading.Event()
+        overlay = worker_overlay([], image={"width": 192, "height": 108})
+        observed = {}
+
+        def analyze_native(frame, *, jpeg_quality):
+            observed["shape"] = frame.shape
+            observed["pixel"] = int(frame[0, 0, 0])
+            observed["jpeg_quality"] = jpeg_quality
+            return overlay
+
+        with patch("scripts.camera_ws_bridge.analyze_camera_image", side_effect=analyze_native):
+            thread = threading.Thread(
+                target=vision_inference_thread,
+                args=(state, stop),
+                kwargs={
+                    "target_hz": 5.0,
+                    "inference_width": 0,
+                    "inference_jpeg_quality": 86,
+                    "output_frame": "camera_link",
+                    "calibration_valid": False,
+                    "nominal_fov_deg": 70.0,
+                },
+            )
+            thread.start()
+            deadline = time.time() + 1.0
+            while state.snapshot(include_frame=False)["vision_inference_count"] < 1 and time.time() < deadline:
+                time.sleep(0.01)
+            stop.set()
+            thread.join(timeout=1.0)
+
+        self.assertEqual(observed["shape"], (108, 192, 3))
+        self.assertEqual(observed["pixel"], 30)
+        self.assertEqual(observed["jpeg_quality"], 86)
+        snap = state.snapshot(include_frame=False)
+        self.assertEqual(snap["vision_dropped_frame_count"], 2)
+        policy = snap["vision_input_policy"]
+        self.assertEqual(policy["mode"], "source_native")
+        self.assertEqual(policy["inference_width"], 192)
+        self.assertTrue(policy["preview_decoupled"])
 
 
 if __name__ == "__main__":

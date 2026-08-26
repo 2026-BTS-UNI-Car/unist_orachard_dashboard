@@ -32,6 +32,7 @@ _SESSION_LOCK = threading.Lock()
 _SESSIONS: dict[str, dict[str, float]] = {}
 _ACTIVE_LIDAR_WS: dict[str, dict[str, float | str]] = {}
 _ACTIVE_CAMERA_WS: dict[str, dict[str, float | str]] = {}
+_ACTIVE_IMU_WS: dict[str, dict[str, float | str]] = {}
 
 
 def dashboard_log(event: str, **fields):
@@ -50,6 +51,9 @@ def _prune_sessions(now: float | None = None):
     for connection_id, item in list(_ACTIVE_CAMERA_WS.items()):
         if item.get("session") in expired:
             _ACTIVE_CAMERA_WS.pop(connection_id, None)
+    for connection_id, item in list(_ACTIVE_IMU_WS.items()):
+        if item.get("session") in expired:
+            _ACTIVE_IMU_WS.pop(connection_id, None)
 
 
 def lidar_websocket_stats() -> dict[str, object]:
@@ -58,6 +62,10 @@ def lidar_websocket_stats() -> dict[str, object]:
 
 def camera_websocket_stats() -> dict[str, object]:
     return websocket_stats(_ACTIVE_CAMERA_WS)
+
+
+def imu_websocket_stats() -> dict[str, object]:
+    return websocket_stats(_ACTIVE_IMU_WS)
 
 
 def websocket_stats(registry: dict[str, dict[str, float | str]]) -> dict[str, object]:
@@ -149,6 +157,20 @@ DOCS_CATALOG = [
         "file": "usb_camera_connection.md",
     },
     {
+        "slug": "imu-ros2-recording",
+        "title": "ROS2 IMU 실시간 표시와 기록",
+        "category": "Hardware",
+        "summary": "BNO085 ROS2 토픽, 녹화 시작 자세·gyro bias 보정, archive와 mapping 입력 계약",
+        "file": "imu_ros2_recording.md",
+    },
+    {
+        "slug": "jetson-offline-access-20260827",
+        "title": "Jetson 오프라인 Wi-Fi 접속",
+        "category": "Network",
+        "summary": "실제 보드 네트워크 판정, USB Wi-Fi AP, 로컬 DNS, Dashboard·SSH·Portainer 접속 계약",
+        "file": "jetson_offline_access_20260827.md",
+    },
+    {
         "slug": "wave-rover-control",
         "title": "WAVE ROVER 연동",
         "category": "Hardware",
@@ -166,7 +188,7 @@ DOCS_CATALOG = [
         "slug": "lidar-archive-analysis",
         "title": "LiDAR Archive 분석",
         "category": "Data",
-        "summary": "v6 OOD overlay precompute, 4초 gzip streaming, v9 metric-anchor orchard map cache와 검증",
+        "summary": "v6 OOD overlay precompute, 4초 gzip streaming, v10 robust metric-anchor orchard map cache와 검증",
         "file": "lidar_archive_analysis.md",
     },
     {
@@ -180,8 +202,15 @@ DOCS_CATALOG = [
         "slug": "orchard-tree-detection-fusion",
         "title": "과수 인식과 LiDAR-Camera Fusion",
         "category": "Research",
-        "summary": "v9 LiDAR metric-anchor + camera semantic fusion과 fail-closed 행간 중심선",
+        "summary": "v10 LiDAR robust metric-anchor + one-to-one camera semantics + local bilateral corridor 중심선",
         "file": "orchard_tree_detection_fusion.md",
+    },
+    {
+        "slug": "orchard-fusion-v10-20260721",
+        "title": "2026-07-21 Fusion v10/r2 평가 기록",
+        "category": "Research",
+        "summary": "3개 archive 동기화·landmark·bilateral corridor·navigation fail-closed 재현 평가",
+        "file": "orchard_fusion_v10_20260721.md",
     },
     {
         "slug": "orchard-tree-algorithm-report",
@@ -308,6 +337,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._proxy_lidar_websocket()
         elif path == "/ws/camera":
             self._proxy_camera_websocket()
+        elif path == "/ws/imu":
+            self._proxy_imu_websocket()
         elif path in APP_ROUTES or path.startswith("/docs/"):
             self._send_file(STATIC_ROOT / "index.html")
         elif path == "/api/health":
@@ -316,6 +347,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             payload = self.provider.telemetry()
             payload["connection"]["lidar_websocket"] = lidar_websocket_stats()
             payload["connection"]["camera_websocket"] = camera_websocket_stats()
+            payload["connection"]["imu_websocket"] = imu_websocket_stats()
             self._send_json(payload)
         elif path == "/api/system":
             self._send_json(self.provider.system())
@@ -329,6 +361,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             payload = self.provider.connection()
             payload["lidar_websocket"] = lidar_websocket_stats()
             payload["camera_websocket"] = camera_websocket_stats()
+            payload["imu_websocket"] = imu_websocket_stats()
             self._send_json(payload)
         elif path == "/api/rover/status":
             self._send_json(self.provider.rover_status())
@@ -735,6 +768,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "frame_topic_alive": False,
                 "last_frame_age_sec": None,
                 "frame_count": 0,
+            },
+        )
+
+    def _proxy_imu_websocket(self):
+        self._proxy_local_websocket(
+            label="imu",
+            registry=_ACTIVE_IMU_WS,
+            default_upstream=os.environ.get("IMU_WS_UPSTREAM", "ws://127.0.0.1:8775/ws/imu"),
+            unavailable_payload={
+                "type": "imu",
+                "imu_topic_alive": False,
+                "corrected_topic_alive": False,
+                "last_imu_age_s": None,
+                "raw": {},
+                "corrected": {},
+                "magnetic": {},
+                "calibration": {"state": "unavailable", "valid": False},
             },
         )
 

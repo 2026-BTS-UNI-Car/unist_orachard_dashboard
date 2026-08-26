@@ -71,6 +71,12 @@ Dashboard Connection 탭의 해상도와 FPS 선택지는 이 상태 파일의 `
 
 WebSocket bridge는 source와 output 해상도를 모두 보낸다. 정상 상태에서는 Dashboard caption의 `source` 값이 선택한 캡처 해상도와 일치해야 한다. 일치하지 않으면 UVC 장치가 요청 모드를 거부했거나 아직 재오픈 중인 상태다.
 
+브라우저/WebSocket output은 표시용 프리뷰다. 기본 AI 추론은 `ORCHARD_VISION_INFERENCE_WIDTH=0`으로 source/native frame을 사용하고, recorder는 별도의 `RECORDER_CAMERA_PREVIEW_WIDTH=640`으로 저장 JPEG만 축소한다. 따라서 화면이나 archive 용량을 줄이기 위해 프리뷰 폭을 바꿔도 AI 입력 해상도는 바뀌지 않는다. 추론 입력은 camera bridge가 단독 소유하므로 폭을 제한하려면 `ORCHARD_VISION_INFERENCE_WIDTH`만 명시적으로 설정한다. recorder는 공유된 bridge 결과를 sensor stamp로 매칭하며 독립 추론 설정을 갖지 않는다.
+
+camera bridge는 5 Hz의 latest-frame/coalescing 방식이다. worker가 200 ms보다 늦어져도 과거 frame queue를 순서대로 처리하지 않고 가장 최근 frame으로 교체하며, 누락 수와 실제 추론 입력 크기는 `runtime/camera_bridge_status.json`의 `vision_publisher`에서 확인한다.
+
+CameraInfo는 단순히 마지막 메시지를 재사용하지 않는다. `camera_info_image_header_integrity_v2` 계약이 image/CameraInfo의 `frame_id`, native width/height, sensor stamp gate, monotonic clock을 모두 검증하며, 하나라도 불일치하면 operator calibration flag가 켜져 있어도 `bearing_valid=false`로 닫힌다. status의 provenance reason과 regression count가 배포 smoke gate에도 포함된다.
+
 ROS2 driver의 초기 기본값은 Compose 환경변수 `CAMERA_WIDTH`, `CAMERA_HEIGHT`, `CAMERA_FPS`, `CAMERA_FOURCC`로 정한다. 런타임 변경은 `CAMERA_SETTINGS_FILE`의 JSON이 우선한다.
 
 ## 자동 재인식

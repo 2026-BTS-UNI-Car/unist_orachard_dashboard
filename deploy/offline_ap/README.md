@@ -23,13 +23,14 @@ systemd unit만 설치합니다. NetworkManager를 재시작/리로드하지 않
 phone --WPA2--> USB Wi-Fi AP (10.77.0.1/24)
                    |-- DNS bts.sarihub.com        -> 10.77.0.1
                    |-- DNS bts-docker.sarihub.com -> 10.77.0.1
+                   |-- DNS jetson-ssh.sarihub.com -> 10.77.0.1 (TCP 22 direct)
                    `-- nginx 10.77.0.1:80
                          |-- bts.sarihub.com        -> http://127.0.0.1:8080
                          `-- bts-docker.sarihub.com -> https://127.0.0.1:9443
                                                        (CA 검증 유지)
 ```
 
-DNS는 포트를 지정할 수 없으므로, 두 호스트명을 AP 전용 주소의 HTTP 80으로
+DNS는 포트를 지정할 수 없으므로, 두 HTTP 호스트명을 AP 전용 주소의 HTTP 80으로
 해석하고 host-network nginx가 `Host` 헤더로 백엔드를 구분합니다. nginx는
 `10.77.0.1:80`에만 bind하므로 기존 uplink 주소에는 새 리스너를 열지 않습니다.
 proxy와 dnsmasq에는 daemon 자체의 자동 restart 정책을 두지 않고 helper/timer가
@@ -41,14 +42,15 @@ AP 주소는 NetworkManager의 `ipv4.method=manual`로만 부여합니다. 별�
 **AP 인터페이스에만** DHCP/DNS를 제공하고 DHCP router option은 빈 값으로 보내므로
 휴대폰에는 default gateway가 배포되지 않습니다. DNS upstream도 없으며 IP forwarding,
 masquerade/NAT 또는 firewall rule을 만들지 않습니다. 따라서 이 AP는 인터넷 공유기가
-아니라 Jetson의 두 로컬 HTTP 서비스만 찾는 격리된 접속망입니다.
+아니라 Jetson의 두 로컬 HTTP 서비스와 SSH만 찾는 격리된 접속망입니다.
 
 ## 중요한 TLS 경계
 
-클라이언트가 접속하는 주소는 다음 두 **HTTP URL만** 지원합니다.
+클라이언트가 접속하는 주소는 다음 두 **HTTP URL**과 로컬 SSH 이름을 지원합니다.
 
 - `http://bts.sarihub.com`
 - `http://bts-docker.sarihub.com`
+- `ssh unist@jetson-ssh.sarihub.com` (DNS가 `10.77.0.1`을 반환하고 TCP 22로 직접 접속)
 
 이 번들은 443 리스너, 자체 서명 클라이언트 인증서, 인증서 경고 자동 우회,
 HTTPS에서 HTTP로의 강제 다운그레이드를 만들지 않습니다. 휴대폰과 Jetson 사이의

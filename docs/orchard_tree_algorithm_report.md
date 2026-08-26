@@ -1,6 +1,6 @@
 # 과수 인식 알고리즘 기술 부록
 
-> **Historical v8 methods appendix (non-normative).** References below to Weighted Fusion describe the retired July 10 experiment, not the current runtime. The normative v9 contract is in `orchard_tree_detection_fusion.md` and uses LiDAR metric anchors plus camera semantic support; it does not average uncalibrated camera coordinates into metric positions.
+> **Historical v8 methods appendix (non-normative).** References below to Weighted Fusion describe the retired July 10 experiment, not the current runtime. The normative v10 contract is in `orchard_tree_detection_fusion.md` and uses LiDAR metric anchors plus camera semantic support; it does not average uncalibrated camera coordinates into metric positions.
 
 Last updated: 2026-07-10
 

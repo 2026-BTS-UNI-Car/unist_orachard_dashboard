@@ -28,6 +28,21 @@ from dashboard_server.orchard_mapping import (
 from scripts.precompute_orchard_maps import current_cache
 
 
+def native_camera_policy(width: int, height: int) -> dict:
+    return {
+        "revision": "source_native_preview_decoupled_jpeg_v1",
+        "mode": "source_native",
+        "requested_width": 0,
+        "source_width": width,
+        "source_height": height,
+        "inference_width": width,
+        "inference_height": height,
+        "jpeg_quality": 86,
+        "preview_decoupled": True,
+        "no_upscale": True,
+    }
+
+
 def lidar_tree(x_m: float, y_m: float, confidence: float = 0.78) -> dict:
     return {
         "x_m": x_m,
@@ -113,8 +128,12 @@ class OrchardMappingV9Test(unittest.TestCase):
         self.assertLess(support["predicted_u_px"], 0.0)
 
     def test_camera_info_intrinsics_are_scaled_and_preserved_for_preview(self):
+        policy = native_camera_policy(1920, 1080)
         frame = {
             "t_s": 1.0,
+            "source_width": 1920,
+            "source_height": 1080,
+            "inference_input_policy": dict(policy),
             "camera_info": {
                 "width": 1920,
                 "height": 1080,
@@ -127,6 +146,7 @@ class OrchardMappingV9Test(unittest.TestCase):
                 "method": "unit",
                 "image": {"width": 640, "height": 360},
                 "detections": [],
+                "inference_input_policy": dict(policy),
             },
         }
 
@@ -313,7 +333,7 @@ class OrchardMappingV9Test(unittest.TestCase):
 
         self.assertTrue(centerline["ok"], centerline)
         self.assertGreaterEqual(centerline["segment_count"], 2)
-        self.assertEqual(centerline["method"], "trajectory_segmented_local_frenet_robust_rows_v9")
+        self.assertEqual(centerline["method"], "trajectory_segmented_hybrid_bilateral_rows_v10")
         xs = [float(point["x_m"]) for point in centerline["points"]]
         self.assertLess(max(xs) - min(xs), 3.0)
         self.assertGreaterEqual(centerline["confidence"], centerline["confidence_threshold"])
@@ -473,9 +493,39 @@ class OrchardMappingV9Test(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            same_revision_missing_input_contract = json.loads(cache_path.read_text(encoding="utf-8"))
+            self.assertFalse(current_orchard_map_cache(same_revision_missing_input_contract))
+
+            current_provenance = {
+                "enforced": True,
+                "required_revision": "source_native_preview_decoupled_jpeg_v1",
+                "required_mode": "source_native",
+                "required_requested_width": 0,
+                "required_jpeg_quality": 86,
+                "frame_count": 0,
+                "accepted_frame_count": 0,
+                "rejected_frame_count": 0,
+                "legacy_preview_as_native_allowed": False,
+            }
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "map": {
+                            "ok": True,
+                            "algorithm": MAP_ALGORITHM_NAME,
+                            "cache_revision": MAP_CACHE_REVISION,
+                            "camera": {"input_provenance": current_provenance},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
             current = json.loads(cache_path.read_text(encoding="utf-8"))
             self.assertTrue(current_orchard_map_cache(current))
             self.assertTrue(current_cache(cache_path, timeline_path))
+            current["map"]["camera"]["input_provenance"]["frame_count"] = 1
+            self.assertFalse(current_orchard_map_cache(current))
 
     def test_build_map_publishes_v9_sync_and_metric_anchor_diagnostics(self):
         payload = build_orchard_map(
@@ -496,6 +546,8 @@ class OrchardMappingV9Test(unittest.TestCase):
             "pinhole_u_equals_cx_minus_fx_tan_bearing",
         )
         self.assertFalse(payload["camera"]["projection_model"]["nominal_intrinsics_calibrated"])
+        self.assertTrue(payload["camera"]["input_provenance"]["enforced"])
+        self.assertEqual(payload["camera"]["input_provenance"]["frame_count"], 0)
 
 
 if __name__ == "__main__":

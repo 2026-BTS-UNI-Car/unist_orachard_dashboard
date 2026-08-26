@@ -6,7 +6,7 @@
 
 규범 캐시 리비전: `v9_rep103_provenance_continuity_readiness_r3`
 
-> 이 문서는 현재 v9/r3 계약의 규범 문서다. 아래 세 기록에는 사람 기준 정답(ground truth, GT)이 없으므로 정확도, precision, recall, 위치 RMSE 또는 중심선 오차를 주장할 수 없다. 평가 범위는 구현 자기일관성과 fail-closed invariant 확인뿐이다. 과거 v8 방식은 비교 설명을 위한 비규범적 이력으로만 다룬다.
+> **Historical v9/r3 snapshot (non-normative).** 현재 규범 계약은 `orchard_fusion_v10_20260721.md`에 있다. 아래 세 기록에는 사람 기준 정답(ground truth, GT)이 없으므로 정확도, precision, recall, 위치 RMSE 또는 중심선 오차를 주장할 수 없다. 이 문서는 v10 비교를 위한 과거 자기일관성/fail-closed 평가 기록으로만 유지한다.
 
 ## 1. 평가 범위와 판정 해석
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import copy
 import json
+import math
 import os
 from functools import lru_cache
 from typing import Any
@@ -13,6 +14,8 @@ from urllib.request import Request, urlopen
 CAMERA_ALGORITHM_NAME = "opencv_orchard_scene_trunk_semantic_gate_v4"
 LOCAL_VISION_ALGORITHM_NAME = "local_orchard_vision_ai_worker_v4"
 LOCAL_VISION_ANALYSIS_REVISION = "orchard_trunk_yolo11_trt_clip_ood_v1"
+VISION_INFERENCE_INPUT_POLICY_REVISION = "source_native_preview_decoupled_jpeg_v1"
+DEFAULT_VISION_INFERENCE_JPEG_QUALITY = 86
 VISION_AI_URL = os.environ.get("ORCHARD_VISION_AI_URL", "").strip()
 VISION_AI_TIMEOUT_S = float(os.environ.get("ORCHARD_VISION_AI_TIMEOUT_S", "6.0"))
 
@@ -30,14 +33,19 @@ def empty_camera_analysis(method: str = "unavailable", error: str = "") -> dict[
     }
 
 
-def analyze_camera_frame_payload(frame: dict[str, Any]) -> dict[str, Any]:
+def analyze_camera_frame_payload(
+    frame: dict[str, Any],
+    *,
+    require_source_native_provenance: bool = False,
+) -> dict[str, Any]:
     existing = frame.get("overlay")
-    if (
-        isinstance(existing, dict)
-        and existing.get("ok") is True
-        and current_camera_overlay_algorithm(existing.get("algorithm"), existing.get("revision"))
-    ):
+    if current_source_native_camera_overlay(existing, frame=frame):
         return existing
+    if require_source_native_provenance:
+        return empty_camera_analysis(
+            "source_native_provenance_required",
+            "The archived image is a display preview or has no verifiable source/native inference provenance; it must not be relabelled as a native v10 result.",
+        )
     data = frame.get("data")
     if not data:
         return empty_camera_analysis("no_frame_data")
@@ -48,16 +56,210 @@ def current_camera_overlay_algorithm(algorithm: Any, revision: Any = None) -> bo
     return algorithm == LOCAL_VISION_ALGORITHM_NAME and revision == LOCAL_VISION_ANALYSIS_REVISION
 
 
+def current_source_native_inference_policy(
+    policy: Any,
+    *,
+    source_width: Any = None,
+    source_height: Any = None,
+) -> bool:
+    """Validate the complete v10 source/native inference-input contract.
+
+    Algorithm and model revisions alone do not prove which pixels reached the
+    worker.  In particular, old archives contain 640 px display JPEGs that
+    must never be silently treated as source/native inference.  This predicate
+    intentionally fails closed on missing fields and configuration drift.
+    """
+
+    if not isinstance(policy, dict):
+        return False
+    numeric_fields = (
+        "requested_width",
+        "source_width",
+        "source_height",
+        "inference_width",
+        "inference_height",
+        "jpeg_quality",
+    )
+    if any(not isinstance(policy.get(key), int) or isinstance(policy.get(key), bool) for key in numeric_fields):
+        return False
+    try:
+        requested_width = int(policy.get("requested_width"))
+        policy_source_width = int(policy.get("source_width"))
+        policy_source_height = int(policy.get("source_height"))
+        inference_width = int(policy.get("inference_width"))
+        inference_height = int(policy.get("inference_height"))
+        jpeg_quality = int(policy.get("jpeg_quality"))
+    except (TypeError, ValueError):
+        return False
+    if (
+        policy.get("revision") != VISION_INFERENCE_INPUT_POLICY_REVISION
+        or policy.get("mode") != "source_native"
+        or requested_width != 0
+        or policy.get("preview_decoupled") is not True
+        or policy.get("no_upscale") is not True
+        or jpeg_quality != DEFAULT_VISION_INFERENCE_JPEG_QUALITY
+        or policy_source_width <= 0
+        or policy_source_height <= 0
+        or inference_width != policy_source_width
+        or inference_height != policy_source_height
+    ):
+        return False
+    try:
+        if source_width is not None and int(source_width) != policy_source_width:
+            return False
+        if source_height is not None and int(source_height) != policy_source_height:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def current_source_native_camera_overlay(overlay: Any, *, frame: Any = None) -> bool:
+    """Return true only for a current successful overlay with native provenance."""
+
+    if (
+        not isinstance(overlay, dict)
+        or overlay.get("ok") is not True
+        or not current_camera_overlay_algorithm(overlay.get("algorithm"), overlay.get("revision"))
+    ):
+        return False
+    frame_dict = frame if isinstance(frame, dict) else {}
+    frame_source_width = frame_dict.get("source_width")
+    frame_source_height = frame_dict.get("source_height")
+    overlay_policy = overlay.get("inference_input_policy")
+    if not current_source_native_inference_policy(
+        overlay_policy,
+        source_width=frame_source_width,
+        source_height=frame_source_height,
+    ):
+        return False
+    frame_policy = frame_dict.get("inference_input_policy")
+    if frame_policy is None:
+        return True
+    if not current_source_native_inference_policy(
+        frame_policy,
+        source_width=frame_source_width,
+        source_height=frame_source_height,
+    ):
+        return False
+    provenance_keys = (
+        "revision",
+        "mode",
+        "requested_width",
+        "source_width",
+        "source_height",
+        "inference_width",
+        "inference_height",
+        "jpeg_quality",
+        "preview_decoupled",
+        "no_upscale",
+    )
+    return all(overlay_policy.get(key) == frame_policy.get(key) for key in provenance_keys)
+
+
 @lru_cache(maxsize=2048)
 def _analyze_camera_data_cached(data: str) -> dict[str, Any]:
     return analyze_camera_data_with_local_worker(data)
 
 
 def estimate_camera_orchard_support(frame: dict[str, Any]) -> dict[str, Any]:
-    return analyze_camera_frame_payload(frame)
+    return analyze_camera_frame_payload(frame, require_source_native_provenance=True)
 
 
-def analyze_camera_image(image_bgr: Any) -> dict[str, Any]:
+def prepare_camera_inference_frame(image_bgr: Any, requested_width: int = 0) -> tuple[Any, dict[str, Any]]:
+    """Return a no-upscale inference image and explicit input provenance.
+
+    ``requested_width <= 0`` means source/native resolution.  A positive width
+    is a *maximum* rather than a forced shape, so a small source is never
+    upscaled.  Preview rendering is intentionally outside this helper.
+    """
+
+    if image_bgr is None or not hasattr(image_bgr, "shape") or len(image_bgr.shape) < 2:
+        raise ValueError("camera inference requires a non-empty image")
+    source_height, source_width = (int(value) for value in image_bgr.shape[:2])
+    if source_height <= 0 or source_width <= 0:
+        raise ValueError("camera inference requires a non-empty image")
+    requested = int(requested_width)
+    inference_width = source_width if requested <= 0 else min(source_width, max(1, requested))
+    inference_height = max(1, int(round(source_height * inference_width / source_width)))
+    if inference_width == source_width and inference_height == source_height:
+        inference_frame = image_bgr
+    else:
+        try:
+            import cv2  # type: ignore
+        except Exception as exc:
+            raise RuntimeError("OpenCV is required to resize the camera inference input") from exc
+        inference_frame = cv2.resize(image_bgr, (inference_width, inference_height), interpolation=cv2.INTER_AREA)
+    return inference_frame, {
+        "revision": VISION_INFERENCE_INPUT_POLICY_REVISION,
+        "mode": "source_native" if requested <= 0 else "bounded_width",
+        "requested_width": max(0, requested),
+        "source_width": source_width,
+        "source_height": source_height,
+        "inference_width": inference_width,
+        "inference_height": inference_height,
+        "preview_decoupled": True,
+        "no_upscale": True,
+    }
+
+
+def scale_camera_overlay_geometry(overlay: dict[str, Any] | None, width: int, height: int) -> dict[str, Any]:
+    """Scale worker geometry to a stored/display preview without reinference."""
+
+    if not isinstance(overlay, dict):
+        return {}
+    output = copy.deepcopy(overlay)
+    image = output.get("image") if isinstance(output.get("image"), dict) else {}
+    source_width = max(1, int(image.get("width") or width))
+    source_height = max(1, int(image.get("height") or height))
+    sx = int(width) / source_width
+    sy = int(height) / source_height
+
+    def finite_values(value: Any, count: int) -> list[float] | None:
+        if not isinstance(value, (list, tuple)) or len(value) < count:
+            return None
+        try:
+            values = [float(item) for item in value[:count]]
+        except (TypeError, ValueError):
+            return None
+        return values if all(math.isfinite(item) for item in values) else None
+
+    for detection in output.get("detections") or []:
+        if not isinstance(detection, dict):
+            continue
+        bbox = finite_values(detection.get("bbox"), 4)
+        if bbox is not None and bbox[2] > 0.0 and bbox[3] > 0.0:
+            detection["bbox"] = [
+                int(round(bbox[0] * sx)),
+                int(round(bbox[1] * sy)),
+                int(round(bbox[2] * sx)),
+                int(round(bbox[3] * sy)),
+            ]
+        contour = detection.get("contour")
+        if isinstance(contour, list):
+            scaled_contour = []
+            for point in contour:
+                values = finite_values(point, 2)
+                if values is not None:
+                    scaled_contour.append([int(round(values[0] * sx)), int(round(values[1] * sy))])
+            if scaled_contour:
+                detection["contour"] = scaled_contour
+        line = finite_values(detection.get("line"), 4)
+        if line is not None:
+            detection["line"] = [
+                int(round(line[0] * sx)),
+                int(round(line[1] * sy)),
+                int(round(line[2] * sx)),
+                int(round(line[3] * sy)),
+            ]
+    output["image"] = {**image, "width": int(width), "height": int(height)}
+    return output
+
+
+def analyze_camera_image(
+    image_bgr: Any,
+    jpeg_quality: int = DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
+) -> dict[str, Any]:
     try:
         import cv2  # type: ignore
     except Exception:
@@ -67,12 +269,17 @@ def analyze_camera_image(image_bgr: Any) -> dict[str, Any]:
     height, width = image_bgr.shape[:2]
     if height <= 0 or width <= 0:
         return empty_camera_analysis("empty_image")
-    return analyze_camera_image_with_local_worker(cv2, image_bgr)
+    return analyze_camera_image_with_local_worker(cv2, image_bgr, jpeg_quality=jpeg_quality)
 
 
-def analyze_camera_image_with_local_worker(cv2: Any, image_bgr: Any) -> dict[str, Any]:
+def analyze_camera_image_with_local_worker(
+    cv2: Any,
+    image_bgr: Any,
+    jpeg_quality: int = DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
+) -> dict[str, Any]:
+    quality = max(40, min(95, int(jpeg_quality)))
     try:
-        ok, encoded = cv2.imencode(".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 86])
+        ok, encoded = cv2.imencode(".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
     except Exception:
         return empty_camera_analysis("vision_ai_encode_failed", "Failed to JPEG-encode camera frame for local AI inference.")
     if not ok:
@@ -509,11 +716,22 @@ class CameraOverlayStabilizer:
         self.max_age_s = max_age_s
         self.tracks: list[dict[str, Any]] = []
         self.next_id = 1
+        self.clock_epoch = 0
+        self.last_update_s: float | None = None
 
     def update(self, overlay: dict[str, Any], now: float | None = None) -> dict[str, Any]:
         if not overlay.get("ok"):
             return overlay
         now = 0.0 if now is None else float(now)
+        clock_reset = self.last_update_s is not None and now <= self.last_update_s
+        if clock_reset:
+            # A regressing or duplicate sensor stamp must never confirm a
+            # detection from the previous clock epoch.  Reusing that future
+            # track makes age negative and can silently promote one proposal
+            # to map admission after a bag replay/driver clock reset.
+            self.tracks = []
+            self.clock_epoch += 1
+        self.last_update_s = now
         detections = [
             copy.deepcopy(item)
             for item in overlay.get("detections") or []
@@ -542,7 +760,7 @@ class CameraOverlayStabilizer:
                     best_score = score
             if best_index is None or best_score < 0.16:
                 track = {
-                    "id": f"cam-tree-{self.next_id}",
+                    "id": f"cam-tree-e{self.clock_epoch}-{self.next_id}",
                     "bbox": bbox,
                     "confidence": float(detection.get("confidence") or 0.0),
                     "tree_probability": float(detection.get("tree_probability") or detection.get("confidence") or 0.0),
@@ -597,6 +815,9 @@ class CameraOverlayStabilizer:
         output["stabilized"] = True
         output["stabilizer"] = "iou_bbox_exponential_smoothing_temporal_admission_v2"
         output["pending_detections"] = pending
+        output["stabilizer_clock_epoch"] = self.clock_epoch
+        output["stabilizer_clock_reset"] = clock_reset
+        output["stabilizer_clock_integrity_ok"] = not clock_reset
         output["confidence"] = max((float(item.get("confidence") or 0.0) for item in rows), default=0.0)
         return output
 

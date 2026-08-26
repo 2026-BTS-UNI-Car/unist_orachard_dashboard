@@ -703,6 +703,26 @@
               <div id="roverCameraStats" class="chart-readout"></div>
             </article>
 
+            <article class="panel rover-live-panel rover-imu-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Live ROS 2</p>
+                  <h2>IMU</h2>
+                </div>
+                <button id="roverImuToggle" class="action-button secondary" type="button">IMU 시작</button>
+              </div>
+              <div class="imu-attitude-stage">
+                <canvas id="roverImuCanvas" class="imu-attitude-canvas" width="520" height="280"></canvas>
+                <span id="roverImuCaption">/imu/data_raw 대기</span>
+              </div>
+              <div class="imu-heading-row">
+                <span>Heading</span>
+                <strong id="roverImuHeading">--°</strong>
+                <span id="roverImuCalibrationState" class="tag">idle</span>
+              </div>
+              <div id="roverImuStats" class="chart-readout"></div>
+            </article>
+
             <article class="panel rover-drive-panel">
               <div class="panel-head">
                 <div>
@@ -759,6 +779,10 @@
                 <button id="roverRecordCameraButton" class="action-button secondary" type="button" data-record-kind="camera">Camera</button>
                 <button id="roverRecordBothButton" class="action-button secondary" type="button" data-record-kind="both">LiDAR+Camera</button>
               </div>
+              <label class="switch-control record-imu-option">
+                <input id="roverRecordImuToggle" type="checkbox" checked />
+                <span>IMU 함께 기록 (기본) · 시작 시 정지 자세 보정</span>
+              </label>
               <div id="roverRecordingStatus" class="test-result">기록 대기 중</div>
             </article>
 
@@ -833,6 +857,7 @@
                     </figure>
                   </div>
                   <div id="roverArchiveDetails" class="status-list"></div>
+                  <div id="roverArchiveImuStats" class="chart-readout compact"></div>
                   <div class="orchard-map-panel">
                     <div class="panel-head mini">
                       <div>

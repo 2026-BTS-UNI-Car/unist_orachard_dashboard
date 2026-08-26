@@ -10,6 +10,7 @@ services:
     privileged: true
     depends_on:
       - vision-ai-worker
+      - ros2-imu-bridge
     environment:
       DASHBOARD_HOST: "0.0.0.0"
       DASHBOARD_PORT: "8080"
@@ -30,6 +31,9 @@ services:
       CAMERA_WS_UPSTREAM: "ws://127.0.0.1:8770/ws/camera"
       CAMERA_DRIVER_STATUS_FILE: "/app/runtime/camera_driver_status.json"
       CAMERA_BRIDGE_STATUS_FILE: "/app/runtime/camera_bridge_status.json"
+      IMU_WS_UPSTREAM: "ws://127.0.0.1:8775/ws/imu"
+      IMU_DRIVER_STATUS_FILE: "/app/runtime/imu_driver_status.json"
+      IMU_BRIDGE_STATUS_FILE: "/app/runtime/imu_bridge_status.json"
       CAMERA_SETTINGS_FILE: "/app/runtime/camera_settings.json"
       ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
       ROVER_COMMAND_FILE: "/app/runtime/rover_command.json"
@@ -241,9 +245,11 @@ services:
       ORCHARD_VISION_AI_TIMEOUT_S: "${ORCHARD_VISION_AI_TIMEOUT_S:-6.0}"
       ORCHARD_VISION_BEARINGS_TOPIC: "${ORCHARD_VISION_BEARINGS_TOPIC:-/orchard/vision/tree_bearings}"
       ORCHARD_VISION_PUBLISH_HZ: "${ORCHARD_VISION_PUBLISH_HZ:-5.0}"
-      ORCHARD_VISION_WIDTH: "${ORCHARD_VISION_WIDTH:-640}"
+      ORCHARD_VISION_INFERENCE_WIDTH: "${ORCHARD_VISION_INFERENCE_WIDTH:-0}"
+      ORCHARD_VISION_INFERENCE_JPEG_QUALITY: "${ORCHARD_VISION_INFERENCE_JPEG_QUALITY:-86}"
       ORCHARD_VISION_FRAME_ID: "${ORCHARD_VISION_FRAME_ID:-camera_link}"
       ORCHARD_VISION_BEARING_CALIBRATION_VALID: "${ORCHARD_VISION_BEARING_CALIBRATION_VALID:-0}"
+      ORCHARD_CAMERA_INFO_SYNC_MAX_DELTA_S: "${ORCHARD_CAMERA_INFO_SYNC_MAX_DELTA_S:-0.12}"
       CAMERA_FOV_DEG: "${CAMERA_FOV_DEG:-70.0}"
     volumes:
       - ./runtime:/app/runtime
@@ -259,10 +265,86 @@ services:
           --camera-info-topic "$${CAMERA_INFO_TOPIC}" \
           --vision-topic "$${ORCHARD_VISION_BEARINGS_TOPIC}" \
           --vision-hz "$${ORCHARD_VISION_PUBLISH_HZ}" \
-          --vision-width "$${ORCHARD_VISION_WIDTH}" \
+          --vision-inference-width "$${ORCHARD_VISION_INFERENCE_WIDTH}" \
+          --vision-inference-jpeg-quality "$${ORCHARD_VISION_INFERENCE_JPEG_QUALITY}" \
           --vision-output-frame "$${ORCHARD_VISION_FRAME_ID}" \
           --vision-nominal-fov-deg "$${CAMERA_FOV_DEG}" \
+          --camera-info-sync-max-delta-s "$${ORCHARD_CAMERA_INFO_SYNC_MAX_DELTA_S}" \
           --status-file "$${CAMERA_BRIDGE_STATUS_FILE}"
+
+  ros2-imu-driver:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-imu-driver:latest
+    container_name: unist-orachard-ros2-imu-driver
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    devices:
+      - "/dev/i2c-${IMU_I2C_BUS:-7}:/dev/i2c-${IMU_I2C_BUS:-7}"
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      IMU_I2C_BUS: "${IMU_I2C_BUS:-7}"
+      IMU_I2C_ADDRESS: "${IMU_I2C_ADDRESS:-0x4A}"
+      IMU_SAMPLE_HZ: "${IMU_SAMPLE_HZ:-20}"
+      IMU_FRAME_ID: "${IMU_FRAME_ID:-imu_link}"
+      IMU_RAW_TOPIC: "${IMU_RAW_TOPIC:-/imu/data_raw}"
+      IMU_MAG_TOPIC: "${IMU_MAG_TOPIC:-/imu/mag}"
+      IMU_DRIVER_STATUS_TOPIC: "${IMU_DRIVER_STATUS_TOPIC:-/orchard/imu/driver_status}"
+      IMU_DRIVER_STATUS_FILE: "/app/runtime/imu_driver_status.json"
+    volumes:
+      - ./runtime:/app/runtime
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        source /opt/ros/iron/setup.bash
+        python3 /app/scripts/imu_ros2_driver.py \
+          --i2c-bus "$${IMU_I2C_BUS}" \
+          --i2c-address "$${IMU_I2C_ADDRESS}" \
+          --sample-hz "$${IMU_SAMPLE_HZ}" \
+          --frame-id "$${IMU_FRAME_ID}" \
+          --raw-topic "$${IMU_RAW_TOPIC}" \
+          --mag-topic "$${IMU_MAG_TOPIC}" \
+          --status-topic "$${IMU_DRIVER_STATUS_TOPIC}" \
+          --status-file "$${IMU_DRIVER_STATUS_FILE}"
+
+  ros2-imu-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-imu-bridge:latest
+    container_name: unist-orachard-ros2-imu-bridge
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    depends_on:
+      - ros2-imu-driver
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      IMU_RAW_TOPIC: "${IMU_RAW_TOPIC:-/imu/data_raw}"
+      IMU_CORRECTED_TOPIC: "${IMU_CORRECTED_TOPIC:-/imu/data}"
+      IMU_MAG_TOPIC: "${IMU_MAG_TOPIC:-/imu/mag}"
+      IMU_CALIBRATION_TOPIC: "${IMU_CALIBRATION_TOPIC:-/orchard/imu/calibration}"
+      IMU_BRIDGE_MAX_HZ: "${IMU_BRIDGE_MAX_HZ:-20}"
+      IMU_BRIDGE_STATUS_FILE: "/app/runtime/imu_bridge_status.json"
+    volumes:
+      - ./runtime:/app/runtime
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        source /opt/ros/iron/setup.bash
+        python3 /app/scripts/imu_ws_bridge.py \
+          --host 0.0.0.0 \
+          --port 8775 \
+          --raw-topic "$${IMU_RAW_TOPIC}" \
+          --corrected-topic "$${IMU_CORRECTED_TOPIC}" \
+          --mag-topic "$${IMU_MAG_TOPIC}" \
+          --calibration-topic "$${IMU_CALIBRATION_TOPIC}" \
+          --max-hz "$${IMU_BRIDGE_MAX_HZ}" \
+          --status-file "$${IMU_BRIDGE_STATUS_FILE}"
 
   ros2-rover-bridge:
     build:
@@ -323,6 +405,8 @@ services:
       - ros2-lidar-driver
       - ros2-camera-driver
       - ros2-camera-bridge
+      - ros2-imu-driver
+      - ros2-imu-bridge
     environment:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       RECORDER_HOST: "127.0.0.1"
@@ -335,17 +419,29 @@ services:
       ROVER_CMD_TOPIC: "${ROVER_CMD_TOPIC:-/cmd_vel}"
       ROVER_STATUS_TOPIC: "${ROVER_STATUS_TOPIC:-/rover/status}"
       ODOM_TOPIC: "${ODOM_TOPIC:-/odom}"
-      IMU_TOPIC: "${IMU_TOPIC:-/imu/data}"
+      IMU_RAW_TOPIC: "${IMU_RAW_TOPIC:-/imu/data_raw}"
+      IMU_CORRECTED_TOPIC: "${IMU_CORRECTED_TOPIC:-/imu/data}"
+      IMU_MAG_TOPIC: "${IMU_MAG_TOPIC:-/imu/mag}"
+      IMU_DRIVER_STATUS_TOPIC: "${IMU_DRIVER_STATUS_TOPIC:-/orchard/imu/driver_status}"
+      IMU_CALIBRATION_TOPIC: "${IMU_CALIBRATION_TOPIC:-/orchard/imu/calibration}"
       TF_TOPIC: "${TF_TOPIC:-/tf}"
       TF_STATIC_TOPIC: "${TF_STATIC_TOPIC:-/tf_static}"
       ORCHARD_VISION_BEARINGS_TOPIC: "${ORCHARD_VISION_BEARINGS_TOPIC:-/orchard/vision/tree_bearings}"
       RECORDER_PREVIEW_MAX_POINTS: "${RECORDER_PREVIEW_MAX_POINTS:-1200}"
       RECORDER_TIMELINE_HZ: "${RECORDER_TIMELINE_HZ:-2.0}"
       RECORDER_TIMELINE_MAX_FRAMES: "${RECORDER_TIMELINE_MAX_FRAMES:-1800}"
+      RECORDER_IMU_TIMELINE_HZ: "${RECORDER_IMU_TIMELINE_HZ:-10.0}"
+      RECORDER_IMU_TIMELINE_MAX_FRAMES: "${RECORDER_IMU_TIMELINE_MAX_FRAMES:-18000}"
+      RECORDER_IMU_CALIBRATION_WINDOW_S: "${RECORDER_IMU_CALIBRATION_WINDOW_S:-1.5}"
+      RECORDER_IMU_CALIBRATION_MIN_SAMPLES: "${RECORDER_IMU_CALIBRATION_MIN_SAMPLES:-20}"
+      RECORDER_IMU_STATIONARY_MAX_GYRO_RAD_S: "${RECORDER_IMU_STATIONARY_MAX_GYRO_RAD_S:-0.08}"
+      RECORDER_IMU_STATIONARY_GRAVITY_TOLERANCE_M_S2: "${RECORDER_IMU_STATIONARY_GRAVITY_TOLERANCE_M_S2:-2.0}"
+      RECORDER_IMU_STATIONARY_MAX_ACCEL_STD_M_S2: "${RECORDER_IMU_STATIONARY_MAX_ACCEL_STD_M_S2:-0.35}"
       RECORDER_CAMERA_PREVIEW_WIDTH: "${RECORDER_CAMERA_PREVIEW_WIDTH:-640}"
       RECORDER_CAMERA_JPEG_QUALITY: "${RECORDER_CAMERA_JPEG_QUALITY:-68}"
-      ORCHARD_VISION_AI_URL: "${ORCHARD_VISION_AI_URL:-http://127.0.0.1:8785/analyze}"
-      ORCHARD_VISION_AI_TIMEOUT_S: "${ORCHARD_VISION_AI_TIMEOUT_S:-6.0}"
+      RECORDER_SHARED_VISION_SYNC_MAX_DELTA_S: "${RECORDER_SHARED_VISION_SYNC_MAX_DELTA_S:-0.12}"
+      RECORDER_SHARED_VISION_WAIT_TIMEOUT_S: "${RECORDER_SHARED_VISION_WAIT_TIMEOUT_S:-0.35}"
+      RECORDER_CAMERA_ARCHIVE_FLUSH_TIMEOUT_S: "${RECORDER_CAMERA_ARCHIVE_FLUSH_TIMEOUT_S:-0.75}"
     volumes:
       - ./runtime:/app/runtime
     command:
@@ -364,7 +460,23 @@ services:
           --cmd-topic "$${ROVER_CMD_TOPIC}" \
           --rover-status-topic "$${ROVER_STATUS_TOPIC}" \
           --odom-topic "$${ODOM_TOPIC}" \
-          --imu-topic "$${IMU_TOPIC}" \
+          --imu-raw-topic "$${IMU_RAW_TOPIC}" \
+          --imu-corrected-topic "$${IMU_CORRECTED_TOPIC}" \
+          --imu-mag-topic "$${IMU_MAG_TOPIC}" \
+          --imu-driver-status-topic "$${IMU_DRIVER_STATUS_TOPIC}" \
+          --imu-calibration-topic "$${IMU_CALIBRATION_TOPIC}" \
           --tf-topic "$${TF_TOPIC}" \
           --tf-static-topic "$${TF_STATIC_TOPIC}" \
-          --vision-topic "$${ORCHARD_VISION_BEARINGS_TOPIC}"
+          --vision-topic "$${ORCHARD_VISION_BEARINGS_TOPIC}" \
+          --imu-timeline-hz "$${RECORDER_IMU_TIMELINE_HZ}" \
+          --imu-timeline-max-frames "$${RECORDER_IMU_TIMELINE_MAX_FRAMES}" \
+          --imu-calibration-window-s "$${RECORDER_IMU_CALIBRATION_WINDOW_S}" \
+          --imu-calibration-min-samples "$${RECORDER_IMU_CALIBRATION_MIN_SAMPLES}" \
+          --imu-stationary-max-gyro-rad-s "$${RECORDER_IMU_STATIONARY_MAX_GYRO_RAD_S}" \
+          --imu-stationary-gravity-tolerance-m-s2 "$${RECORDER_IMU_STATIONARY_GRAVITY_TOLERANCE_M_S2}" \
+          --imu-stationary-max-accel-std-m-s2 "$${RECORDER_IMU_STATIONARY_MAX_ACCEL_STD_M_S2}" \
+          --camera-preview-width "$${RECORDER_CAMERA_PREVIEW_WIDTH}" \
+          --camera-jpeg-quality "$${RECORDER_CAMERA_JPEG_QUALITY}" \
+          --camera-vision-sync-max-delta-s "$${RECORDER_SHARED_VISION_SYNC_MAX_DELTA_S}" \
+          --camera-vision-wait-timeout-s "$${RECORDER_SHARED_VISION_WAIT_TIMEOUT_S}" \
+          --camera-archive-flush-timeout-s "$${RECORDER_CAMERA_ARCHIVE_FLUSH_TIMEOUT_S}"

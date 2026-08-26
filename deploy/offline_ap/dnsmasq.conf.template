@@ -16,3 +16,4 @@ dhcp-option=3
 dhcp-option=6,10.77.0.1
 address=/bts.sarihub.com/10.77.0.1
 address=/bts-docker.sarihub.com/10.77.0.1
+address=/jetson-ssh.sarihub.com/10.77.0.1

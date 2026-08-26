@@ -791,6 +791,8 @@ assert_port_80_available() {
 }
 
 assert_local_backends() {
+  ss -H -ltn | awk '$4 ~ /:22$/ { found = 1 } END { exit(found ? 0 : 1) }' ||
+    die 'SSH backend is not listening on TCP 22'
   curl --fail --silent --show-error --max-time 3 --noproxy '*' \
     http://127.0.0.1:8080/api/health >/dev/null || die 'dashboard backend is unhealthy'
   curl --fail --silent --show-error --max-time 3 --noproxy '*' --cacert "$PORTAINER_CA" \
@@ -815,7 +817,7 @@ assert_proxy_prerequisites() {
 
 assert_ap_dns() {
   local name answers
-  for name in bts.sarihub.com bts-docker.sarihub.com; do
+  for name in bts.sarihub.com bts-docker.sarihub.com jetson-ssh.sarihub.com; do
     answers="$(dig +time=2 +tries=1 +short @"$AP_ADDRESS" "$name" A 2>/dev/null |
       sed '/^[[:space:]]*$/d' | sort -u || true)"
     [[ "$answers" == "$AP_ADDRESS" ]] || die "AP DNS did not map only $name to $AP_ADDRESS"
@@ -1241,7 +1243,7 @@ activate_ap_locked() {
   (assert_proxy_health) || abort_activation 'dashboard/Portainer proxy health or config failed'
   (assert_routing_matches_baseline) || abort_activation 'routing/policy/uplink changed after proxy start'
   trap - HUP INT TERM
-  log "AP verified on $INTERFACE at $AP_CIDR; both local names and backends are healthy"
+  log "AP verified on $INTERFACE at $AP_CIDR; all local names and backends are healthy"
 }
 
 activate_ap() { require_root; acquire_operation_lock; activate_ap_locked; }

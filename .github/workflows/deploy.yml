@@ -97,7 +97,7 @@ jobs:
           fi
           python3 -m compileall dashboard_server scripts
           python3 -m unittest discover -s tests -p 'test_*.py'
-          TARGET_SERVICES="vision-ai-worker ros2-camera-bridge ros2-lidar-bridge ros2-data-recorder dashboard"
+          TARGET_SERVICES="vision-ai-worker ros2-camera-bridge ros2-lidar-bridge ros2-imu-driver ros2-imu-bridge ros2-data-recorder dashboard"
           $COMPOSE build $TARGET_SERVICES
 
           # Compose 1.29 cannot inspect Docker 29's newer image metadata while
@@ -117,6 +117,8 @@ jobs:
           recreate_service vision-ai-worker unist-orachard-vision-ai
           recreate_service ros2-camera-bridge unist-orachard-ros2-camera-bridge
           recreate_service ros2-lidar-bridge unist-orachard-ros2-lidar-bridge
+          recreate_service ros2-imu-driver unist-orachard-ros2-imu-driver
+          recreate_service ros2-imu-bridge unist-orachard-ros2-imu-bridge
           recreate_service ros2-data-recorder unist-orachard-ros2-data-recorder
           recreate_service dashboard unist-orachard-dashboard
           $COMPOSE ps
@@ -128,6 +130,7 @@ jobs:
           checks = [
               ("dashboard", "http://127.0.0.1:8080/api/health"),
               ("vision-ai-worker", "http://127.0.0.1:8785/health"),
+              ("data-recorder", "http://127.0.0.1:8790/status"),
           ]
           for name, url in checks:
               last = ""
@@ -142,6 +145,32 @@ jobs:
                                   raise RuntimeError(f"unexpected vision revision: {payload}")
                               if not str(payload.get("model") or "").endswith("best.engine + openai/clip-vit-base-patch32"):
                                   raise RuntimeError(f"TensorRT/CLIP model not active: {payload}")
+                          if name == "data-recorder":
+                              pipeline = payload.get("camera_pipeline") or {}
+                              if pipeline.get("inference_owner") != "camera_ws_bridge" or pipeline.get("independent_inference") is not False:
+                                  raise RuntimeError(f"recorder must reuse the shared camera bridge inference: {payload}")
+                              if pipeline.get("latest_only") is not True:
+                                  raise RuntimeError(f"recorder latest-frame archive policy missing: {payload}")
+                              if (
+                                  pipeline.get("input_policy_revision") != "source_native_preview_decoupled_jpeg_v1"
+                                  or pipeline.get("required_input_mode") != "source_native"
+                                  or int(pipeline.get("required_requested_width", -1)) != 0
+                                  or int(pipeline.get("required_jpeg_quality") or 0) != 86
+                              ):
+                                  raise RuntimeError(f"recorder native inference provenance contract drifted: {payload}")
+                              if int(pipeline.get("shared_vision_provenance_rejected_count") or 0) != 0:
+                                  raise RuntimeError(f"recorder rejected camera bridge inference provenance: {payload}")
+                              if int(pipeline.get("shared_vision_received_count") or 0) <= 0:
+                                  raise RuntimeError(f"recorder has not received the shared camera bridge topic: {payload}")
+                              if float(pipeline.get("shared_vision_received_age_s") or 999.0) >= 3.0:
+                                  raise RuntimeError(f"recorder shared camera bridge topic is stale: {payload}")
+                              imu = payload.get("imu_pipeline") or {}
+                              if imu.get("default_recording_enabled") is not True:
+                                  raise RuntimeError(f"recorder IMU default contract is disabled: {payload}")
+                              if imu.get("raw_topic") != "/imu/data_raw" or imu.get("corrected_topic") != "/imu/data":
+                                  raise RuntimeError(f"recorder IMU ROS2 topic contract drifted: {payload}")
+                              if imu.get("raw_topic_alive") is not True or float(imu.get("last_raw_age_s") or 999.0) >= 1.0:
+                                  raise RuntimeError(f"recorder has no current ROS2 IMU sample: {payload}")
                           print(f"{name} ok: {json.dumps(payload, ensure_ascii=False)}")
                           break
                       last = json.dumps(payload, ensure_ascii=False)
@@ -152,7 +181,10 @@ jobs:
                   raise SystemExit(f"{name} health failed: {last}")
           PY
           docker exec unist-orachard-ros2-camera-bridge /bin/sh -lc 'test -n "$ORCHARD_VISION_AI_URL"'
-          docker exec unist-orachard-ros2-data-recorder /bin/sh -lc 'test -n "$ORCHARD_VISION_AI_URL"'
+          docker exec unist-orachard-ros2-camera-bridge /bin/sh -lc 'test -n "$ORCHARD_VISION_INFERENCE_WIDTH" && test -n "$ORCHARD_VISION_INFERENCE_JPEG_QUALITY"'
+          docker exec unist-orachard-ros2-data-recorder /bin/sh -lc 'test -n "$RECORDER_SHARED_VISION_SYNC_MAX_DELTA_S" && test -n "$RECORDER_SHARED_VISION_WAIT_TIMEOUT_S"'
+          docker exec unist-orachard-ros2-imu-driver /bin/sh -lc 'test "$IMU_RAW_TOPIC" = /imu/data_raw && test "$IMU_MAG_TOPIC" = /imu/mag'
+          docker exec unist-orachard-ros2-imu-bridge /bin/sh -lc 'test "$IMU_CORRECTED_TOPIC" = /imu/data && test "$IMU_CALIBRATION_TOPIC" = /orchard/imu/calibration'
           python3 - <<'PY'
           import json
           import subprocess
@@ -166,6 +198,8 @@ jobs:
                   status = json.loads(status_path.read_text(encoding="utf-8"))
                   vision = status.get("vision_publisher") or {}
                   payload = vision.get("last_payload") or {}
+                  input_policy = vision.get("input_policy") or {}
+                  actual_input = input_policy.get("last_actual") or {}
                   checks = {
                       "frame_topic_alive": status.get("frame_topic_alive") is True,
                       "inference_count": int(vision.get("inference_count") or 0) > 0,
@@ -177,6 +211,29 @@ jobs:
                       "payload_revision": payload.get("revision") == "orchard_trunk_yolo11_trt_clip_ood_v1",
                       "payload_source": payload.get("source") == "camera_ws_bridge_shared_worker_v4",
                       "payload_frame": payload.get("frame_id") == "camera_link",
+                      "latest_only": vision.get("latest_only") is True,
+                      "no_backlog": vision.get("coalescing") == "single_slot_newest_frame_no_backlog",
+                      "input_policy_revision": input_policy.get("revision") == "source_native_preview_decoupled_jpeg_v1",
+                      "input_policy_mode": input_policy.get("mode") == "source_native",
+                      "input_policy_requested_width": int(input_policy.get("requested_width", -1)) == 0,
+                      "input_policy_jpeg_quality": int(input_policy.get("jpeg_quality") or 0) == 86,
+                      "preview_decoupled": input_policy.get("preview_decoupled") is True,
+                      "actual_input_policy_revision": actual_input.get("revision") == "source_native_preview_decoupled_jpeg_v1",
+                      "actual_input_mode": actual_input.get("mode") == "source_native",
+                      "actual_input_requested_width": int(actual_input.get("requested_width", -1)) == 0,
+                      "actual_input_jpeg_quality": int(actual_input.get("jpeg_quality") or 0) == 86,
+                      "input_no_upscale": actual_input.get("no_upscale") is True,
+                      "actual_inference_width": int(actual_input.get("inference_width") or 0) > 0,
+                      "actual_inference_is_source_width": int(actual_input.get("inference_width") or 0) == int(actual_input.get("source_width") or -1),
+                      "actual_inference_is_source_height": int(actual_input.get("inference_height") or 0) == int(actual_input.get("source_height") or -1),
+                      "actual_inference_cadence": float(vision.get("effective_hz") or 0.0) > 0.0,
+                      "last_success_fresh": float(vision.get("last_success_age_sec") or 999.0) < 3.0,
+                      "camera_info_provenance_revision": vision.get("camera_info_provenance_revision") == "camera_info_image_header_integrity_v2",
+                      "camera_info_provenance_valid": vision.get("camera_info_provenance_valid") is True,
+                      "camera_info_provenance_reason": vision.get("camera_info_provenance_reason") == "validated",
+                      "camera_info_stamp_in_gate": float(vision.get("camera_info_sync_delta_s") or 0.0) <= float(vision.get("camera_info_sync_max_delta_s") or -1.0),
+                      "image_clock_monotonic": int(vision.get("image_clock_regression_count") or 0) == 0,
+                      "camera_info_clock_monotonic": int(vision.get("camera_info_clock_regression_count") or 0) == 0,
                       "bearing_calibration_requested": vision.get("bearing_calibration_requested") is False,
                       "bearing_calibration_valid": vision.get("bearing_calibration_valid") is False,
                       "metric_range_valid": vision.get("metric_range_valid") is False,
@@ -232,12 +289,20 @@ jobs:
           ):
               map_url = f"http://127.0.0.1:8080/api/recordings/{recording_id}/orchard-map"
               orchard_map = json.load(urllib.request.urlopen(map_url, timeout=60))["map"]
-              assert orchard_map["algorithm"] == "orchard_metric_anchor_semantic_fusion_local_frenet_v9", orchard_map["algorithm"]
-              assert orchard_map["cache_revision"] == "v9_rep103_provenance_continuity_readiness_r3", orchard_map
+              assert orchard_map["algorithm"] == "orchard_metric_anchor_semantic_fusion_local_frenet_v10", orchard_map["algorithm"]
+              assert orchard_map["cache_revision"] == "v10_rep103_robust_tracks_unique_semantics_row_model_native_input_r3", orchard_map
               assert orchard_map["ok"] is True
               actual_layers = {name: len(layer["trees"]) for name, layer in orchard_map["maps"].items()}
               assert set(actual_layers) == {"lidar", "camera", "fusion"}, actual_layers
               fusion = orchard_map["fusion"]
+              input_provenance = orchard_map["camera"]["input_provenance"]
+              assert input_provenance["enforced"] is True, input_provenance
+              assert input_provenance["required_revision"] == "source_native_preview_decoupled_jpeg_v1", input_provenance
+              assert input_provenance["required_mode"] == "source_native", input_provenance
+              assert input_provenance["required_requested_width"] == 0, input_provenance
+              assert input_provenance["required_jpeg_quality"] == 86, input_provenance
+              assert input_provenance["legacy_preview_as_native_allowed"] is False, input_provenance
+              assert input_provenance["accepted_frame_count"] + input_provenance["rejected_frame_count"] == input_provenance["frame_count"], input_provenance
               assert fusion["position_policy"].startswith("LiDAR supplies metric"), fusion
               assert fusion["metric_anchor_count"] == actual_layers["lidar"], (fusion, actual_layers)
               assert fusion["metric_anchor_count"] + fusion["camera_only_promoted_count"] == actual_layers["fusion"], fusion
@@ -249,10 +314,10 @@ jobs:
                   for tree in orchard_map["maps"]["fusion"]["trees"]
               )
               centerline = orchard_map["centerline"]
-              assert centerline["method"] == "trajectory_segmented_local_frenet_robust_rows_v9", centerline
+              assert centerline["method"] == "trajectory_segmented_hybrid_bilateral_rows_v10", centerline
               assert centerline["ok"] is True or centerline["points"] == [], centerline
               for segment in centerline.get("segments", []):
-                  assert segment["method"] == "trajectory_segmented_local_frenet_robust_rows_v9", segment
+                  assert segment["method"] == "trajectory_segmented_global_landmark_rows_v10", segment
                   if segment["ok"]:
                       assert segment["straddles_vehicle"] is True, segment
                       assert segment["left_occupied_bins"] >= 3, segment
@@ -270,6 +335,20 @@ jobs:
                       assert interval and all(interval[0] <= point["s_m"] <= interval[1] for point in segment["points"]), segment
                   else:
                       assert segment["fail_closed"] is True and segment["points"] == [], segment
+              for segment in centerline.get("corridor_segments", []):
+                  assert segment["method"] == "trajectory_segmented_time_local_bilateral_corridor_v10", segment
+                  if segment["ok"]:
+                      assert segment["evidence_mode"] == "time_local_bilateral_corridor_consensus", segment
+                      assert segment["bilateral_frame_count"] >= 6, segment
+                      assert segment["corridor_occupied_bins"] >= 3, segment
+                      assert segment["corridor_station_span_m"] >= 4.0, segment
+                      assert segment["corridor_time_span_s"] >= 2.0, segment
+                      assert 3.0 <= segment["row_gap_m"] <= 7.0, segment
+                      assert segment["corridor_row_gap_mad_m"] <= max(0.65, segment["row_gap_m"] * 0.16), segment
+                      assert segment["corridor_lateral_residual_p90_m"] <= 0.75, segment
+                      assert len(segment["points"]) >= 3, segment
+                  else:
+                      assert segment["fail_closed"] is True and segment["points"] == [], segment
 
               segment_url = f"http://127.0.0.1:8080/api/recordings/{recording_id}/timeline?start_s=0&duration_s=4"
               request = urllib.request.Request(segment_url, headers={"Accept-Encoding": "gzip"})
@@ -281,12 +360,33 @@ jobs:
                   overlay = frame.get("overlay") or {}
                   assert overlay.get("algorithm") == "local_orchard_vision_ai_worker_v4", overlay
                   assert overlay.get("revision") == "orchard_trunk_yolo11_trt_clip_ood_v1", overlay
+                  if overlay.get("ok") is True:
+                      policy = overlay.get("inference_input_policy") or {}
+                      assert policy.get("revision") == "source_native_preview_decoupled_jpeg_v1", policy
+                      assert policy.get("mode") == "source_native", policy
+                      assert int(policy.get("requested_width", -1)) == 0, policy
+                      assert int(policy.get("jpeg_quality") or 0) == 86, policy
+                      assert int(policy.get("source_width") or 0) == int(policy.get("inference_width") or -1), policy
+                      assert int(policy.get("source_height") or 0) == int(policy.get("inference_height") or -1), policy
+                      assert policy.get("preview_decoupled") is True and policy.get("no_upscale") is True, policy
+                  else:
+                      assert overlay.get("method") == "source_native_provenance_required", overlay
               for frame in payload["timeline"]["lidar"]["frames"]:
                   overlay = frame.get("overlay") or {}
                   assert overlay.get("algorithm") == "polar_gap_cluster_wall_context_tree_ood_predictive_tracks_v6", overlay
               readiness = orchard_map.get("readiness") or {}
               assert type(readiness.get("data_sufficiency_ok")) is bool, readiness
               assert type(readiness.get("navigation_ready")) is bool, readiness
+              if readiness.get("observed", {}).get("centerline_evidence_ready"):
+                  assert readiness["navigation_ready"] is False, readiness
+                  assert "ground_truth_validated_missing" in readiness["navigation_readiness_reasons"], readiness
+                  assert "camera_intrinsics_validated_missing" in readiness["navigation_readiness_reasons"], readiness
+                  assert "camera_lidar_extrinsics_validated_missing" in readiness["navigation_readiness_reasons"], readiness
+                  assert "trajectory_pose_validated_missing" in readiness["navigation_readiness_reasons"], readiness
+              sync = fusion["sync"]
+              if not sync.get("clock_integrity_ok"):
+                  assert readiness["navigation_ready"] is False, (sync, readiness)
+                  assert "sensor_header_clock_integrity_not_validated" in readiness["navigation_readiness_reasons"], readiness
               research_readiness.append(
                   {
                       "recording_id": recording_id,

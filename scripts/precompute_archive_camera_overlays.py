@@ -15,10 +15,12 @@ if str(ROOT) not in sys.path:
 
 from dashboard_server.camera_analysis import (
     CameraOverlayStabilizer,
+    DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
     LOCAL_VISION_ALGORITHM_NAME,
     LOCAL_VISION_ANALYSIS_REVISION,
+    VISION_INFERENCE_INPUT_POLICY_REVISION,
     analyze_camera_frame_payload,
-    current_camera_overlay_algorithm,
+    current_source_native_camera_overlay,
 )
 
 
@@ -51,12 +53,8 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def overlay_is_current_ok(overlay: Any) -> bool:
-    return (
-        isinstance(overlay, dict)
-        and overlay.get("ok") is True
-        and current_camera_overlay_algorithm(overlay.get("algorithm"), overlay.get("revision"))
-    )
+def overlay_is_current_ok(frame: Any) -> bool:
+    return isinstance(frame, dict) and current_source_native_camera_overlay(frame.get("overlay"), frame=frame)
 
 
 def recording_paths(archive_dir: Path, ids: list[str]) -> list[Path]:
@@ -76,6 +74,7 @@ def process_timeline(path: Path, args: argparse.Namespace, remaining: int | None
         "current_ok": 0,
         "updated": 0,
         "failed": 0,
+        "provenance_rejected": 0,
         "skipped": 0,
         "elapsed_s": 0.0,
         "timeline": str(timeline_path),
@@ -94,7 +93,7 @@ def process_timeline(path: Path, args: argparse.Namespace, remaining: int | None
         if not isinstance(frame, dict):
             summary["skipped"] += 1
             continue
-        if overlay_is_current_ok(frame.get("overlay")) and not args.force:
+        if overlay_is_current_ok(frame) and not args.force:
             summary["current_ok"] += 1
             continue
         if not frame.get("data"):
@@ -105,12 +104,17 @@ def process_timeline(path: Path, args: argparse.Namespace, remaining: int | None
         if args.dry_run:
             summary["updated"] += 1
             continue
-        overlay = stabilizer.update(analyze_camera_frame_payload(frame), float(frame.get("t_s") or 0.0))
+        overlay = stabilizer.update(
+            analyze_camera_frame_payload(frame, require_source_native_provenance=True),
+            float(frame.get("t_s") or 0.0),
+        )
         frame["overlay"] = overlay
         if overlay.get("ok"):
             summary["updated"] += 1
         else:
             summary["failed"] += 1
+            if overlay.get("method") == "source_native_provenance_required":
+                summary["provenance_rejected"] += 1
         changed = True
         if args.checkpoint_every > 0 and summary["updated"] and summary["updated"] % args.checkpoint_every == 0:
             write_json_atomic(timeline_path, timeline)
@@ -123,6 +127,13 @@ def process_timeline(path: Path, args: argparse.Namespace, remaining: int | None
             "updated_at": time.time(),
             "updated_frames": summary["updated"],
             "failed_frames": summary["failed"],
+            "provenance_rejected_frames": summary["provenance_rejected"],
+            "required_input_policy": {
+                "revision": VISION_INFERENCE_INPUT_POLICY_REVISION,
+                "mode": "source_native",
+                "requested_width": 0,
+                "jpeg_quality": DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
+            },
             "source": "scripts/precompute_archive_camera_overlays.py",
         }
         write_json_atomic(timeline_path, timeline)
