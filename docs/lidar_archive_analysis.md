@@ -84,6 +84,33 @@ UI는 4초 segment만 요청한다.
 - 현재 segment 재생 중 다음 두 segment prefetch
 - seek 시 필요한 segment만 load
 
+### 2026-08-27 binary JPEG sidecar
+
+기존 LiDAR+Camera archive의 `timeline.json`은 50--80 MB 단일 JSON이며 camera JPEG가 base64로 포함되어 있었다. 원본은 변경하지 않고 timeline mtime/size와 `binary_jpeg_segment_sidecar_v1` revision을 키로 다음 파생 캐시를 만든다.
+
+```text
+runtime/playback_cache/<recording-id>/<source-signature>/
+  manifest.json
+  segments/segment-000000.json
+  frames/frame-<sha256-prefix>.jpg
+```
+
+- 4초 segment JSON에는 base64 `data` 대신 `frame_url`만 둔다.
+- 동일 JPEG는 SHA-256 이름으로 deduplicate한다.
+- frame 응답은 `ETag`와 `Cache-Control: private, max-age=86400, immutable`을 사용한다.
+- 새 녹화를 종료하면 background prewarm하고, 기존 archive는 첫 정렬된 4초 요청에서 한 번 생성한다.
+- 원본 timeline mtime 또는 size가 바뀌면 새 signature 디렉터리를 사용하므로 stale sidecar를 읽지 않는다.
+
+최근 3개 archive의 Jetson localhost 실측:
+
+| Archive | 최초 sidecar 생성+응답 | warm segment 응답 |
+|---|---:|---:|
+| `20260721T082612Z_both` | 4.14 s | 79 ms |
+| `20260721T082224Z_both` | 6.41 s | 77 ms |
+| `20260721T081819Z_both` | 5.39 s | 72 ms |
+
+`20260721T082224Z_both` 첫 구간은 5개 JPEG가 JSON에서 빠지면서 1,497,592 bytes에서 1,115,949 bytes로 줄었다. LiDAR point/overlay가 segment JSON의 대부분을 차지하므로 추가 축소는 LiDAR용 별도 binary transport 과제로 남긴다.
+
 2026-07-10 Jetson warm API:
 
 | Archive | Latency | Wire payload |

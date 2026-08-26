@@ -541,7 +541,14 @@ class RecordingState:
         if kind in {"lidar", "both"}:
             topics.append(self.args.scan_topic)
         if kind in {"camera", "both"}:
-            topics.extend([self.args.camera_topic, self.args.camera_info_topic])
+            topics.extend(
+                [
+                    self.args.camera_topic,
+                    self.args.camera_compressed_topic,
+                    self.args.camera_info_topic,
+                    self.args.camera_preview_info_topic,
+                ]
+            )
         return list(dict.fromkeys(topic for topic in topics if str(topic or "").strip()))
 
     def observe_scan(self, msg: LaserScan) -> None:
@@ -1327,7 +1334,12 @@ def main() -> int:
     parser.add_argument("--status-file", default=os.environ.get("DATA_RECORDER_STATUS_FILE", "/app/runtime/data_recorder_status.json"))
     parser.add_argument("--scan-topic", default=os.environ.get("LIDAR_SCAN_TOPIC", "/scan"))
     parser.add_argument("--camera-topic", default=os.environ.get("CAMERA_IMAGE_TOPIC", "/camera/image_raw"))
+    parser.add_argument("--camera-compressed-topic", default=os.environ.get("CAMERA_COMPRESSED_TOPIC", "/camera/image_jpeg"))
     parser.add_argument("--camera-info-topic", default=os.environ.get("CAMERA_INFO_TOPIC", "/camera/camera_info"))
+    parser.add_argument(
+        "--camera-preview-info-topic",
+        default=os.environ.get("CAMERA_PREVIEW_INFO_TOPIC", "/camera/preview/camera_info"),
+    )
     parser.add_argument("--cmd-topic", default=os.environ.get("ROVER_CMD_TOPIC", "/cmd_vel"))
     parser.add_argument("--rover-status-topic", default=os.environ.get("ROVER_STATUS_TOPIC", "/rover/status"))
     parser.add_argument("--odom-topic", default=os.environ.get("ODOM_TOPIC", "/odom"))

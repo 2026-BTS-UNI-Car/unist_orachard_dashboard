@@ -1,5 +1,6 @@
 import json
 import math
+import struct
 import threading
 import time
 import unittest
@@ -20,6 +21,8 @@ from scripts.camera_ws_bridge import (
     VISION_TREE_CLASS,
     camera_info_payload,
     camera_info_image_provenance,
+    client_settings,
+    encode_binary_camera_frame,
     scale_overlay_geometry,
     status_payload,
     vision_inference_thread,
@@ -81,6 +84,35 @@ def assert_strict_ros_contract(testcase, payload):
 
 
 class CameraVisionBearingContractTests(unittest.TestCase):
+    def test_binary_camera_packet_removes_base64_and_preserves_metadata(self):
+        metadata = {"type": "frame", "frame_count": 42, "width": 640, "height": 480}
+        jpeg = b"\xff\xd8binary-jpeg\xff\xd9"
+
+        packet = encode_binary_camera_frame(metadata, jpeg)
+
+        self.assertEqual(packet[:4], b"UBCF")
+        self.assertEqual(packet[4], 1)
+        metadata_size = struct.unpack("!I", packet[5:9])[0]
+        decoded = json.loads(packet[9 : 9 + metadata_size].decode("utf-8"))
+        self.assertEqual(decoded, metadata)
+        self.assertEqual(packet[9 + metadata_size :], jpeg)
+        self.assertNotIn(b"base64", packet)
+
+    def test_camera_client_settings_negotiate_binary_decode_ack(self):
+        settings = client_settings(
+            "/ws/camera?resolution=640x480&fps=60&quality=70&transport=binary-v1&flow=decode-ack"
+        )
+        self.assertEqual(settings["transport"], "binary-v1")
+        self.assertEqual(settings["flow"], "decode-ack")
+        self.assertEqual(settings["quality"], 70)
+
+    def test_camera_client_settings_negotiate_two_credit_latest_ack(self):
+        settings = client_settings(
+            "/ws/camera?resolution=1280x720&fps=30&transport=binary-v1&flow=latest-ack"
+        )
+        self.assertEqual(settings["transport"], "binary-v1")
+        self.assertEqual(settings["flow"], "latest-ack")
+
     def test_ros_camera_info_numpy_arrays_do_not_require_boolean_coercion(self):
         message = SimpleNamespace(
             header=SimpleNamespace(
@@ -440,6 +472,7 @@ class CameraVisionBearingContractTests(unittest.TestCase):
         status = status_payload(
             state,
             image_topic="/camera/image_raw",
+            compressed_topic="/camera/image_jpeg",
             camera_info_topic="/camera/camera_info",
             vision_topic="/orchard/vision/tree_bearings",
             vision_hz=20.0,
@@ -453,6 +486,36 @@ class CameraVisionBearingContractTests(unittest.TestCase):
         self.assertEqual(publisher["last_payload"]["source"], "camera_ws_bridge_shared_worker_v4")
         self.assertEqual(publisher["coalescing"], "single_slot_newest_frame_no_backlog")
         self.assertEqual(publisher["input_policy"]["revision"], VISION_INFERENCE_INPUT_POLICY_REVISION)
+
+    def test_compressed_preview_is_reported_as_live_without_copying_raw_frame(self):
+        state = CameraState()
+        state.update_camera_info({"width": 1920, "height": 1080, "stamp_ns": 1_000_000_000})
+        jpeg = b"\xff\xd8compressed-preview\xff\xd9"
+        state.update_preview(
+            "camera_link_optical",
+            1,
+            0,
+            jpeg,
+            "bgr8; jpeg compressed bgr8; width=1280; height=720",
+        )
+
+        preview = state.preview_snapshot()
+        self.assertIs(preview["jpeg"], state.preview_jpeg)
+        self.assertEqual(preview["source_width"], 1280)
+        self.assertEqual(preview["source_height"], 720)
+        status = status_payload(
+            state,
+            image_topic="/camera/image_raw",
+            compressed_topic="/camera/image_jpeg",
+            camera_info_topic="/camera/camera_info",
+            vision_topic="/orchard/vision/tree_bearings",
+            vision_hz=5.0,
+            calibration_valid=False,
+        )
+        self.assertTrue(status["frame_topic_alive"])
+        self.assertTrue(status["compressed_frame_topic_alive"])
+        self.assertFalse(status["raw_frame_topic_alive"])
+        self.assertEqual(status["encoding"], "jpeg")
 
     def test_vision_loop_propagates_stale_camera_info_as_fail_closed_provenance(self):
         state = CameraState()

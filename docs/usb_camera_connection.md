@@ -6,7 +6,8 @@
 
 - 카메라 장치는 `ros2-camera-driver` 컨테이너가 단독으로 연다.
 - Dashboard server는 `/dev/video*`를 직접 열지 않는다.
-- Dashboard는 `ros2-camera-bridge`가 ROS2 `/camera/image_raw`를 구독해 WebSocket으로 변환한 JPEG 프레임만 표시한다.
+- Dashboard는 `ros2-camera-bridge`가 ROS2 `/camera/image_jpeg`를 구독해 재인코딩 없이 binary WebSocket으로 전달한 프레임만 표시한다.
+- `/camera/image_raw`는 source-native AI와 archive preview용으로 5 Hz latest-only 발행한다. 실시간 표시는 raw DDS 대역폭과 분리한다.
 - Connection 탭의 해상도/FPS 선택은 `runtime/camera_settings.json`에 저장되고, `ros2-camera-driver`가 실제 UVC 캡처 모드로 적용한다.
 
 ## 제품 기준 사양
@@ -19,7 +20,7 @@
 | 센서 | CMOS |
 | 포커스 | 고정 포커스 |
 | Linux 장치 | `/dev/video0`, `/dev/video1` 등 |
-| 활용 topic | `/camera/image_raw`, `/camera/camera_info` |
+| 활용 topic | `/camera/image_jpeg`, `/camera/image_raw`, `/camera/camera_info` |
 
 ## Jetson 인식 확인
 
@@ -37,10 +38,14 @@ Compose는 두 카메라 서비스를 실행한다.
 
 ```text
 ros2-camera-driver
-  /dev/video* -> ROS2 /camera/image_raw, /camera/camera_info
+  /dev/video* -> ROS2 /camera/image_jpeg, /camera/preview/camera_info (720p live preview)
+              -> ROS2 /camera/image_raw (source-native AI/archive, 5 Hz)
+              -> ROS2 /camera/camera_info
 
 ros2-camera-bridge
-  ROS2 /camera/image_raw -> ws://127.0.0.1:8770/ws/camera
+  ROS2 /camera/image_jpeg -> binary-v1/latest-ack WebSocket
+  ROS2 /camera/image_raw  -> source-native AI worker
+  ws://127.0.0.1:8770/ws/camera -> Dashboard proxy
 ```
 
 Dashboard는 `/ws/camera` 요청을 local camera bridge로 프록시한다. 브라우저가 `/connection` 페이지를 벗어나면 카메라 WebSocket은 자동으로 닫힌다.
@@ -69,11 +74,30 @@ Dashboard Connection 탭의 해상도와 FPS 선택지는 이 상태 파일의 `
 
 선택을 바꾸면 Dashboard가 `/api/camera/settings`로 `runtime/camera_settings.json`을 갱신한다. `ros2-camera-driver`는 이 파일 변경을 감지해 카메라를 닫고 새 width/height/fps/fourcc로 다시 연다.
 
-WebSocket bridge는 source와 output 해상도를 모두 보낸다. 정상 상태에서는 Dashboard caption의 `source` 값이 선택한 캡처 해상도와 일치해야 한다. 일치하지 않으면 UVC 장치가 요청 모드를 거부했거나 아직 재오픈 중인 상태다.
+WebSocket bridge는 표시용 압축 프레임과 캡처 상태를 분리한다. 기본 `CAMERA_COMPRESSED_PREVIEW_WIDTH=1280`이므로 1920x1080 캡처에서도 실시간 프레임은 1280x720이다. 실제 UVC 캡처 크기는 `runtime/camera_driver_status.json`의 `actual`에서 확인한다. AI는 축소 프리뷰가 아닌 `/camera/image_raw`의 선택된 캡처 해상도를 사용한다.
 
 브라우저/WebSocket output은 표시용 프리뷰다. 기본 AI 추론은 `ORCHARD_VISION_INFERENCE_WIDTH=0`으로 source/native frame을 사용하고, recorder는 별도의 `RECORDER_CAMERA_PREVIEW_WIDTH=640`으로 저장 JPEG만 축소한다. 따라서 화면이나 archive 용량을 줄이기 위해 프리뷰 폭을 바꿔도 AI 입력 해상도는 바뀌지 않는다. 추론 입력은 camera bridge가 단독 소유하므로 폭을 제한하려면 `ORCHARD_VISION_INFERENCE_WIDTH`만 명시적으로 설정한다. recorder는 공유된 bridge 결과를 sensor stamp로 매칭하며 독립 추론 설정을 갖지 않는다.
 
-camera bridge는 5 Hz의 latest-frame/coalescing 방식이다. worker가 200 ms보다 늦어져도 과거 frame queue를 순서대로 처리하지 않고 가장 최근 frame으로 교체하며, 누락 수와 실제 추론 입력 크기는 `runtime/camera_bridge_status.json`의 `vision_publisher`에서 확인한다.
+camera AI worker는 5 Hz의 latest-frame/coalescing 방식이다. worker가 200 ms보다 늦어져도 과거 frame queue를 순서대로 처리하지 않고 가장 최근 frame으로 교체하며, 누락 수와 실제 추론 입력 크기는 `runtime/camera_bridge_status.json`의 `vision_publisher`에서 확인한다. 실시간 표시 스트림은 이 AI 주기와 독립적으로 약 15 Hz까지 동작한다.
+
+## 실시간 전송 프로토콜
+
+2026-08-27부터 실시간 카메라는 다음 계약을 사용한다.
+
+- ROS2 `sensor_msgs/CompressedImage` JPEG를 브리지에서 다시 인코딩하지 않는다. `/camera/preview/camera_info`는 720p 프리뷰 크기와 짝을 이루며, source-native `/camera/camera_info`와 구분한다.
+- WebSocket 한 메시지는 `UBCF` magic, protocol version, compact JSON metadata, JPEG bytes 순서인 `binary-v1`이다.
+- base64 JSON 대비 약 33%의 인코딩 팽창과 매 프레임 data URL 생성을 제거한다.
+- `latest-ack`은 최대 두 프레임만 전송 중으로 허용한다. 브라우저는 이전 object URL을 즉시 폐기하고 최신 `<img>` 슬롯으로 교체하므로 오래된 프레임 backlog가 쌓이지 않는다.
+- 상태 JSON은 초당 한 번만 보내며, JPEG WebSocket compression은 끈다.
+
+Jetson 1920x1080 캡처, 1280x720 표시 프리뷰, quality 70에서 측정한 결과:
+
+| 경로 | 표시 수신률 | 평균 JPEG packet | 대역폭 | p95 frame gap |
+|---|---:|---:|---:|---:|
+| Jetson 직접 LAN | 14.91 fps | 37.06 KiB | 4.50 Mbps | 100.6 ms |
+| `bts.sarihub.com` Cloudflare | 12.56 fps | 37.24 KiB | 3.53 Mbps | 145.0 ms |
+
+동일한 공용 경로에서 1080p JPEG + 1-credit decode ACK는 4.15 fps였으므로, 표시 프리뷰 분리와 `latest-ack`을 함께 적용해야 한다.
 
 CameraInfo는 단순히 마지막 메시지를 재사용하지 않는다. `camera_info_image_header_integrity_v2` 계약이 image/CameraInfo의 `frame_id`, native width/height, sensor stamp gate, monotonic clock을 모두 검증하며, 하나라도 불일치하면 operator calibration flag가 켜져 있어도 `bearing_valid=false`로 닫힌다. status의 provenance reason과 regression count가 배포 smoke gate에도 포함된다.
 
@@ -97,13 +121,14 @@ dmesg -T | grep -Ei 'uvc|video|camera'
 
 ```bash
 ros2 topic list | grep camera
+ros2 topic hz /camera/image_jpeg
 ros2 topic hz /camera/image_raw
 ros2 topic echo /camera/camera_info --once
 ```
 
 정상 기준:
 
-- `/camera/image_raw`가 publish된다.
+- `/camera/image_jpeg`가 표시 속도로 publish되고 `/camera/image_raw`가 AI/기록 속도로 publish된다.
 - `/camera/camera_info.header.frame_id`는 `camera_link_optical`이다.
 - Dashboard Connection 탭의 Camera 상태가 `수신 중`으로 바뀐다.
 - Camera readout의 `Display FPS`는 누적 프레임 수가 아니라 최근 WebSocket 표시 속도다.

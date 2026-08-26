@@ -8,6 +8,7 @@ import base64
 import hashlib
 import re
 import secrets
+import shutil
 import socket
 import threading
 import time
@@ -386,6 +387,58 @@ class DashboardApiTest(unittest.TestCase):
             for child in root.glob("*"):
                 child.unlink(missing_ok=True)
             root.rmdir()
+
+    def test_archive_playback_sidecar_serves_binary_jpeg_without_base64_segment(self):
+        root = Path(__file__).resolve().parents[1] / "runtime" / "recordings" / "unit_playback_sidecar"
+        cache_root = Path(__file__).resolve().parents[1] / "runtime" / "playback_cache" / root.name
+        root.mkdir(parents=True, exist_ok=True)
+        jpeg = b"\xff\xd8unit-playback-jpeg\xff\xd9"
+        encoded = base64.b64encode(jpeg).decode("ascii")
+        try:
+            (root / "metadata.json").write_text(
+                json.dumps(
+                    {
+                        "id": root.name,
+                        "kind": "both",
+                        "duration_s": 8.0,
+                        "timeline": {"lidar_frames": 2, "camera_frames": 2, "imu_frames": 0, "sample_hz": 0.25},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "analysis.json").write_text("{}", encoding="utf-8")
+            (root / "preview_scan.json").write_text("{}", encoding="utf-8")
+            (root / "timeline.json").write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "duration_s": 8.0,
+                        "lidar": {"frames": [{"t_s": 0.0, "points": []}, {"t_s": 4.0, "points": []}]},
+                        "camera": {
+                            "frames": [
+                                {"t_s": 0.0, "mime": "image/jpeg", "data": encoded, "width": 16, "height": 9},
+                                {"t_s": 4.0, "mime": "image/jpeg", "data": encoded, "width": 16, "height": 9},
+                            ]
+                        },
+                        "imu": {"frames": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            segment = self.get_json(f"/api/recordings/{root.name}/timeline?start_s=0&duration_s=4")
+            playback = segment["timeline"]["playback"]
+            frame = segment["timeline"]["camera"]["frames"][0]
+            self.assertEqual(playback["revision"], "binary_jpeg_segment_sidecar_v1")
+            self.assertNotIn("data", frame)
+            self.assertIn("/camera-frame/frame-", frame["frame_url"])
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{frame['frame_url']}", timeout=3) as res:
+                self.assertEqual(res.headers.get("Content-Type"), "image/jpeg")
+                self.assertIn("immutable", res.headers.get("Cache-Control", ""))
+                self.assertEqual(res.read(), jpeg)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+            shutil.rmtree(cache_root, ignore_errors=True)
 
     def test_lidar_bridge_status_file_marks_scan_live(self):
         status_file = Path(__file__).resolve().parents[1] / "runtime" / "test_lidar_bridge_status.json"
@@ -824,6 +877,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("supported_view_modes", camera_driver_py)
         self.assertIn("settings_changed", camera_driver_py)
         self.assertIn("rotate_180", camera_driver_py)
+        self.assertIn('publisher_qos="best_effort_keep_last_1"', camera_driver_py)
+        self.assertIn("ReliabilityPolicy.BEST_EFFORT", camera_driver_py)
         self.assertNotIn("def _gpu_percent", telemetry_py)
         self.assertIn("source_max_points", lidar_bridge_py)
         self.assertIn("\"scan_received\"", lidar_bridge_py)

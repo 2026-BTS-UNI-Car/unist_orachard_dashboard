@@ -23,6 +23,8 @@ const CAMERA_RESOLUTION_KEY = "ubts-camera-resolution-v1";
 const CAMERA_FPS_KEY = "ubts-camera-fps-v1";
 const CAMERA_OVERLAY_MODE_KEY = "ubts-camera-overlay-mode-v1";
 const CAMERA_RECONNECT_DEBOUNCE_MS = 500;
+const CAMERA_BINARY_MAGIC = "UBCF";
+const CAMERA_BINARY_HEADER_SIZE = 9;
 const IMU_RECORD_ENABLED_KEY = "ubts-record-imu-enabled-v1";
 const ROVER_SPEED_KEY = "ubts-rover-speed-v1";
 const ROVER_FADE_START_KEY = "ubts-rover-fade-start-v1";
@@ -119,9 +121,14 @@ const state = {
     fps: 60,
     settingsInFlight: false,
     settingsError: "",
-    lastFrameAt: null,
-    lastOverlay: null,
-    lastFrameSize: null,
+	    lastFrameAt: null,
+	    lastOverlay: null,
+	    lastFrameSize: null,
+    transport: "binary-v1",
+    flow: "latest-ack",
+    objectUrl: "",
+    encodedBytes: 0,
+    encodeMs: null,
   },
   imuLive: {
     enabled: false,
@@ -1313,6 +1320,9 @@ function cameraWebSocketUrl() {
   const params = new URLSearchParams({
     resolution: state.cameraLive.resolution,
     fps: String(state.cameraLive.fps),
+    quality: "70",
+    transport: "binary-v1",
+    flow: "latest-ack",
   });
   if (window.UBTS_CAMERA_WS_URL) {
     const separator = String(window.UBTS_CAMERA_WS_URL).includes("?") ? "&" : "?";
@@ -1340,6 +1350,7 @@ function startCameraLive() {
   debugLog("camera", `connecting ${url}`);
   try {
     const socket = new WebSocket(url);
+    socket.binaryType = "arraybuffer";
     state.cameraLive.socket = socket;
     socket.addEventListener("open", () => {
       if (socket !== state.cameraLive.socket) return;
@@ -1354,7 +1365,15 @@ function startCameraLive() {
     });
     socket.addEventListener("message", (event) => {
       if (socket !== state.cameraLive.socket || !routeSupportsCameraLive()) return;
-      handleCameraLiveMessage(event.data);
+      if (typeof event.data === "string") {
+        handleCameraLiveMessage(event.data);
+      } else {
+        handleCameraLiveBinaryMessage(event.data, socket).catch((err) => {
+          state.cameraLive.error = err?.message || "잘못된 Camera binary frame";
+          debugLog("camera", "binary frame error", err);
+          renderCameraLiveState();
+        });
+      }
     });
     socket.addEventListener("error", (event) => {
       if (socket !== state.cameraLive.socket) return;
@@ -1406,6 +1425,10 @@ function closeCameraLive(message = "disconnected", options = {}) {
   state.cameraLive.error = "";
   state.cameraLive.pendingRestart = false;
   if (socket) closeSocketAfterConnect(socket, message);
+  if (state.cameraLive.objectUrl) {
+    URL.revokeObjectURL(state.cameraLive.objectUrl);
+    state.cameraLive.objectUrl = "";
+  }
   debugLog("camera", `stopped: ${message}`);
   renderCameraLiveState(message);
 }
@@ -1485,6 +1508,25 @@ function handleCameraLiveMessage(raw) {
     renderCameraLiveState();
     return;
   }
+  handleCameraLivePayload(payload);
+}
+
+async function handleCameraLiveBinaryMessage(raw, socket) {
+  const buffer = raw instanceof ArrayBuffer ? raw : await raw.arrayBuffer();
+  if (buffer.byteLength <= CAMERA_BINARY_HEADER_SIZE) throw new Error("camera binary frame is truncated");
+  const bytes = new Uint8Array(buffer);
+  const magic = String.fromCharCode(...bytes.slice(0, 4));
+  const version = bytes[4];
+  if (magic !== CAMERA_BINARY_MAGIC || version !== 1) throw new Error("camera binary protocol mismatch");
+  const metadataLength = new DataView(buffer).getUint32(5, false);
+  const jpegOffset = CAMERA_BINARY_HEADER_SIZE + metadataLength;
+  if (metadataLength <= 0 || jpegOffset >= buffer.byteLength) throw new Error("camera binary metadata is invalid");
+  const metadata = JSON.parse(new TextDecoder().decode(bytes.slice(CAMERA_BINARY_HEADER_SIZE, jpegOffset)));
+  const blob = new Blob([bytes.slice(jpegOffset)], { type: metadata.mime || "image/jpeg" });
+  handleCameraLivePayload(metadata, { blob, socket });
+}
+
+function handleCameraLivePayload(payload, binary = null) {
   if (payload.type === "status") {
     state.cameraLive.frameTopicAlive = Boolean(payload.frame_topic_alive);
     state.cameraLive.lastFrameAgeSec = payload.last_frame_age_sec;
@@ -1493,6 +1535,8 @@ function handleCameraLiveMessage(raw) {
     state.cameraLive.sourceWidth = payload.source_width;
     state.cameraLive.sourceHeight = payload.source_height;
     state.cameraLive.frameId = payload.frame_id || state.cameraLive.frameId;
+    state.cameraLive.transport = payload.transport || state.cameraLive.transport;
+    state.cameraLive.flow = payload.flow || state.cameraLive.flow;
     state.cameraLive.error = payload.error || (payload.frame_topic_alive === false ? "ROS2 /camera/image_raw 대기" : "");
     if (payload.error) debugLog("camera", "status", payload);
     if (!payload.frame_topic_alive) setCameraResult("testing", payload.error || "ROS2 카메라 프레임 수신 대기");
@@ -1514,13 +1558,21 @@ function handleCameraLiveMessage(raw) {
       width: Number(payload.width || payload.source_width || 0),
       height: Number(payload.height || payload.source_height || 0),
     };
+    state.cameraLive.transport = payload.transport || (binary ? "binary-v1" : "json-base64");
+    state.cameraLive.flow = payload.flow || state.cameraLive.flow;
+    state.cameraLive.encodedBytes = Number(payload.encoded_bytes || binary?.blob?.size || 0);
+    state.cameraLive.encodeMs = Number.isFinite(Number(payload.encode_ms)) ? Number(payload.encode_ms) : null;
     const overlayError = cameraOverlayErrorText(payload.overlay);
     state.cameraLive.error = overlayError;
-    const src = payload.data ? `data:${payload.mime || "image/jpeg"};base64,${payload.data}` : "";
-    const image = $("cameraLiveImage");
-    const roverImage = $("roverCameraImage");
-    if (image && src) image.src = src;
-    if (roverImage && src) roverImage.src = src;
+    if (binary?.blob) {
+      displayBinaryCameraFrame(binary.blob, payload, binary.socket);
+    } else {
+      const src = payload.data ? `data:${payload.mime || "image/jpeg"};base64,${payload.data}` : "";
+      const image = $("cameraLiveImage");
+      const roverImage = $("roverCameraImage");
+      if (image && src) image.src = src;
+      if (roverImage && src) roverImage.src = src;
+    }
     const source = payload.source_width && payload.source_height ? `${payload.source_width}x${payload.source_height}` : "--";
     const output = payload.width && payload.height ? `${payload.width}x${payload.height}` : state.cameraLive.resolution;
     const rate = state.cameraLive.sourceFps || state.cameraLive.displayFps || state.cameraLive.fps;
@@ -1537,8 +1589,57 @@ function handleCameraLiveMessage(raw) {
   }
   if (payload.type === "socket") {
     state.cameraLive.error = payload.ok ? "" : payload.message || "socket status error";
+    state.cameraLive.transport = payload.transport || state.cameraLive.transport;
+    state.cameraLive.flow = payload.flow || state.cameraLive.flow;
     debugLog("camera", "socket", payload);
     renderCameraLiveState();
+  }
+}
+
+function displayBinaryCameraFrame(blob, payload, socket) {
+  const targets = [$("cameraLiveImage"), $("roverCameraImage")].filter(Boolean);
+  const url = URL.createObjectURL(blob);
+  const previousUrl = state.cameraLive.objectUrl;
+  state.cameraLive.objectUrl = url;
+  if (payload.flow === "latest-ack") {
+    if (previousUrl) URL.revokeObjectURL(previousUrl);
+    for (const image of targets) image.src = url;
+    acknowledgeCameraFrame(socket, payload.frame_count);
+    return;
+  }
+  if (!targets.length) {
+    if (previousUrl) URL.revokeObjectURL(previousUrl);
+    acknowledgeCameraFrame(socket, payload.frame_count);
+    return;
+  }
+  let remaining = targets.length;
+  let settled = false;
+  const finish = () => {
+    remaining -= 1;
+    if (remaining > 0 || settled) return;
+    settled = true;
+    if (previousUrl) URL.revokeObjectURL(previousUrl);
+    acknowledgeCameraFrame(socket, payload.frame_count);
+  };
+  for (const image of targets) {
+    image.onload = finish;
+    image.onerror = finish;
+    image.src = url;
+  }
+  window.setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    if (previousUrl) URL.revokeObjectURL(previousUrl);
+    acknowledgeCameraFrame(socket, payload.frame_count);
+  }, 500);
+}
+
+function acknowledgeCameraFrame(socket, frameCount) {
+  if (socket !== state.cameraLive.socket || socket?.readyState !== WebSocket.OPEN) return;
+  try {
+    socket.send(JSON.stringify({ type: "frame_ack", frame_count: Number(frameCount) || 0 }));
+  } catch (err) {
+    debugLog("camera", "frame ack failed", err);
   }
 }
 
@@ -4555,7 +4656,7 @@ function mergeArchiveTimelineSegment(timeline) {
 
 function archiveFrameKey(frame, kind) {
   const stamp = frame?.stamp ? `${frame.stamp.sec || 0}.${frame.stamp.nanosec || 0}` : "";
-  const size = kind === "camera" ? String(frame?.data || "").length : (frame?.points || []).length;
+  const size = kind === "camera" ? String(frame?.frame_url || frame?.data || "").length : (frame?.points || []).length;
   return `${kind}:${Number(frame?.t_s || 0).toFixed(3)}:${stamp}:${size}`;
 }
 
@@ -4611,6 +4712,7 @@ async function loadArchiveTimelineSegment(id, startS, durationS, options = {}) {
 }
 
 function archiveCameraFrameSrc(frame) {
+  if (frame?.frame_url) return String(frame.frame_url);
   if (!frame?.data) return "";
   const cache = state.archivePlayback.cache;
   const key = frame.cacheKey || `${frame.index}:${String(frame.data).length}`;

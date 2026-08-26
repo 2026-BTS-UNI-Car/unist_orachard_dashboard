@@ -555,6 +555,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not raw:
             self.send_error(404, "Recording id required")
             return
+        if "/camera-frame/" in raw:
+            recording_id, filename = raw.split("/camera-frame/", 1)
+            frame = self.provider.recording_camera_frame(unquote(recording_id), unquote(filename))
+            if not frame:
+                self.send_error(404, "Recording camera frame not found")
+                return
+            self._send_recording_camera_frame(frame)
+            return
         if raw.endswith("/video"):
             recording_id = unquote(raw.removesuffix("/video").strip("/"))
             video = self.provider.recording_video(recording_id)
@@ -583,6 +591,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.recording_orchard_map(recording_id))
             return
         self._send_json(self.provider.recording_detail(unquote(raw)))
+
+    def _send_recording_camera_frame(self, frame: dict[str, object]):
+        path = frame.get("path")
+        if not isinstance(path, Path):
+            self.send_error(404, "Recording camera frame not found")
+            return
+        try:
+            body = path.read_bytes()
+        except OSError:
+            self.send_error(404, "Recording camera frame not found")
+            return
+        etag = f'"{frame.get("etag") or path.stem}"'
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "private, max-age=86400, immutable")
+            self.end_headers()
+            return
+        session_token = self._ensure_session(create=True)
+        self.send_response(200)
+        self.send_header("Content-Type", str(frame.get("mime") or "image/jpeg"))
+        self.send_header("Cache-Control", "private, max-age=86400, immutable")
+        self.send_header("ETag", etag)
+        self.send_header("Content-Length", str(len(body)))
+        self._send_session_cookie(session_token)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _send_recording_video(self, video: dict[str, object]):
         path = video.get("path")

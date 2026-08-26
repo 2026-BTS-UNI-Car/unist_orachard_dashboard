@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import http.client
 import ipaddress
 import json
@@ -39,6 +41,9 @@ DEFAULT_ROVER_BRIDGE_STATUS_FILE = ROOT / "runtime" / "rover_bridge_status.json"
 DEFAULT_ROVER_COMMAND_FILE = ROOT / "runtime" / "rover_command.json"
 DEFAULT_DATA_RECORDER_STATUS_FILE = ROOT / "runtime" / "data_recorder_status.json"
 DEFAULT_RECORDING_ARCHIVE_DIR = ROOT / "runtime" / "recordings"
+PLAYBACK_CACHE_SCHEMA = "orchard.timeline.playback_cache.v1"
+PLAYBACK_CACHE_REVISION = "binary_jpeg_segment_sidecar_v1"
+PLAYBACK_SEGMENT_SECONDS = 4.0
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_CAMERA_VIEW_MODES = [
     {"resolution": "1920x1080", "width": 1920, "height": 1080, "fps": [30], "label": "1080p 16:9"},
@@ -162,6 +167,15 @@ class TelemetryProvider:
         self.data_recorder_status_file = recorder_status_file if recorder_status_file.is_absolute() else ROOT / recorder_status_file
         archive_dir = Path(os.environ.get("RECORDING_ARCHIVE_DIR", str(DEFAULT_RECORDING_ARCHIVE_DIR)))
         self.recording_archive_dir = archive_dir if archive_dir.is_absolute() else ROOT / archive_dir
+        playback_cache_dir = Path(
+            os.environ.get(
+                "RECORDING_PLAYBACK_CACHE_DIR",
+                str(self.recording_archive_dir.parent / "playback_cache"),
+            )
+        )
+        self.recording_playback_cache_dir = (
+            playback_cache_dir if playback_cache_dir.is_absolute() else ROOT / playback_cache_dir
+        )
         self.recorder_api_url = os.environ.get("RECORDER_API_URL", "http://127.0.0.1:8790").rstrip("/")
         self.rover_network_enabled = _env_bool("ROVER_NETWORK_ENABLED", False)
         self.network_control_enabled = _env_bool("NETWORK_CONTROL_ENABLED", False)
@@ -185,6 +199,7 @@ class TelemetryProvider:
         self._timeline_cache: OrderedDict[str, tuple[int, int, dict[str, Any]]] = OrderedDict()
         self._timeline_cache_lock = threading.RLock()
         self._timeline_cache_limit = max(1, int(os.environ.get("ARCHIVE_TIMELINE_CACHE_COUNT", "2")))
+        self._playback_cache_lock = threading.RLock()
         self._rover_status_cache: dict[str, Any] | None = None
         self._rover_status_next_refresh = 0.0
         self._rover_status_timeout_s = max(0.1, float(os.environ.get("ROVER_STATUS_TIMEOUT_S", "0.35")))
@@ -841,6 +856,14 @@ class TelemetryProvider:
     def stop_recording(self) -> dict[str, Any]:
         result = self._recorder_post("/stop", {})
         if result.get("ok"):
+            recording_id = str(result.get("recording_id") or "")
+            if recording_id:
+                threading.Thread(
+                    target=self._prewarm_playback_cache,
+                    args=(recording_id,),
+                    daemon=True,
+                    name=f"playback-cache-{recording_id[:32]}",
+                ).start()
             return result
         return {"ok": False, "state": "recorder_unavailable", "error": result.get("error"), "status": self.recording_status()}
 
@@ -1003,12 +1026,209 @@ class TelemetryProvider:
         path = self.recording_archive_path(recording_id)
         if path is None or not path.exists():
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
-        timeline = self._load_recording_timeline(path / "timeline.json")
+        timeline_path = path / "timeline.json"
+        playback_request = self._playback_segment_request(start_s, duration_s)
+        if playback_request is not None:
+            cached_segment = self._cached_playback_segment(path, timeline_path, playback_request)
+            if cached_segment:
+                return {"ok": True, "timeline": cached_segment}
+        timeline = self._load_recording_timeline(timeline_path)
         if not timeline:
             return {"ok": False, "error": "timeline_not_found", "id": recording_id}
         if start_s is not None or duration_s is not None:
+            if playback_request is not None:
+                cached_segment = self._build_playback_cache(path, timeline_path, timeline, playback_request)
+                if cached_segment:
+                    self._drop_timeline_cache(timeline_path)
+                    return {"ok": True, "timeline": cached_segment}
             return {"ok": True, "timeline": self._recording_timeline_segment(timeline, start_s, duration_s)}
         return {"ok": True, "timeline": timeline}
+
+    def recording_camera_frame(self, recording_id: str, filename: str) -> dict[str, Any] | None:
+        if not re.fullmatch(r"frame-[0-9a-f]{24}\.jpg", str(filename or "")):
+            return None
+        archive = self.recording_archive_path(recording_id)
+        if archive is None or not archive.is_dir():
+            return None
+        timeline_path = archive / "timeline.json"
+        cache_dir = self._playback_cache_path(archive, timeline_path)
+        if cache_dir is None:
+            return None
+        path = (cache_dir / "frames" / filename).resolve()
+        try:
+            frame_root = (cache_dir / "frames").resolve()
+            if frame_root not in path.parents or not path.is_file():
+                return None
+        except OSError:
+            return None
+        return {
+            "path": path,
+            "mime": "image/jpeg",
+            "bytes": path.stat().st_size,
+            "etag": filename.removeprefix("frame-").removesuffix(".jpg"),
+        }
+
+    def _playback_segment_request(self, start_s: Any, duration_s: Any) -> tuple[float, int] | None:
+        if start_s is None or duration_s is None:
+            return None
+        try:
+            start = max(0.0, float(start_s))
+            duration = float(duration_s)
+        except (TypeError, ValueError):
+            return None
+        if abs(duration - PLAYBACK_SEGMENT_SECONDS) > 0.001:
+            return None
+        index = int(round(start / PLAYBACK_SEGMENT_SECONDS))
+        if abs(start - index * PLAYBACK_SEGMENT_SECONDS) > 0.001:
+            return None
+        return start, index
+
+    def _playback_source_signature(self, timeline_path: Path) -> tuple[int, int] | None:
+        try:
+            stat = timeline_path.stat()
+        except OSError:
+            return None
+        return stat.st_mtime_ns, stat.st_size
+
+    def _playback_cache_path(self, archive: Path, timeline_path: Path) -> Path | None:
+        signature = self._playback_source_signature(timeline_path)
+        if signature is None:
+            return None
+        token = f"{signature[0]}-{signature[1]}-{PLAYBACK_CACHE_REVISION}"
+        return self.recording_playback_cache_dir / archive.name / token
+
+    def _valid_playback_manifest(self, cache_dir: Path, timeline_path: Path) -> dict[str, Any] | None:
+        manifest = _load_json(cache_dir / "manifest.json")
+        signature = self._playback_source_signature(timeline_path)
+        if (
+            not manifest
+            or signature is None
+            or manifest.get("schema") != PLAYBACK_CACHE_SCHEMA
+            or manifest.get("revision") != PLAYBACK_CACHE_REVISION
+            or manifest.get("source_mtime_ns") != signature[0]
+            or manifest.get("source_bytes") != signature[1]
+            or float(manifest.get("segment_duration_s") or 0.0) != PLAYBACK_SEGMENT_SECONDS
+        ):
+            return None
+        return manifest
+
+    def _cached_playback_segment(
+        self,
+        archive: Path,
+        timeline_path: Path,
+        request: tuple[float, int],
+    ) -> dict[str, Any] | None:
+        cache_dir = self._playback_cache_path(archive, timeline_path)
+        if cache_dir is None or self._valid_playback_manifest(cache_dir, timeline_path) is None:
+            return None
+        _, index = request
+        return _load_json(cache_dir / "segments" / f"segment-{index:06d}.json") or None
+
+    def _build_playback_cache(
+        self,
+        archive: Path,
+        timeline_path: Path,
+        timeline: dict[str, Any],
+        request: tuple[float, int],
+    ) -> dict[str, Any] | None:
+        with self._playback_cache_lock:
+            cached = self._cached_playback_segment(archive, timeline_path, request)
+            if cached:
+                return cached
+            cache_dir = self._playback_cache_path(archive, timeline_path)
+            signature = self._playback_source_signature(timeline_path)
+            if cache_dir is None or signature is None:
+                return None
+            frames_dir = cache_dir / "frames"
+            segments_dir = cache_dir / "segments"
+            frames_dir.mkdir(parents=True, exist_ok=True)
+            segments_dir.mkdir(parents=True, exist_ok=True)
+            duration = float(timeline.get("duration_s") or 0.0)
+            if duration <= 0.0:
+                all_frames = [
+                    *(timeline.get("lidar", {}).get("frames", []) or []),
+                    *(timeline.get("camera", {}).get("frames", []) or []),
+                    *((timeline.get("imu") or {}).get("frames", []) or []),
+                ]
+                duration = max((float(frame.get("t_s") or 0.0) for frame in all_frames), default=0.0)
+            segment_count = max(1, int(math.ceil(max(0.001, duration) / PLAYBACK_SEGMENT_SECONDS)))
+            camera_files: set[str] = set()
+            for index in range(segment_count):
+                start = index * PLAYBACK_SEGMENT_SECONDS
+                segment = self._recording_timeline_segment(timeline, start, PLAYBACK_SEGMENT_SECONDS)
+                for frame in segment.get("camera", {}).get("frames", []):
+                    encoded = frame.get("data")
+                    if not encoded:
+                        continue
+                    try:
+                        jpeg = base64.b64decode(encoded, validate=True)
+                    except (ValueError, TypeError):
+                        continue
+                    frame.pop("data", None)
+                    digest = hashlib.sha256(jpeg).hexdigest()[:24]
+                    filename = f"frame-{digest}.jpg"
+                    frame_path = frames_dir / filename
+                    if not frame_path.exists():
+                        tmp_path = frame_path.with_suffix(".jpg.tmp")
+                        tmp_path.write_bytes(jpeg)
+                        tmp_path.replace(frame_path)
+                    camera_files.add(filename)
+                    frame["frame_url"] = (
+                        f"/api/recordings/{archive.name}/camera-frame/{filename}"
+                        f"?v={signature[0]}-{signature[1]}"
+                    )
+                    frame["transport"] = "binary-jpeg-http-cache-v1"
+                segment["playback"] = {
+                    "schema": PLAYBACK_CACHE_SCHEMA,
+                    "revision": PLAYBACK_CACHE_REVISION,
+                    "segment_duration_s": PLAYBACK_SEGMENT_SECONDS,
+                    "camera_transport": "binary-jpeg-http-cache-v1",
+                    "source_timeline_preserved": True,
+                }
+                segment_path = segments_dir / f"segment-{index:06d}.json"
+                tmp_segment = segment_path.with_suffix(".json.tmp")
+                tmp_segment.write_text(
+                    json.dumps(segment, ensure_ascii=False, separators=(",", ":"), allow_nan=False),
+                    encoding="utf-8",
+                )
+                tmp_segment.replace(segment_path)
+            manifest = {
+                "schema": PLAYBACK_CACHE_SCHEMA,
+                "revision": PLAYBACK_CACHE_REVISION,
+                "recording_id": archive.name,
+                "source_mtime_ns": signature[0],
+                "source_bytes": signature[1],
+                "segment_duration_s": PLAYBACK_SEGMENT_SECONDS,
+                "segment_count": segment_count,
+                "camera_file_count": len(camera_files),
+                "created_at": time.time(),
+                "source_timeline_preserved": True,
+            }
+            _write_json_atomic(cache_dir / "manifest.json", manifest)
+            return self._cached_playback_segment(archive, timeline_path, request)
+
+    def _drop_timeline_cache(self, timeline_path: Path) -> None:
+        try:
+            key = str(timeline_path.resolve())
+        except OSError:
+            key = str(timeline_path)
+        with self._timeline_cache_lock:
+            self._timeline_cache.pop(key, None)
+
+    def _prewarm_playback_cache(self, recording_id: str) -> None:
+        archive = self.recording_archive_path(recording_id)
+        if archive is None or not archive.is_dir():
+            return
+        timeline_path = archive / "timeline.json"
+        timeline = self._load_recording_timeline(timeline_path)
+        if not timeline:
+            return
+        try:
+            self._build_playback_cache(archive, timeline_path, timeline, (0.0, 0))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            return
+        finally:
+            self._drop_timeline_cache(timeline_path)
 
     def recording_orchard_map(self, recording_id: str) -> dict[str, Any]:
         path = self.recording_archive_path(recording_id)

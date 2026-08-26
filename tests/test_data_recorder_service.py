@@ -53,7 +53,9 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
             vision_topic="/orchard/vision/tree_bearings",
             scan_topic="/scan",
             camera_topic="/camera/image_raw",
+            camera_compressed_topic="/camera/image_jpeg",
             camera_info_topic="/camera/camera_info",
+            camera_preview_info_topic="/camera/preview/camera_info",
         )
         state = RecordingState(args)
         with state.lock:
@@ -226,6 +228,10 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
             self.assertIn("/imu/data_raw", topics)
             self.assertIn("/imu/data", topics)
             self.assertIn("/imu/mag", topics)
+            self.assertIn("/camera/image_raw", topics)
+            self.assertIn("/camera/image_jpeg", topics)
+            self.assertIn("/camera/camera_info", topics)
+            self.assertIn("/camera/preview/camera_info", topics)
 
     def test_imu_can_be_explicitly_disabled_but_default_contract_is_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

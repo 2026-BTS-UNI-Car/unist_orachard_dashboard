@@ -16,7 +16,8 @@ from typing import Any, Iterable
 import cv2
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo, Image
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import CameraInfo, CompressedImage, Image
 
 
 USBDEVFS_RESET = 21780
@@ -279,8 +280,19 @@ class UsbCameraDriver(Node):
         self.request_fourcc = str(initial_mode["fourcc"])
         self.settings_mtime_ns: int | None = None
         self.next_settings_check_at = 0.0
-        self.image_pub = self.create_publisher(Image, args.image_topic, 10)
-        self.info_pub = self.create_publisher(CameraInfo, args.camera_info_topic, 10)
+        # Camera images are real-time sensor samples, not a reliable work queue.
+        # KEEP_LAST(1) + BEST_EFFORT prevents multi-megabyte raw frames from
+        # accumulating behind a slow dashboard/recorder subscriber.
+        sensor_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self.image_pub = self.create_publisher(Image, args.image_topic, sensor_qos)
+        self.compressed_pub = self.create_publisher(CompressedImage, args.compressed_topic, sensor_qos)
+        self.info_pub = self.create_publisher(CameraInfo, args.camera_info_topic, sensor_qos)
+        self.preview_info_pub = self.create_publisher(CameraInfo, args.preview_camera_info_topic, sensor_qos)
         self.cap: cv2.VideoCapture | None = None
         self.device = ""
         self.actual_width: int | None = None
@@ -288,6 +300,10 @@ class UsbCameraDriver(Node):
         self.actual_fps: float | None = None
         self.fail_count = 0
         self.frame_count = 0
+        self.raw_frame_count = 0
+        self.compressed_frame_count = 0
+        self.last_raw_publish_at = 0.0
+        self.last_compressed_encode_ms: float | None = None
         self.last_error: str | None = None
         self.last_recovery: dict[str, Any] | None = None
         self.recovery_count = 0
@@ -302,12 +318,18 @@ class UsbCameraDriver(Node):
         log(
             "start",
             image_topic=args.image_topic,
+            compressed_topic=args.compressed_topic,
             camera_info_topic=args.camera_info_topic,
+            preview_camera_info_topic=args.preview_camera_info_topic,
             width=self.request_width,
             height=self.request_height,
             fps=self.request_fps,
             frame_id=args.frame_id,
             rotate_180=args.rotate_180,
+            publisher_qos="best_effort_keep_last_1",
+            raw_publish_fps=args.raw_publish_fps,
+            compressed_jpeg_quality=args.compressed_jpeg_quality,
+            compressed_preview_width=args.compressed_preview_width,
             auto_usb_recover=args.auto_usb_recover,
             status_file=args.status_file,
             settings_file=args.settings_file,
@@ -357,6 +379,14 @@ class UsbCameraDriver(Node):
             "default_view_modes": DEFAULT_VIEW_MODES,
             "settings_file": str(self.settings_file) if self.settings_file else None,
             "frame_count": self.frame_count,
+            "raw_frame_count": self.raw_frame_count,
+            "compressed_frame_count": self.compressed_frame_count,
+            "raw_publish_fps": self.args.raw_publish_fps,
+            "compressed_topic": self.args.compressed_topic,
+            "preview_camera_info_topic": self.args.preview_camera_info_topic,
+            "compressed_jpeg_quality": self.args.compressed_jpeg_quality,
+            "compressed_preview_width": self.args.compressed_preview_width,
+            "last_compressed_encode_ms": self.last_compressed_encode_ms,
             "fail_count": self.fail_count,
             "last_error": self.last_error,
             "last_recovery": self.last_recovery,
@@ -497,6 +527,9 @@ class UsbCameraDriver(Node):
             self.device = path
             self.fail_count = 0
             self.frame_count = 0
+            self.raw_frame_count = 0
+            self.compressed_frame_count = 0
+            self.last_raw_publish_at = 0.0
             self.last_publish_at = 0.0
             self.last_error = None
             self.actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or frame.shape[1])
@@ -577,19 +610,53 @@ class UsbCameraDriver(Node):
         self.last_publish_at = time.time()
         stamp = self.get_clock().now().to_msg()
         height, width = frame.shape[:2]
-        image = Image()
-        image.header.stamp = stamp
-        image.header.frame_id = self.frame_id
-        image.height = height
-        image.width = width
-        image.encoding = "bgr8"
-        image.is_bigendian = 0
-        image.step = width * 3
-        image.data = frame.tobytes()
-        info = estimate_camera_info(width, height, self.frame_id, self.args.fov_deg)
-        info.header.stamp = stamp
-        self.image_pub.publish(image)
-        self.info_pub.publish(info)
+        preview = frame
+        preview_width = min(width, max(320, int(self.args.compressed_preview_width)))
+        if preview_width < width:
+            preview_height = max(1, int(round(height * preview_width / width)))
+            preview = cv2.resize(frame, (preview_width, preview_height), interpolation=cv2.INTER_AREA)
+        else:
+            preview_height = height
+        encode_started = time.perf_counter()
+        ok, encoded = cv2.imencode(
+            ".jpg",
+            preview,
+            [int(cv2.IMWRITE_JPEG_QUALITY), max(40, min(92, int(self.args.compressed_jpeg_quality)))],
+        )
+        self.last_compressed_encode_ms = round((time.perf_counter() - encode_started) * 1000.0, 2)
+        if ok:
+            compressed = CompressedImage()
+            compressed.header.stamp = stamp
+            compressed.header.frame_id = self.frame_id
+            compressed.format = f"bgr8; jpeg compressed bgr8; width={preview_width}; height={preview_height}"
+            compressed.data = encoded.tobytes()
+            self.compressed_pub.publish(compressed)
+            self.compressed_frame_count += 1
+            preview_info = estimate_camera_info(preview_width, preview_height, self.frame_id, self.args.fov_deg)
+            preview_info.header.stamp = stamp
+            self.preview_info_pub.publish(preview_info)
+
+        # Raw BGR remains available for source-native AI and archive previews,
+        # but is deliberately bounded. Live viewing consumes the high-rate
+        # compressed ROS2 topic, avoiding roughly 6 MiB of DDS traffic per
+        # 1080p frame.
+        raw_interval = 1.0 / max(0.1, float(self.args.raw_publish_fps))
+        if self.raw_frame_count == 0 or self.last_publish_at - self.last_raw_publish_at >= raw_interval:
+            image = Image()
+            image.header.stamp = stamp
+            image.header.frame_id = self.frame_id
+            image.height = height
+            image.width = width
+            image.encoding = "bgr8"
+            image.is_bigendian = 0
+            image.step = width * 3
+            image.data = frame.tobytes()
+            self.image_pub.publish(image)
+            info = estimate_camera_info(width, height, self.frame_id, self.args.fov_deg)
+            info.header.stamp = stamp
+            self.info_pub.publish(info)
+            self.raw_frame_count += 1
+            self.last_raw_publish_at = self.last_publish_at
         self.frame_count += 1
 
     def destroy_node(self):
@@ -602,7 +669,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Publish a UVC USB camera as ROS2 Image and CameraInfo.")
     parser.add_argument("--device", default=os.environ.get("CAMERA_DEVICE", "auto"))
     parser.add_argument("--image-topic", default=os.environ.get("CAMERA_IMAGE_TOPIC", "/camera/image_raw"))
+    parser.add_argument("--compressed-topic", default=os.environ.get("CAMERA_COMPRESSED_TOPIC", "/camera/image_jpeg"))
     parser.add_argument("--camera-info-topic", default=os.environ.get("CAMERA_INFO_TOPIC", "/camera/camera_info"))
+    parser.add_argument(
+        "--preview-camera-info-topic",
+        default=os.environ.get("CAMERA_PREVIEW_INFO_TOPIC", "/camera/preview/camera_info"),
+    )
     parser.add_argument("--frame-id", default=os.environ.get("CAMERA_FRAME_ID", "camera_link_optical"))
     parser.add_argument("--width", type=int, default=int(os.environ.get("CAMERA_WIDTH", "1280")))
     parser.add_argument("--height", type=int, default=int(os.environ.get("CAMERA_HEIGHT", "720")))
@@ -613,6 +685,17 @@ def main() -> int:
     parser.add_argument("--status-file", default=os.environ.get("CAMERA_DRIVER_STATUS_FILE", "/app/runtime/camera_driver_status.json"))
     parser.add_argument("--settings-file", default=os.environ.get("CAMERA_SETTINGS_FILE", "/app/runtime/camera_settings.json"))
     parser.add_argument("--max-tick-fps", type=float, default=float(os.environ.get("CAMERA_MAX_TICK_FPS", "60")))
+    parser.add_argument("--raw-publish-fps", type=float, default=float(os.environ.get("CAMERA_RAW_PUBLISH_FPS", "5")))
+    parser.add_argument(
+        "--compressed-jpeg-quality",
+        type=int,
+        default=int(os.environ.get("CAMERA_COMPRESSED_JPEG_QUALITY", "70")),
+    )
+    parser.add_argument(
+        "--compressed-preview-width",
+        type=int,
+        default=int(os.environ.get("CAMERA_COMPRESSED_PREVIEW_WIDTH", "1280")),
+    )
     parser.add_argument("--status-interval-s", type=float, default=float(os.environ.get("CAMERA_DRIVER_STATUS_INTERVAL_S", "0.5")))
     parser.add_argument("--open-retry-interval-s", type=float, default=float(os.environ.get("CAMERA_OPEN_RETRY_INTERVAL_S", "1.0")))
     parser.add_argument("--wait-log-interval-s", type=float, default=float(os.environ.get("CAMERA_WAIT_LOG_INTERVAL_S", "8.0")))
@@ -621,6 +704,9 @@ def main() -> int:
     parser.add_argument("--usb-recover-max-interval-s", type=float, default=float(os.environ.get("CAMERA_USB_RECOVER_MAX_INTERVAL_S", "120.0")))
     parser.add_argument("--authorized-cycle-every", type=int, default=int(os.environ.get("CAMERA_AUTHORIZED_CYCLE_EVERY", "3")))
     args = parser.parse_args()
+    args.raw_publish_fps = max(0.1, min(30.0, float(args.raw_publish_fps)))
+    args.compressed_jpeg_quality = max(40, min(92, int(args.compressed_jpeg_quality)))
+    args.compressed_preview_width = max(320, min(3840, int(args.compressed_preview_width)))
     rclpy.init()
     node = UsbCameraDriver(args)
     try:
