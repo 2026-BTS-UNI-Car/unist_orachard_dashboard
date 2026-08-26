@@ -167,7 +167,7 @@ DOCS_CATALOG = [
         "slug": "jetson-offline-access-20260827",
         "title": "Jetson 오프라인 Wi-Fi 접속",
         "category": "Network",
-        "summary": "실제 보드 네트워크 판정, USB Wi-Fi AP, 로컬 DNS, Dashboard·SSH·Portainer 접속 계약",
+        "summary": "단일 무선랜 Wi-Fi/AP 자동 전환, 로컬 DNS, Dashboard·SSH·Portainer 접속 계약",
         "file": "jetson_offline_access_20260827.md",
     },
     {
@@ -314,6 +314,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.start_recording(payload))
         elif path == "/api/recordings/stop":
             self._send_json(self.provider.stop_recording())
+        elif path == "/api/imu/zero":
+            self._send_json(self.provider.zero_imu())
+        elif path == "/api/network/mode":
+            payload = self._read_json_body()
+            self._send_json(self.provider.set_network_mode(payload))
         elif path.startswith("/rover-proxy/") or path == "/rover-proxy":
             self._proxy_rover_request(parsed)
         elif path == "/api/fan/mode":

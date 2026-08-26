@@ -952,6 +952,24 @@ h2 {
   min-width: 0;
 }
 
+.network-mode-panel {
+  margin-bottom: 18px;
+}
+
+.network-mode-actions {
+  grid-template-columns: repeat(2, minmax(130px, auto));
+  justify-content: start;
+  justify-items: stretch;
+  margin-top: 14px;
+}
+
+.network-mode-panel .control-note {
+  display: block;
+  margin-top: 10px;
+  color: var(--dim);
+  line-height: 1.55;
+}
+
 .imu-attitude-stage {
   position: relative;
   overflow: hidden;

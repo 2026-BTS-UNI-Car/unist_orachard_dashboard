@@ -126,6 +126,7 @@ class RecordingState:
         self.imu_recording_raw_count = 0
         self.imu_corrected_published_count = 0
         self.imu_timeline_count = 0
+        self.imu_calibration_events: list[dict[str, Any]] = []
         self.next_imu_sample_at = 0.0
         self.write_status("start")
 
@@ -178,6 +179,7 @@ class RecordingState:
                     "latest_corrected": dict(self.imu_latest_corrected),
                     "latest_magnetic": dict(self.imu_latest_magnetic),
                     "calibration": self.imu_calibrator.status(),
+                    "calibration_events": copy.deepcopy(self.imu_calibration_events),
                 },
                 "camera_pipeline": {
                     "input_policy_revision": VISION_INFERENCE_INPUT_POLICY_REVISION,
@@ -353,10 +355,19 @@ class RecordingState:
             self.imu_recording_raw_count = 0
             self.imu_corrected_published_count = 0
             self.imu_timeline_count = 0
+            self.imu_calibration_events = []
             self.next_imu_sample_at = 0.0
             started_steady = time.monotonic()
             if include_imu:
                 self.imu_calibrator.begin(recording_id, now_monotonic=started_steady)
+                self.imu_calibration_events.append(
+                    {
+                        "event": "recording_start_stationary_calibration_requested",
+                        "recording_id": recording_id,
+                        "t_s": 0.0,
+                        "at": iso_now(),
+                    }
+                )
             else:
                 self.imu_calibrator.reset()
             self.active = {
@@ -474,6 +485,7 @@ class RecordingState:
                 "sample_hz": float(self.args.imu_timeline_hz),
                 "frames": list(self.imu_frames),
                 "calibration": self.imu_calibrator.status(),
+                "calibration_events": copy.deepcopy(self.imu_calibration_events),
                 "raw_received_count": self.imu_recording_raw_count,
                 "corrected_published_count": self.imu_corrected_published_count,
             },
@@ -590,9 +602,9 @@ class RecordingState:
     def observe_imu(self, msg: Imu) -> dict[str, Any] | None:
         """Consume only the ROS 2 raw IMU topic and return a corrected sample.
 
-        The Dashboard never opens I2C.  A corrected sample is returned only
-        while an IMU-enabled recording is active and the start-stationary gate
-        has completed successfully.
+        The Dashboard never opens I2C. A corrected sample is returned whenever
+        an operator/manual or recording-start reference is valid. Timeline
+        sampling remains limited to an active IMU-enabled recording.
         """
 
         now_epoch = time.time()
@@ -646,15 +658,28 @@ class RecordingState:
             self.imu_last_received_monotonic = now_steady
             self.imu_raw_received_count += 1
             active = dict(self.active or {})
-            if not active or not active.get("include_imu", True) or active.get("stopping"):
-                return None
-            self.imu_recording_raw_count += 1
-            self.imu_calibrator.observe(raw, now_monotonic=now_steady)
+            recording_imu_active = bool(
+                active and active.get("include_imu", True) and not active.get("stopping")
+            )
+            if recording_imu_active:
+                self.imu_recording_raw_count += 1
+                was_ready = self.imu_calibrator.ready
+                self.imu_calibrator.observe(raw, now_monotonic=now_steady)
+                if not was_ready and self.imu_calibrator.ready:
+                    self.imu_calibration_events.append(
+                        {
+                            "event": "recording_start_stationary_calibration_completed",
+                            "recording_id": active.get("id"),
+                            "t_s": round(now_epoch - float(active.get("started_monotonic", now_epoch)), 6),
+                            "at": iso_now(),
+                            "calibration": copy.deepcopy(self.imu_calibrator.calibration),
+                        }
+                    )
             corrected = self.imu_calibrator.correct(raw)
             if corrected:
                 self.imu_latest_corrected = corrected
                 self.imu_corrected_published_count += 1
-            if now_steady >= self.next_imu_sample_at:
+            if recording_imu_active and now_steady >= self.next_imu_sample_at:
                 self.next_imu_sample_at = now_steady + 1.0 / max(0.1, float(self.args.imu_timeline_hz))
                 magnetic = dict(self.imu_latest_magnetic)
                 magnetic_age_s = None
@@ -677,10 +702,70 @@ class RecordingState:
                     ),
                     "magnetic_age_s": round(magnetic_age_s, 6) if magnetic_age_s is not None else None,
                     "calibration_state": self.imu_calibrator.status(now_steady)["state"],
+                    "calibration_reference_id": corrected.get("calibration_reference_id") if corrected else None,
+                    "calibration_source": corrected.get("calibration_source") if corrected else None,
                 }
                 self.append_imu_limited(frame)
                 self.imu_timeline_count += 1
             return copy.deepcopy(corrected)
+
+    def zero_imu(self) -> dict[str, Any]:
+        now_epoch = time.time()
+        now_steady = time.monotonic()
+        with self.lock:
+            raw = copy.deepcopy(self.imu_latest_raw)
+            sample_age_s = (
+                None
+                if self.imu_last_received_monotonic is None
+                else max(0.0, now_steady - self.imu_last_received_monotonic)
+            )
+            if not raw or sample_age_s is None or sample_age_s > 1.0:
+                return {
+                    "ok": False,
+                    "state": "imu_unavailable",
+                    "error": "A fresh ROS2 /imu/data_raw sample is required.",
+                    "sample_age_s": sample_age_s,
+                }
+            active = dict(self.active or {})
+            reference_id = str(active.get("id") or f"manual-{int(now_epoch * 1000)}")
+            calibration = self.imu_calibrator.zero_from_sample(
+                raw,
+                reference_id=reference_id,
+                now_monotonic=now_steady,
+            )
+            if calibration is None:
+                return {
+                    "ok": False,
+                    "state": "invalid_imu_sample",
+                    "error": self.imu_calibrator.last_rejection_reason,
+                }
+            event = {
+                "event": "dashboard_manual_zero",
+                "recording_id": active.get("id"),
+                "t_s": (
+                    round(now_epoch - float(active.get("started_monotonic", now_epoch)), 6)
+                    if active
+                    else None
+                ),
+                "at": iso_now(),
+                "reference_id": reference_id,
+                "reference_euler_deg": copy.deepcopy(calibration.get("reference_euler_deg") or {}),
+            }
+            self.imu_calibration_events.append(event)
+            corrected = self.imu_calibrator.correct(raw)
+            if corrected:
+                self.imu_latest_corrected = corrected
+        self.write_status("dashboard_manual_imu_zero")
+        return {
+            "ok": True,
+            "state": "zeroed",
+            "message": "Current ROS2 IMU pose is now the zero reference.",
+            "sample_age_s": round(sample_age_s, 4),
+            "reference_id": reference_id,
+            "reference_euler_deg": calibration.get("reference_euler_deg"),
+            "corrected": corrected,
+            "recording_active": bool(active),
+        }
 
     def observe_magnetic(self, msg: MagneticField) -> None:
         try:
@@ -1189,6 +1274,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(self.state.start(str(payload.get("kind") or ""), include_imu=include_imu))
         elif self.path == "/stop":
             self.send_json(self.state.stop())
+        elif self.path == "/imu/zero":
+            self.send_json(self.state.zero_imu())
         else:
             self.send_error(404, "Not found")
 

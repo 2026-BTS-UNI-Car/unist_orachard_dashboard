@@ -121,6 +121,35 @@ class ImuStartReferenceTests(unittest.TestCase):
         self.assertAlmostEqual(covariance["y"], 0.0, places=12)
         self.assertGreater(covariance["z"], 0.0)
 
+    def test_dashboard_manual_zero_makes_current_pose_identity_immediately(self):
+        calibrator = self.make_calibrator()
+        reference = quaternion_from_euler(-22.0, 11.0, 73.0)
+        calibration = calibrator.zero_from_sample(
+            sample(reference, gyro=(0.03, -0.01, 0.02)),
+            reference_id="manual-test",
+            now_monotonic=42.0,
+        )
+        self.assertIsNotNone(calibration)
+        self.assertTrue(calibration["manual_zero"])
+        self.assertFalse(calibration["covariance_estimated"])
+        corrected = calibrator.correct(sample(reference, gyro=(0.03, -0.01, 0.02)))
+        self.assertIsNotNone(corrected)
+        for axis in ("roll", "pitch", "yaw"):
+            self.assertAlmostEqual(corrected["euler_deg"][axis], 0.0, places=5)
+        self.assertEqual(corrected["calibration_source"], "dashboard_manual_zero")
+        self.assertEqual(corrected["calibration_reference_id"], "manual-test")
+        self.assertEqual(calibrator.status(now_monotonic=420.0)["stationary_span_s"], 0.0)
+
+    def test_dashboard_manual_zero_rejects_invalid_sample(self):
+        calibrator = self.make_calibrator()
+        calibration = calibrator.zero_from_sample(
+            sample((0.0, 0.0, 0.0, 0.0)),
+            reference_id="bad-manual-test",
+        )
+        self.assertIsNone(calibration)
+        self.assertFalse(calibrator.ready)
+        self.assertEqual(calibrator.last_rejection_reason, "manual_zero_malformed_or_non_finite")
+
 
 if __name__ == "__main__":
     unittest.main()

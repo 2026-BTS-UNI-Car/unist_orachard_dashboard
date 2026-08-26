@@ -137,6 +137,9 @@ const state = {
     error: "",
     userStopped: false,
     reconnectTimer: null,
+    zeroInFlight: false,
+    zeroState: "idle",
+    zeroMessage: "ROS2 IMU 연결 후 현재 자세를 0점으로 설정할 수 있습니다.",
   },
   cameraModes: DEFAULT_CAMERA_MODES,
   cameraModesSignature: JSON.stringify(DEFAULT_CAMERA_MODES),
@@ -212,6 +215,11 @@ const state = {
   apiLogCounter: 0,
   tickInFlight: false,
   telemetryFailures: 0,
+  networkControl: {
+    actionInFlight: false,
+    message: "네트워크 제어 상태를 확인하고 있습니다.",
+    level: "testing",
+  },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1011,6 +1019,7 @@ function renderTelemetry(data) {
   text("networkInternalIp", net.primary_ipv4 || "--");
   text("networkInternalIpText", [net.primary_interface, net.hostname].filter(Boolean).join(" · ") || "host route");
   text("networkThroughput", `${fmtBps(net.total_rx_bps)} RX · ${fmtBps(net.total_tx_bps)} TX`);
+  renderNetworkMode(net.control || {});
 
   text("dockerContainerCount", docker.available ? docker.summary?.total ?? "--" : "N/A");
   text("dockerRunningText", docker.available ? `${docker.summary?.running || 0} running · ${docker.summary?.stopped || 0} stopped` : docker.error || "--");
@@ -1040,6 +1049,78 @@ function renderTelemetry(data) {
   renderContainers(docker);
   maybeRefreshContainerDetail();
   renderChartReadouts(data);
+}
+
+function networkModeLabel(control) {
+  if (control.ethernet_connected && control.ap_active) return "Ethernet + AP";
+  if (control.transition === "wifi_scan") return "Wi-Fi 검색 중";
+  if (control.transition === "ap_start") return "AP 전환 중";
+  if (control.ap_active) return "AP";
+  if (control.wifi_connected) return "Wi-Fi";
+  return control.enabled === false ? "비활성화" : control.state || "연결 없음";
+}
+
+function renderNetworkMode(control) {
+  const mode = networkModeLabel(control);
+  text("networkModeTag", mode);
+  const tag = $("networkModeTag");
+  if (tag) tag.className = `tag ${control.ok ? "ok" : ""}`.trim();
+  const countdown = Number(control.seconds_until_auto_switch);
+  const countdownText = Number.isFinite(countdown)
+    ? `${Math.ceil(countdown)}초 후 자동 전환`
+    : control.controls_locked_reason === "ethernet_keeps_ap_active"
+      ? "Ethernet 연결로 AP 상시 유지"
+      : "자동 전환 대기";
+  const colors = chartColors();
+  renderReadout("networkModeReadout", [
+    { label: "Mode", value: mode, sub: control.connection || control.transition || "--", color: colors.cyan },
+    { label: "AP", value: control.ap_ssid || "BTS_Jetson", sub: control.ap_address || "10.77.0.1", color: colors.blue },
+    { label: "AP clients", value: control.ap_clients ?? 0, sub: countdownText, color: colors.good },
+    { label: "Ethernet", value: control.ethernet_connected ? "connected" : "not connected", sub: control.last_error || control.reason || "--", color: control.ethernet_connected ? colors.good : colors.amber },
+  ]);
+  const apButton = $("networkEnableApButton");
+  const wifiButton = $("networkScanWifiButton");
+  if (apButton) apButton.disabled = state.networkControl.actionInFlight || !control.can_request_ap;
+  if (wifiButton) wifiButton.disabled = state.networkControl.actionInFlight || !control.can_request_wifi;
+  const result = $("networkModeResult");
+  if (result) {
+    result.className = `test-result ${state.networkControl.level}`.trim();
+    result.textContent = control.last_error || state.networkControl.message;
+  }
+}
+
+async function requestNetworkMode(action) {
+  if (state.networkControl.actionInFlight) return;
+  const isAp = action === "ap";
+  const warning = isAp
+    ? "Jetson의 현재 Wi-Fi 인터넷을 끊고 BTS_Jetson AP로 전환합니다. 계속할까요?"
+    : "BTS_Jetson AP를 끄고 저장된 Wi-Fi를 최대 1분간 검색합니다. 계속할까요?";
+  if (!window.confirm(warning)) return;
+  state.networkControl.actionInFlight = true;
+  state.networkControl.level = "testing";
+  state.networkControl.message = isAp ? "AP 전환 요청을 전달했습니다." : "저장된 Wi-Fi 검색 요청을 전달했습니다.";
+  renderNetworkMode(state.telemetry?.network?.control || {});
+  try {
+    const result = await postJson("/api/network/mode", {
+      action,
+      confirm: isAp ? "disconnect_wifi_and_enable_ap" : "leave_ap_and_scan_known_wifi",
+    });
+    state.networkControl.level = result.ok ? "ok" : "bad";
+    state.networkControl.message = result.ok
+      ? "요청이 승인되었습니다. 전환 중에는 이 페이지 연결이 잠시 끊길 수 있습니다."
+      : result.error || "네트워크 전환 요청이 거부되었습니다.";
+  } catch (err) {
+    state.networkControl.level = "testing";
+    state.networkControl.message = "연결이 종료되었습니다. AP/Wi-Fi 전환 상태를 다시 확인하세요.";
+  } finally {
+    state.networkControl.actionInFlight = false;
+    renderNetworkMode(state.telemetry?.network?.control || {});
+  }
+}
+
+function initNetworkControls() {
+  $("networkEnableApButton")?.addEventListener("click", () => requestNetworkMode("ap"));
+  $("networkScanWifiButton")?.addEventListener("click", () => requestNetworkMode("wifi"));
 }
 
 async function runLidarTest() {
@@ -1517,6 +1598,27 @@ function toggleImuLive() {
   startImuLive();
 }
 
+async function zeroImuReference() {
+  if (state.imuLive.zeroInFlight || !state.imuLive.topicAlive) return;
+  state.imuLive.zeroInFlight = true;
+  state.imuLive.zeroState = "testing";
+  state.imuLive.zeroMessage = "현재 ROS2 IMU 자세를 영점으로 적용하는 중입니다.";
+  renderImuLiveState();
+  try {
+    const result = await postJson("/api/imu/zero", {});
+    state.imuLive.zeroState = result.ok ? "ok" : "bad";
+    state.imuLive.zeroMessage = result.ok
+      ? "현재 자세가 새 IMU 영점으로 적용되었습니다."
+      : result.error || "IMU 영점 적용에 실패했습니다.";
+  } catch (err) {
+    state.imuLive.zeroState = "bad";
+    state.imuLive.zeroMessage = err.message || "IMU 영점 적용에 실패했습니다.";
+  } finally {
+    state.imuLive.zeroInFlight = false;
+    renderImuLiveState();
+  }
+}
+
 function imuWebSocketUrl() {
   if (window.UBTS_IMU_WS_URL) return String(window.UBTS_IMU_WS_URL);
   const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -1636,6 +1738,16 @@ function renderImuLiveState(overrideLabel) {
   if (button) {
     button.textContent = state.imuLive.connected ? "IMU 중지" : "IMU 시작";
     button.classList.toggle("active", state.imuLive.connected && state.imuLive.topicAlive);
+  }
+  const zeroButton = $("roverImuZeroButton");
+  if (zeroButton) {
+    zeroButton.disabled = state.imuLive.zeroInFlight || !state.imuLive.topicAlive;
+    zeroButton.textContent = state.imuLive.zeroInFlight ? "영점 적용 중" : "현재 자세 영점";
+  }
+  const zeroResult = $("roverImuZeroResult");
+  if (zeroResult) {
+    zeroResult.className = `test-result ${state.imuLive.zeroState === "idle" ? "" : state.imuLive.zeroState}`.trim();
+    zeroResult.textContent = state.imuLive.zeroMessage;
   }
   text("roverImuCaption", statusLabel);
   text("roverImuHeading", Number.isFinite(yaw) ? `${fmtNumber(yaw, 1)}°` : "--°");
@@ -3655,6 +3767,7 @@ function initRoverControl() {
   $("roverCameraToggle")?.addEventListener("click", toggleCameraLive);
   $("roverLidarToggle")?.addEventListener("click", toggleLidarLive);
   $("roverImuToggle")?.addEventListener("click", toggleImuLive);
+  $("roverImuZeroButton")?.addEventListener("click", zeroImuReference);
   $("roverRecordImuToggle")?.addEventListener("change", (event) => setRecordingImuEnabled(event.target.checked, true));
   $("roverRecordStartButton")?.addEventListener("click", () => startRecording(state.recordings.kind));
   document.querySelectorAll("[data-record-kind]").forEach((button) => {
@@ -5863,6 +5976,7 @@ initLidarTest();
 initCameraLive();
 initFanControls();
 initDockerControls();
+initNetworkControls();
 initRoverControl();
 renderRoute();
 loadPlan().catch(console.error);

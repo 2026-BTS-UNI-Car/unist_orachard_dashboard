@@ -164,6 +164,8 @@ class TelemetryProvider:
         self.recording_archive_dir = archive_dir if archive_dir.is_absolute() else ROOT / archive_dir
         self.recorder_api_url = os.environ.get("RECORDER_API_URL", "http://127.0.0.1:8790").rstrip("/")
         self.rover_network_enabled = _env_bool("ROVER_NETWORK_ENABLED", False)
+        self.network_control_enabled = _env_bool("NETWORK_CONTROL_ENABLED", False)
+        self.network_mode_helper = os.environ.get("NETWORK_MODE_HELPER", "/usr/local/sbin/ubts-network-mode")
         self.host_root = Path(os.environ.get("HOST_ROOT", "/host-root"))
         if not self.host_root.exists():
             self.host_root = Path("/")
@@ -306,7 +308,88 @@ class TelemetryProvider:
             "external_ip_error": self._external_ip_error,
             "total_rx_bps": round(sum(iface["rx_bps"] for iface in traffic_interfaces), 1),
             "total_tx_bps": round(sum(iface["tx_bps"] for iface in traffic_interfaces), 1),
+            "control": self.network_control_status(),
         }
+
+    def network_control_status(self) -> dict[str, Any]:
+        if not self.network_control_enabled:
+            return {
+                "ok": False,
+                "enabled": False,
+                "state": "disabled",
+                "can_request_ap": False,
+                "can_request_wifi": False,
+            }
+        result = self._network_mode_command("status")
+        result.setdefault("enabled", True)
+        return result
+
+    def set_network_mode(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self.network_control_enabled:
+            return {"ok": False, "state": "disabled", "error": "Network control is disabled."}
+        action = str(payload.get("action") or "").strip().lower()
+        confirmations = {
+            "ap": "disconnect_wifi_and_enable_ap",
+            "wifi": "leave_ap_and_scan_known_wifi",
+        }
+        if action not in confirmations:
+            return {"ok": False, "state": "bad_action", "error": "action must be ap or wifi"}
+        if str(payload.get("confirm") or "") != confirmations[action]:
+            return {"ok": False, "state": "confirmation_required", "action": action}
+        result = self._network_mode_command(f"request-{action}")
+        result["requested_action"] = action
+        return result
+
+    def _network_mode_command(self, command: str) -> dict[str, Any]:
+        if command not in {"status", "request-ap", "request-wifi"}:
+            return {"ok": False, "state": "bad_command"}
+        helper = Path(self.network_mode_helper)
+        host_helper = self.host_root / str(helper).lstrip("/")
+        nsenter = shutil.which("nsenter")
+        if self.host_root == Path("/") and helper.exists():
+            argv = [str(helper), command, "--json"]
+            runner = "host"
+        elif nsenter and host_helper.exists():
+            argv = [
+                nsenter,
+                "-t",
+                "1",
+                "-m",
+                "-u",
+                "-i",
+                "-n",
+                "-p",
+                "--",
+                str(helper),
+                command,
+                "--json",
+            ]
+            runner = "nsenter"
+        else:
+            return {
+                "ok": False,
+                "enabled": True,
+                "state": "helper_unavailable",
+                "error": f"Host helper not found: {helper}",
+            }
+        try:
+            proc = subprocess.run(argv, check=False, capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {"ok": False, "enabled": True, "state": "helper_error", "error": str(exc)}
+        output = (proc.stdout or "").strip().splitlines()
+        try:
+            result = json.loads(output[-1]) if output else {}
+        except json.JSONDecodeError:
+            result = {}
+        if not isinstance(result, dict):
+            result = {}
+        result.setdefault("ok", proc.returncode == 0)
+        result.setdefault("state", "ok" if proc.returncode == 0 else "helper_failed")
+        if proc.returncode != 0 and not result.get("error"):
+            result["error"] = (proc.stderr or proc.stdout or f"exit {proc.returncode}").strip()[:500]
+        result["enabled"] = True
+        result["runner"] = runner
+        return result
 
     def docker(self) -> dict[str, Any]:
         if not Path(self.docker_socket).exists():
@@ -744,6 +827,16 @@ class TelemetryProvider:
         if result.get("ok"):
             return result
         return {"ok": False, "state": "recorder_unavailable", "error": result.get("error"), "status": self.recording_status()}
+
+    def zero_imu(self) -> dict[str, Any]:
+        result = self._recorder_post("/imu/zero", {})
+        if result.get("ok"):
+            return result
+        return {
+            "ok": False,
+            "state": result.get("state", "recorder_unavailable"),
+            "error": result.get("error", "IMU zero request failed"),
+        }
 
     def stop_recording(self) -> dict[str, Any]:
         result = self._recorder_post("/stop", {})

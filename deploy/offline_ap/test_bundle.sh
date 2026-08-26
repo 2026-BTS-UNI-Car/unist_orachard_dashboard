@@ -49,14 +49,17 @@ fi
 
 printf '%s\n' 'Testing nginx configuration without network access or host listeners...'
 docker run --rm --network none \
-  --user 101:101 \
   --cap-drop ALL \
   --cap-add NET_BIND_SERVICE \
+  --cap-add CHOWN \
+  --cap-add DAC_OVERRIDE \
+  --cap-add SETUID \
+  --cap-add SETGID \
   --security-opt no-new-privileges:true \
   --entrypoint /opt/ubts-offline-ap/render-and-run.sh \
-  --tmpfs /etc/nginx/conf.d:uid=101,gid=101,mode=0755 \
+  --tmpfs /etc/nginx/conf.d:uid=0,gid=0,mode=0755 \
   --tmpfs /var/cache/nginx:uid=101,gid=101,mode=0755 \
-  --tmpfs /var/run:uid=101,gid=101,mode=0755 \
+  --tmpfs /var/run:uid=0,gid=0,mode=0755 \
   --tmpfs /tmp:uid=101,gid=101,mode=1777 \
   -e AP_ADDRESS=127.0.0.1 \
   -e PORTAINER_TLS_NAME=localhost \

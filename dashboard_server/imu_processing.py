@@ -152,6 +152,89 @@ class StartReferenceCalibrator:
         self.recording_id = str(recording_id)
         self.started_monotonic = float(now_monotonic if now_monotonic is not None else time.monotonic())
 
+    def zero_from_sample(
+        self,
+        sample: dict[str, Any],
+        *,
+        reference_id: str,
+        now_monotonic: float | None = None,
+    ) -> dict[str, Any] | None:
+        """Make the supplied pose the current body-frame zero immediately.
+
+        This operator action is deliberately distinct from the recording-start
+        stationary estimator: it uses one current sample, records that fact in
+        provenance, and never claims a statistically estimated covariance.
+        """
+
+        now = float(now_monotonic if now_monotonic is not None else time.monotonic())
+        quaternion = normalize_quaternion(
+            (
+                (sample.get("orientation") or {}).get("x"),
+                (sample.get("orientation") or {}).get("y"),
+                (sample.get("orientation") or {}).get("z"),
+                (sample.get("orientation") or {}).get("w"),
+            )
+        )
+        gyro = _xyz_tuple(sample.get("angular_velocity") or {})
+        accel = _xyz_tuple(sample.get("linear_acceleration") or {})
+        if quaternion is None or gyro is None or accel is None:
+            self.last_rejection_reason = "manual_zero_malformed_or_non_finite"
+            return None
+
+        self.reset()
+        self.recording_id = str(reference_id)
+        self.started_monotonic = now
+        reference_yaw = yaw_quaternion(quaternion)
+        sensor_to_body = quaternion_multiply(quaternion_conjugate(reference_yaw), quaternion)
+        reference_euler = quaternion_to_euler_deg(quaternion)
+        accel_body = rotate_vector(sensor_to_body, accel)
+        self.samples = [
+            {
+                "received_monotonic": now,
+                "quaternion": quaternion,
+                "gyro": gyro,
+                "accel": accel,
+                "accel_norm": math.sqrt(sum(value * value for value in accel)),
+            }
+        ]
+        self.calibration = {
+            "schema": IMU_CALIBRATION_SCHEMA,
+            "revision": IMU_CALIBRATION_REVISION,
+            "valid": True,
+            "recording_id": self.recording_id,
+            "sample_count": 1,
+            "stationary_span_s": 0.0,
+            "completed_monotonic": now,
+            "source": "dashboard_manual_zero",
+            "manual_zero": True,
+            "assumption": "operator_selected_current_pose_as_body_frame_zero",
+            "heading_policy": "manual_reference_roll_pitch_yaw_zero",
+            "raw_orientation_convention": "bno085_rotation_vector_sensor_native_requires_mount_validation",
+            "reference_quaternion": _quaternion_dict(quaternion),
+            "reference_euler_deg": {key: round(value, 6) for key, value in reference_euler.items()},
+            "sensor_to_body_quaternion": _quaternion_dict(sensor_to_body),
+            "reference_yaw_quaternion": _quaternion_dict(reference_yaw),
+            "gyro_bias_rad_s": _vector_dict(gyro),
+            "gyro_bias_frame": "sensor_native_single_sample",
+            "gyro_variance": _vector_dict((0.0, 0.0, 0.0)),
+            "accel_variance": _vector_dict((0.0, 0.0, 0.0)),
+            "covariance_frame": "imu_link_manual_reference",
+            "covariance_estimated": False,
+            "accel_norm_mean_m_s2": round(math.sqrt(sum(value * value for value in accel)), 8),
+            "accel_norm_std_m_s2": None,
+            "reference_acceleration_body_m_s2": _vector_dict(accel_body),
+            "stationarity_thresholds": None,
+            "rejected_sample_count": 0,
+            "window_reset_count": 0,
+            "mapping_ready": False,
+            "mapping_blockers": [
+                "manual_zero_is_not_a_stationary_covariance_estimate",
+                "imu_to_base_link_extrinsic_not_independently_measured",
+                "time_alignment_and_wheel_odometry_not_validated",
+            ],
+        }
+        return dict(self.calibration)
+
     @property
     def ready(self) -> bool:
         return bool(self.calibration and self.calibration.get("valid"))
@@ -302,6 +385,8 @@ class StartReferenceCalibrator:
             },
             "calibration_valid": True,
             "calibration_revision": IMU_CALIBRATION_REVISION,
+            "calibration_source": self.calibration.get("source", "recording_start_stationary_window"),
+            "calibration_reference_id": self.recording_id,
         }
 
     def correct_magnetic(self, magnetic: dict[str, Any]) -> dict[str, float] | None:
@@ -316,7 +401,9 @@ class StartReferenceCalibrator:
     def status(self, now_monotonic: float | None = None) -> dict[str, Any]:
         now = float(now_monotonic if now_monotonic is not None else time.monotonic())
         span = 0.0
-        if self.samples:
+        if self.ready and self.calibration is not None:
+            span = max(0.0, float(self.calibration.get("stationary_span_s") or 0.0))
+        elif self.samples:
             span = max(0.0, now - float(self.samples[0]["received_monotonic"]))
         return {
             "schema": IMU_CALIBRATION_SCHEMA,

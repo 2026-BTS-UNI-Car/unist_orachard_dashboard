@@ -231,6 +231,28 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
             self.assertNotIn("/imu/data_raw", state.topics_for("both", include_imu=False))
             self.assertIn("/imu/data_raw", state.topics_for("camera"))
 
+    def test_dashboard_manual_imu_zero_works_without_active_recording(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state = self.make_state(tmp)
+            with state.lock:
+                state.active = None
+            state.observe_imu(self.imu_message())
+            result = state.zero_imu()
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["state"], "zeroed")
+            self.assertFalse(result["recording_active"])
+            corrected = state.observe_imu(self.imu_message())
+            self.assertIsNotNone(corrected)
+            self.assertAlmostEqual(corrected["euler_deg"]["roll"], 0.0, places=6)
+            self.assertEqual(corrected["calibration_source"], "dashboard_manual_zero")
+
+    def test_dashboard_manual_imu_zero_fails_closed_without_fresh_sample(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state = self.make_state(tmp)
+            result = state.zero_imu()
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["state"], "imu_unavailable")
+
 
 if __name__ == "__main__":
     unittest.main()

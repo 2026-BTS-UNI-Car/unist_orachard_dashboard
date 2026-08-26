@@ -441,6 +441,23 @@
             </article>
           </section>
 
+          <section class="panel network-mode-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Jetson Wi-Fi mode</p>
+                <h2>오프라인 AP / 저장된 Wi-Fi</h2>
+              </div>
+              <span id="networkModeTag" class="tag">확인 중</span>
+            </div>
+            <div id="networkModeReadout" class="chart-readout"></div>
+            <div class="panel-actions network-mode-actions">
+              <button id="networkEnableApButton" class="action-button primary" type="button" disabled>AP 전환</button>
+              <button id="networkScanWifiButton" class="action-button secondary" type="button" disabled>Wi-Fi 검색</button>
+            </div>
+            <div id="networkModeResult" class="test-result">네트워크 제어 상태를 확인하고 있습니다.</div>
+            <small class="control-note">AP: BTS_Jetson · 클라이언트가 1분 없으면 저장된 Wi-Fi를 1분간 검색한 뒤 다시 AP로 복귀합니다.</small>
+          </section>
+
           <section class="dashboard-grid">
             <article class="panel chart-panel wide">
               <div class="panel-head">
@@ -709,7 +726,10 @@
                   <p class="eyebrow">Live ROS 2</p>
                   <h2>IMU</h2>
                 </div>
-                <button id="roverImuToggle" class="action-button secondary" type="button">IMU 시작</button>
+                <div class="panel-actions">
+                  <button id="roverImuZeroButton" class="action-button secondary" type="button" disabled>현재 자세 영점</button>
+                  <button id="roverImuToggle" class="action-button secondary" type="button">IMU 시작</button>
+                </div>
               </div>
               <div class="imu-attitude-stage">
                 <canvas id="roverImuCanvas" class="imu-attitude-canvas" width="520" height="280"></canvas>
@@ -721,6 +741,7 @@
                 <span id="roverImuCalibrationState" class="tag">idle</span>
               </div>
               <div id="roverImuStats" class="chart-readout"></div>
+              <div id="roverImuZeroResult" class="test-result">ROS2 IMU 연결 후 현재 자세를 0점으로 설정할 수 있습니다.</div>
             </article>
 
             <article class="panel rover-drive-panel">

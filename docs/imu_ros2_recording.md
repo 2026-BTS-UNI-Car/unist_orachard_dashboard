@@ -14,7 +14,7 @@ flowchart LR
   DRIVER -->|sensor_msgs/MagneticField| MAG[/imu/mag]
   RAW --> REC[ros2-data-recorder]
   MAG --> REC
-  REC -->|녹화 시작 정지 구간 보정| CORR[/imu/data]
+  REC -->|녹화 시작 정지 구간 또는 수동 영점| CORR[/imu/data]
   REC --> CAL[/orchard/imu/calibration]
   RAW --> BRIDGE[ros2-imu-bridge]
   MAG --> BRIDGE
@@ -77,6 +77,28 @@ accel_corrected(t) = rotate(q_mount, accel_raw(t))
 
 이 방식의 핵심 가정은 **차량 자체는 녹화 시작 순간 수평이고 정지했으며, 센서 장착만 기울어져 있다**는 것이다. 경사면에서 시작하면 경사까지 장착 오차로 흡수되므로 별도 외부보정 전에는 절대 자세로 해석하면 안 된다.
 
+## Dashboard 수동 IMU 영점
+
+Dashboard의 `현재 자세를 0점으로` 버튼은 최신 `/imu/data_raw` 표본의 quaternion을
+즉시 기준으로 삼는다. 녹화 중이 아니어도 적용되며 이후 `/imu/data` 보정 스트림은
+계속 발행된다. 버튼 직후의 보정 quaternion은 identity이고 roll/pitch/yaw는 모두 0이다.
+
+```text
+q_reference = q_raw(t_button)
+q_reference_yaw = yaw_only(q_reference)
+q_mount = inverse(q_reference_yaw) ⊗ q_reference
+q_corrected(t) = inverse(q_reference_yaw) ⊗ q_raw(t) ⊗ inverse(q_mount)
+gyro_bias = gyro_raw(t_button)
+gyro_corrected(t) = rotate(q_mount, gyro_raw(t) - gyro_bias)
+```
+
+단일 표본 영점은 운영자가 선택한 현재 자세를 로컬 body frame으로 정의하는 기능이지,
+정지 창 기반 통계 보정을 대체하지 않는다. 따라서 manual calibration에는
+`source=dashboard_manual_zero`, `manual_zero=true`, `covariance_estimated=false`를
+기록하고 `mapping_ready=false`를 유지한다. 녹화 중 버튼을 누르면 영점 이벤트와
+reference id가 archive calibration event에 포함된다. 녹화 시작 시에는 기존 설계대로
+새 정지 창을 수집해 해당 recording 전용 기준을 다시 만든다.
+
 ## 녹화·다운로드 산출물
 
 IMU 기록 옵션은 UI와 recorder API 모두 기본 `true`이다. 명시적으로 끈 경우에만 IMU 토픽을 rosbag 목록에서 제외한다. `both`, `lidar`, `camera` 중 어떤 기록 종류를 선택해도 기본 IMU 동작은 같다.
@@ -125,6 +147,9 @@ ros2 topic echo /imu/data_raw --once
 # recorder가 ROS 2 원본을 실제로 받는지
 curl -s http://127.0.0.1:8790/status | python3 -m json.tool
 
+# 최신 실제 IMU 자세를 수동 영점으로 지정
+curl -s -X POST http://127.0.0.1:8080/api/imu/zero | python3 -m json.tool
+
 # 기본 IMU 포함 녹화
 curl -s -X POST -H 'Content-Type: application/json' \
   -d '{"kind":"both"}' http://127.0.0.1:8790/start
@@ -141,7 +166,10 @@ curl -s -X POST -H 'Content-Type: application/json' \
   IMU timeline 95 frame을 저장했고 `include_imu=true`, `imu_calibration_valid=true`를 확인했다.
 - 원본·보정·자기장·상태·보정 토픽이 MCAP rosbag2와 `timeline.json`,
   `imu_calibration.json`, `metadata.json`에 함께 들어갔다.
-- ARM64 ROS Iron 컨테이너 전체 단위·통합·회귀 테스트 130개가 통과했다.
+- Dashboard 수동 영점 실제 검증에서 원본 자세 roll `-86.26°`, pitch `-2.73°`,
+  yaw `40.20°`가 즉시 `(0°, 0°, 0°)`가 됐고 1초 뒤 drift는 각각 약
+  `-0.049°`, `-0.019°`, `-0.006°`였다.
+- ROS Iron 컨테이너 전체 단위·통합·회귀 테스트 140개가 통과했다.
 
 검증 후 생성한 세 테스트 archive(약 1.04 GB)는 결과를 문서화한 뒤 제거했으며,
 기존 사용자 archive 19개는 그대로 보존했다.

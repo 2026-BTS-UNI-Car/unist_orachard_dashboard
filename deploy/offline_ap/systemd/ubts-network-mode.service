@@ -1,0 +1,15 @@
+[Unit]
+Description=UBTS Jetson Wi-Fi client/offline-AP state machine
+After=NetworkManager.service docker.service
+Requires=NetworkManager.service docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/ubts-network-mode.conf
+ExecStart=/usr/local/sbin/ubts-network-mode controller
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
