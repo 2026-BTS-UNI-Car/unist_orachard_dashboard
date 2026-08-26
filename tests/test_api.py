@@ -665,6 +665,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("roverImuZeroButton", html)
         self.assertIn("/api/network/mode", app_js)
         self.assertIn("networkEnableApButton", html)
+        self.assertLess(html.index("networkEnableApButton"), html.index("networkModeReadout"))
         self.assertIn("networkScanWifiButton", html)
         self.assertIn("Observed FPS", app_js)
         self.assertIn("syncSelectOptions", app_js)

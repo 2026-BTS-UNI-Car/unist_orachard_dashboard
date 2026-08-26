@@ -1065,7 +1065,8 @@ function renderNetworkMode(control) {
   text("networkModeTag", mode);
   const tag = $("networkModeTag");
   if (tag) tag.className = `tag ${control.ok ? "ok" : ""}`.trim();
-  const countdown = Number(control.seconds_until_auto_switch);
+  const countdownValue = control.seconds_until_auto_switch;
+  const countdown = countdownValue == null ? Number.NaN : Number(countdownValue);
   const countdownText = Number.isFinite(countdown)
     ? `${Math.ceil(countdown)}초 후 자동 전환`
     : control.controls_locked_reason === "ethernet_keeps_ap_active"

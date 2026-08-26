@@ -953,6 +953,8 @@ h2 {
 }
 
 .network-mode-panel {
+  display: grid;
+  align-content: start;
   margin-bottom: 18px;
 }
 
@@ -960,7 +962,11 @@ h2 {
   grid-template-columns: repeat(2, minmax(130px, auto));
   justify-content: start;
   justify-items: stretch;
-  margin-top: 14px;
+  margin: 14px 0;
+}
+
+.network-mode-panel .chart-readout {
+  min-height: 0;
 }
 
 .network-mode-panel .control-note {
