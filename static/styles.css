@@ -1337,6 +1337,42 @@ h2 {
   display: none;
 }
 
+.archive-imu-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+}
+
+.archive-imu-panel[hidden] {
+  display: none;
+}
+
+.archive-imu-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(320px, 1.15fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.archive-imu-attitude-stage,
+.archive-imu-attitude-stage .imu-attitude-canvas {
+  min-height: 240px;
+  height: 240px;
+}
+
+.archive-imu-panel .chart-readout {
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .archive-imu-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .archive-download-actions {
   display: grid;
   justify-items: stretch;

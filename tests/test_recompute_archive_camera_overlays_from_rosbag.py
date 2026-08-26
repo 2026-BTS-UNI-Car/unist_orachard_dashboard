@@ -13,6 +13,7 @@ from scripts.recompute_archive_camera_overlays_from_rosbag import (
     image_message_to_bgr,
     source_policy,
     stamp_ns,
+    sync_metadata_timeline,
 )
 
 
@@ -46,6 +47,23 @@ class ArchiveRosbagCameraRecomputeTest(unittest.TestCase):
             timeline.write_text("changed", encoding="utf-8")
             self.assertEqual(backup_timeline(timeline, ".bak"), backup)
             self.assertEqual(backup.read_text(encoding="utf-8"), "original")
+
+    def test_metadata_counts_are_synchronized_without_losing_policy_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp)
+            metadata = archive / "metadata.json"
+            metadata.write_text('{"timeline":{"camera_frames":99,"sample_hz":2}}', encoding="utf-8")
+            timeline = {
+                "lidar": {"frames": [{}, {}]},
+                "camera": {"frames": [{}]},
+                "imu": {"frames": [{}, {}, {}]},
+            }
+            self.assertTrue(sync_metadata_timeline(archive, timeline, ".bak", False))
+            updated = __import__("json").loads(metadata.read_text(encoding="utf-8"))
+            self.assertEqual(updated["timeline"]["lidar_frames"], 2)
+            self.assertEqual(updated["timeline"]["camera_frames"], 1)
+            self.assertEqual(updated["timeline"]["imu_frames"], 3)
+            self.assertEqual(updated["timeline"]["sample_hz"], 2)
 
 
 if __name__ == "__main__":

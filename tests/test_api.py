@@ -226,7 +226,17 @@ class DashboardApiTest(unittest.TestCase):
         root.mkdir(parents=True, exist_ok=True)
         try:
             (root / "metadata.json").write_text(
-                json.dumps({"id": "unit_lidar_archive", "kind": "lidar", "state": "archived", "duration_s": 1.2}),
+                json.dumps(
+                    {
+                        "id": "unit_lidar_archive",
+                        "kind": "lidar",
+                        "state": "archived",
+                        "duration_s": 1.2,
+                        "include_imu": True,
+                        "topics": ["/scan", "/imu/data_raw", "/imu/data"],
+                        "timeline": {"lidar_frames": 1, "camera_frames": 0, "imu_frames": 1, "imu_calibration_valid": True},
+                    }
+                ),
                 encoding="utf-8",
             )
             (root / "preview_scan.json").write_text(
@@ -246,6 +256,16 @@ class DashboardApiTest(unittest.TestCase):
                         "coordinate_frame": "lidar_bridge_xy_v1",
                         "lidar": {"frames": [{"t_s": 0.0, "points": [{"x_m": 1.0, "y_m": 0.0, "distance_m": 1.0}], "overlay": {}}]},
                         "camera": {"frames": []},
+                        "imu": {
+                            "frames": [
+                                {
+                                    "t_s": 0.0,
+                                    "stamp": {"sec": 1, "nanosec": 0},
+                                    "corrected": {"euler_deg": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0}},
+                                    "calibration_state": "ready",
+                                }
+                            ]
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -257,6 +277,8 @@ class DashboardApiTest(unittest.TestCase):
             self.assertTrue(detail["ok"])
             self.assertEqual(detail["recording"]["metadata"]["kind"], "lidar")
             self.assertEqual(detail["recording"]["timeline_summary"]["lidar_frames"], 1)
+            self.assertEqual(detail["recording"]["timeline_summary"]["imu_frames"], 1)
+            self.assertTrue(detail["recording"]["timeline_summary"]["imu_calibration_valid"])
             timeline = self.get_json("/api/recordings/unit_lidar_archive/timeline")
             self.assertTrue(timeline["ok"])
             self.assertEqual(timeline["timeline"]["algorithm"], "polar_gap_cluster_line_fit_fragment_merge_predictive_tracks_v5")
@@ -689,6 +711,11 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("safeDocAssetHref", app_js)
         self.assertIn("/docs-assets/", app_js)
         self.assertIn("ARCHIVE_SEGMENT_SECONDS = 4", app_js)
+        self.assertIn("ARCHIVE_IMU_SYNC_MAX_DELTA_S = 0.2", app_js)
+        self.assertIn("recordingSensorLabel", app_js)
+        self.assertIn("roverArchiveImuPanel", html)
+        self.assertIn("roverArchiveImuCanvas", html)
+        self.assertIn("roverArchiveImuTime", html)
         self.assertIn("ROVER_FADE_START_KEY", app_js)
         self.assertIn("drawLidarMapOnCanvas", app_js)
         self.assertNotIn("fillText(item.label", app_js)

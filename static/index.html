@@ -878,7 +878,22 @@
                     </figure>
                   </div>
                   <div id="roverArchiveDetails" class="status-list"></div>
-                  <div id="roverArchiveImuStats" class="chart-readout compact"></div>
+                  <section id="roverArchiveImuPanel" class="archive-imu-panel" hidden>
+                    <div class="panel-head mini">
+                      <div>
+                        <p class="eyebrow">Time-aligned ROS 2</p>
+                        <h3>Recorded IMU</h3>
+                      </div>
+                      <span id="roverArchiveImuTime" class="tag">IMU -- / Δ --</span>
+                    </div>
+                    <div class="archive-imu-grid">
+                      <div class="imu-attitude-stage archive-imu-attitude-stage">
+                        <canvas id="roverArchiveImuCanvas" class="imu-attitude-canvas" width="520" height="280"></canvas>
+                        <span id="roverArchiveImuCaption">IMU timeline 대기</span>
+                      </div>
+                      <div id="roverArchiveImuStats" class="chart-readout compact"></div>
+                    </div>
+                  </section>
                   <div class="orchard-map-panel">
                     <div class="panel-head mini">
                       <div>

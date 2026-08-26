@@ -886,17 +886,30 @@ class TelemetryProvider:
         preview_scan: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         metadata_summary = metadata.get("timeline") if isinstance(metadata.get("timeline"), dict) else {}
+        topics = metadata.get("topics") if isinstance(metadata.get("topics"), list) else []
+        metadata_imu_frames = metadata_summary.get("imu_frames")
+        if metadata_imu_frames is None and not any(
+            str(topic).startswith("/imu/") or str(topic) == "/orchard/imu/calibration"
+            for topic in topics
+        ):
+            metadata_imu_frames = 0
         summary: dict[str, Any] = {
             "ok": True,
             "duration_s": metadata.get("duration_s"),
             "lidar_frames": metadata_summary.get("lidar_frames"),
             "camera_frames": metadata_summary.get("camera_frames"),
+            "imu_frames": metadata_imu_frames,
+            "imu_calibration_valid": metadata_summary.get("imu_calibration_valid"),
+            "imu_timeline_hz": metadata_summary.get("imu_timeline_hz"),
             "sample_hz": metadata_summary.get("sample_hz"),
             "algorithm": metadata.get("algorithm"),
             "coordinate_frame": (preview_scan or {}).get("coordinate_frame"),
             "source": "metadata",
         }
-        if summary["lidar_frames"] is not None or summary["camera_frames"] is not None:
+        if (
+            (summary["lidar_frames"] is not None or summary["camera_frames"] is not None)
+            and summary["imu_frames"] is not None
+        ):
             return summary
 
         timeline_path = path / "timeline.json"
@@ -921,6 +934,11 @@ class TelemetryProvider:
                 "duration_s": timeline.get("duration_s") or summary.get("duration_s"),
                 "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
                 "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
+                "imu_frames": len((timeline.get("imu") or {}).get("frames", [])),
+                "imu_calibration_valid": bool(
+                    (timeline.get("imu") or {}).get("calibration", {}).get("valid")
+                    or (timeline.get("imu") or {}).get("calibration", {}).get("calibration", {}).get("valid")
+                ),
                 "algorithm": timeline.get("algorithm") or summary.get("algorithm"),
                 "coordinate_frame": timeline.get("coordinate_frame") or summary.get("coordinate_frame"),
                 "source": "timeline",

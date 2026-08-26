@@ -14,6 +14,7 @@ const ARCHIVE_OVERLAY_MODE_KEY = "ubts-archive-overlay-mode-v1";
 const ARCHIVE_OVERLAY_VISIBLE_KEY = "ubts-archive-overlay-visible-v1";
 const ARCHIVE_RANGE_KEY = "ubts-archive-lidar-range-v1";
 const ARCHIVE_SEGMENT_SECONDS = 4;
+const ARCHIVE_IMU_SYNC_MAX_DELTA_S = 0.2;
 const PERCEPTION_OVERLAY_KEY = "ubts-perception-overlay-mode-v1";
 const LIDAR_SPEC_MAX_POINTS = 3200;
 const LIDAR_COORDINATE_FRAME = "lidar_bridge_xy_v1";
@@ -4307,6 +4308,21 @@ function recordingKindLabel(kind) {
   return { lidar: "LiDAR", camera: "Camera", both: "LiDAR+Camera" }[kind] || kind || "대기";
 }
 
+function recordingImuFrameCount(payload) {
+  const value = payload?.timeline?.imu_frames
+    ?? payload?.timeline_summary?.imu_frames
+    ?? payload?.metadata?.timeline?.imu_frames
+    ?? 0;
+  const count = Number(value);
+  return Number.isFinite(count) ? Math.max(0, count) : 0;
+}
+
+function recordingSensorLabel(payload) {
+  const kind = payload?.kind || payload?.metadata?.kind;
+  const label = recordingKindLabel(kind);
+  return recordingImuFrameCount(payload) > 0 ? `${label}+IMU` : label;
+}
+
 function renderRecordingStatus(override) {
   const status = state.recordings.status || {};
   const active = Boolean(status.active);
@@ -4454,6 +4470,7 @@ function clearArchiveFrameCache() {
   state.archivePlayback.loadingSegments = new Map();
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
+  state.archivePlayback.lastCameraOverlayRenderKey = "";
 }
 
 function prepareArchiveTimelineCache(timeline) {
@@ -4504,7 +4521,11 @@ function mergeArchiveTimelineSegment(timeline) {
   }));
   for (const frame of cameraFrames) {
     const key = archiveFrameKey(frame, "camera");
-    if (cache.cameraKeys.has(key)) continue;
+    if (cache.cameraKeys.has(key)) {
+      const existing = cache.cameraFrames.find((item) => item.cacheKey === key);
+      if (existing) Object.assign(existing, frame, { cacheKey: key });
+      continue;
+    }
     cache.cameraKeys.add(key);
     frame.cacheKey = key;
     cache.cameraFrames.push(frame);
@@ -4529,6 +4550,7 @@ function mergeArchiveTimelineSegment(timeline) {
   cache.imuFrames.forEach((frame, cacheIndex) => { frame.cacheIndex = cacheIndex; });
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
+  state.archivePlayback.lastCameraOverlayRenderKey = "";
 }
 
 function archiveFrameKey(frame, kind) {
@@ -4637,7 +4659,7 @@ function renderArchiveDownloadButton(payload, id) {
   button.hidden = false;
   button.href = href;
   button.download = `${id}.tar.gz`;
-  if (meta) meta.textContent = `${recordingKindLabel(payload?.kind || payload?.metadata?.kind)} · tar.gz`;
+  if (meta) meta.textContent = `${recordingSensorLabel(payload)} · tar.gz`;
 }
 
 function renderRecordings() {
@@ -4658,9 +4680,9 @@ function renderRecordings() {
     button.type = "button";
     button.classList.toggle("active", item.id === state.recordings.selectedId);
     button.innerHTML = `
-      <span>${escapeHtml(recordingKindLabel(item.kind))}</span>
+      <span>${escapeHtml(recordingSensorLabel(item))}</span>
       <strong>${escapeHtml(item.id)}</strong>
-      <small>${escapeHtml(formatShortDate(item.started_at || item.created_at))} · ${escapeHtml(item.duration_s ? `${fmtNumber(item.duration_s, 1)}s` : item.state || "ready")} · L${escapeHtml(item.timeline?.lidar_frames ?? 0)} C${escapeHtml(item.timeline?.camera_frames ?? 0)}</small>
+      <small>${escapeHtml(formatShortDate(item.started_at || item.created_at))} · ${escapeHtml(item.duration_s ? `${fmtNumber(item.duration_s, 1)}s` : item.state || "ready")} · L${escapeHtml(item.timeline?.lidar_frames ?? 0)} C${escapeHtml(item.timeline?.camera_frames ?? 0)} I${escapeHtml(item.timeline?.imu_frames ?? 0)}</small>
     `;
     button.addEventListener("click", () => selectRecording(item.id));
     target.append(button);
@@ -4684,7 +4706,7 @@ function renderRecordingDetail(detail) {
   if (!id) state.recordings.timeline = null;
   setupArchivePlayback(payload, normalizedPreview);
   const rows = id ? [
-    { title: "ID", sub: recordingKindLabel(metadata.kind || payload.kind), ok: true, level: "ok", value: id },
+    { title: "ID", sub: recordingSensorLabel(payload), ok: true, level: "ok", value: id },
     { title: "Duration", sub: formatShortDate(metadata.started_at), ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
     { title: "Timeline", sub: `${payload?.timeline_summary?.lidar_frames || state.recordings.timeline?.lidar?.frames?.length || 0} lidar · ${payload?.timeline_summary?.camera_frames || state.recordings.timeline?.camera?.frames?.length || 0} camera · ${payload?.timeline_summary?.imu_frames || state.recordings.timeline?.imu?.frames?.length || 0} imu`, ok: Boolean(state.recordings.timeline), level: state.recordings.timeline ? "ok" : "warn", value: state.recordings.timeline ? "playable" : "preview only" },
     { title: "LiDAR Analysis", sub: `${analysis.walls?.length || 0} walls · ${analysis.objects?.length || 0} objects`, ok: hasLidar, level: hasLidar ? "ok" : "warn", value: hasLidar ? `${preview.points.length} pts` : "no scan" },
@@ -4855,7 +4877,11 @@ function renderArchiveFrame() {
   const cache = state.archivePlayback.cache || {};
   const lidarFrame = timeline ? nearestTimelineFrame(cache.lidarFrames || [], timeS) : null;
   const cameraFrame = timeline && state.archivePlayback.sync ? nearestTimelineFrame(cache.cameraFrames || [], timeS) : null;
-  const imuFrame = timeline ? nearestTimelineFrame(cache.imuFrames || [], timeS) : null;
+  const nearestImuFrame = timeline ? nearestTimelineFrame(cache.imuFrames || [], timeS) : null;
+  const imuSyncDeltaS = nearestImuFrame ? Math.abs(Number(nearestImuFrame.t_s || 0) - timeS) : null;
+  const imuFrame = Number.isFinite(imuSyncDeltaS) && imuSyncDeltaS <= ARCHIVE_IMU_SYNC_MAX_DELTA_S
+    ? nearestImuFrame
+    : null;
   const lidarResult = lidarFrame?.result || state.archivePlayback.fallbackPreview;
   const overlayMode = archiveOverlayRenderMode();
   const fusedTrees = archiveFusedTreesForTime(timeS, state.archivePlayback.range, lidarResult);
@@ -4897,6 +4923,9 @@ function renderArchiveFrame() {
     state.perceptionOverlayMode,
     state.archivePlayback.overlayVisible ? "overlay-on" : "overlay-off",
     cameraFrame?.overlay?.algorithm || "no-overlay",
+    cameraFrame?.overlay?.ok === false ? "error" : "ok",
+    cameraFrame?.overlay?.method || "no-method",
+    cameraFrame?.overlay?.error || "no-error",
     cameraFrame?.overlay?.detections?.length || 0,
   ].join(":");
   if (cameraOverlayKey !== state.archivePlayback.lastCameraOverlayRenderKey) {
@@ -4913,15 +4942,33 @@ function renderArchiveFrame() {
   const imuSample = imuFrame?.corrected || imuFrame?.raw || {};
   const imuEuler = imuSample.euler_deg || {};
   const imuCalibrationState = imuFrame?.calibration_state || timeline?.imu?.calibration?.state || "unavailable";
+  const imuAcceleration = imuSample.linear_acceleration || {};
+  const imuGyro = imuSample.angular_velocity || {};
+  const imuMagnetic = imuFrame?.magnetic?.magnetic_field_uT || {};
+  const imuFrameCount = Math.max(
+    Number(timeline?.sync?.imu_frames || 0),
+    Number(state.recordings.selected?.recording?.timeline_summary?.imu_frames || 0),
+    Number(state.recordings.selected?.recording?.metadata?.timeline?.imu_frames || 0),
+    cache.imuFrames?.length || 0,
+  );
+  const hasArchivedImu = imuFrameCount > 0;
+  const imuPanel = $("roverArchiveImuPanel");
+  if (imuPanel) imuPanel.hidden = !hasArchivedImu;
   const colors = chartColors();
   renderReadout("roverArchiveImuStats", [
     {
-      label: "Archive IMU",
+      label: "Roll / Pitch / Yaw",
       value: imuFrame ? `${fmtNumber(imuEuler.roll, 1)}° / ${fmtNumber(imuEuler.pitch, 1)}° / ${fmtNumber(imuEuler.yaw, 1)}°` : "--",
-      sub: imuFrame ? `${imuFrame.corrected ? "start-corrected" : "raw"} · t=${fmtNumber(imuFrame.t_s, 2)}s · calibration ${imuCalibrationState}` : "IMU frame 없음",
+      sub: imuFrame ? `${imuFrame.corrected ? "start-corrected" : "raw"} · calibration ${imuCalibrationState}` : "현재 재생 시각 안에 IMU frame 없음",
       color: imuFrame?.corrected ? colors.good : colors.amber,
     },
+    { label: "Acceleration", value: imuFrame && vectorNorm(imuAcceleration) !== null ? `${fmtNumber(vectorNorm(imuAcceleration), 3)} m/s²` : "--", sub: `x ${fmtNumber(imuAcceleration.x, 3)} · y ${fmtNumber(imuAcceleration.y, 3)} · z ${fmtNumber(imuAcceleration.z, 3)}`, color: colors.good },
+    { label: "Angular velocity", value: imuFrame && vectorNorm(imuGyro) !== null ? `${fmtNumber(vectorNorm(imuGyro), 4)} rad/s` : "--", sub: `x ${fmtNumber(imuGyro.x, 4)} · y ${fmtNumber(imuGyro.y, 4)} · z ${fmtNumber(imuGyro.z, 4)}`, color: colors.amber },
+    { label: "Magnetic field", value: imuFrame && vectorNorm(imuMagnetic) !== null ? `${fmtNumber(vectorNorm(imuMagnetic), 2)} µT` : "--", sub: imuFrame?.calibration_reference_id ? `reference ${imuFrame.calibration_reference_id}` : "magnetometer unavailable", color: colors.blue },
   ]);
+  text("roverArchiveImuTime", imuFrame ? `IMU ${fmtNumber(imuFrame.t_s, 3)}s / Δ ${fmtNumber(imuSyncDeltaS, 3)}s` : "IMU -- / Δ --");
+  text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data corrected" : "/imu/data_raw"} · playback ${fmtNumber(timeS, 3)}s` : "동기 IMU sample 대기");
+  drawImuAttitude($("roverArchiveImuCanvas"), Number(imuEuler.roll), Number(imuEuler.pitch), Number(imuEuler.yaw));
   text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   text("roverOrchardMapTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   const scrubber = $("roverArchiveScrubber");

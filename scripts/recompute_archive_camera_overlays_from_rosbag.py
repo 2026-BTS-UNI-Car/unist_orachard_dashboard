@@ -112,6 +112,29 @@ def backup_timeline(path: Path, suffix: str) -> Path:
     return backup
 
 
+def sync_metadata_timeline(path: Path, timeline: dict[str, Any], suffix: str, dry_run: bool) -> bool:
+    metadata_path = path / "metadata.json"
+    if not metadata_path.is_file():
+        return False
+    metadata = load_json(metadata_path)
+    if not metadata:
+        return False
+    timeline_metadata = metadata.get("timeline") if isinstance(metadata.get("timeline"), dict) else {}
+    counts = {
+        "lidar_frames": len(((timeline.get("lidar") or {}).get("frames") or [])),
+        "camera_frames": len(((timeline.get("camera") or {}).get("frames") or [])),
+        "imu_frames": len(((timeline.get("imu") or {}).get("frames") or [])),
+    }
+    if all(timeline_metadata.get(key) == value for key, value in counts.items()):
+        return False
+    if dry_run:
+        return True
+    backup_timeline(metadata_path, suffix)
+    metadata["timeline"] = {**timeline_metadata, **counts}
+    write_json_atomic(metadata_path, metadata)
+    return True
+
+
 def source_policy(source_width: int, source_height: int, jpeg_quality: int) -> dict[str, Any]:
     # Use the production helper so a changed contract fails validation instead
     # of being duplicated silently in this repair path.
@@ -218,8 +241,10 @@ def process_recording(path: Path, args: argparse.Namespace) -> dict[str, Any]:
         "max_match_delta_s": 0.0,
         "max_candidate_delta_s": 0.0,
         "dry_run": bool(args.dry_run),
+        "metadata_updated": False,
     }
     if not targets:
+        summary["metadata_updated"] = sync_metadata_timeline(path, timeline, args.backup_suffix, args.dry_run)
         return summary
 
     reader = rosbag2_py.SequentialReader()
@@ -340,6 +365,7 @@ def process_recording(path: Path, args: argparse.Namespace) -> dict[str, Any]:
         write_json_atomic(timeline_path, timeline)
     summary["max_match_delta_s"] = round(float(summary["max_match_delta_s"]), 9)
     summary["max_candidate_delta_s"] = round(float(summary["max_candidate_delta_s"]), 9)
+    summary["metadata_updated"] = sync_metadata_timeline(path, timeline, args.backup_suffix, args.dry_run)
     return summary
 
 
