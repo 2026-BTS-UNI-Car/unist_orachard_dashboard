@@ -16,7 +16,7 @@ import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
@@ -296,7 +296,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path == "/api/lidar/test":
+        if path.startswith("/occupancy-api"):
+            self._proxy_occupancy_request(parsed)
+        elif path == "/api/lidar/test":
             self._send_json(self.provider.lidar_test())
         elif path == "/api/lidar/scan":
             self._send_json(self.provider.lidar_scan())
@@ -338,7 +340,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path == "/ws/lidar":
+        if path.startswith("/occupancy-api"):
+            self._proxy_occupancy_request(parsed)
+        elif path == "/ws/lidar":
             self._proxy_lidar_websocket()
         elif path == "/ws/camera":
             self._proxy_camera_websocket()
@@ -392,6 +396,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._proxy_rover_request(parsed)
         elif path.startswith("/static/"):
             self._send_file(STATIC_ROOT / path.removeprefix("/static/"))
+        else:
+            self.send_error(404, "Not found")
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/occupancy-api"):
+            self._proxy_occupancy_request(parsed)
         else:
             self.send_error(404, "Not found")
 
@@ -985,6 +996,60 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     self.wfile.write(payload)
         except (OSError, URLError) as exc:
             self._send_json({"ok": False, "state": "unreachable", "target": base_url, "error": str(exc)})
+
+    def _proxy_occupancy_request(self, parsed):
+        """Forward binary map frames and control requests to the local Jetson renderer."""
+        base_url = os.environ.get("OCCUPANCY_GRID_URL", "http://127.0.0.1:8810").rstrip("/")
+        suffix = parsed.path.removeprefix("/occupancy-api") or "/"
+        target_url = f"{base_url}{suffix}"
+        if parsed.query:
+            target_url = f"{target_url}?{parsed.query}"
+        body = None
+        headers = {"User-Agent": "UBTS-Dashboard-Occupancy-Proxy/1.0"}
+        if self.command in {"POST", "PUT", "PATCH"}:
+            body = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
+            content_type = self.headers.get("Content-Type")
+            if content_type:
+                headers["Content-Type"] = content_type
+        try:
+            req = Request(target_url, data=body, headers=headers, method=self.command)
+            with urlopen(req, timeout=90) as res:
+                self._send_occupancy_proxy_response(res.status, res.headers, res.read())
+        except HTTPError as exc:
+            self._send_occupancy_proxy_response(exc.code, exc.headers, exc.read())
+        except (OSError, URLError) as exc:
+            payload = json.dumps(
+                {
+                    "ok": False,
+                    "state": "occupancy_renderer_unreachable",
+                    "error": str(exc),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            self.send_response(502)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(payload)
+            self.close_connection = True
+
+    def _send_occupancy_proxy_response(self, status: int, upstream_headers, payload: bytes):
+        self.send_response(status)
+        self.send_header("Content-Type", upstream_headers.get("Content-Type", "application/octet-stream"))
+        self.send_header("Cache-Control", upstream_headers.get("Cache-Control", "no-store"))
+        self.send_header("Connection", "close")
+        metadata = upstream_headers.get("X-OGM-Meta")
+        if metadata:
+            self.send_header("X-OGM-Meta", metadata)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(payload)
+        self.close_connection = True
 
     def _rewrite_rover_html(self, payload: bytes, base_url: str) -> bytes:
         try:

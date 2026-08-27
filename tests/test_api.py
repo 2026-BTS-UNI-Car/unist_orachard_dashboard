@@ -15,6 +15,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from dashboard_server.app import create_server
 
@@ -136,6 +137,65 @@ class DashboardApiTest(unittest.TestCase):
         payload = self.get_json("/api/health")
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["service"], "unist_orachard_dashboard")
+
+    def test_occupancy_proxy_preserves_binary_metadata_and_post_body(self):
+        observed = {}
+
+        class UpstreamHandler(BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+
+            def do_GET(self):
+                observed["get_path"] = self.path
+                payload = b"\x89PNG\r\n\x1a\nmap"
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("X-OGM-Meta", '{"frame_index":3}')
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def do_POST(self):
+                observed["post_path"] = self.path
+                observed["post_body"] = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                payload = b'{"ok":true,"session_id":"fresh"}'
+                self.send_response(201)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+        upstream = ThreadingHTTPServer(("127.0.0.1", 0), UpstreamHandler)
+        thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+        thread.start()
+        previous = os.environ.get("OCCUPANCY_GRID_URL")
+        os.environ["OCCUPANCY_GRID_URL"] = f"http://127.0.0.1:{upstream.server_address[1]}"
+        try:
+            url = f"http://127.0.0.1:{self.port}/occupancy-api/api/v1/sessions/s1/frame.png?t_s=1.5"
+            with urllib.request.urlopen(url, timeout=3) as res:
+                self.assertEqual(res.status, 200)
+                self.assertEqual(res.headers.get("Content-Type"), "image/png")
+                self.assertEqual(res.headers.get("X-OGM-Meta"), '{"frame_index":3}')
+                self.assertTrue(res.read().startswith(b"\x89PNG"))
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/occupancy-api/api/v1/sessions",
+                data=b'{"archive_id":"sample"}',
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=3) as res:
+                self.assertEqual(res.status, 201)
+                self.assertEqual(json.loads(res.read())["session_id"], "fresh")
+            self.assertEqual(observed["get_path"], "/api/v1/sessions/s1/frame.png?t_s=1.5")
+            self.assertEqual(observed["post_body"], b'{"archive_id":"sample"}')
+        finally:
+            if previous is None:
+                os.environ.pop("OCCUPANCY_GRID_URL", None)
+            else:
+                os.environ["OCCUPANCY_GRID_URL"] = previous
+            upstream.shutdown()
+            upstream.server_close()
+            thread.join(timeout=2)
 
     def test_telemetry_shape(self):
         payload = self.get_json("/api/telemetry")
