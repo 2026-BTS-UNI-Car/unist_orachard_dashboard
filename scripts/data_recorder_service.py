@@ -1368,7 +1368,7 @@ def main() -> int:
     parser.add_argument(
         "--camera-vision-sync-max-delta-s",
         type=float,
-        default=float(os.environ.get("RECORDER_SHARED_VISION_SYNC_MAX_DELTA_S", "0.12")),
+        default=float(os.environ.get("RECORDER_SHARED_VISION_SYNC_MAX_DELTA_S", "0.16")),
     )
     parser.add_argument(
         "--camera-vision-wait-timeout-s",

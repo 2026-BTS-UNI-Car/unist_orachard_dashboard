@@ -4668,6 +4668,11 @@ async function ensureArchiveSegmentForTime(timeS, options = {}) {
   const startS = Math.max(0, Math.floor((Number(timeS) || 0) / segmentDuration) * segmentDuration);
   await loadArchiveTimelineSegment(id, startS, segmentDuration, options);
   const nextStart = startS + segmentDuration;
+  const cameraBootstrapNeeded = (state.archivePlayback.cache.cameraFrames?.length || 0) === 0
+    && Number(timeline.sync?.camera_frames || 0) > 0;
+  if (cameraBootstrapNeeded && nextStart < state.archivePlayback.durationS + 0.25) {
+    await loadArchiveTimelineSegment(id, nextStart, segmentDuration);
+  }
   const nearSegmentEnd = Number(timeS) + 2 >= nextStart;
   if ((state.archivePlayback.playing || nearSegmentEnd) && nextStart < state.archivePlayback.durationS + 0.25) {
     loadArchiveTimelineSegment(id, nextStart, segmentDuration).catch((err) => debugLog("archive", "segment prefetch failed", err));
@@ -5007,7 +5012,7 @@ function renderArchiveFrame() {
 
   const image = $("roverArchiveCameraImage");
   const nativeVideo = archiveNativeVideo();
-  if (!nativeVideo && image && cameraFrame?.data) {
+  if (!nativeVideo && image && (cameraFrame?.frame_url || cameraFrame?.data)) {
     warmArchiveCameraCache(cameraFrame);
     const src = archiveCameraFrameSrc(cameraFrame);
     const cameraRenderKey = `${cameraFrame.cacheIndex}:${src}`;

@@ -144,6 +144,7 @@ class OrchardMappingV10Test(unittest.TestCase):
         self.assertFalse(indexed[0]["ok"])
         self.assertEqual(indexed[0]["method"], "source_native_provenance_required")
         self.assertTrue(indexed[1]["ok"])
+        self.assertEqual(indexed[1]["method"], "local_orchard_vision_ai_worker_v4")
 
     def test_global_sync_is_one_to_one_and_reports_conflict(self):
         lidar = [

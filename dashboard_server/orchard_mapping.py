@@ -284,7 +284,7 @@ def build_orchard_map(timeline: dict[str, Any]) -> dict[str, Any]:
         "camera": {
             "frames_analyzed": len(camera_index),
             "input_provenance": camera_input_provenance,
-            "method": camera_index[0]["method"] if camera_index else "unavailable",
+            "method": camera_index[0].get("method", "unavailable") if camera_index else "unavailable",
             "projection_model": {
                 "model": "pinhole_u_equals_cx_minus_fx_tan_bearing",
                 "nominal_fov_x_deg": CAMERA_NOMINAL_FOV_X_DEG,
@@ -2596,6 +2596,13 @@ def camera_observation_index(frames: list[dict[str, Any]]) -> list[dict[str, Any
     rows = []
     for frame in frames:
         support = estimate_camera_orchard_support(frame)
+        support_method = str(
+            support.get("method")
+            or support.get("backend")
+            or support.get("source")
+            or support.get("algorithm")
+            or "unavailable"
+        )
         fov_x_rad, intrinsics_calibrated, intrinsics_source = camera_horizontal_fov(frame)
         image = support.get("image") if isinstance(support.get("image"), dict) else {}
         if not image:
@@ -2610,6 +2617,7 @@ def camera_observation_index(frames: list[dict[str, Any]]) -> list[dict[str, Any
                 "observation_index": len(rows),
                 "t_s": float(frame.get("t_s") or 0.0),
                 **support,
+                "method": support_method,
                 "sensor_stamp_s": sensor_timestamp_s(frame),
                 "image": image,
                 "fov_x_rad": fov_x_rad,
