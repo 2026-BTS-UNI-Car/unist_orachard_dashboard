@@ -592,6 +592,16 @@ class RecordingState:
                 "source_points": len(msg.ranges),
                 "coverage_deg": self.coverage(points),
                 "range_limit_m": float(msg.range_max),
+                # Preserve source timing for IMU yaw deskew in offline mapping.
+                # Header stamp is the first-ray acquisition time (LaserScan REP).
+                "scan_time_s": float(msg.scan_time),
+                "time_increment_s": float(msg.time_increment),
+                "angle_min_rad": float(msg.angle_min),
+                "angle_increment_rad": float(msg.angle_increment),
+                # SLAMTEC sllidar_ros2 (inverted=false, full 0..360 scan) writes
+                # ranges in reverse node order while keeping positive angle/time
+                # increments.  Record the physical time direction explicitly.
+                "point_time_direction": -1.0,
             },
             "source": "archive_recorder",
         }

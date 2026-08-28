@@ -27,6 +27,8 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
             status_file=str(Path(tmp) / "status.json"),
             camera_preview_width=160,
             camera_jpeg_quality=68,
+            preview_max_points=720,
+            lidar_frame_id="laser",
             camera_vision_sync_max_delta_s=0.12,
             camera_vision_wait_timeout_s=wait_s,
             camera_archive_flush_timeout_s=0.5,
@@ -125,6 +127,38 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
             angular_velocity_covariance=[-1.0] + [0.0] * 8,
             linear_acceleration_covariance=[-1.0] + [0.0] * 8,
         )
+
+    def lidar_message(self) -> SimpleNamespace:
+        return SimpleNamespace(
+            header=SimpleNamespace(
+                frame_id="laser",
+                stamp=SimpleNamespace(sec=123, nanosec=456),
+            ),
+            angle_min=-np.pi,
+            angle_increment=np.pi / 2.0,
+            time_increment=0.0244,
+            scan_time=0.0976,
+            range_min=0.15,
+            range_max=12.0,
+            ranges=[1.0, 2.0, 3.0, 4.0],
+        )
+
+    def test_lidar_archive_preserves_source_scan_timing_and_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state = self.make_state(tmp)
+            with state.lock:
+                state.active["kind"] = "both"
+                state.next_lidar_sample_at = 0.0
+            state.observe_scan(self.lidar_message())
+
+            self.assertEqual(len(state.lidar_frames), 1)
+            frame = state.lidar_frames[0]
+            self.assertEqual(frame["stamp"], {"sec": 123, "nanosec": 456})
+            self.assertAlmostEqual(frame["metrics"]["scan_time_s"], 0.0976)
+            self.assertAlmostEqual(frame["metrics"]["time_increment_s"], 0.0244)
+            self.assertAlmostEqual(frame["metrics"]["angle_min_rad"], -np.pi)
+            self.assertAlmostEqual(frame["metrics"]["angle_increment_rad"], np.pi / 2.0)
+            self.assertEqual(frame["metrics"]["point_time_direction"], -1.0)
 
     def test_ros_callback_only_coalesces_latest_frame_without_wait_or_inference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

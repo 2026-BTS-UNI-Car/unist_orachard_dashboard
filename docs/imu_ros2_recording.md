@@ -149,6 +149,12 @@ IMU 기록 옵션은 UI와 recorder API 모두 기본 `true`이다. 명시적으
 
 원본 ROS header stamp와 수신 기반 `t_s`를 동시에 남긴다. `t_s`는 대시보드 재생용이고, 다중 센서 정밀 동기화는 rosbag의 ROS timestamp를 사용해야 한다.
 
+### LiDAR source timing 보존
+
+회전 중 2D LiDAR 한 sweep을 순간 촬영으로 취급하면 첫 ray와 마지막 ray가 서로 다른 body yaw에서 관측되어 벽이 두꺼워질 수 있다. recorder는 각 LiDAR timeline frame에 ROS header stamp와 함께 `scan_time_s`, `time_increment_s`, `angle_min_rad`, `angle_increment_rad`, `point_time_direction`을 저장한다. 현재 Jetson의 SLAMTEC full-scan 설정은 publish 배열이 물리 획득 순서와 반대이므로 `point_time_direction=-1.0`을 명시한다.
+
+Occupancy renderer는 이 정보와 IMU source stamp를 사용해 ray를 scan 중앙 시각으로 회전 deskew한다. 기존 archive에는 scan duration이 없어 실제 Jetson에서 측정한 약 0.0977초를 fallback으로 사용한다. 이 처리는 yaw 회전 왜곡만 줄이며 scan 중 translation이나 LiDAR·IMU hardware clock offset을 해결하지는 않는다.
+
 ## Dashboard 표시
 
 `/connection`과 `/rover-control`에서 `/ws/imu`를 열어 다음을 표시한다.
