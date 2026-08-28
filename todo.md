@@ -314,4 +314,4 @@ Last updated: 2026-07-11
 - [x] provenance가 없는 개별 프레임을 전체 AI 장애로 표시하지 않고 비차단 안내로 분리했다.
 - [x] Linux 전체 테스트 145개 통과(7개 skip), 최신 archive compact payload 및 Chrome 8초 재생 회귀를 통과시켰다.
 - [x] Jetson dashboard만 재빌드·배포하고 healthy 상태와 공개 도메인 8.3초 Chrome 재생을 확인했다.
-- [ ] GitHub 브랜치에 커밋·푸시하고 배포 결과를 기록한다.
+- [x] GitHub `feature/occupancy-grid-proxy` 브랜치에 커밋·푸시하고 배포 결과를 기록했다.
