@@ -284,6 +284,7 @@ class DashboardApiTest(unittest.TestCase):
 
     def test_recordings_api_reads_archive_and_downloads_tarball(self):
         root = Path(__file__).resolve().parents[1] / "runtime" / "recordings" / "unit_lidar_archive"
+        playback_cache = Path(__file__).resolve().parents[1] / "runtime" / "playback_cache" / root.name
         root.mkdir(parents=True, exist_ok=True)
         try:
             (root / "metadata.json").write_text(
@@ -322,7 +323,10 @@ class DashboardApiTest(unittest.TestCase):
                                 {
                                     "t_s": 0.0,
                                     "stamp": {"sec": 1, "nanosec": 0},
-                                    "corrected": {"euler_deg": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0}},
+                                    "corrected": {
+                                        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+                                        "euler_deg": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+                                    },
                                     "calibration_state": "ready",
                                 }
                             ]
@@ -347,6 +351,31 @@ class DashboardApiTest(unittest.TestCase):
             self.assertTrue(segment["ok"])
             self.assertTrue(segment["timeline"]["segment"]["partial"])
             self.assertEqual(len(segment["timeline"]["lidar"]["frames"]), 1)
+            self.assertIsInstance(segment["timeline"]["lidar"]["frames"][0]["points"][0], dict)
+            compact = self.get_json(
+                "/api/recordings/unit_lidar_archive/timeline"
+                "?start_s=0&duration_s=4&profile=dashboard-compact-v1"
+            )
+            compact_timeline = compact["timeline"]
+            self.assertEqual(compact_timeline["playback"]["profile"], "dashboard-compact-v1")
+            self.assertEqual(
+                compact_timeline["playback"]["lidar_point_fields"],
+                ["x_m", "y_m", "distance_m", "quality", "angle_deg"],
+            )
+            self.assertEqual(compact_timeline["lidar"]["frames"][0]["points"][0], [1.0, 0.0, 1.0, None, None])
+            self.assertEqual(
+                set(compact_timeline["imu"]["frames"][0]["corrected"]),
+                {"euler_deg"},
+            )
+            self.get_json(
+                "/api/recordings/unit_lidar_archive/timeline"
+                "?start_s=0&duration_s=0.5&profile=dashboard-compact-v1"
+            )
+            source_after_compact = self.get_json("/api/recordings/unit_lidar_archive/timeline")
+            self.assertIn(
+                "orientation",
+                source_after_compact["timeline"]["imu"]["frames"][0]["corrected"],
+            )
             orchard_cache = root.parent.parent / "orchard_analysis" / "unit_lidar_archive_orchard_map.json"
             orchard_cache.parent.mkdir(parents=True, exist_ok=True)
             orchard_cache.write_text(
@@ -376,6 +405,7 @@ class DashboardApiTest(unittest.TestCase):
             root.rmdir()
             cache = Path(__file__).resolve().parents[1] / "runtime" / "recording_downloads" / "unit_lidar_archive.tar.gz"
             cache.unlink(missing_ok=True)
+            shutil.rmtree(playback_cache, ignore_errors=True)
             orchard_cache = Path(__file__).resolve().parents[1] / "runtime" / "orchard_analysis" / "unit_lidar_archive_orchard_map.json"
             orchard_cache.unlink(missing_ok=True)
 
@@ -826,6 +856,12 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("safeDocAssetHref", app_js)
         self.assertIn("/docs-assets/", app_js)
         self.assertIn("ARCHIVE_SEGMENT_SECONDS = 4", app_js)
+        self.assertIn('ARCHIVE_PLAYBACK_PROFILE = "dashboard-compact-v1"', app_js)
+        self.assertIn("scheduleArchiveSegmentsForTime", app_js)
+        self.assertIn("scheduleArchiveSeek", app_js)
+        self.assertIn("preloadArchiveCameraFrame", app_js)
+        self.assertIn("No verified AI result for this camera frame", app_js)
+        self.assertNotIn('debugLog("archive", "render segment load failed"', app_js)
         self.assertIn("ARCHIVE_IMU_SYNC_MAX_DELTA_S = 0.2", app_js)
         self.assertIn("recordingSensorLabel", app_js)
         self.assertIn("roverArchiveImuPanel", html)

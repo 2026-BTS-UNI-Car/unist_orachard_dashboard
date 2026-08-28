@@ -43,6 +43,8 @@ DEFAULT_DATA_RECORDER_STATUS_FILE = ROOT / "runtime" / "data_recorder_status.jso
 DEFAULT_RECORDING_ARCHIVE_DIR = ROOT / "runtime" / "recordings"
 PLAYBACK_CACHE_SCHEMA = "orchard.timeline.playback_cache.v1"
 PLAYBACK_CACHE_REVISION = "binary_jpeg_segment_sidecar_v1"
+PLAYBACK_DASHBOARD_PROFILE = "dashboard-compact-v1"
+PLAYBACK_LIDAR_POINT_FIELDS = ("x_m", "y_m", "distance_m", "quality", "angle_deg")
 PLAYBACK_SEGMENT_SECONDS = 4.0
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_CAMERA_VIEW_MODES = [
@@ -1022,7 +1024,13 @@ class TelemetryProvider:
             "path": path,
         }
 
-    def recording_timeline(self, recording_id: str, start_s: Any = None, duration_s: Any = None) -> dict[str, Any]:
+    def recording_timeline(
+        self,
+        recording_id: str,
+        start_s: Any = None,
+        duration_s: Any = None,
+        profile: Any = None,
+    ) -> dict[str, Any]:
         path = self.recording_archive_path(recording_id)
         if path is None or not path.exists():
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
@@ -1031,7 +1039,7 @@ class TelemetryProvider:
         if playback_request is not None:
             cached_segment = self._cached_playback_segment(path, timeline_path, playback_request)
             if cached_segment:
-                return {"ok": True, "timeline": cached_segment}
+                return {"ok": True, "timeline": self._playback_response_profile(cached_segment, profile)}
         timeline = self._load_recording_timeline(timeline_path)
         if not timeline:
             return {"ok": False, "error": "timeline_not_found", "id": recording_id}
@@ -1040,9 +1048,71 @@ class TelemetryProvider:
                 cached_segment = self._build_playback_cache(path, timeline_path, timeline, playback_request)
                 if cached_segment:
                     self._drop_timeline_cache(timeline_path)
-                    return {"ok": True, "timeline": cached_segment}
-            return {"ok": True, "timeline": self._recording_timeline_segment(timeline, start_s, duration_s)}
+                    return {"ok": True, "timeline": self._playback_response_profile(cached_segment, profile)}
+            segment = self._recording_timeline_segment(timeline, start_s, duration_s)
+            return {"ok": True, "timeline": self._playback_response_profile(segment, profile)}
         return {"ok": True, "timeline": timeline}
+
+    def _playback_response_profile(self, timeline: dict[str, Any], profile: Any) -> dict[str, Any]:
+        """Compact only the dashboard playback response; the archive stays lossless.
+
+        The default timeline API remains unchanged for ROS/research consumers.  The
+        browser asks for this profile because repeated JSON object keys in LiDAR and
+        complete IMU covariance/orientation records add substantial parse work while
+        not being used by the playback canvases.
+        """
+        if str(profile or "") != PLAYBACK_DASHBOARD_PROFILE:
+            return timeline
+
+        result = dict(timeline)
+        lidar = dict(timeline.get("lidar") or {})
+        compact_lidar_frames: list[dict[str, Any]] = []
+        for source_frame in lidar.get("frames", []) or []:
+            frame = dict(source_frame)
+            points = frame.get("points") or []
+            if points and isinstance(points[0], dict):
+                frame["points"] = [
+                    [point.get(field) for field in PLAYBACK_LIDAR_POINT_FIELDS]
+                    for point in points
+                ]
+            compact_lidar_frames.append(frame)
+        lidar["frames"] = compact_lidar_frames
+        result["lidar"] = lidar
+
+        imu = dict(timeline.get("imu") or {})
+        compact_imu_frames: list[dict[str, Any]] = []
+        for source_frame in imu.get("frames", []) or []:
+            frame = dict(source_frame)
+            for sample_name in ("raw", "corrected"):
+                sample = frame.get(sample_name)
+                if not isinstance(sample, dict):
+                    continue
+                frame[sample_name] = {
+                    key: sample[key]
+                    for key in ("frame_id", "euler_deg", "angular_velocity", "linear_acceleration")
+                    if key in sample
+                }
+            magnetic = frame.get("magnetic")
+            if isinstance(magnetic, dict):
+                frame["magnetic"] = {
+                    key: magnetic[key]
+                    for key in ("frame_id", "magnetic_field_uT")
+                    if key in magnetic
+                }
+            compact_imu_frames.append(frame)
+        imu["frames"] = compact_imu_frames
+        result["imu"] = imu
+
+        playback = dict(timeline.get("playback") or {})
+        playback.update(
+            {
+                "profile": PLAYBACK_DASHBOARD_PROFILE,
+                "lidar_point_fields": list(PLAYBACK_LIDAR_POINT_FIELDS),
+                "archive_source_preserved": True,
+            }
+        )
+        result["playback"] = playback
+        return result
 
     def recording_camera_frame(self, recording_id: str, filename: str) -> dict[str, Any] | None:
         if not re.fullmatch(r"frame-[0-9a-f]{24}\.jpg", str(filename or "")):

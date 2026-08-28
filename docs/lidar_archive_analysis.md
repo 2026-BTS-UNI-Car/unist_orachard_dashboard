@@ -1,6 +1,6 @@
 # LiDAR Archive 분석과 재생
 
-Last updated: 2026-08-22
+Last updated: 2026-08-28
 
 ## Current v10 contract (normative)
 
@@ -67,6 +67,28 @@ docker exec unist-orachard-dashboard \
 Camera 또는 LiDAR timeline이 바뀌면 map cache mtime도 stale이 되므로 map을 마지막에 생성한다.
 
 ## 4. Streaming playback
+
+### 2026-08-28 dashboard compact playback
+
+대시보드는 4초 segment를 `profile=dashboard-compact-v1`로 요청한다. 원본 `timeline.json`과 기본 API 응답은 그대로 유지하며, 재생 응답에서만 LiDAR point object를 필드 순서가 명시된 숫자 배열로 전송하고 IMU는 화면에 사용하는 raw/corrected 벡터만 전달한다. 브라우저는 수신 즉시 기존 object 형태로 복원하므로 렌더 알고리즘과 archive 원본 정밀도는 변하지 않는다.
+
+재생 루프는 canvas를 그릴 뿐 HTTP 요청을 만들지 않는다. segment가 바뀔 때만 현재 구간을 보장하고 다음 두 구간을 미리 받는다. scrubber drag는 90 ms debounce를 사용하고, JPEG sidecar는 다음 프레임까지 `Image` 객체로 미리 다운로드·비동기 디코딩한다. 지도와 시간 UI는 최대 20 fps로 갱신하며 native video 디코딩은 브라우저 video element가 독립적으로 수행한다.
+
+Camera AI 표시는 다음 두 상태를 구분한다.
+
+- worker/encode/inference 실패: 빨간 `Camera AI unavailable`
+- `source_native_provenance_required` 또는 `shared_vision_sync_unavailable`: 원본 영상은 계속 재생하고 `No verified AI result for this camera frame` 안내만 표시
+
+두 번째 상태에서 인접 프레임 결과나 preview 재추론 결과를 가져다 붙이지 않는다. 따라서 source-native provenance fail-closed 정책은 유지된다.
+
+`20260828T100032Z_both`의 40-44초 구간 실측은 다음과 같다.
+
+| 응답 | JSON | gzip |
+|---|---:|---:|
+| 기존 segment | 약 846 KB | 152,631 B |
+| `dashboard-compact-v1` | 407,796 B | 123,944 B |
+
+Headless Chrome에서 최신 archive를 8.2초 재생했을 때 camera source는 7번 정상 전환됐고 timeline 요청은 `0/4/8/12/16s` 구간별 정확히 1회였다. 중복 요청과 browser `SEVERE` console error는 0건이었다.
 
 UI는 4초 segment만 요청한다.
 

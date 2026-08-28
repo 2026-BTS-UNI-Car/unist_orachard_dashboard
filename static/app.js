@@ -14,6 +14,7 @@ const ARCHIVE_OVERLAY_MODE_KEY = "ubts-archive-overlay-mode-v1";
 const ARCHIVE_OVERLAY_VISIBLE_KEY = "ubts-archive-overlay-visible-v1";
 const ARCHIVE_RANGE_KEY = "ubts-archive-lidar-range-v1";
 const ARCHIVE_SEGMENT_SECONDS = 4;
+const ARCHIVE_PLAYBACK_PROFILE = "dashboard-compact-v1";
 const ARCHIVE_IMU_SYNC_MAX_DELTA_S = 0.2;
 const PERCEPTION_OVERLAY_KEY = "ubts-perception-overlay-mode-v1";
 const LIDAR_SPEC_MAX_POINTS = 3200;
@@ -201,6 +202,9 @@ const state = {
 	    segmentDurationS: ARCHIVE_SEGMENT_SECONDS,
 	    segmentCache: new Map(),
 	    loadingSegments: new Map(),
+	    lastSegmentWindowKey: "",
+	    seekTimer: null,
+	    lastPlaybackRenderAt: 0,
 	    lastLidarRenderKey: "",
 	    lastCameraRenderKey: "",
 	    lastCameraOverlayRenderKey: "",
@@ -1664,11 +1668,12 @@ function renderCameraLiveState(overrideLabel) {
   const observedDetail = `ROS ${cameraFpsLabel(state.cameraLive.sourceFps)} · WS ${cameraFpsLabel(state.cameraLive.displayFps)}`;
   const colors = chartColors();
   const overlayError = cameraOverlayErrorText(state.cameraLive.lastOverlay);
+  const overlayNotice = cameraOverlayNoticeText(state.cameraLive.lastOverlay);
   const aiVisionValue = state.cameraLive.lastOverlay
-    ? overlayError ? "ERROR" : "ON"
+    ? overlayError ? "ERROR" : overlayNotice ? "NO MATCH" : "ON"
     : "WAIT";
-  const aiVisionSub = overlayError || state.cameraLive.lastOverlay?.backend || state.cameraLive.lastOverlay?.method || "local AI worker required";
-  const aiVisionColor = overlayError ? colors.rose : state.cameraLive.lastOverlay ? colors.good : colors.amber;
+  const aiVisionSub = overlayError || overlayNotice || state.cameraLive.lastOverlay?.backend || state.cameraLive.lastOverlay?.method || "local AI worker required";
+  const aiVisionColor = overlayError ? colors.rose : overlayNotice ? colors.amber : state.cameraLive.lastOverlay ? colors.good : colors.amber;
   renderReadout("cameraLiveStats", [
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
@@ -1943,13 +1948,25 @@ function shouldShowCameraOverlay() {
 
 function cameraOverlayErrorText(overlay) {
   if (!overlay || overlay.ok !== false) return "";
+  if (cameraOverlayNoticeText(overlay)) return "";
   return overlay.error || overlay.method || "local vision AI worker unavailable";
+}
+
+function cameraOverlayNoticeText(overlay) {
+  if (!overlay || overlay.ok !== false) return "";
+  const method = String(overlay.method || "");
+  if (method === "source_native_provenance_required" || method === "shared_vision_sync_unavailable") {
+    return "No verified AI result for this camera frame";
+  }
+  return "";
 }
 
 function drawCameraOverlayOnCanvas(canvas, overlay, options = {}) {
   if (!canvas) return;
   const frame = canvas.closest(".camera-frame, .rover-camera-frame, .archive-camera-frame");
-  const mode = options.overlayVisible === false || !shouldShowCameraOverlay() ? "raw" : state.cameraOverlayMode;
+  const requestedMode = options.overlayVisible === false || !shouldShowCameraOverlay() ? "raw" : state.cameraOverlayMode;
+  const overlayNotice = cameraOverlayNoticeText(overlay);
+  const mode = overlayNotice && requestedMode === "overlay" ? "both" : requestedMode;
   frame?.classList.toggle("overlay-only", mode === "overlay");
   const prepared = prepareCanvas(canvas);
   if (!prepared) return;
@@ -1959,6 +1976,10 @@ function drawCameraOverlayOnCanvas(canvas, overlay, options = {}) {
   const overlayError = cameraOverlayErrorText(overlay);
   if (overlayError) {
     drawCameraOverlayError(ctx, w, h, overlayError, mode);
+    return;
+  }
+  if (overlayNotice) {
+    drawCameraOverlayNotice(ctx, w, h, overlayNotice);
     return;
   }
 
@@ -1999,6 +2020,24 @@ function drawCameraOverlayOnCanvas(canvas, overlay, options = {}) {
     drawCameraDetectionShape(ctx, detection, { offsetX, offsetY, scale, color, x, y, boxW, boxH, confidence });
     drawCameraConfidenceLabel(ctx, `${Math.round(confidence * 100)}%`, x, y, boxW, color, labelBoxes);
   }
+  ctx.restore();
+}
+
+function drawCameraOverlayNotice(ctx, w, h, message) {
+  ctx.save();
+  const maxW = Math.min(w - 24, 360);
+  const x = Math.max(12, (w - maxW) / 2);
+  const y = Math.max(12, h - 92);
+  ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
+  ctx.strokeStyle = cssVar("--chart-amber", "#f6bd4a");
+  ctx.lineWidth = 1.5;
+  roundRectPath(ctx, x, y, maxW, 34, 7);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#fff7d6";
+  ctx.font = "700 11px Inter, Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(String(message), w / 2, y + 22);
   ctx.restore();
 }
 
@@ -4501,7 +4540,7 @@ async function selectRecording(id) {
     state.recordings.timeline = timelineShellFromRecording(detail?.recording || detail);
     renderRecordingDetail(detail);
     if (state.recordings.timeline) {
-      await ensureArchiveSegmentForTime(0, { force: true }).catch((err) => debugLog("archive", "first segment load failed", err));
+      await scheduleArchiveSegmentsForTime(0, { force: true, reschedule: true }).catch((err) => debugLog("archive", "first segment load failed", err));
       renderArchiveFrame();
       loadRecordingOrchardMap(id).catch((err) => debugLog("archive", "orchard map load failed", err));
     }
@@ -4552,6 +4591,10 @@ function timelineShellFromRecording(payload) {
 
 function clearArchiveFrameCache() {
   const cache = state.archivePlayback.cache;
+  if (state.archivePlayback.seekTimer) {
+    clearTimeout(state.archivePlayback.seekTimer);
+    state.archivePlayback.seekTimer = null;
+  }
   if (cache?.objectUrls) {
     for (const url of cache.objectUrls.values()) {
       if (url && url.startsWith("blob:")) URL.revokeObjectURL(url);
@@ -4569,6 +4612,8 @@ function clearArchiveFrameCache() {
   };
   state.archivePlayback.segmentCache = new Map();
   state.archivePlayback.loadingSegments = new Map();
+  state.archivePlayback.lastSegmentWindowKey = "";
+  state.archivePlayback.lastPlaybackRenderAt = 0;
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
   state.archivePlayback.lastCameraOverlayRenderKey = "";
@@ -4579,9 +4624,18 @@ function prepareArchiveTimelineCache(timeline) {
   mergeArchiveTimelineSegment(timeline);
 }
 
+function expandArchiveLidarPoints(points, fields) {
+  if (!Array.isArray(points) || !points.length || !Array.isArray(points[0])) return points || [];
+  const names = Array.isArray(fields) && fields.length
+    ? fields
+    : ["x_m", "y_m", "distance_m", "quality", "angle_deg"];
+  return points.map((values) => Object.fromEntries(names.map((name, index) => [name, values[index]])));
+}
+
 function mergeArchiveTimelineSegment(timeline) {
   if (!timeline) return;
   const cache = state.archivePlayback.cache;
+  const lidarPointFields = timeline.playback?.lidar_point_fields || [];
   if (state.recordings.timeline && timeline.imu) {
     state.recordings.timeline.imu = {
       ...(state.recordings.timeline.imu || {}),
@@ -4589,21 +4643,25 @@ function mergeArchiveTimelineSegment(timeline) {
       frames: [],
     };
   }
-  const lidarFrames = (timeline.lidar?.frames || []).map((frame, index) => ({
-    ...frame,
-    index,
-    t_s: Number(frame.t_s) || 0,
-    result: normalizeArchiveLidarResult({
-      ok: true,
-      state: "archive_timeline",
-      frame_id: frame.frame_id || "laser",
-      stamp: frame.stamp,
-      points: frame.points || [],
-      coordinate_frame: frame.coordinate_frame || timeline.coordinate_frame,
-      metrics: frame.metrics || {},
-      source: "archive_timeline",
-    }, frame.overlay, frame),
-  }));
+  const lidarFrames = (timeline.lidar?.frames || []).map((frame, index) => {
+    const points = expandArchiveLidarPoints(frame.points, lidarPointFields);
+    return {
+      ...frame,
+      index,
+      t_s: Number(frame.t_s) || 0,
+      points,
+      result: normalizeArchiveLidarResult({
+        ok: true,
+        state: "archive_timeline",
+        frame_id: frame.frame_id || "laser",
+        stamp: frame.stamp,
+        points,
+        coordinate_frame: frame.coordinate_frame || timeline.coordinate_frame,
+        metrics: frame.metrics || {},
+        source: "archive_timeline",
+      }, frame.overlay, frame),
+    };
+  });
   for (const frame of lidarFrames) {
     const key = archiveFrameKey(frame, "lidar");
     if (cache.lidarKeys.has(key)) continue;
@@ -4683,13 +4741,47 @@ async function ensureArchiveSegmentForTime(timeS, options = {}) {
   }
 }
 
+function archiveSegmentWindowKey(timeS) {
+  const id = state.recordings.selectedId;
+  if (!id || !state.recordings.timeline) return "";
+  const duration = Math.max(1, Number(state.archivePlayback.segmentDurationS) || ARCHIVE_SEGMENT_SECONDS);
+  const start = Math.max(0, Math.floor((Number(timeS) || 0) / duration) * duration);
+  return `${id}:${start.toFixed(3)}:${duration.toFixed(3)}`;
+}
+
+function scheduleArchiveSegmentsForTime(timeS, options = {}) {
+  const key = archiveSegmentWindowKey(timeS);
+  if (!key) return Promise.resolve();
+  if (!options.reschedule && state.archivePlayback.lastSegmentWindowKey === key) return Promise.resolve();
+  state.archivePlayback.lastSegmentWindowKey = key;
+  return ensureArchiveSegmentForTime(timeS, { force: Boolean(options.force) })
+    .catch((error) => {
+      if (state.archivePlayback.lastSegmentWindowKey === key) state.archivePlayback.lastSegmentWindowKey = "";
+      throw error;
+    });
+}
+
+function scheduleArchiveSeek(timeS) {
+  if (state.archivePlayback.seekTimer) clearTimeout(state.archivePlayback.seekTimer);
+  state.archivePlayback.seekTimer = setTimeout(() => {
+    state.archivePlayback.seekTimer = null;
+    scheduleArchiveSegmentsForTime(timeS, { reschedule: true })
+      .then(() => renderArchiveFrame())
+      .catch((err) => debugLog("archive", "seek segment load failed", err));
+  }, 90);
+}
+
 async function loadArchiveTimelineSegment(id, startS, durationS, options = {}) {
   const start = Math.max(0, Number(startS) || 0);
   const duration = Math.max(1, Number(durationS) || ARCHIVE_SEGMENT_SECONDS);
   const key = `${id}:${start.toFixed(3)}:${duration.toFixed(3)}`;
   if (!options.force && state.archivePlayback.segmentCache.has(key)) return state.archivePlayback.segmentCache.get(key);
   if (state.archivePlayback.loadingSegments.has(key)) return state.archivePlayback.loadingSegments.get(key);
-  const params = new URLSearchParams({ start_s: start.toFixed(3), duration_s: duration.toFixed(3) });
+  const params = new URLSearchParams({
+    start_s: start.toFixed(3),
+    duration_s: duration.toFixed(3),
+    profile: ARCHIVE_PLAYBACK_PROFILE,
+  });
   const promise = getJson(`/api/recordings/${encodeURIComponent(id)}/timeline?${params.toString()}`)
     .then((payload) => {
       if (id !== state.recordings.selectedId) return payload;
@@ -4717,7 +4809,10 @@ async function loadArchiveTimelineSegment(id, startS, durationS, options = {}) {
 }
 
 function archiveCameraFrameSrc(frame) {
-  if (frame?.frame_url) return String(frame.frame_url);
+  if (frame?.frame_url) {
+    preloadArchiveCameraFrame(frame);
+    return String(frame.frame_url);
+  }
   if (!frame?.data) return "";
   const cache = state.archivePlayback.cache;
   const key = frame.cacheKey || `${frame.index}:${String(frame.data).length}`;
@@ -4729,16 +4824,31 @@ function archiveCameraFrameSrc(frame) {
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
     const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
     cache.objectUrls.set(key, url);
-    const image = new Image();
-    image.decoding = "async";
-    image.src = url;
-    cache.imageElements.set(key, image);
     return url;
   } catch (_) {
     const dataUrl = `data:${mime};base64,${frame.data}`;
     cache.objectUrls.set(key, dataUrl);
     return dataUrl;
   }
+}
+
+function preloadArchiveCameraFrame(frame, priority = "low") {
+  if (!frame) return null;
+  const cache = state.archivePlayback.cache;
+  const key = frame.cacheKey || `${frame.index}:${frame.frame_url || String(frame.data || "").length}`;
+  const existing = cache.imageElements.get(key);
+  if (existing) {
+    if (priority === "high") existing.fetchPriority = "high";
+    return existing;
+  }
+  const src = frame.frame_url ? String(frame.frame_url) : archiveCameraFrameSrc(frame);
+  if (!src) return null;
+  const image = new Image();
+  image.decoding = "async";
+  image.fetchPriority = priority;
+  image.src = src;
+  cache.imageElements.set(key, image);
+  return image;
 }
 
 function warmArchiveCameraCache(frame) {
@@ -4748,7 +4858,9 @@ function warmArchiveCameraCache(frame) {
   if (!Number.isFinite(center)) return;
   const start = Math.max(0, center - 3);
   const end = Math.min(frames.length - 1, center + 8);
-  for (let index = start; index <= end; index += 1) archiveCameraFrameSrc(frames[index]);
+  for (let index = start; index <= end; index += 1) {
+    preloadArchiveCameraFrame(frames[index], index <= center + 2 ? "high" : "low");
+  }
 }
 
 function renderArchiveDownloadButton(payload, id) {
@@ -4913,7 +5025,6 @@ async function toggleArchivePlayback() {
     return;
   }
   if (!state.recordings.timeline) return;
-  ensureArchiveSegmentForTime(state.archivePlayback.timeS).catch((err) => debugLog("archive", "initial segment load failed", err));
   const startTime = state.archivePlayback.timeS >= state.archivePlayback.durationS ? 0 : state.archivePlayback.timeS;
   const video = archiveNativeVideo();
   if (video) {
@@ -4929,6 +5040,8 @@ async function toggleArchivePlayback() {
   state.archivePlayback.playing = true;
   state.archivePlayback.startedAt = performance.now();
   state.archivePlayback.startTimeS = startTime;
+  scheduleArchiveSegmentsForTime(startTime, { reschedule: true })
+    .catch((err) => debugLog("archive", "initial segment load failed", err));
   archivePlaybackTick();
 }
 
@@ -4960,7 +5073,11 @@ function archivePlaybackTick(now = performance.now()) {
     return;
   }
   state.archivePlayback.timeS = next;
-  renderArchiveFrame();
+  scheduleArchiveSegmentsForTime(next).catch((err) => debugLog("archive", "playback segment load failed", err));
+  if (now - (state.archivePlayback.lastPlaybackRenderAt || 0) >= 50) {
+    state.archivePlayback.lastPlaybackRenderAt = now;
+    renderArchiveFrame();
+  }
   state.archivePlayback.raf = requestAnimationFrame(archivePlaybackTick);
 }
 
@@ -4971,16 +5088,13 @@ function setArchiveTime(value, options = {}) {
   if (video && Math.abs(Number(video.currentTime || 0) - state.archivePlayback.timeS) > 0.04) {
     try { video.currentTime = state.archivePlayback.timeS; } catch (_) { /* metadata is not ready yet */ }
   }
-  ensureArchiveSegmentForTime(state.archivePlayback.timeS)
-    .then(() => renderArchiveFrame())
-    .catch((err) => debugLog("archive", "seek segment load failed", err));
+  scheduleArchiveSeek(state.archivePlayback.timeS);
   renderArchiveFrame();
 }
 
 function renderArchiveFrame() {
   const timeline = state.recordings.timeline;
   const timeS = Math.max(0, Number(state.archivePlayback.timeS) || 0);
-  ensureArchiveSegmentForTime(timeS).catch((err) => debugLog("archive", "render segment load failed", err));
   const cache = state.archivePlayback.cache || {};
   const lidarFrame = timeline ? nearestTimelineFrame(cache.lidarFrames || [], timeS) : null;
   const cameraFrame = timeline && state.archivePlayback.sync ? nearestTimelineFrame(cache.cameraFrames || [], timeS) : null;

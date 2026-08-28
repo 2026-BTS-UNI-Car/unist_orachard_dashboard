@@ -303,3 +303,15 @@ Last updated: 2026-07-11
 - [x] 과거 v7 배포 중 SSH timeout은 복구됐고, 후속 v8을 CI/CD로 Jetson에 배포해 health/API/browser 검증까지 완료했다.
 - [x] SegFormer-B0 대신 orchard-specific YOLO11n-seg TensorRT FP16 + CLIP OOD worker를 Jetson GPU 별도 container에서 검증했다.
 - [ ] 수동 annotation GT를 만들어 v7 LiDAR wall suppression과 camera v4 gate의 precision/recall을 계산한다.
+
+## 2026-08-28 대시보드 영상 재생 및 Camera AI 상태 수정
+
+- [x] 최신 archive `20260828T100032Z_both`의 전체 85개 segment와 Camera AI provenance 상태를 점검했다.
+- [x] archive 렌더 루프에서 네트워크 요청을 분리하고 segment-window 단위로 중복 요청을 차단했다.
+- [x] scrubber 연속 이동 요청을 debounce하고 재생 UI 갱신을 20 fps로 제한했다.
+- [x] binary JPEG sidecar를 실제 `Image` 객체로 선행 다운로드·디코딩하도록 수정했다.
+- [x] 원본 timeline을 바꾸지 않는 `dashboard-compact-v1` 재생 응답을 추가했다.
+- [x] provenance가 없는 개별 프레임을 전체 AI 장애로 표시하지 않고 비차단 안내로 분리했다.
+- [x] Linux 전체 테스트 145개 통과(7개 skip), 최신 archive compact payload 및 Chrome 8초 재생 회귀를 통과시켰다.
+- [x] Jetson dashboard만 재빌드·배포하고 healthy 상태와 공개 도메인 8.3초 Chrome 재생을 확인했다.
+- [ ] GitHub 브랜치에 커밋·푸시하고 배포 결과를 기록한다.

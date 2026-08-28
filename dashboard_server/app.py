@@ -426,7 +426,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         if self.command != "HEAD":
-            self.wfile.write(encoded)
+            try:
+                self.wfile.write(encoded)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                self.close_connection = True
+                return
         self.close_connection = True
         self._log_served_json()
 
@@ -595,7 +599,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             params = parse_qs(query or "")
             start_s = (params.get("start_s") or [None])[0]
             duration_s = (params.get("duration_s") or [None])[0]
-            self._send_json(self.provider.recording_timeline(recording_id, start_s=start_s, duration_s=duration_s))
+            profile = (params.get("profile") or [None])[0]
+            self._send_json(
+                self.provider.recording_timeline(
+                    recording_id,
+                    start_s=start_s,
+                    duration_s=duration_s,
+                    profile=profile,
+                )
+            )
             return
         if raw.endswith("/orchard-map"):
             recording_id = unquote(raw.removesuffix("/orchard-map").strip("/"))
@@ -629,7 +641,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send_session_cookie(session_token)
         self.end_headers()
         if self.command != "HEAD":
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                self.close_connection = True
 
     def _send_recording_video(self, video: dict[str, object]):
         path = video.get("path")
