@@ -104,6 +104,14 @@ class DecoderTests(unittest.TestCase):
         self.assertLess(len(decoder.buffer), 1024)
         self.assertTrue(decoder.feed(pvt())[0]['valid'])
 
+    def test_two_dimensional_fix_does_not_claim_altitude(self):
+        decoder = GnssDecoder()
+        data = bytearray(pvt()[6:-2]); data[20] = 2
+        frame = decoder.feed(ubx_packet(1,7,data))[0]
+        self.assertTrue(frame['valid'])
+        self.assertIsNone(frame['altitude_ellipsoid_m'])
+        self.assertIsNone(frame['v_acc_m'])
+
     def test_stale_invalid_times_and_delayed_bridge_messages(self):
         data = sample()
         empty_snapshot = fresh_snapshot({}, None, now=100)

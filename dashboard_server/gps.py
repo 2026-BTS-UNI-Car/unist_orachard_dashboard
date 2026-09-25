@@ -205,6 +205,8 @@ class GnssDecoder:
                      satellites=p[23], pdop=struct.unpack_from("<H", p, 76)[0]*.01,
                      speed_mps=max(0, speed*.001), course_deg=(heading*1e-5) % 360,
                      gps_time=gps_time, fix_dimension=p[20])
+        if p[20] == 2:
+            frame.update(altitude_ellipsoid_m=None, altitude_msl_m=None, v_acc_m=None)
         return frame
 
 

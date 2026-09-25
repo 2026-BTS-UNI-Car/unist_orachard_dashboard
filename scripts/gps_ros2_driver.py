@@ -131,7 +131,8 @@ def make_navsat(sample, message_class):
     msg.header.frame_id = 'gps_link'
     ok = valid_position(sample)
     msg.status.status = (2 if sample.get('quality') in (4, 5) else 0) if ok else -1
-    msg.status.service = 15  # GPS, GLONASS, BeiDou and Galileo; no invented base_link transform.
+    # PVT/GGA do not identify which constellations actually supplied the fix.
+    msg.status.service = 0
     msg.latitude = float(sample['latitude']) if ok else math.nan
     msg.longitude = float(sample['longitude']) if ok else math.nan
     msg.altitude = float(sample['altitude_ellipsoid_m']) if ok and sample.get('altitude_ellipsoid_m') is not None else math.nan

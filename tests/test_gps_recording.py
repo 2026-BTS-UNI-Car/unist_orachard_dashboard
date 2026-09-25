@@ -49,6 +49,7 @@ class GpsRosTests(unittest.TestCase):
         self.assertEqual(msg.header.frame_id,'gps_link')
         self.assertEqual(msg.header.stamp.sec,42)
         self.assertEqual(msg.status.status,2)
+        self.assertEqual(msg.status.service,0)
         self.assertAlmostEqual(msg.position_covariance[0],.0004)
         sample['valid']=False
         msg=make_navsat(sample,NavSatFix)
