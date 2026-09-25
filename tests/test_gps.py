@@ -111,6 +111,10 @@ class DecoderTests(unittest.TestCase):
         self.assertTrue(frame['valid'])
         self.assertIsNone(frame['altitude_ellipsoid_m'])
         self.assertIsNone(frame['v_acc_m'])
+        hp = bytearray(36); struct.pack_into('<I',hp,4,123456)
+        refined = decoder.feed(ubx_packet(1,20,hp))[0]
+        self.assertIsNone(refined['altitude_ellipsoid_m'])
+        self.assertIsNone(refined['v_acc_m'])
 
     def test_stale_invalid_times_and_delayed_bridge_messages(self):
         data = sample()
