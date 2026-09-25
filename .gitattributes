@@ -1,3 +1,4 @@
 *.sh text eol=lf
 *.py text eol=lf
-static/vendor/** -text
+static/vendor/** -text -whitespace
+static/vendor/gps-map-vendors.json text eol=lf whitespace
