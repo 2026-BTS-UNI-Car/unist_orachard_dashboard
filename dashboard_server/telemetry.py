@@ -769,7 +769,9 @@ class TelemetryProvider:
             return {"ok": False, "state": "invalid_kind", "error": "kind must be lidar, camera, or both"}
         raw_include_imu = payload.get("include_imu", True)
         include_imu = raw_include_imu if isinstance(raw_include_imu, bool) else str(raw_include_imu).strip().lower() in {"1", "true", "yes", "on"}
-        result = self._recorder_post("/start", {"kind": kind, "include_imu": include_imu})
+        raw_gps = payload.get("include_gps", True)
+        include_gps = raw_gps if isinstance(raw_gps, bool) else str(raw_gps).lower() in {"1", "true", "yes", "on"}
+        result = self._recorder_post("/start", {"kind": kind, "include_imu": include_imu, "include_gps": include_gps})
         if result.get("ok"):
             return result
         return {"ok": False, "state": "recorder_unavailable", "error": result.get("error"), "status": self.recording_status()}
@@ -853,6 +855,9 @@ class TelemetryProvider:
             "lidar_frames": metadata_summary.get("lidar_frames"),
             "camera_frames": metadata_summary.get("camera_frames"),
             "imu_frames": metadata_imu_frames,
+            "gps_frames": metadata_summary.get("gps_frames", 0),
+            "gps_valid_frames": metadata_summary.get("gps_valid_frames", 0),
+            "gps_enabled": metadata.get("include_gps", False),
             "imu_calibration_valid": metadata_summary.get("imu_calibration_valid"),
             "imu_timeline_hz": metadata_summary.get("imu_timeline_hz"),
             "sample_hz": metadata_summary.get("sample_hz"),
@@ -889,6 +894,7 @@ class TelemetryProvider:
                 "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
                 "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
                 "imu_frames": len((timeline.get("imu") or {}).get("frames", [])),
+                "gps_frames": (timeline.get("gps") or {}).get("frame_count", len((timeline.get("gps") or {}).get("frames", []))),
                 "imu_calibration_valid": bool(
                     (timeline.get("imu") or {}).get("calibration", {}).get("valid")
                     or (timeline.get("imu") or {}).get("calibration", {}).get("calibration", {}).get("valid")
@@ -964,11 +970,14 @@ class TelemetryProvider:
         if path is None or not path.exists():
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
         timeline_path = path / "timeline.json"
+        def response(timeline):
+            timeline = self._with_recorded_gps(path, timeline, start_s, duration_s)
+            return {"ok": True, "timeline": self._playback_response_profile(timeline, profile)}
         playback_request = self._playback_segment_request(start_s, duration_s)
         if playback_request is not None:
             cached_segment = self._cached_playback_segment(path, timeline_path, playback_request)
             if cached_segment:
-                return {"ok": True, "timeline": self._playback_response_profile(cached_segment, profile)}
+                return response(cached_segment)
         timeline = self._load_recording_timeline(timeline_path)
         if not timeline:
             return {"ok": False, "error": "timeline_not_found", "id": recording_id}
@@ -977,10 +986,39 @@ class TelemetryProvider:
                 cached_segment = self._build_playback_cache(path, timeline_path, timeline, playback_request)
                 if cached_segment:
                     self._drop_timeline_cache(timeline_path)
-                    return {"ok": True, "timeline": self._playback_response_profile(cached_segment, profile)}
+                    return response(cached_segment)
             segment = self._recording_timeline_segment(timeline, start_s, duration_s)
-            return {"ok": True, "timeline": self._playback_response_profile(segment, profile)}
-        return {"ok": True, "timeline": timeline}
+            return response(segment)
+        return response(timeline)
+
+    def _with_recorded_gps(self, path, timeline, start_s, duration_s):
+        """Read the full GPS sidecar by time window, including old samples past the RAM tail."""
+        gps_path = path / "gps.jsonl"
+        if not gps_path.is_file(): return timeline
+        try:
+            start = max(0., float(start_s)) if start_s is not None else 0.
+            end = start + max(.1, float(duration_s)) if duration_s is not None else float("inf")
+        except (ValueError, TypeError): return timeline
+        frames = []
+        before = None
+        try:
+            with gps_path.open(encoding="utf-8") as source:
+                for line in source:
+                    try:
+                        frame = json.loads(line)
+                        t = float(frame["t_s"])
+                        if not math.isfinite(t) or not isinstance(frame.get("sample"), dict): continue
+                    except (ValueError, TypeError, KeyError): continue
+                    if t < start:
+                        before = frame
+                        continue
+                    if not frames and before is not None: frames.append(before)
+                    frames.append(frame)
+                    if t > end: break
+            if not frames and before is not None: frames.append(before)
+        except OSError: return timeline
+        return {**timeline, "gps": {**(timeline.get("gps") or {}), "frames": frames},
+                "sync": {**(timeline.get("sync") or {}), "segment_gps_frames": len(frames)}}
 
     def _playback_response_profile(self, timeline: dict[str, Any], profile: Any) -> dict[str, Any]:
         """Compact only the dashboard playback response; the archive stays lossless.
@@ -1315,11 +1353,16 @@ class TelemetryProvider:
             **{key: value for key, value in (timeline.get("imu") or {}).items() if key != "frames"},
             "frames": imu_frames,
         }
+        payload["gps"] = {
+            **{key: value for key, value in (timeline.get("gps") or {}).items() if key != "frames"},
+            "frames": self._timeline_frames_between((timeline.get("gps") or {}).get("frames", []), start, end),
+        }
         payload["sync"] = {
             **(timeline.get("sync") or {}),
             "segment_lidar_frames": len(payload["lidar"]["frames"]),
             "segment_camera_frames": len(payload["camera"]["frames"]),
             "segment_imu_frames": len(payload["imu"]["frames"]),
+            "segment_gps_frames": len(payload["gps"]["frames"]),
         }
         return payload
 
@@ -2577,6 +2620,7 @@ class TelemetryProvider:
             "duration_s": recorder.get("duration_s"),
             "samples": recorder.get("samples"),
             "include_imu": recorder.get("include_imu", True),
+            "include_gps": recorder.get("include_gps", True),
             "imu_pipeline": recorder.get("imu_pipeline"),
             "status_url": recorder.get("status_url") or f"{self.recorder_api_url}/status",
         }

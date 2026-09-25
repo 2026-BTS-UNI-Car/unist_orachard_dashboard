@@ -15,6 +15,8 @@
       }
     </script>
     <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/vendor/maplibre-gl/maplibre-gl.css" />
+    <link rel="stylesheet" href="/static/gps-map.css" />
   </head>
   <body>
     <button id="mobileNavBackdrop" class="mobile-nav-backdrop" type="button" aria-label="메뉴 닫기"></button>
@@ -720,6 +722,24 @@
               <div id="roverCameraStats" class="chart-readout"></div>
             </article>
 
+            <article class="panel rover-gps-panel wide">
+              <div class="panel-head">
+                <div><p class="eyebrow">Live · Offline Map</p><h2>GPS · 로버 위치</h2></div>
+                <div class="gps-map-actions"><span id="roverGpsFixState" class="tag" data-state="waiting">수신 대기</span><button id="roverGpsFollow" class="action-button primary" type="button" aria-pressed="true">로버 중심 추적 중</button></div>
+              </div>
+              <div id="roverGpsMap" class="gps-map" role="region" aria-label="로버 GPS 오프라인 지도"></div>
+              <div class="gps-readouts">
+                <div><span>위도 · 경도</span><strong id="roverGpsPosition">GPS 위치 수신 대기</strong></div>
+                <div><span>수신 상태</span><strong id="roverGpsQuality">GPS 데이터 없음</strong></div>
+                <div><span>수신기 보고 정확도</span><strong id="roverGpsAccuracy">정확도 미보고</strong></div>
+                <div><span>이동 속도</span><strong id="roverGpsSpeed">— km/h</strong></div>
+              </div>
+              <div class="gps-map-footer"><span id="roverGpsMapStatus">오프라인 지도 준비 중</span><span id="roverGpsAge">GPS 표본 수신 전</span></div>
+              <p id="roverGpsAltitude" class="gps-caption">현재 위치가 확정되면 표시됩니다.</p>
+              <p class="gps-caption">드래그로 지도 둘러보기 · 휠/두 손가락으로 확대·축소 · 로버 중심 버튼으로 추적 재개. 첫 위치 수신 전에는 울산 지도를 표시합니다.</p>
+              <details class="gps-diagnostics"><summary>GPS 연결 정보</summary><p id="roverGpsConnection">GPS 브리지 연결 대기</p><p>RTK FIX는 보정 데이터가 실제 수신될 때 표시됩니다. 지도는 Jetson에 저장되어 인터넷 없이 사용할 수 있습니다.</p></details>
+            </article>
+
             <article class="panel rover-live-panel rover-imu-panel">
               <div class="panel-head">
                 <div>
@@ -799,6 +819,7 @@
                 <input id="roverRecordImuToggle" type="checkbox" checked />
                 <span>IMU 함께 기록 (기본) · 시작 시 정지 자세 보정</span>
               </label>
+              <label class="switch-control record-imu-option"><input id="roverRecordGpsToggle" type="checkbox" checked /><span>GPS 함께 기록 (기본) · 위치·정확도·수신 상태</span></label>
               <div id="roverRecordingStatus" class="test-result">기록 대기 중</div>
             </article>
 
@@ -873,6 +894,13 @@
                     </figure>
                   </div>
                   <div id="roverArchiveDetails" class="status-list"></div>
+                  <section id="roverArchiveGpsPanel" class="archive-gps-panel" hidden>
+                    <div class="panel-head mini"><div><p class="eyebrow">Time-aligned GPS</p><h3>기록된 로버 위치</h3></div><button id="roverArchiveGpsFollow" class="action-button secondary" type="button" aria-pressed="true">로버 중심 추적 중</button></div>
+                    <div id="roverArchiveGpsMap" class="gps-map gps-archive-map" role="region" aria-label="기록 GPS 동기 재생 지도"></div>
+                    <div class="gps-readouts"><div><span>위도 · 경도</span><strong id="roverArchiveGpsPosition">기록 선택 대기</strong></div><div><span>수신 상태</span><strong id="roverArchiveGpsQuality">—</strong></div><div><span>수신기 보고 정확도</span><strong id="roverArchiveGpsAccuracy">—</strong></div><div><span>이동 속도</span><strong id="roverArchiveGpsSpeed">—</strong></div></div>
+                    <div class="gps-map-footer"><span id="roverArchiveGpsTime">GPS 타임라인 대기</span><span id="roverArchiveGpsMapStatus"></span></div>
+                    <p id="roverArchiveGpsAltitude" class="gps-caption"></p>
+                  </section>
                   <section id="roverArchiveImuPanel" class="archive-imu-panel" hidden>
                     <div class="panel-head mini">
                       <div>
@@ -982,5 +1010,7 @@
     </div>
 
     <script src="/static/app.js"></script>
+    <script src="/static/vendor/pmtiles/pmtiles.js"></script>
+    <script type="module" src="/static/gps-map.js"></script>
   </body>
 </html>

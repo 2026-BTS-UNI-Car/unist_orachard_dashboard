@@ -34,6 +34,9 @@ services:
       IMU_WS_UPSTREAM: "ws://127.0.0.1:8775/ws/imu"
       IMU_DRIVER_STATUS_FILE: "/app/runtime/imu_driver_status.json"
       IMU_BRIDGE_STATUS_FILE: "/app/runtime/imu_bridge_status.json"
+      GPS_WS_UPSTREAM: "ws://127.0.0.1:8778/ws/gps"
+      GPS_BRIDGE_STATUS_FILE: "/app/runtime/gps_bridge_status.json"
+      OFFLINE_MAP_DIR: "/app/data/maps"
       CAMERA_SETTINGS_FILE: "/app/runtime/camera_settings.json"
       ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
       ROVER_CONTROL_SOCKET: "/run/ubts-rover/control.sock"
@@ -377,6 +380,50 @@ services:
       - /run/lock:/run/lock
       - /run/udev:/run/udev:ro
     command: ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && python3 -m scripts.rover_control_bridge"]
+
+  ros2-gps-driver:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-gps-driver:latest
+    container_name: unist-orachard-ros2-gps-driver
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    pid: host
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      GPS_SERIAL_PORT: "/dev/ubts-gps"
+      GPS_BAUD: "${GPS_BAUD:-0}"
+      GPS_DRIVER_STATUS_FILE: "/app/runtime/gps_driver_status.json"
+    devices:
+      - "${GPS_SERIAL_DEVICE:-/dev/ttyTHS1}:/dev/ubts-gps"
+    volumes:
+      - ./runtime:/app/runtime
+      - /run/ubts-gps:/run/ubts-gps
+    command: ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && exec python3 -m scripts.gps_ros2_driver"]
+
+  ros2-gps-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-gps-bridge:latest
+    container_name: unist-orachard-ros2-gps-bridge
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    depends_on:
+      - ros2-gps-driver
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      GPS_BRIDGE_STATUS_FILE: "/app/runtime/gps_bridge_status.json"
+    volumes:
+      - ./runtime:/app/runtime
+    command: ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && exec python3 -m scripts.gps_ws_bridge"]
 
   ros2-data-recorder:
     build:

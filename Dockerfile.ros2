@@ -19,8 +19,9 @@ COPY scripts/imu_ros2_driver.py ./scripts/imu_ros2_driver.py
 COPY scripts/imu_ws_bridge.py ./scripts/imu_ws_bridge.py
 COPY scripts/esp_wheel_controller.py scripts/esp_motor.py scripts/rover_control_core.py scripts/rover_control_bridge.py scripts/stream_policy.py ./scripts/
 COPY scripts/data_recorder_service.py ./scripts/data_recorder_service.py
+COPY scripts/gps_ros2_driver.py scripts/gps_ws_bridge.py ./scripts/
 COPY scripts/recompute_archive_camera_overlays_from_rosbag.py ./scripts/recompute_archive_camera_overlays_from_rosbag.py
 
-EXPOSE 8765 8770 8775 8790
+EXPOSE 8765 8770 8775 8778 8790
 
 CMD ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && python3 /app/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan --source ${LIDAR_BRIDGE_SOURCE}"]

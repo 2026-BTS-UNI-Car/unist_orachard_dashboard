@@ -22,6 +22,8 @@ jobs:
         run: docker compose config --quiet
       - name: Browser control state machine
         run: node tests/test_rover_browser.js
+      - name: GPS map follow and replay
+        run: node tests/test_gps_map.mjs
       - name: Build dashboard image
         run: docker build --file Dockerfile --tag unist-orchard-dashboard:smoke .
       - name: Build ROS2 runtime image
@@ -32,4 +34,11 @@ jobs:
             --volume "$PWD:/workspace:ro" \
             --workdir /workspace \
             unist-orchard-dashboard-ros2:smoke \
-            /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -m unittest discover -s tests -p "test_camera_ws_bridge.py" && python3 -m unittest discover -s tests -p "test_data_recorder_service.py"'
+            /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -m unittest discover -s tests -p "test_camera_ws_bridge.py" && python3 -m unittest discover -s tests -p "test_data_recorder_service.py" && python3 -m unittest discover -s tests -p "test_gps*.py"'
+      - name: Isolated four-sensor ROS recording
+        run: |
+          mkdir -p runtime data
+          docker run --rm --network none -e ROS_DOMAIN_ID=173 -e UBTS_GPS_INTEGRATION_TEST=1 \
+            --volume "$PWD:/workspace:ro" --tmpfs /workspace/runtime:rw --tmpfs /workspace/data:rw \
+            --workdir /workspace unist-orchard-dashboard-ros2:smoke \
+            /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -B -m unittest discover -s tests -p "test_gps_integration.py"'

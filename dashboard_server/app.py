@@ -33,6 +33,7 @@ _SESSIONS: dict[str, dict[str, float]] = {}
 _ACTIVE_LIDAR_WS: dict[str, dict[str, float | str]] = {}
 _ACTIVE_CAMERA_WS: dict[str, dict[str, float | str]] = {}
 _ACTIVE_IMU_WS: dict[str, dict[str, float | str]] = {}
+_ACTIVE_GPS_WS: dict[str, dict[str, float | str]] = {}
 
 
 def dashboard_log(event: str, **fields):
@@ -54,6 +55,9 @@ def _prune_sessions(now: float | None = None):
     for connection_id, item in list(_ACTIVE_IMU_WS.items()):
         if item.get("session") in expired:
             _ACTIVE_IMU_WS.pop(connection_id, None)
+    for connection_id, item in list(_ACTIVE_GPS_WS.items()):
+        if item.get("session") in expired:
+            _ACTIVE_GPS_WS.pop(connection_id, None)
 
 
 def lidar_websocket_stats() -> dict[str, object]:
@@ -114,6 +118,10 @@ class _TeeWriter:
 
 
 DOCS_CATALOG = [
+    {
+        "slug": "gps-offline-map", "title": "GPS · 대한민국 오프라인 지도", "category": "Sensors",
+        "summary": "GPS UART 드라이버, 지도 추적, 동기 기록 및 배선 진단", "file": "gps_offline_map.md",
+    },
     {
         "slug": "architecture",
         "title": "대시보드 아키텍처",
@@ -344,6 +352,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._proxy_camera_websocket()
         elif path == "/ws/imu":
             self._proxy_imu_websocket()
+        elif path == "/ws/gps":
+            self._proxy_local_websocket(label="gps", registry=_ACTIVE_GPS_WS,
+                default_upstream=os.environ.get("GPS_WS_UPSTREAM", "ws://127.0.0.1:8778/ws/gps"),
+                unavailable_payload={"type": "gps", "state": "unavailable", "valid": False, "connected": False})
+        elif path == "/api/maps/status":
+            from dashboard_server.offline_maps import map_status
+            self._send_json(map_status())
+        elif path.startswith("/maps/"):
+            self._send_map_asset(unquote(path.removeprefix("/maps/")))
+        elif path == "/api/gps":
+            from dashboard_server.gps import fresh_snapshot
+            try:
+                gps = json.loads(Path(os.environ.get("GPS_BRIDGE_STATUS_FILE", str(ROOT / "runtime/gps_bridge_status.json"))).read_text())
+            except (OSError, ValueError):
+                gps = {}
+            self._send_json(fresh_snapshot(gps, gps.get("received_at"), driver=gps.get("driver")))
         elif path in APP_ROUTES or path.startswith("/docs/"):
             self._send_file(STATIC_ROOT / "index.html")
         elif path == "/api/health":
@@ -513,26 +537,46 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if root not in resolved.parents and resolved != root:
                 self.send_error(403, "Forbidden")
                 return
-            body = resolved.read_bytes()
+            info = resolved.stat()
         except OSError:
             self.send_error(404, "Not found")
             return
         content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
-        if resolved.suffix == ".js":
+        if resolved.suffix in (".js", ".mjs"):
             content_type = "application/javascript; charset=utf-8"
         elif resolved.suffix == ".css":
             content_type = "text/css; charset=utf-8"
         elif resolved.suffix == ".html":
             content_type = "text/html; charset=utf-8"
+        compressed = 'gzip' in self.headers.get('Accept-Encoding', '') and resolved.suffix in ('.js', '.mjs', '.css', '.html', '.json', '.svg')
+        etag = f'"{info.st_mtime_ns:x}-{info.st_size:x}-{"gz" if compressed else "raw"}"'
+        if self.headers.get('If-None-Match') == etag:
+            self.send_response(304)
+            self.send_header('ETag', etag)
+            self.send_header('Cache-Control', 'private, max-age=0, must-revalidate')
+            self.send_header('Vary', 'Accept-Encoding')
+            self._send_session_cookie(session_token)
+            self.end_headers()
+            return
+        try:
+            body = resolved.read_bytes()
+        except OSError:
+            self.send_error(404, 'Not found')
+            return
+        if compressed: body = gzip.compress(body, compresslevel=6, mtime=0)
         self.send_response(200)
         self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", "private, max-age=0, must-revalidate")
+        self.send_header('ETag', etag)
+        self.send_header('Vary', 'Accept-Encoding')
+        if compressed: self.send_header('Content-Encoding', 'gzip')
         self.send_header("Connection", "close")
         self._send_session_cookie(session_token)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if self.command != "HEAD":
-            self.wfile.write(body)
+            try: self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, OSError): pass
         self.close_connection = True
 
     def _ensure_session(self, create: bool) -> str | None:
@@ -663,13 +707,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError, OSError):
                 self.close_connection = True
 
+    def _send_map_asset(self, relative):
+        from dashboard_server.offline_maps import asset_path
+        path = asset_path(relative)
+        if path is None:
+            self.send_error(404, "Offline map asset not found")
+            return
+        if path.suffix == ".pmtiles" and not self.headers.get("Range") and self.command != "HEAD":
+            self.send_error(400, "A byte range is required for this map archive")
+            return
+        mime = {".pmtiles": "application/octet-stream", ".pbf": "application/x-protobuf",
+                ".woff2": "font/woff2"}.get(path.suffix) or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        self._send_range_file({"path": path, "mime": mime})
+
     def _send_recording_video(self, video: dict[str, object]):
+        self._send_range_file(video)
+
+    def _send_range_file(self, video: dict[str, object]):
         path = video.get("path")
         if not isinstance(path, Path):
             self.send_error(404, "Recording video not found")
             return
         try:
-            size = path.stat().st_size
+            info = path.stat()
+            size = info.st_size
         except OSError:
             self.send_error(404, "Recording video not found")
             return
@@ -681,10 +742,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         length = end - start + 1
+        etag = f'"{info.st_mtime_ns:x}-{size:x}"'
+        if self.headers.get('If-Match') not in (None, '*', etag):
+            self.send_response(412)
+            self.send_header('ETag', etag)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
         session_token = self._ensure_session(create=True)
         self.send_response(206 if partial else 200)
         self.send_header("Content-Type", str(video.get("mime") or "video/mp4"))
         self.send_header("Accept-Ranges", "bytes")
+        self.send_header("ETag", etag)
         self.send_header("Content-Length", str(length))
         self.send_header("Cache-Control", "private, max-age=3600")
         self.send_header("Content-Disposition", f'inline; filename="{path.name}"')

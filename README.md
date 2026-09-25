@@ -1,5 +1,7 @@
 # UNIST Orchard Rover Dashboard
 
+GPS UART driver, offline Korea maps and synchronized GPS recording: [GPS setup and operation](docs/gps_offline_map.md)
+
 Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대시보드입니다. 현재 서버는 Jetson의 실제 시스템, 네트워크, Docker 상태를 읽고, ROS2/로버 데이터는 추후 bridge가 제공하는 JSON 텔레메트리 파일을 통해 연결합니다.
 
 대시보드는 수행계획서의 연구 방향인 Vision-LiDAR 신뢰도 동적 조절, 행간 중심선 추정, 경로추종 안정화, 과수원 주행 성능 검증을 기준으로 구성했습니다.

@@ -181,6 +181,7 @@ const state = {
 	    actionInFlight: false,
 	    kind: "both",
 	    includeImu: true,
+	    includeGps: true,
 	    lastStatusAt: 0,
 	  },
 	  archivePlayback: {
@@ -195,7 +196,7 @@ const state = {
 	    sync: true,
 	    range: 25,
 	    fallbackPreview: null,
-	    cache: { lidarFrames: [], cameraFrames: [], imuFrames: [], lidarKeys: new Set(), cameraKeys: new Set(), imuKeys: new Set(), objectUrls: new Map(), imageElements: new Map() },
+	    cache: { lidarFrames: [], cameraFrames: [], imuFrames: [], gpsFrames: [], gpsKeys: new Set(), lidarKeys: new Set(), cameraKeys: new Set(), imuKeys: new Set(), objectUrls: new Map(), imageElements: new Map() },
 	    segmentDurationS: ARCHIVE_SEGMENT_SECONDS,
 	    segmentCache: new Map(),
 	    loadingSegments: new Map(),
@@ -407,6 +408,7 @@ function renderRoute() {
   if (!routeSupportsImuLive(route) && (state.imuLive.socket || state.imuLive.enabled)) {
     closeImuLive("Live 화면 밖에서는 IMU WebSocket을 닫습니다.", { userStopped: false });
   }
+  window.RoverGps?.routeChanged();
   requestChartAnimation();
 }
 
@@ -1327,6 +1329,7 @@ function liveNetworkProfile() {
 function setLiveNetworkProfile(value) {
   if (!["auto", "tiny", "slow", "balanced", "detail"].includes(value)) return;
   try { localStorage.setItem("ubts-live-network-profile", value); } catch (_) {}
+  window.RoverGps?.profileChanged();
   if (state.imuLive.socket) { closeImuLive("profile changed", {userStopped: false}); setTimeout(startImuLive, 250); }
   document.querySelectorAll("[data-network-profile]").forEach(el => { el.value = value; });
   if (state.cameraLive.socket) { closeCameraLive("전송 품질 변경", {userStopped: false}); setTimeout(startCameraLive, 250); }
@@ -3934,6 +3937,7 @@ function initRoverControl() {
   $("roverImuToggle")?.addEventListener("click", toggleImuLive);
   $("roverImuZeroButton")?.addEventListener("click", zeroImuReference);
   $("roverRecordImuToggle")?.addEventListener("change", (event) => setRecordingImuEnabled(event.target.checked, true));
+  $("roverRecordGpsToggle")?.addEventListener("change", (event) => { state.recordings.includeGps = event.target.checked; renderRecordingStatus(); });
   $("roverRecordStartButton")?.addEventListener("click", () => startRecording(state.recordings.kind));
   document.querySelectorAll("[data-record-kind]").forEach((button) => {
     button.addEventListener("click", () => setRecordingKind(button.dataset.recordKind, true));
@@ -4353,6 +4357,7 @@ async function startRecording(kind) {
 	    const payload = await postJson("/api/recordings/start", {
 	      kind: kind || state.recordings.kind,
 	      include_imu: state.recordings.includeImu,
+	      include_gps: state.recordings.includeGps,
 	    });
 	    state.recordings.status = payload.status || payload;
 	    state.recordings.lastStatusAt = Date.now();
@@ -4400,7 +4405,9 @@ function recordingImuFrameCount(payload) {
 function recordingSensorLabel(payload) {
   const kind = payload?.kind || payload?.metadata?.kind;
   const label = recordingKindLabel(kind);
-  return recordingImuFrameCount(payload) > 0 ? `${label}+IMU` : label;
+  const sensors = recordingImuFrameCount(payload) > 0 ? `${label}+IMU` : label;
+  const gpsCount = payload?.timeline?.gps_frames ?? payload?.timeline_summary?.gps_frames ?? payload?.metadata?.timeline?.gps_frames ?? 0;
+  return Number(gpsCount) > 0 ? `${sensors}+GPS` : sensors;
 }
 
 function renderRecordingStatus(override) {
@@ -4408,7 +4415,8 @@ function renderRecordingStatus(override) {
   const active = Boolean(status.active);
   const kind = recordingKindLabel(active ? status.kind : state.recordings.kind);
   const includeImu = active ? status.include_imu !== false : state.recordings.includeImu;
-  const sensorLabel = includeImu ? `${kind}+IMU` : kind;
+  const includeGps = active ? status.include_gps !== false : state.recordings.includeGps;
+  const sensorLabel = `${kind}${includeImu ? "+IMU" : ""}${includeGps ? "+GPS" : ""}`;
   const duration = recordingDurationSeconds(status);
   const calibrationState = status.imu_pipeline?.calibration?.state;
   const message = override || (active
@@ -4434,6 +4442,8 @@ function renderRecordingStatus(override) {
   text("roverRecorderState", active ? "recording" : status.ok ? "ready" : status.state || "--");
   text("roverRecorderKind", active ? sensorLabel : status.archive_count !== undefined ? `${status.archive_count} archives` : "대기");
   const imuToggle = $("roverRecordImuToggle");
+  const gpsToggle = $("roverRecordGpsToggle");
+  if (gpsToggle) { gpsToggle.checked = includeGps; gpsToggle.disabled = state.recordings.actionInFlight || active; }
   if (imuToggle) {
     imuToggle.checked = includeImu;
     imuToggle.disabled = state.recordings.actionInFlight || active;
@@ -4506,7 +4516,8 @@ function timelineShellFromRecording(payload) {
   const lidarFrames = Number(summary.lidar_frames || 0);
   const cameraFrames = Number(summary.camera_frames || 0);
   const imuFrames = Number(summary.imu_frames || 0);
-  if (!summary.ok && !lidarFrames && !cameraFrames && !imuFrames) return null;
+  const gpsFrames = Number(summary.gps_frames || 0);
+  if (!summary.ok && !lidarFrames && !cameraFrames && !imuFrames && !gpsFrames) return null;
   return {
     ok: true,
     id: payload?.id || metadata.id || state.recordings.selectedId,
@@ -4517,11 +4528,13 @@ function timelineShellFromRecording(payload) {
     lidar: { frames: [] },
     camera: { frames: [] },
     imu: { frames: [], calibration: metadata.timeline?.imu_calibration || {} },
+    gps: {frames: [], enabled: metadata.include_gps === true || gpsFrames > 0},
     sync: {
       time_base: "seconds_since_recording_start",
       lidar_frames: lidarFrames,
       camera_frames: cameraFrames,
       imu_frames: imuFrames,
+      gps_frames: gpsFrames,
     },
     streaming: true,
   };
@@ -4542,9 +4555,11 @@ function clearArchiveFrameCache() {
     lidarFrames: [],
     cameraFrames: [],
     imuFrames: [],
+    gpsFrames: [],
     lidarKeys: new Set(),
     cameraKeys: new Set(),
     imuKeys: new Set(),
+    gpsKeys: new Set(),
     objectUrls: new Map(),
     imageElements: new Map(),
   };
@@ -4645,6 +4660,12 @@ function mergeArchiveTimelineSegment(timeline) {
   }
   cache.imuFrames.sort((a, b) => a.t_s - b.t_s);
   cache.imuFrames.forEach((frame, cacheIndex) => { frame.cacheIndex = cacheIndex; });
+  cache.gpsFrames ||= []; cache.gpsKeys ||= new Set();
+  for (const frame of timeline.gps?.frames || []) {
+    const key = `${Number(frame.t_s).toFixed(6)}:${frame.sample?.sequence ?? frame.sample?.state}`;
+    if (!cache.gpsKeys.has(key)) { cache.gpsKeys.add(key); cache.gpsFrames.push({...frame, t_s:Number(frame.t_s)}); }
+  }
+  cache.gpsFrames.sort((a, b) => a.t_s-b.t_s);
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
   state.archivePlayback.lastCameraOverlayRenderKey = "";
@@ -4839,7 +4860,7 @@ function renderRecordings() {
     button.innerHTML = `
       <span>${escapeHtml(recordingSensorLabel(item))}</span>
       <strong>${escapeHtml(item.id)}</strong>
-      <small>${escapeHtml(formatShortDate(item.started_at || item.created_at))} · ${escapeHtml(item.duration_s ? `${fmtNumber(item.duration_s, 1)}s` : item.state || "ready")} · L${escapeHtml(item.timeline?.lidar_frames ?? 0)} C${escapeHtml(item.timeline?.camera_frames ?? 0)} I${escapeHtml(item.timeline?.imu_frames ?? 0)}</small>
+      <small>${escapeHtml(formatShortDate(item.started_at || item.created_at))} · ${escapeHtml(item.duration_s ? `${fmtNumber(item.duration_s, 1)}s` : item.state || "ready")} · L${escapeHtml(item.timeline?.lidar_frames ?? 0)} C${escapeHtml(item.timeline?.camera_frames ?? 0)} I${escapeHtml(item.timeline?.imu_frames ?? 0)} G${escapeHtml(item.timeline?.gps_frames ?? 0)}</small>
     `;
     button.addEventListener("click", () => selectRecording(item.id));
     target.append(button);
@@ -4947,7 +4968,8 @@ function setupArchivePlayback(payload, fallbackPreview) {
   const lidarFrames = state.archivePlayback.cache.lidarFrames || [];
   const cameraFrames = state.archivePlayback.cache.cameraFrames || [];
   const imuFrames = state.archivePlayback.cache.imuFrames || [];
-  const lastFrameTime = Math.max(0, ...lidarFrames.map((frame) => Number(frame.t_s) || 0), ...cameraFrames.map((frame) => Number(frame.t_s) || 0), ...imuFrames.map((frame) => Number(frame.t_s) || 0));
+  const gpsFrames = state.archivePlayback.cache.gpsFrames || [];
+  const lastFrameTime = Math.max(0, ...gpsFrames.map((frame) => Number(frame.t_s) || 0), ...lidarFrames.map((frame) => Number(frame.t_s) || 0), ...cameraFrames.map((frame) => Number(frame.t_s) || 0), ...imuFrames.map((frame) => Number(frame.t_s) || 0));
   state.archivePlayback.durationS = Math.max(duration, lastFrameTime);
   state.archivePlayback.timeS = Math.min(state.archivePlayback.timeS || 0, state.archivePlayback.durationS);
   state.archivePlayback.fallbackPreview = fallbackPreview;
@@ -5034,6 +5056,7 @@ function renderArchiveFrame() {
   const timeline = state.recordings.timeline;
   const timeS = Math.max(0, Number(state.archivePlayback.timeS) || 0);
   const cache = state.archivePlayback.cache || {};
+  window.RoverGps?.archive(cache.gpsFrames || [], timeS, state.recordings.selectedId, timeline?.gps?.enabled === true);
   const lidarFrame = timeline ? nearestTimelineFrame(cache.lidarFrames || [], timeS) : null;
   const cameraFrame = timeline && state.archivePlayback.sync ? nearestTimelineFrame(cache.cameraFrames || [], timeS) : null;
   const nearestImuFrame = timeline ? nearestTimelineFrame(cache.imuFrames || [], timeS) : null;

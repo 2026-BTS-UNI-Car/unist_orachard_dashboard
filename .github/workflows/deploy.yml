@@ -96,9 +96,9 @@ jobs:
             COMPOSE="docker-compose"
           fi
           python3 -m compileall dashboard_server scripts
-          TARGET_SERVICES="ros2-esp-rover-bridge ros2-lidar-driver vision-ai-worker ros2-camera-bridge ros2-lidar-bridge ros2-imu-driver ros2-imu-bridge ros2-data-recorder dashboard"
+          TARGET_SERVICES="ros2-gps-driver ros2-gps-bridge ros2-esp-rover-bridge ros2-lidar-driver vision-ai-worker ros2-camera-bridge ros2-lidar-bridge ros2-imu-driver ros2-imu-bridge ros2-data-recorder dashboard"
           $COMPOSE build $TARGET_SERVICES
-          docker run --rm --network none -e ROS_DOMAIN_ID=173 \
+          docker run --rm --network none -e ROS_DOMAIN_ID=173 -e UBTS_GPS_INTEGRATION_TEST=1 \
             --volume "$APP_DIR:/workspace:ro" --tmpfs /workspace/runtime:rw --tmpfs /workspace/data:rw \
             --workdir /workspace unist-orachard-ros2-esp-rover-bridge:latest \
             /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -B -m unittest discover -s tests'
@@ -127,6 +127,8 @@ jobs:
           recreate_service ros2-lidar-bridge unist-orachard-ros2-lidar-bridge
           recreate_service ros2-imu-driver unist-orachard-ros2-imu-driver
           recreate_service ros2-imu-bridge unist-orachard-ros2-imu-bridge
+          recreate_service ros2-gps-driver unist-orachard-ros2-gps-driver
+          recreate_service ros2-gps-bridge unist-orachard-ros2-gps-bridge
           recreate_service ros2-data-recorder unist-orachard-ros2-data-recorder
           recreate_service dashboard unist-orachard-dashboard
           $COMPOSE ps

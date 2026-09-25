@@ -47,6 +47,7 @@ from dashboard_server.imu_processing import (
     StartReferenceCalibrator,
     quaternion_to_euler_deg,
 )
+from dashboard_server.gps import GPS_SCHEMA, GPS_TIMELINE_SCHEMA, valid_position, finite
 
 
 def iso_now() -> str:
@@ -129,6 +130,14 @@ class RecordingState:
         self.imu_timeline_count = 0
         self.imu_calibration_events: list[dict[str, Any]] = []
         self.next_imu_sample_at = 0.0
+        self.gps_frames = []
+        self.gps_frame_count = 0
+        self.gps_valid_count = 0
+        self.gps_latest = {}
+        self.gps_last_at = None
+        self.gps_write_error = None
+        self.next_gps_sample_at = 0.0
+        self.gps_log = None
         self.write_status("start")
 
     def status(self) -> dict[str, Any]:
@@ -143,6 +152,7 @@ class RecordingState:
                 "recording_id": active.get("id"),
                 "kind": active.get("kind"),
                 "include_imu": bool(active.get("include_imu", True)) if active else True,
+                "include_gps": bool(active.get("include_gps", True)) if active else True,
                 "started_at": active.get("started_at"),
                 "duration_s": active.get("duration_s"),
                 "rosbag_topics": list(active.get("topics") or []),
@@ -153,6 +163,14 @@ class RecordingState:
                     "lidar_frames": len(self.lidar_frames),
                     "camera_frames": len(self.camera_frames),
                     "imu_frames": len(self.imu_frames),
+                    "gps_frames": self.gps_frame_count,
+                },
+                "gps_pipeline": {
+                    "schema": GPS_TIMELINE_SCHEMA, "data_topic": "/gps/data", "fix_topic": "/gps/fix",
+                    "topic_alive": self.gps_last_at is not None and time.monotonic()-self.gps_last_at < 3,
+                    "valid": valid_position(self.gps_latest) and self.gps_last_at is not None and time.monotonic()-self.gps_last_at < 3,
+                    "frames": self.gps_frame_count, "valid_frames": self.gps_valid_count,
+                    "error": self.gps_write_error,
                 },
                 "imu_pipeline": {
                     "schema": IMU_TIMELINE_SCHEMA,
@@ -278,6 +296,7 @@ class RecordingState:
             "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
             "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
             "imu_frames": len(timeline.get("imu", {}).get("frames", [])),
+            "gps_frames": (timeline.get("gps") or {}).get("frame_count", 0),
             "imu_calibration_valid": bool(
                 timeline.get("imu", {}).get("calibration", {}).get("valid")
                 or timeline.get("imu", {}).get("calibration", {}).get("calibration", {}).get("valid")
@@ -286,7 +305,7 @@ class RecordingState:
             "coordinate_frame": timeline.get("coordinate_frame"),
         }
 
-    def start(self, kind: str, include_imu: bool = True) -> dict[str, Any]:
+    def start(self, kind: str, include_imu: bool = True, include_gps: bool = True) -> dict[str, Any]:
         kind = kind.strip().lower()
         if kind not in {"lidar", "camera", "both"}:
             return {"ok": False, "state": "invalid_kind", "error": "kind must be lidar, camera, or both"}
@@ -302,11 +321,13 @@ class RecordingState:
             root = self.archive_dir / recording_id
             root.mkdir(parents=True, exist_ok=False)
             include_imu = bool(include_imu)
-            topics = self.topics_for(kind, include_imu=include_imu)
+            include_gps = bool(include_gps)
+            topics = self.topics_for(kind, include_imu=include_imu, include_gps=include_gps)
             metadata = {
                 "id": recording_id,
                 "kind": kind,
                 "include_imu": include_imu,
+                "include_gps": include_gps,
                 "state": "recording",
                 "started_at": iso_now(),
                 "topics": topics,
@@ -356,6 +377,11 @@ class RecordingState:
             self.camera_last_vision_sync_delta_s = None
             self.camera_last_input_policy = {}
             self.imu_frames = []
+            self.gps_frames = []
+            self.gps_frame_count = self.gps_valid_count = 0
+            self.gps_write_error = None
+            self.next_gps_sample_at = 0.0
+            self.gps_log = (root / "gps.jsonl").open("w", encoding="utf-8") if include_gps else None
             self.imu_latest_corrected = {}
             self.imu_recording_raw_count = 0
             self.imu_corrected_published_count = 0
@@ -401,6 +427,9 @@ class RecordingState:
         with self.lock:
             self.active = None
             self.process = None
+            if self.gps_log is not None:
+                self.gps_log.close()
+                self.gps_log = None
         if proc and proc.poll() is None:
             proc.send_signal(signal.SIGINT)
             try:
@@ -424,6 +453,10 @@ class RecordingState:
                     "lidar_frames": len(self.lidar_frames),
                     "camera_frames": len(self.camera_frames),
                     "imu_frames": len(self.imu_frames),
+                    "gps_frames": self.gps_frame_count,
+                    "gps_valid_frames": self.gps_valid_count,
+                    "gps_enabled": bool(active.get("include_gps", True)),
+                    "gps_error": self.gps_write_error,
                     "sample_hz": self.args.timeline_hz,
                     "camera_preview_width": self.args.camera_preview_width,
                     "camera_input_policy_revision": VISION_INFERENCE_INPUT_POLICY_REVISION,
@@ -503,6 +536,14 @@ class RecordingState:
                 "lidar_frames": len(self.lidar_frames),
                 "camera_frames": len(self.camera_frames),
                 "imu_frames": len(self.imu_frames),
+                "gps_frames": self.gps_frame_count,
+            },
+            "gps": {
+                "schema": GPS_TIMELINE_SCHEMA, "enabled": bool(active.get("include_gps", True)),
+                "data_topic": "/gps/data", "fix_topic": "/gps/fix", "coordinate_frame": "WGS84",
+                "sample_hz": 5, "frame_count": self.gps_frame_count, "valid_frames": self.gps_valid_count,
+                "frames_file": "gps.jsonl", "frames": list(self.gps_frames), "error": self.gps_write_error,
+                "time_base": "host_receive_time_relative_to_recording_start", "gps_utc_preserved": True,
             },
         }
 
@@ -519,7 +560,7 @@ class RecordingState:
             log("rosbag_start_error", error=str(exc), cmd=cmd)
             return None
 
-    def topics_for(self, kind: str, *, include_imu: bool = True) -> list[str]:
+    def topics_for(self, kind: str, *, include_imu: bool = True, include_gps: bool = True) -> list[str]:
         topics = [
             self.args.cmd_topic,
             self.args.rover_status_topic,
@@ -538,6 +579,8 @@ class RecordingState:
                     self.args.imu_calibration_topic,
                 ]
             )
+        if include_gps:
+            topics.extend(["/gps/fix", "/gps/data", "/gps/driver_status"])
         if kind in {"lidar", "both"}:
             topics.append(self.args.scan_topic)
         if kind in {"camera", "both"}:
@@ -550,6 +593,40 @@ class RecordingState:
                 ]
             )
         return list(dict.fromkeys(topic for topic in topics if str(topic or "").strip()))
+
+    def observe_gps(self, msg, *, status=False):
+        try:
+            sample = json.loads(msg.data)
+            if not isinstance(sample, dict) or sample.get("schema") != GPS_SCHEMA: return
+            now = time.monotonic()
+            if status:
+                if sample.get("valid") or sample.get("state") not in {"stale", "no_data", "unavailable"}: return
+                sample.update(valid=False, latitude=None, longitude=None, received_at=time.time())
+                sample.pop("driver", None)
+            json.dumps(sample, allow_nan=False)
+            received = finite(sample.get('received_at'))
+            if received is None: return
+        except (ValueError, TypeError): return
+        with self.lock:
+            self.gps_latest = sample
+            self.gps_last_at = now
+            active = self.active
+            if not active or not active.get("include_gps", True) or active.get("stopping") or now < self.next_gps_sample_at: return
+            self.next_gps_sample_at = now + .2
+            started = float(active.get("started_monotonic", time.time()))
+            if received < started or received > time.time()+1: return
+            frame = {"t_s": round(received-started, 6), "sample": sample}
+            if self.gps_log is not None:
+                try:
+                    self.gps_log.write(json.dumps(frame, allow_nan=False, separators=(",", ":"))+"\n")
+                    self.gps_log.flush()
+                except OSError as error:
+                    self.gps_write_error = str(error)
+                    return
+            self.gps_frames.append(frame)
+            if len(self.gps_frames) > 18000: del self.gps_frames[:len(self.gps_frames)-18000]
+            self.gps_frame_count += 1
+            self.gps_valid_count += int(valid_position(sample))
 
     def observe_scan(self, msg: LaserScan) -> None:
         with self.lock:
@@ -1235,6 +1312,8 @@ class RecorderNode(Node):
         self.calibration_publisher = self.create_publisher(String, args.imu_calibration_topic, 10)
         self.create_subscription(Imu, args.imu_raw_topic, self.observe_imu, camera_qos)
         self.create_subscription(MagneticField, args.imu_mag_topic, self.state.observe_magnetic, camera_qos)
+        self.create_subscription(String, "/gps/data", self.state.observe_gps, camera_qos)
+        self.create_subscription(String, "/gps/driver_status", lambda msg: self.state.observe_gps(msg, status=True), 10)
 
     def observe_imu(self, msg: Imu) -> None:
         corrected = self.state.observe_imu(msg)
@@ -1297,7 +1376,9 @@ class Handler(BaseHTTPRequestHandler):
             payload = self.read_json()
             raw_include_imu = payload.get("include_imu", True)
             include_imu = raw_include_imu if isinstance(raw_include_imu, bool) else str(raw_include_imu).strip().lower() in {"1", "true", "yes", "on"}
-            self.send_json(self.state.start(str(payload.get("kind") or ""), include_imu=include_imu))
+            raw_gps = payload.get("include_gps", True)
+            include_gps = raw_gps if isinstance(raw_gps, bool) else str(raw_gps).lower() in {"1", "true", "yes", "on"}
+            self.send_json(self.state.start(str(payload.get("kind") or ""), include_imu=include_imu, include_gps=include_gps))
         elif self.path == "/stop":
             self.send_json(self.state.stop())
         elif self.path == "/imu/zero":
