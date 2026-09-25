@@ -38,7 +38,6 @@ DEFAULT_IMU_DRIVER_STATUS_FILE = ROOT / "runtime" / "imu_driver_status.json"
 DEFAULT_IMU_BRIDGE_STATUS_FILE = ROOT / "runtime" / "imu_bridge_status.json"
 DEFAULT_CAMERA_SETTINGS_FILE = ROOT / "runtime" / "camera_settings.json"
 DEFAULT_ROVER_BRIDGE_STATUS_FILE = ROOT / "runtime" / "rover_bridge_status.json"
-DEFAULT_ROVER_COMMAND_FILE = ROOT / "runtime" / "rover_command.json"
 DEFAULT_DATA_RECORDER_STATUS_FILE = ROOT / "runtime" / "data_recorder_status.json"
 DEFAULT_RECORDING_ARCHIVE_DIR = ROOT / "runtime" / "recordings"
 PLAYBACK_CACHE_SCHEMA = "orchard.timeline.playback_cache.v1"
@@ -163,8 +162,6 @@ class TelemetryProvider:
             os.environ.get("ROVER_BRIDGE_STATUS_FILE", str(DEFAULT_ROVER_BRIDGE_STATUS_FILE))
         )
         self.rover_bridge_status_file = rover_bridge_file if rover_bridge_file.is_absolute() else ROOT / rover_bridge_file
-        rover_command_file = Path(os.environ.get("ROVER_COMMAND_FILE", str(DEFAULT_ROVER_COMMAND_FILE)))
-        self.rover_command_file = rover_command_file if rover_command_file.is_absolute() else ROOT / rover_command_file
         recorder_status_file = Path(os.environ.get("DATA_RECORDER_STATUS_FILE", str(DEFAULT_DATA_RECORDER_STATUS_FILE)))
         self.data_recorder_status_file = recorder_status_file if recorder_status_file.is_absolute() else ROOT / recorder_status_file
         archive_dir = Path(os.environ.get("RECORDING_ARCHIVE_DIR", str(DEFAULT_RECORDING_ARCHIVE_DIR)))
@@ -179,7 +176,6 @@ class TelemetryProvider:
             playback_cache_dir if playback_cache_dir.is_absolute() else ROOT / playback_cache_dir
         )
         self.recorder_api_url = os.environ.get("RECORDER_API_URL", "http://127.0.0.1:8790").rstrip("/")
-        self.rover_network_enabled = _env_bool("ROVER_NETWORK_ENABLED", False)
         self.network_control_enabled = _env_bool("NETWORK_CONTROL_ENABLED", False)
         self.network_mode_helper = os.environ.get("NETWORK_MODE_HELPER", "/usr/local/sbin/ubts-network-mode")
         self.host_root = Path(os.environ.get("HOST_ROOT", "/host-root"))
@@ -733,83 +729,16 @@ class TelemetryProvider:
         }
 
     def rover_status(self) -> dict[str, Any]:
-        now = time.time()
-        if self._rover_status_cache is not None and now < self._rover_status_next_refresh:
-            return dict(self._rover_status_cache)
-        base = os.environ.get("ROVER_BASE_URL", "http://192.168.4.1").rstrip("/")
-        if not self.rover_network_enabled:
-            result = {
-                "ok": False,
-                "connected": False,
-                "state": "network_disabled",
-                "base_url": None,
-                "proxy_url": None,
-                "control_page": "/rover-control",
-                "mode": "serial_only",
-                "message": "WAVE ROVER network control is disabled; Jetson UART pins are the only control path.",
-                "checked_at": now,
-                "cache_ttl_s": self._rover_status_refresh_s,
-            }
-            self._rover_status_cache = dict(result)
-            self._rover_status_next_refresh = now + self._rover_status_refresh_s
-            return result
-        result = {
-            "ok": False,
-            "connected": False,
-            "state": "unreachable",
-            "base_url": base,
-            "proxy_url": "/rover-proxy/",
-            "control_page": "/rover-control",
-            "mode": "web_proxy_and_ros_bridge",
-        }
-        try:
-            req = urllib.request.Request(base + "/", headers={"User-Agent": "UBTS-Dashboard/1.0"})
-            with urllib.request.urlopen(req, timeout=self._rover_status_timeout_s) as res:
-                body = res.read(256)
-                result.update(
-                    {
-                        "ok": 200 <= int(res.status) < 500,
-                        "connected": True,
-                        "state": "reachable",
-                        "http_status": res.status,
-                        "content_type": res.headers.get("Content-Type"),
-                        "sample": body.decode("utf-8", errors="replace")[:120],
-                    }
-                )
-        except Exception as exc:
-            result["error"] = str(exc)
-        result["checked_at"] = now
-        result["cache_ttl_s"] = self._rover_status_refresh_s
-        self._rover_status_cache = dict(result)
-        self._rover_status_next_refresh = now + self._rover_status_refresh_s
-        return result
+        from dashboard_server.rover_api import request
+        return {**request({"op": "status"}), "control_page": "/rover-control", "mode": "esp_manual"}
 
     def set_rover_command(self, payload: dict[str, Any]) -> dict[str, Any]:
-        linear = self._bounded_float(payload.get("linear"), -0.45, 0.45)
-        angular = self._bounded_float(payload.get("angular"), -1.4, 1.4)
-        ttl_s = self._bounded_float(payload.get("ttl_s"), 0.2, 2.0, default=0.65)
-        try:
-            speed_pct = int(float(payload.get("speed_pct", 0) or 0))
-        except (TypeError, ValueError):
-            speed_pct = 0
-        command = {
-            "type": "rover_command",
-            "updated_at": time.time(),
-            "source": str(payload.get("source") or "dashboard"),
-            "linear": linear,
-            "angular": angular,
-            "ttl_s": ttl_s,
-            "speed_pct": max(0, min(100, speed_pct)),
-            "enabled": True,
-            "transport": "serial_bridge_file",
-        }
-        _write_json_atomic(self.rover_command_file, command)
-        return {"ok": True, "state": "queued", "command_file": str(self.rover_command_file), "command": command}
+        # All web control must pass the authenticated handler and lease protocol.
+        return {"ok": False, "error": "legacy_command_file_removed"}
 
-    def stop_rover(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        payload = dict(payload or {})
-        payload.update({"linear": 0.0, "angular": 0.0, "ttl_s": 0.65, "speed_pct": 0, "source": payload.get("source") or "dashboard_stop"})
-        return self.set_rover_command(payload)
+    def stop_rover(self, payload=None):
+        from dashboard_server.rover_api import request
+        return request({"op": "stop"})
 
     def recording_status(self) -> dict[str, Any]:
         remote = self._recorder_get("/status")
@@ -2376,7 +2305,7 @@ class TelemetryProvider:
                 {"path": "/docker", "label": "Docker", "summary": "Docker engine and containers"},
                 {"path": "/fan", "label": "Fan Control", "summary": "Jetson 온도와 수동 PWM"},
                 {"path": "/research", "label": "Research", "summary": "연구 일정과 ROS2 연결 상태"},
-                {"path": "/rover-control", "label": "Rover Control", "summary": "WAVE ROVER 원본 UI proxy와 ROS bridge 준비 상태"},
+                {"path": "/rover-control", "label": "Rover Control", "summary": "ESP8266 원본 UI proxy와 ROS bridge 준비 상태"},
                 {"path": "/docs", "label": "Docs", "summary": "운영 문서와 Markdown viewer"},
             ]
         }
@@ -2756,35 +2685,16 @@ class TelemetryProvider:
 
     def _rover_bridge_status(self) -> dict[str, Any]:
         data = _load_json(self.rover_bridge_status_file)
-        now = time.time()
         try:
-            updated_at = float(data.get("updated_at", 0.0))
+            age = time.time() - float(data.get("updated_at") or 0)
         except (TypeError, ValueError):
-            updated_at = 0.0
-        status_age = round(now - updated_at, 3) if updated_at else None
-        alive = status_age is not None and status_age <= 3.0
-        base_url = None if not self.rover_network_enabled else (data.get("base_url") or os.environ.get("ROVER_BASE_URL", "http://192.168.4.1"))
-        return {
-            "alive": alive,
-            "connected": bool(alive and data.get("connected")),
-            "state": data.get("state") if alive else "not_connected",
-            "status_age_sec": status_age,
-            "transport": data.get("transport") or os.environ.get("ROVER_TRANSPORT", "serial"),
-            "serial_port": data.get("serial_port") or os.environ.get("ROVER_SERIAL_PORT", "/dev/ttyTHS1"),
-            "serial_baudrate": data.get("serial_baudrate") or int(os.environ.get("ROVER_SERIAL_BAUDRATE", "115200")),
-            "base_url": base_url,
-            "cmd_topic": data.get("cmd_topic") or "/cmd_vel",
-            "status_topic": data.get("status_topic") or "/rover/status",
-            "last_command": data.get("last_command"),
-            "last_command_source": data.get("last_command_source"),
-            "command_file": data.get("command_file") or str(self.rover_command_file),
-            "file_command_active": bool(alive and data.get("file_command_active")),
-            "file_command_age_sec": data.get("file_command_age_sec"),
-            "serial_open": bool(alive and data.get("serial_open")),
-            "last_error": data.get("last_error") if alive else None,
-            "updated_at": updated_at or None,
-            "status_file": str(self.rover_bridge_status_file),
-        }
+            age = float("inf")
+        alive = 0 <= age < 3
+        return {**data, "alive": alive, "ok": bool(alive and data.get("connected")),
+                "connected": bool(alive and data.get("connected")),
+                "serial_open": bool(alive and data.get("serial_open")),
+                "state": data.get("state", "disarmed") if alive else "unavailable",
+                "mode": "esp_manual", "automatic_input_enabled": False}
 
     def _resolution_text(self, width: Any, height: Any) -> str | None:
         try:

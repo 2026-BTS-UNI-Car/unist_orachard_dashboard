@@ -28,8 +28,6 @@ const CAMERA_BINARY_MAGIC = "UBCF";
 const CAMERA_BINARY_HEADER_SIZE = 9;
 const IMU_RECORD_ENABLED_KEY = "ubts-record-imu-enabled-v1";
 const ROVER_SPEED_KEY = "ubts-rover-speed-v1";
-const ROVER_FADE_START_KEY = "ubts-rover-fade-start-v1";
-const ROVER_FADE_STOP_KEY = "ubts-rover-fade-stop-v1";
 const ROVER_RECORD_KIND_KEY = "ubts-rover-record-kind-v1";
 const ROVER_PANEL_COLLAPSED_KEY = "ubts-rover-panel-collapsed-v1";
 const ROVER_CONTROL_INTERVAL_MS = 140;
@@ -162,8 +160,6 @@ const state = {
 	    targetAngular: 0,
 	    currentLinear: 0,
 	    currentAngular: 0,
-	    fadeStart: true,
-	    fadeStop: false,
 	    activeKeys: new Set(),
 	    activeButton: "",
 	    stoppingWithFade: false,
@@ -905,6 +901,9 @@ async function loadDocs() {
 }
 
 async function tick() {
+  const interval = liveNetworkProfile() === "tiny" ? 10000 : ["auto", "slow"].includes(liveNetworkProfile()) ? 3000 : 1000;
+  if (state.lastTelemetryPoll && Date.now() - state.lastTelemetryPoll < interval) return;
+  state.lastTelemetryPoll = Date.now();
   if (state.tickInFlight) {
     debugLog("api", "/api/telemetry skipped: previous request still running");
     return;
@@ -1320,13 +1319,27 @@ function toggleCameraLive() {
   startCameraLive();
 }
 
+function liveNetworkProfile() {
+  try { return localStorage.getItem("ubts-live-network-profile") || "auto"; }
+  catch (_) { return "auto"; }
+}
+function setLiveNetworkProfile(value) {
+  if (!["auto", "tiny", "slow", "balanced", "detail"].includes(value)) return;
+  try { localStorage.setItem("ubts-live-network-profile", value); } catch (_) {}
+  if (state.imuLive.socket) { closeImuLive("profile changed", {userStopped: false}); setTimeout(startImuLive, 250); }
+  document.querySelectorAll("[data-network-profile]").forEach(el => { el.value = value; });
+  if (state.cameraLive.socket) { closeCameraLive("전송 품질 변경", {userStopped: false}); setTimeout(startCameraLive, 250); }
+  if (state.lidarLive.socket) { closeLidarLive("전송 품질 변경", {userStopped: false}); setTimeout(startLidarLive, 250); }
+}
+
 function cameraWebSocketUrl() {
   const params = new URLSearchParams({
     resolution: state.cameraLive.resolution,
     fps: String(state.cameraLive.fps),
     quality: "70",
+    profile: liveNetworkProfile(),
     transport: "binary-v1",
-    flow: "latest-ack",
+    flow: "decode-ack",
   });
   if (window.UBTS_CAMERA_WS_URL) {
     const separator = String(window.UBTS_CAMERA_WS_URL).includes("?") ? "&" : "?";
@@ -1728,9 +1741,10 @@ async function zeroImuReference() {
 }
 
 function imuWebSocketUrl() {
-  if (window.UBTS_IMU_WS_URL) return String(window.UBTS_IMU_WS_URL);
+  const params = new URLSearchParams({profile: liveNetworkProfile(), flow: "ack"});
+  if (window.UBTS_IMU_WS_URL) return `${window.UBTS_IMU_WS_URL}${String(window.UBTS_IMU_WS_URL).includes("?") ? "&" : "?"}${params}`;
   const scheme = location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${location.host}/ws/imu`;
+  return `${scheme}://${location.host}/ws/imu?${params}`;
 }
 
 function startImuLive() {
@@ -1807,6 +1821,7 @@ function handleImuLiveMessage(raw) {
   }
   if (payload.type === "socket") return;
   if (payload.type !== "imu") return;
+  if (payload.sequence && state.imuLive.socket?.readyState === WebSocket.OPEN) state.imuLive.socket.send(JSON.stringify({type: "imu_ack", sequence: payload.sequence}));
   state.imuLive.topicAlive = Boolean(payload.imu_topic_alive);
   state.imuLive.correctedTopicAlive = Boolean(payload.corrected_topic_alive);
   state.imuLive.raw = payload.raw || {};
@@ -2207,7 +2222,7 @@ function setCameraResult(kind, message) {
 }
 
 function lidarWebSocketUrl() {
-  const params = new URLSearchParams({ max_points: String(state.lidarPoints.value) });
+  const params = new URLSearchParams({ max_points: String(state.lidarPoints.value), format: "polar-v1", flow: "ack", profile: liveNetworkProfile() });
   if (window.UBTS_LIDAR_WS_URL) {
     const separator = String(window.UBTS_LIDAR_WS_URL).includes("?") ? "&" : "?";
     return `${window.UBTS_LIDAR_WS_URL}${separator}${params.toString()}`;
@@ -2245,6 +2260,7 @@ function handleLidarLiveMessage(raw) {
     return;
   }
   if (payload.type === "scan") {
+    if (payload.point_encoding === "polar-v1") payload.points = payload.points.map(([angle_deg, distance_m, quality]) => ({angle_deg, distance_m, quality, x_m: Math.sin(angle_deg * Math.PI / 180) * distance_m, y_m: Math.cos(angle_deg * Math.PI / 180) * distance_m}));
     const result = lidarScanFromLive(payload);
     maybeAutoSetLidarRange(result);
     state.lidarLive.lastScanAgeSec = 0;
@@ -2264,6 +2280,9 @@ function handleLidarLiveMessage(raw) {
 	      });
 	    }
     renderLidarScan(result, "live_websocket");
+    if (state.lidarLive.socket?.readyState === WebSocket.OPEN && Number.isInteger(payload.sequence)) {
+      state.lidarLive.socket.send(JSON.stringify({type: "scan_ack", sequence: payload.sequence}));
+    }
     renderLidarLiveState();
     renderLiveSensorLinks();
     return;
@@ -2286,7 +2305,7 @@ function lidarScanFromLive(payload) {
     rendered_points: points.length,
     min_distance_m: distances.length ? Math.min(...distances) : null,
     max_distance_m: distances.length ? Math.max(...distances) : null,
-    coverage_deg: angleCoverage(points),
+    coverage_deg: Number.isFinite(payload.coverage_deg) ? payload.coverage_deg : angleCoverage(points),
     range_limit_m: 30.0,
   };
   return {
@@ -2356,7 +2375,7 @@ function renderLidarLiveState(overrideLabel) {
   text("lidarLiveSocket", socketText);
   text("lidarLiveAge", lidarAgeLabel());
   const pointLabel = state.lidarLive.pointCount
-    ? `${state.lidarLive.pointCount}/${state.lidarLive.requestedPointCount || state.lidarPoints.value}`
+    ? `${state.lidarLive.pointCount}/${state.lidarLive.sourcePointCount || state.lidarLive.pointCount}`
     : "--";
   text("lidarLivePoints", pointLabel);
   const colors = chartColors();
@@ -3826,38 +3845,38 @@ function renderRoverControl(data) {
   }
   text("roverControlState", roverBridge.serial_open ? "open" : roverBridge.state || "대기");
   text("roverControlBase", roverBridge.serial_port || "--");
-  text("roverProxyState", rover.mode || roverBridge.mode || "serial_only");
+  text("roverProxyState", rover.mode || roverBridge.mode || "esp_manual");
   text("roverRosState", roverBridge.ok ? "ready" : roverBridge.state || "대기");
   text("roverRecorderState", recorder.active ? "recording" : recorder.ok ? "ready" : recorder.state || "대기");
   text("roverRecorderKind", recorder.active ? recordingKindLabel(recorder.kind) : recorder.archive_count !== undefined ? `${recorder.archive_count} archives` : "대기");
   renderStatusRows("roverControlDetails", [
     {
-      title: "UART ROS2 Bridge",
-      sub: "ROS2 /cmd_vel -> WAVE ROVER JSON",
+      title: "ESP8266 Bridge",
+      sub: "수동 조종 · 단일 USB 소유자",
       ok: Boolean(roverBridge.ok),
       level: roverBridge.ok ? "ok" : "warn",
       value: roverBridge.state || "대기",
     },
     {
-      title: "Jetson UART",
-      sub: roverBridge.serial_port || "/dev/ttyTHS1",
+      title: "ESP USB",
+      sub: roverBridge.serial_port || "/dev/ubts-motor",
       ok: Boolean(roverBridge.serial_open),
       level: roverBridge.serial_open ? "ok" : "warn",
       value: roverBridge.serial_open ? "열림" : "포트 대기",
     },
     {
-      title: "Network Control",
-      sub: "WAVE ROVER AP/Web UI",
-      ok: rover.mode === "serial_only" || rover.state === "network_disabled",
+      title: "ROS 관측",
+      sub: "자동 주행 입력은 사용하지 않음",
+      ok: roverBridge.automatic_input_enabled === false,
       level: "ok",
       value: "비활성화",
     },
     {
-      title: "Command File",
-      sub: roverBridge.command_file || "/app/runtime/rover_command.json",
+      title: "조종 상태",
+      sub: "입력 만료와 MCU 정지 감시",
       ok: true,
       level: "ok",
-      value: roverBridge.file_command_active ? "active" : "TTL 대기",
+      value: roverBridge.armed ? "조종 활성화" : "조종 해제",
     },
     {
       title: "ROS2 IMU",
@@ -3880,20 +3899,23 @@ function renderRoverControl(data) {
 }
 
 function initRoverControl() {
+  document.querySelectorAll("[data-network-profile]").forEach(el => { el.value = liveNetworkProfile(); el.addEventListener("change", () => setLiveNetworkProfile(el.value)); });
+  $("roverArmButton")?.addEventListener("click", armEspRover);
+  window.addEventListener("blur", () => { if (state.roverControl.lease || state.roverControl.inFlight) stopRoverNow("focus_lost"); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden && (state.roverControl.lease || state.roverControl.inFlight)) stopRoverNow("page_hidden"); });
+  document.addEventListener("focusin", (event) => { if (hasActiveRoverInput() && roverKeyTargetBlocked(event)) stopRoverNow("input_focus"); });
+  setInterval(() => { if (state.roverControl.lease) { ensureRoverCommandTimer(); } }, 200);
+
   try {
     const rawSpeed = localStorage.getItem(ROVER_SPEED_KEY);
     const stored = rawSpeed === null ? null : Number(rawSpeed);
     if (Number.isFinite(stored)) state.roverControl.speedPct = Math.max(0, Math.min(100, stored));
-    const fadeStart = localStorage.getItem(ROVER_FADE_START_KEY);
-    const fadeStop = localStorage.getItem(ROVER_FADE_STOP_KEY);
     const recordKind = localStorage.getItem(ROVER_RECORD_KIND_KEY);
     const recordImu = localStorage.getItem(IMU_RECORD_ENABLED_KEY);
     const panelCollapsed = localStorage.getItem(ROVER_PANEL_COLLAPSED_KEY);
     const archiveRange = Number(localStorage.getItem(ARCHIVE_RANGE_KEY));
     const archiveOverlayVisible = localStorage.getItem(ARCHIVE_OVERLAY_VISIBLE_KEY);
     const perceptionOverlay = localStorage.getItem(PERCEPTION_OVERLAY_KEY);
-    state.roverControl.fadeStart = fadeStart === null ? true : fadeStart === "1";
-    state.roverControl.fadeStop = fadeStop === "1";
     state.roverControl.panelCollapsed = panelCollapsed === "1";
     if (Number.isFinite(archiveRange)) state.archivePlayback.range = clampLidarRange(archiveRange);
     state.archivePlayback.overlayVisible = archiveOverlayVisible === null ? true : archiveOverlayVisible === "1";
@@ -3917,8 +3939,6 @@ function initRoverControl() {
   });
   $("roverRecordStopButton")?.addEventListener("click", stopRecording);
   $("roverArchiveRefreshButton")?.addEventListener("click", () => loadRecordings().catch(console.error));
-  $("roverFadeStartToggle")?.addEventListener("change", (event) => setRoverFadeOption("start", event.target.checked, true));
-  $("roverFadeStopToggle")?.addEventListener("change", (event) => setRoverFadeOption("stop", event.target.checked, true));
   $("roverArchivePlayButton")?.addEventListener("click", toggleArchivePlayback);
   $("roverArchiveScrubber")?.addEventListener("input", (event) => setArchiveTime(Number(event.target.value), { pause: true }));
   $("roverOrchardMapScrubber")?.addEventListener("input", (event) => setArchiveTime(Number(event.target.value), { pause: true }));
@@ -3959,8 +3979,6 @@ function initRoverControl() {
   document.addEventListener("keydown", handleRoverKeyDown);
   document.addEventListener("keyup", handleRoverKeyUp);
   setRoverSpeed(state.roverControl.speedPct, false);
-  setRoverFadeOption("start", state.roverControl.fadeStart, false);
-  setRoverFadeOption("stop", state.roverControl.fadeStop, false);
   setRoverDrivePanelCollapsed(state.roverControl.panelCollapsed, false);
   setRecordingKind(state.recordings.kind, false);
   setRecordingImuEnabled(state.recordings.includeImu, false);
@@ -3986,27 +4004,6 @@ function setRoverSpeed(value, persist) {
     }
   }
   if (hasActiveRoverInput()) updateRoverMotion();
-}
-
-function setRoverFadeOption(which, enabled, persist) {
-  const value = Boolean(enabled);
-  if (which === "stop") {
-    state.roverControl.fadeStop = value;
-    const toggle = $("roverFadeStopToggle");
-    if (toggle) toggle.checked = value;
-  } else {
-    state.roverControl.fadeStart = value;
-    const toggle = $("roverFadeStartToggle");
-    if (toggle) toggle.checked = value;
-  }
-  if (persist) {
-    try {
-      localStorage.setItem(which === "stop" ? ROVER_FADE_STOP_KEY : ROVER_FADE_START_KEY, value ? "1" : "0");
-    } catch (_) {
-      // Option remains session-local without storage.
-    }
-  }
-  renderRoverMotionReadout();
 }
 
 function setRoverDrivePanelCollapsed(collapsed, persist) {
@@ -4144,204 +4141,131 @@ function archiveOverlayRenderMode() {
 }
 
 function roverKeyFromEvent(event) {
-  const key = String(event.key || "").toLowerCase();
+  const physical = /^Key[WASD]$/.test(event.code || "") ? event.code.slice(3) : event.key;
+  const key = String(physical || "").toLowerCase();
   return ["w", "a", "s", "d"].includes(key) ? key : "";
 }
 
 function roverKeyTargetBlocked(event) {
-  const tag = String(event.target?.tagName || "").toLowerCase();
-  return tag === "input" || tag === "textarea" || tag === "select" || event.target?.isContentEditable;
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(event.target?.tagName) || event.target?.isContentEditable;
+}
+
+async function armEspRover() {
+  const c = state.roverControl;
+  if (c.inFlight || c.lease) return;
+  c.inFlight = true;
+  const epoch = c.epoch || 0;
+  try {
+    const input = $("roverControlPassword");
+    if (input?.value) {
+      const auth = await postJson("/api/rover/auth", {password: input.value});
+      input.value = "";
+      if (!auth.ok) throw new Error("조종 암호를 확인하세요.");
+    }
+    const result = await postJson("/api/rover/arm");
+    if (!result.ok) throw new Error(result.error);
+    if (epoch !== (c.epoch || 0)) { await postJson("/api/rover/stop", {reason: "cancelled_arm"}); return; }
+    c.lease = result.lease; c.ticket = result.ticket; c.seq = result.seq;
+    c.pendingRelease = false;
+    setRoverCommandStatus("ok", "조종 활성화 · WASD/방향 버튼을 누르는 동안 이동 · Esc 즉시 정지");
+  } catch (err) { setRoverCommandStatus("bad", err.message); }
+  finally { c.inFlight = false; }
 }
 
 function handleRoverKeyDown(event) {
-  if (currentRoute() !== "/rover-control" || roverKeyTargetBlocked(event)) return;
-  if (state.roverControl.panelCollapsed) return;
+  if (event.key === "Escape") { stopRoverNow("escape"); return; }
+  if (currentRoute() !== "/rover-control" || roverKeyTargetBlocked(event) || event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
+  if (state.roverControl.panelCollapsed || !state.roverControl.lease) return;
   const key = roverKeyFromEvent(event);
   if (!key) return;
   event.preventDefault();
   state.roverControl.activeKeys.add(key);
   state.roverControl.activeButton = "";
-  ensureRoverCommandTimer();
   updateRoverMotion();
 }
-
 function handleRoverKeyUp(event) {
   const key = roverKeyFromEvent(event);
-  if (!key) return;
+  if (!key || !state.roverControl.activeKeys.has(key)) return;
   state.roverControl.activeKeys.delete(key);
-  if (currentRoute() === "/rover-control") {
-    event.preventDefault();
-	    if (hasActiveRoverInput()) updateRoverMotion();
-	    else releaseRoverInput("key_release");
-	  }
-	}
-
+  if (hasActiveRoverInput()) updateRoverMotion();
+  else releaseRoverInput("key_release");
+}
 function startRoverButtonCommand(action) {
+  if (!state.roverControl.lease) { setRoverCommandStatus("bad", "먼저 조종을 활성화하세요."); return; }
   state.roverControl.activeButton = action;
   state.roverControl.activeKeys.clear();
-  state.roverControl.stoppingWithFade = false;
-  ensureRoverCommandTimer();
   updateRoverMotion();
 }
-
 function hasActiveRoverInput() {
   return Boolean(state.roverControl.activeButton || state.roverControl.activeKeys.size);
 }
-
 function roverMotionVector() {
-  const keys = state.roverControl.activeKeys;
-  let linear = 0;
-  let angular = 0;
-  if (keys.size) {
-    linear += keys.has("w") ? 1 : 0;
-    linear -= keys.has("s") ? 1 : 0;
-    angular += keys.has("a") ? 1 : 0;
-    angular -= keys.has("d") ? 1 : 0;
-  } else {
-    const action = state.roverControl.activeButton;
-    linear = action === "forward" ? 1 : action === "backward" ? -1 : 0;
-    angular = action === "left" ? 1 : action === "right" ? -1 : 0;
+  const c = state.roverControl;
+  const keys = c.activeKeys;
+  let forward = (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0);
+  let turn = (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0);
+  if (c.activeButton) {
+    forward = c.activeButton === "forward" ? 1 : c.activeButton === "backward" ? -1 : 0;
+    turn = c.activeButton === "right" ? 1 : c.activeButton === "left" ? -1 : 0;
   }
-  const speed = state.roverControl.speedPct / 100;
-  return {
-    linear: Number((linear * ROVER_MAX_LINEAR_MPS * speed).toFixed(3)),
-    angular: Number((angular * ROVER_MAX_ANGULAR_RPS * speed).toFixed(3)),
-  };
+  const divisor = Math.max(1, Math.abs(forward - turn), Math.abs(forward + turn));
+  return {left: Math.round((forward + turn) / divisor * c.speedPct), right: Math.round((forward - turn) / divisor * c.speedPct)};
 }
-
 function ensureRoverCommandTimer() {
-  if (state.roverControl.commandTimer) return;
-  state.roverControl.commandTimer = window.setInterval(() => {
-    if (currentRoute() !== "/rover-control") {
-      clearRoverCommandTimer();
-      return;
-    }
-    if (!hasActiveRoverInput() && !state.roverControl.stoppingWithFade) {
-      clearRoverCommandTimer();
-      return;
-    }
-    stepRoverMotion();
-  }, ROVER_CONTROL_INTERVAL_MS);
+  if (!state.roverControl.commandTimer) state.roverControl.commandTimer = setInterval(stepRoverMotion, 140);
 }
-
 function clearRoverCommandTimer() {
-  if (!state.roverControl.commandTimer) return;
-  window.clearInterval(state.roverControl.commandTimer);
+  clearInterval(state.roverControl.commandTimer);
   state.roverControl.commandTimer = null;
 }
-
 function updateRoverMotion() {
-  const motion = roverMotionVector();
-  state.roverControl.targetLinear = motion.linear;
-  state.roverControl.targetAngular = motion.angular;
-  state.roverControl.stoppingWithFade = false;
+  state.roverControl.pendingRelease = false;
+  ensureRoverCommandTimer();
   renderRoverButtons();
   stepRoverMotion();
 }
-
-function stepRoverMotion() {
-  const control = state.roverControl;
-  if (hasActiveRoverInput()) {
-    const motion = roverMotionVector();
-    control.targetLinear = motion.linear;
-    control.targetAngular = motion.angular;
-  } else {
-    control.targetLinear = 0;
-    control.targetAngular = 0;
-  }
-  const targetLinear = control.targetLinear;
-  const targetAngular = control.targetAngular;
-  const accelerating = Math.abs(targetLinear) > Math.abs(control.currentLinear) || Math.abs(targetAngular) > Math.abs(control.currentAngular);
-  const useFade = accelerating ? control.fadeStart : control.fadeStop;
-  if (useFade) {
-    control.currentLinear = fadeAxis(control.currentLinear, targetLinear, ROVER_MAX_LINEAR_MPS * 0.24);
-    control.currentAngular = fadeAxis(control.currentAngular, targetAngular, ROVER_MAX_ANGULAR_RPS * 0.24);
-  } else {
-    control.currentLinear = targetLinear;
-    control.currentAngular = targetAngular;
-  }
-  if (!hasActiveRoverInput() && Math.abs(control.currentLinear) < 0.005 && Math.abs(control.currentAngular) < 0.005) {
-    control.currentLinear = 0;
-    control.currentAngular = 0;
-    control.stoppingWithFade = false;
-    clearRoverCommandTimer();
-  }
-  control.linear = Number(control.currentLinear.toFixed(3));
-  control.angular = Number(control.currentAngular.toFixed(3));
-  renderRoverButtons();
-  renderRoverMotionReadout();
-  sendRoverCommand(control.linear, control.angular, hasActiveRoverInput() ? "operator_drive" : "operator_fade_stop").catch((err) => {
-    state.roverControl.lastError = err.message;
-    setRoverCommandStatus("bad", `명령 실패: ${err.message}`);
-  });
-}
-
-function fadeAxis(current, target, step) {
-  const diff = target - current;
-  if (Math.abs(diff) <= step) return target;
-  return current + Math.sign(diff) * step;
-}
-
-function releaseRoverInput(reason = "release") {
-  state.roverControl.activeButton = "";
-  state.roverControl.activeKeys.clear();
-  if (state.roverControl.fadeStop) {
-    state.roverControl.stoppingWithFade = true;
-    ensureRoverCommandTimer();
-    stepRoverMotion();
-    setRoverCommandStatus("testing", "정지 페이드 적용 중");
-    return;
-  }
-  stopRoverNow(reason);
-}
-
-async function sendRoverCommand(linear, angular, source) {
-  if (state.roverControl.inFlight) return;
-  state.roverControl.inFlight = true;
+async function stepRoverMotion() {
+  const c = state.roverControl;
+  if (!c.lease || c.inFlight) return;
+  if (document.hidden || currentRoute() !== "/rover-control") { stopRoverNow("page_inactive"); return; }
+  const motion = roverMotionVector();
+  const op = c.pendingRelease ? "release" : hasActiveRoverInput() ? "command" : "keepalive";
+  c.pendingRelease = false;
+  c.inFlight = true;
+  const epoch = c.epoch || 0;
   try {
-    const payload = await postJson("/api/rover/command", {
-      linear,
-      angular,
-      ttl_s: 0.65,
-      speed_pct: Math.round(state.roverControl.speedPct),
-      source,
-    });
-    state.roverControl.lastCommandAt = Date.now();
-    state.roverControl.lastError = payload.ok ? "" : payload.error || "command rejected";
-    setRoverCommandStatus(payload.ok ? "ok" : "bad", roverCommandMessage(payload));
-  } finally {
-    state.roverControl.inFlight = false;
-  }
-}
-
-async function stopRoverNow(reason = "operator_stop") {
-  state.roverControl.activeButton = "";
-  state.roverControl.activeKeys.clear();
-  state.roverControl.linear = 0;
-  state.roverControl.angular = 0;
-  state.roverControl.targetLinear = 0;
-  state.roverControl.targetAngular = 0;
-  state.roverControl.currentLinear = 0;
-  state.roverControl.currentAngular = 0;
-  state.roverControl.stoppingWithFade = false;
-  clearRoverCommandTimer();
-  renderRoverButtons();
-  renderRoverMotionReadout();
-  setRoverCommandStatus("testing", "정지 명령 전송 중");
-  try {
-    const payload = await postJson("/api/rover/stop", { source: reason });
-    setRoverCommandStatus(payload.ok ? "ok" : "bad", roverCommandMessage(payload));
+    const result = await postJson(`/api/rover/${op}`, {lease: c.lease, ticket: c.ticket, seq: c.seq + 1,
+      left: motion.left, right: motion.right, deadman: op === "command"});
+    if (epoch !== (c.epoch || 0)) return;
+    if (!result.ok) throw new Error(result.error || "control rejected");
+    c.ticket = result.ticket; c.seq = result.seq;
+    c.left = motion.left; c.right = motion.right;
+    renderRoverMotionReadout();
   } catch (err) {
-    setRoverCommandStatus("bad", `정지 실패: ${err.message}`);
-  }
+    if (epoch === (c.epoch || 0)) { stopRoverNow("command_failed"); setRoverCommandStatus("bad", `정지 · ${err.message} · 다시 활성화하세요.`); }
+  } finally { c.inFlight = false; }
 }
-
-function roverCommandMessage(payload) {
-  const command = payload.command || {};
-  const linear = fmtNumber(command.linear || 0, 2);
-  const angular = fmtNumber(command.angular || 0, 2);
-  return payload.ok ? `serial bridge 대기 · linear ${linear} · angular ${angular}` : payload.error || payload.state || "명령 실패";
+function releaseRoverInput(reason = "release") {
+  const c = state.roverControl;
+  c.activeButton = ""; c.activeKeys.clear(); c.pendingRelease = true;
+  renderRoverButtons(); stepRoverMotion();
 }
+async function stopRoverNow(reason = "operator_stop") {
+  const c = state.roverControl;
+  c.epoch = (c.epoch || 0) + 1;
+  c.lease = c.ticket = null;
+  c.activeButton = ""; c.activeKeys.clear();
+  c.pendingRelease = false; c.left = c.right = 0;
+  c.linear = c.angular = c.currentLinear = c.currentAngular = 0;
+  c.stoppingWithFade = false;
+  clearRoverCommandTimer(); renderRoverButtons(); renderRoverMotionReadout();
+  setRoverCommandStatus("testing", "정지 요청 중 · 조종 해제");
+  try {
+    const result = await postJson("/api/rover/stop", {reason});
+    setRoverCommandStatus(result.ok ? "ok" : "bad", result.ok ? "정지 요청 접수 · 다시 조종하려면 활성화하세요." : result.error);
+  } catch (_) { setRoverCommandStatus("bad", "응답 없음 · 입력 만료 정지 대기 · 연결 복구 후 상태를 확인하세요."); }
+}
+function roverCommandMessage(payload) { return payload.ok ? "ESP 요청 접수" : payload.error || "제어 실패"; }
 
 function setRoverCommandStatus(kind, message) {
   const target = $("roverCommandStatus");
@@ -4362,26 +4286,12 @@ function renderRoverButtons() {
 }
 
 function renderRoverMotionReadout() {
+  const c = state.roverControl;
   const colors = chartColors();
   renderReadout("roverMotionReadout", [
-    {
-      label: "Current",
-      value: `${fmtNumber(state.roverControl.linear, 2)} m/s`,
-      sub: `${fmtNumber(state.roverControl.angular, 2)} rad/s`,
-      color: colors.cyan,
-    },
-    {
-      label: "Target",
-      value: `${fmtNumber(state.roverControl.targetLinear, 2)} m/s`,
-      sub: `${fmtNumber(state.roverControl.targetAngular, 2)} rad/s`,
-      color: colors.blue,
-    },
-    {
-      label: "Fade",
-      value: `${state.roverControl.fadeStart ? "start" : "snap"} / ${state.roverControl.fadeStop ? "stop" : "zero"}`,
-      sub: `${Math.round(state.roverControl.speedPct)}% speed cap`,
-      color: colors.good,
-    },
+    {label: "왼쪽 요청 PWM", value: `${c.left || 0}%`, sub: "실제 속도 측정값 아님", color: colors.cyan},
+    {label: "오른쪽 요청 PWM", value: `${c.right || 0}%`, sub: "MCU 가감속 적용", color: colors.blue},
+    {label: "조종", value: c.lease ? "활성" : "해제", sub: "입력 만료 0.75초 · Esc 즉시 정지", color: colors.good},
   ]);
 }
 
@@ -4515,9 +4425,7 @@ async function loadRecordings() {
   try {
     const payload = await getJson("/api/recordings");
     state.recordings.items = payload.recordings || [];
-    if (!state.recordings.selectedId && state.recordings.items.length) {
-      state.recordings.selectedId = state.recordings.items[0].id;
-    }
+    // Fetch archive frames and maps only after an explicit selection.
     renderRecordings();
     if (state.recordings.selectedId) await selectRecording(state.recordings.selectedId);
   } finally {
@@ -6201,7 +6109,7 @@ window.addEventListener("resize", () => {
   }
 });
 window.addEventListener("pagehide", () => {
-  if (hasActiveRoverInput() || state.roverControl.stoppingWithFade || Math.abs(state.roverControl.currentLinear) > 0.001 || Math.abs(state.roverControl.currentAngular) > 0.001) {
+  if (state.roverControl.lease || hasActiveRoverInput() || state.roverControl.stoppingWithFade || Math.abs(state.roverControl.currentLinear) > 0.001 || Math.abs(state.roverControl.currentAngular) > 0.001) {
     try {
       const body = JSON.stringify({ source: "pagehide" });
       if (navigator.sendBeacon) {

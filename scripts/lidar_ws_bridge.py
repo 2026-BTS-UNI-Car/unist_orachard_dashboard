@@ -356,85 +356,81 @@ def _serial_stream_at_baud(
     return True
 
 
-async def serve_websocket(state: ScanState, host: str, port: int, path: str, max_hz: float, source_max_points: int):
-    try:
-        import websockets
-    except ImportError as exc:
-        raise SystemExit("Install the optional 'websockets' package on Jetson to run lidar_ws_bridge.py") from exc
+def compact_scan_payload(snap, points, sequence, compact=True, overlay=True):
+    payload = {"type": "scan", "frame_id": snap["frame_id"], "source": snap["source"], "stamp": snap["stamp"],
+               "sequence": sequence, "point_count": len(points), "source_point_count": snap["point_count"],
+               "requested_max_points": len(points), "overlay": snap["analysis"] if overlay else {},
+               "coverage_deg": len({int(p["angle_deg"]) % 360 for p in snap.get("points", points)})}
+    if compact:
+        payload["point_encoding"] = "polar-v1"
+        payload["points"] = [[p["angle_deg"], p["distance_m"], p.get("quality", 0)] for p in points]
+    else:
+        payload["points"] = points
+    return payload
 
-    interval = 1.0 / max(0.1, min(10.0, max_hz))
+
+async def serve_websocket(state: ScanState, host: str, port: int, path: str, max_hz: float, source_max_points: int):
+    import websockets
+    from scripts.stream_policy import StreamBudget
 
     async def handler(websocket, legacy_path=None):
-        try:
-            request_path = getattr(websocket, "request", None)
-            if request_path is not None:
-                actual_path = getattr(request_path, "path", path)
-            else:
-                actual_path = legacy_path or getattr(websocket, "path", path)
-            parsed_path = urlparse(actual_path)
-            if parsed_path.path != path:
-                await websocket.close(code=1008, reason="unsupported path")
-                return
-            requested_max_points = client_max_points(actual_path, default=900, source_max=source_max_points)
-            bridge_log("client_open", path=actual_path, max_points=requested_max_points)
-            await websocket.send(json.dumps({"type": "socket", "ok": True, "message": "lidar websocket connected"}))
-            while True:
-                snap = state.snapshot()
-                points = decimate_points(snap["points"], requested_max_points)
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "type": "status",
-                            "device_found": True,
-                            "scan_topic_alive": snap["last_scan_age_sec"] is not None and snap["last_scan_age_sec"] < 2.0,
-                            "last_scan_age_sec": snap["last_scan_age_sec"],
-                            "point_count": len(points),
-                            "source_point_count": snap["point_count"],
-                            "requested_max_points": requested_max_points,
-                            "overlay": {
-                                "algorithm": snap["analysis"].get("algorithm"),
-                                "walls": len(snap["analysis"].get("walls", [])),
-                                "objects": len(snap["analysis"].get("objects", [])),
-                            },
-                            "source": snap["source"],
-                            "frame_id": snap["frame_id"],
-                            "error": snap["error"] or (
-                                None
-                                if snap["last_scan_age_sec"] is not None and snap["last_scan_age_sec"] < 2.0
-                                else "ROS2 /scan is not being received yet. Dashboard is subscribe-only and does not open the LiDAR serial port."
-                            ),
-                        },
-                        separators=(",", ":"),
-                    )
-                )
-                if points:
-                    await websocket.send(
-                        json.dumps(
-                            {
-                                "type": "scan",
-                                "frame_id": snap["frame_id"],
-                                "source": snap["source"],
-                                "stamp": snap["stamp"],
-                                "point_count": len(points),
-                                "source_point_count": snap["point_count"],
-                                "requested_max_points": requested_max_points,
-                                "points": points,
-                                "overlay": snap["analysis"],
-                            },
-                            separators=(",", ":"),
-                        )
-                    )
-                await asyncio.sleep(interval)
-        except Exception as exc:
-            connection_closed = getattr(getattr(websockets, "exceptions", None), "ConnectionClosed", None)
-            if connection_closed is not None and isinstance(exc, connection_closed):
-                bridge_log("client_closed")
-                return
-            bridge_log("handler_error", error=str(exc))
+        actual_path = getattr(getattr(websocket, "request", None), "path", None) or legacy_path or getattr(websocket, "path", path)
+        if urlparse(actual_path).path != path:
+            await websocket.close(code=1008, reason="unsupported path")
             return
+        params = parse_qs(urlparse(actual_path).query)
+        compact = (params.get("format") or [""])[0] == "polar-v1"
+        ack_flow = (params.get("flow") or [""])[0] == "ack"
+        budget = StreamBudget((params.get("profile") or ["auto"])[0])
+        requested = client_max_points(actual_path, default=900, source_max=source_max_points)
+        last_stamp = None
+        sequence = 0
+        last_status = 0.0
+        try:
+            await websocket.send(json.dumps({"type": "socket", "ok": True, "latest_only": True, "max_inflight_frames": 1}))
+            while True:
+                started = time.monotonic()
+                snap = state.snapshot()
+                alive = snap["last_scan_age_sec"] is not None and snap["last_scan_age_sec"] < 2
+                limit = 60 if budget.values[0] <= 160 else 180 if budget.values[0] <= 320 else 450 if budget.values[0] <= 640 else source_max_points
+                points = decimate_points(snap["points"], min(requested, limit))
+                if started - last_status >= 1:
+                    await asyncio.wait_for(websocket.send(json.dumps({"type": "status", "device_found": alive,
+                        "scan_topic_alive": alive, "last_scan_age_sec": snap["last_scan_age_sec"],
+                        "point_count": len(points), "source_point_count": snap["point_count"],
+                        "requested_max_points": min(requested, limit), "source": snap["source"],
+                        "error": snap["error"], "latest_only": True}, separators=(",", ":"))), timeout=2)
+                    last_status = started
+                if not alive or not points or snap["stamp"] == last_stamp:
+                    await asyncio.sleep(0.04)
+                    continue
+                sequence += 1
+                payload = compact_scan_payload(snap, points, sequence, compact, budget.values[0] > 320)
+                message = json.dumps(payload, separators=(",", ":"))
+                await asyncio.wait_for(websocket.send(message), timeout=2)
+                last_stamp = snap["stamp"]
+                if ack_flow:
+                    deadline = time.monotonic() + 2
+                    while True:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise asyncio.TimeoutError()
+                        raw = await asyncio.wait_for(websocket.recv(), timeout=remaining)
+                        reply = json.loads(raw)
+                        if reply.get("type") == "scan_ack" and reply.get("sequence") == sequence:
+                            break
+                    budget.acknowledge(time.monotonic() - started)
+                hz = min(max_hz, 1 if budget.values[0] <= 160 else 3 if budget.values[0] <= 320 else 5 if budget.values[0] <= 640 else 10)
+                delay = max(1 / max(0.1, hz), len(message) / max(2000, budget.values[4] / 4)) - (time.monotonic() - started)
+                if delay > 0:
+                    await asyncio.sleep(delay)
+        except Exception as exc:
+            bridge_log("preview_closed", reason=type(exc).__name__)
+        finally:
+            await websocket.close()
 
-    bridge_log("ws_listen", host=host, port=port, path=path, max_hz=max_hz, source_max_points=source_max_points)
-    async with websockets.serve(handler, host, port):
+    async with websockets.serve(handler, host, port, max_size=4096, max_queue=2, write_limit=8192,
+                                compression=None, close_timeout=1):
         await asyncio.Future()
 
 

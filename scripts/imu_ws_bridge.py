@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -179,25 +179,35 @@ async def serve(state: ImuBridgeState, args: argparse.Namespace, stop: threading
     except ImportError as exc:
         raise SystemExit("Install websockets in the ROS2 runtime image") from exc
 
-    interval = 1.0 / max(1.0, min(30.0, float(args.max_hz)))
-
     async def handler(websocket, legacy_path=None):
         request = getattr(websocket, "request", None)
         actual_path = getattr(request, "path", args.path) if request is not None else legacy_path or getattr(websocket, "path", args.path)
         if urlparse(actual_path).path != args.path:
             await websocket.close(code=1008, reason="unsupported path")
             return
+        profile = (parse_qs(urlparse(actual_path).query).get("profile") or ["auto"])[0]
+        hz = {"tiny": 1, "auto": 2, "slow": 2, "balanced": 5, "detail": 10}.get(profile, 2)
+        interval = 1.0 / max(1.0, min(hz, float(args.max_hz)))
+        ack = (parse_qs(urlparse(actual_path).query).get("flow") or [""])[0] == "ack"
+        sequence = 0
         await websocket.send(json.dumps({"type": "socket", "ok": True, "schema": BRIDGE_SCHEMA}, separators=(",", ":")))
         try:
             while True:
-                await websocket.send(json.dumps({"type": "imu", **state.snapshot()}, separators=(",", ":")))
+                sequence += 1
+                await asyncio.wait_for(websocket.send(json.dumps({"type": "imu", **state.snapshot(), "sequence": sequence}, separators=(",", ":"))), timeout=2)
+                if ack:
+                    reply = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
+                    if not isinstance(reply, dict) or reply.get("type") != "imu_ack" or reply.get("sequence") != sequence:
+                        break
                 await asyncio.sleep(interval)
         except Exception as exc:
             connection_closed = getattr(getattr(websockets, "exceptions", None), "ConnectionClosed", None)
             if connection_closed is None or not isinstance(exc, connection_closed):
-                state.set_error(f"websocket handler: {exc}")
+                print(f"IMU preview closed: {type(exc).__name__}", flush=True)
+        finally:
+            await websocket.close()
 
-    async with websockets.serve(handler, args.host, args.port):
+    async with websockets.serve(handler, args.host, args.port, max_size=4096, max_queue=2, write_limit=8192, compression=None, close_timeout=1):
         while not stop.is_set():
             await asyncio.sleep(0.2)
 

@@ -4,6 +4,7 @@ import argparse
 import base64
 import gzip
 import hashlib
+import hmac
 import json
 import mimetypes
 import os
@@ -171,11 +172,11 @@ DOCS_CATALOG = [
         "file": "jetson_offline_access_20260827.md",
     },
     {
-        "slug": "wave-rover-control",
-        "title": "WAVE ROVER 연동",
+        "slug": "esp-rover-control",
+        "title": "ESP8266 연동",
         "category": "Hardware",
-        "summary": "Waveshare WAVE ROVER WiFi, Web UI proxy, ROS2 cmd_vel bridge 기준",
-        "file": "wave_rover_control.md",
+        "summary": "ESP USB motor owner, manual lease and ROS status 기준",
+        "file": "esp_rover_control.md",
     },
     {
         "slug": "rover-control-dashboard",
@@ -296,7 +297,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path.startswith("/occupancy-api"):
+        if path.startswith("/api/rover/"):
+            self._rover_action(path)
+        elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
         elif path == "/api/lidar/test":
             self._send_json(self.provider.lidar_test())
@@ -305,12 +308,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/camera/settings":
             payload = self._read_json_body()
             self._send_json(self.provider.set_camera_settings(payload))
-        elif path == "/api/rover/command":
-            payload = self._read_json_body()
-            self._send_json(self.provider.set_rover_command(payload))
-        elif path == "/api/rover/stop":
-            payload = self._read_json_body()
-            self._send_json(self.provider.stop_rover(payload))
         elif path == "/api/recordings/start":
             payload = self._read_json_body()
             self._send_json(self.provider.start_recording(payload))
@@ -405,6 +402,48 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._proxy_occupancy_request(parsed)
         else:
             self.send_error(404, "Not found")
+
+    def _rover_action(self, path):
+        from dashboard_server.rover_api import request
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host"):
+            self.send_error(403, "Origin mismatch")
+            return
+        session = self._ensure_session(create=False)
+        if not session:
+            self.send_error(403, "Dashboard session required")
+            return
+        payload = self._read_json_body()
+        if not isinstance(payload, dict):
+            self.send_error(400, "Object required")
+            return
+        if path == "/api/rover/auth":
+            try:
+                expected = Path(os.environ.get("ROVER_CONTROL_TOKEN_FILE", "/app/data/rover-control-token")).read_text().strip()
+            except OSError:
+                expected = ""
+            supplied = payload.get("password", "")
+            valid = isinstance(supplied, str) and len(expected) >= 20 and hmac.compare_digest(supplied.encode(), expected.encode())
+            with _SESSION_LOCK:
+                item = _SESSIONS.get(session, {})
+                allowed_at = item.get("rover_auth_after", 0)
+                valid = valid and time.time() >= allowed_at
+                item["rover_auth_after"] = time.time() + 2
+                if valid:
+                    item["rover_authorized_until"] = time.time() + 3600
+            self._send_json({"ok": bool(valid), "error": None if valid else "control_password_required"})
+            return
+        with _SESSION_LOCK:
+            authorized = _SESSIONS.get(session, {}).get("rover_authorized_until", 0) > time.time()
+        if not authorized:
+            self._send_json({"ok": False, "error": "control_password_required"})
+            return
+        operations = {"/api/rover/arm": "arm", "/api/rover/command": "drive", "/api/rover/release": "release",
+                      "/api/rover/keepalive": "keepalive", "/api/rover/stop": "stop"}
+        if path not in operations:
+            self.send_error(404)
+            return
+        self._send_json(request({**payload, "op": operations[path], "owner": session}))
 
     def log_message(self, fmt, *args):
         if os.environ.get("DASHBOARD_ACCESS_LOG", "0") == "1":
@@ -972,45 +1011,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return f"{upstream_url}{separator}{client_query}"
 
     def _proxy_rover_request(self, parsed):
-        if os.environ.get("ROVER_NETWORK_ENABLED", "0").strip().lower() not in {"1", "true", "yes", "on"}:
-            self._send_json(
-                {
-                    "ok": False,
-                    "state": "network_disabled",
-                    "mode": "serial_only",
-                    "message": "WAVE ROVER network proxy is disabled. Use Jetson UART pins and ROS2 /cmd_vel only.",
-                }
-            )
-            return
-        base_url = os.environ.get("ROVER_DASHBOARD_URL", os.environ.get("ROVER_BASE_URL", "http://192.168.4.1")).rstrip("/") + "/"
-        suffix = parsed.path.removeprefix("/rover-proxy").lstrip("/")
-        target_url = urljoin(base_url, suffix)
-        if parsed.query:
-            target_url = f"{target_url}?{parsed.query}"
-        body = None
-        headers = {"User-Agent": "UBTS-Dashboard-Rover-Proxy/1.0"}
-        if self.command == "POST":
-            body = self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
-            content_type = self.headers.get("Content-Type")
-            if content_type:
-                headers["Content-Type"] = content_type
-        try:
-            req = Request(target_url, data=body, headers=headers, method=self.command)
-            with urlopen(req, timeout=4) as res:
-                payload = res.read()
-                content_type = res.headers.get("Content-Type", "application/octet-stream")
-                if "text/html" in content_type.lower():
-                    payload = self._rewrite_rover_html(payload, base_url)
-                self.send_response(res.status)
-                self.send_header("Content-Type", content_type)
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Connection", "close")
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                if self.command != "HEAD":
-                    self.wfile.write(payload)
-        except (OSError, URLError) as exc:
-            self._send_json({"ok": False, "state": "unreachable", "target": base_url, "error": str(exc)})
+        self.send_error(410, "Legacy rover proxy removed")
 
     def _proxy_occupancy_request(self, parsed):
         """Forward binary map frames and control requests to the local Jetson renderer."""
@@ -1065,16 +1066,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(payload)
         self.close_connection = True
-
-    def _rewrite_rover_html(self, payload: bytes, base_url: str) -> bytes:
-        try:
-            text = payload.decode("utf-8")
-        except UnicodeDecodeError:
-            return payload
-        if "<head" in text.lower() and "<base " not in text.lower():
-            text = text.replace("<head>", '<head><base href="/rover-proxy/">', 1)
-            text = text.replace("<HEAD>", '<HEAD><base href="/rover-proxy/">', 1)
-        return text.encode("utf-8")
 
     def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b"", deadline: float | None = None):
         if initial_upstream:

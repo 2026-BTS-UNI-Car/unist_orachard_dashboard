@@ -619,15 +619,15 @@
 
         <section class="page" data-page="/rover-control">
           <header class="page-head">
-            <p class="eyebrow">WAVE ROVER</p>
-            <h1>Rover Control</h1>
-            <p>Jetson 40-pin UART와 ROS2 /cmd_vel bridge만 사용합니다. WAVE ROVER 네트워크 제어는 비활성화되어 있습니다.</p>
+            <p class="eyebrow">ESP8266 ROVER</p>
+            <h1>Rover Control</h1><label>전송 품질 <select data-network-profile aria-label="전송 품질 선택"><option value="auto">자동 조절</option><option value="tiny">64 kbps</option><option value="slow">매우 느린 망</option><option value="balanced">균형</option><option value="detail">고화질</option></select></label>
+            <p>ESP8266 USB 브리지로 수동 조종합니다. 조종 암호로 활성화한 뒤 WASD 또는 방향 버튼을 누르세요.</p>
           </header>
 
           <section class="kpi-grid">
-            <article class="kpi"><span>UART</span><strong id="roverControlState">--</strong><small id="roverControlBase">--</small></article>
-            <article class="kpi"><span>Mode</span><strong id="roverProxyState">--</strong><small>network disabled</small></article>
-            <article class="kpi"><span>ROS2</span><strong id="roverRosState">--</strong><small>/cmd_vel bridge</small></article>
+            <article class="kpi"><span>ESP USB</span><strong id="roverControlState">--</strong><small id="roverControlBase">--</small></article>
+            <article class="kpi"><span>Mode</span><strong id="roverProxyState">--</strong><small>단일 사용자 수동 조종</small></article>
+            <article class="kpi"><span>ROS2</span><strong id="roverRosState">--</strong><small>모터 상태 관측</small></article>
             <article class="kpi"><span>Archive</span><strong id="roverRecorderState">--</strong><small id="roverRecorderKind">대기</small></article>
           </section>
 
@@ -755,6 +755,10 @@
                   <button id="roverStopButton" class="action-button danger" type="button">STOP</button>
                 </div>
               </div>
+              <div class="rover-arm-controls">
+                <input id="roverControlPassword" type="password" autocomplete="off" placeholder="조종 암호" aria-label="조종 암호" />
+                <button id="roverArmButton" class="action-button primary" type="button">조종 활성화</button>
+              </div>
               <div class="rover-speed-control">
                 <label for="roverSpeedSlider">
                   <span>Speed</span>
@@ -770,16 +774,7 @@
                 <button type="button" data-rover-drive="right">D</button>
                 <button type="button" data-rover-drive="backward">S</button>
               </div>
-              <div class="rover-fade-options">
-                <label class="switch-control">
-                  <input id="roverFadeStartToggle" type="checkbox" />
-                  <span>출발 페이드</span>
-                </label>
-                <label class="switch-control">
-                  <input id="roverFadeStopToggle" type="checkbox" />
-                  <span>정지 페이드</span>
-                </label>
-              </div>
+              <p>키·버튼 놓기: 서서히 정지 · STOP/Esc/창 이탈: 즉시 정지 후 조종 해제</p>
               <div id="roverCommandStatus" class="test-result">명령 대기 중</div>
             </article>
 

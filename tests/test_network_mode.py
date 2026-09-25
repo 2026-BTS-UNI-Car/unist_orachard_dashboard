@@ -15,6 +15,34 @@ SPEC.loader.exec_module(network_mode)
 
 
 class NetworkModeContractTests(unittest.TestCase):
+    def test_active_correct_ap_accepts_nmcli_textual_disable(self):
+        values = {"802-11-wireless.mode": "ap", "802-11-wireless.ssid": network_mode.SSID,
+                  "connection.autoconnect": "no", "ipv4.addresses": network_mode.AP_CIDR,
+                  "802-11-wireless.band": "bg", "802-11-wireless.channel": "6", "802-11-wireless.powersave": "disable"}
+        with mock.patch.object(network_mode, "validate_password"), mock.patch.object(network_mode, "read_ap_uuid", return_value="managed"), \
+             mock.patch.object(network_mode, "connection_exists", return_value=True), \
+             mock.patch.object(network_mode, "nmcli_value", side_effect=lambda *a: values[a[1]]), \
+             mock.patch.object(network_mode, "interface_snapshot", return_value={"ap_active": True}), \
+             mock.patch.object(network_mode, "run") as run:
+            self.assertEqual(network_mode.ensure_ap_profile(), "managed")
+            run.assert_not_called()
+
+    def test_existing_ap_is_pinned_to_24ghz_without_reconnecting_station(self):
+        values = {"802-11-wireless.mode": "ap", "802-11-wireless.ssid": network_mode.SSID,
+                  "connection.autoconnect": "no", "ipv4.addresses": network_mode.AP_CIDR,
+                  "802-11-wireless.band": "a", "802-11-wireless.channel": "149", "802-11-wireless.powersave": "0"}
+        with mock.patch.object(network_mode, "validate_password"), mock.patch.object(network_mode, "read_ap_uuid", return_value="managed"), \
+             mock.patch.object(network_mode, "connection_exists", return_value=True), \
+             mock.patch.object(network_mode, "nmcli_value", side_effect=lambda *a: values[a[1]]), \
+             mock.patch.object(network_mode, "interface_snapshot", return_value={"ap_active": False}), \
+             mock.patch.object(network_mode, "run") as run:
+            self.assertEqual(network_mode.ensure_ap_profile(), "managed")
+            args = run.call_args.args[0]
+            self.assertIn("modify", args)
+            self.assertIn("bg", args)
+            self.assertNotIn("up", args)
+            self.assertNotIn("delete", args)
+
     def test_queue_request_requires_fresh_controller_and_matching_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             old_status = network_mode.STATUS_FILE

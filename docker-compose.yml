@@ -36,20 +36,19 @@ services:
       IMU_BRIDGE_STATUS_FILE: "/app/runtime/imu_bridge_status.json"
       CAMERA_SETTINGS_FILE: "/app/runtime/camera_settings.json"
       ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
-      ROVER_COMMAND_FILE: "/app/runtime/rover_command.json"
+      ROVER_CONTROL_SOCKET: "/run/ubts-rover/control.sock"
+      ROVER_CONTROL_TOKEN_FILE: "/app/data/rover-control-token"
       RECORDER_API_URL: "http://127.0.0.1:8790"
       DATA_RECORDER_STATUS_FILE: "/app/runtime/data_recorder_status.json"
       RECORDING_ARCHIVE_DIR: "/app/runtime/recordings"
       ORCHARD_VISION_AI_URL: "${ORCHARD_VISION_AI_URL:-http://127.0.0.1:8785/analyze}"
       ORCHARD_VISION_AI_TIMEOUT_S: "${ORCHARD_VISION_AI_TIMEOUT_S:-6.0}"
-      ROVER_NETWORK_ENABLED: "${ROVER_NETWORK_ENABLED:-0}"
       NETWORK_CONTROL_ENABLED: "${NETWORK_CONTROL_ENABLED:-1}"
       NETWORK_MODE_HELPER: "/usr/local/sbin/ubts-network-mode"
-      ROVER_BASE_URL: "${ROVER_BASE_URL:-http://192.168.4.1}"
-      ROVER_DASHBOARD_URL: "${ROVER_DASHBOARD_URL:-http://192.168.4.1}"
     volumes:
       - ./runtime:/app/runtime
       - ./data:/app/data
+      - /run/ubts-rover:/run/ubts-rover
       - /:/host-root:ro
       - /dev:/host-dev
       - /etc/nv_tegra_release:/etc/nv_tegra_release:ro
@@ -125,20 +124,14 @@ services:
     restart: unless-stopped
     network_mode: host
     ipc: host
-    privileged: true
     environment:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
-      LIDAR_SERIAL_PORT: "${LIDAR_SERIAL_PORT:-/dev/ttyUSB0}"
+      LIDAR_SERIAL_PORT: "/dev/ubts-lidar"
       LIDAR_SERIAL_BAUDRATE: "${LIDAR_SERIAL_BAUDRATE:-1000000}"
       LIDAR_FRAME_ID: "${LIDAR_FRAME_ID:-laser}"
       LIDAR_SCAN_MODE: "${LIDAR_SCAN_MODE:-DenseBoost}"
-    volumes:
-      - /dev:/dev
-    device_cgroup_rules:
-      - "c 166:* rwm"
-      - "c 188:* rwm"
-      - "c 204:* rwm"
-      - "c 240:* rwm"
+    devices:
+      - "${LIDAR_USB_DEVICE:-/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_121a995f106ff011adae549b1045c30f-if00-port0}:/dev/ubts-lidar"
 
   ros2-camera-driver:
     build:
@@ -360,51 +353,31 @@ services:
           --max-hz "$${IMU_BRIDGE_MAX_HZ}" \
           --status-file "$${IMU_BRIDGE_STATUS_FILE}"
 
-  ros2-rover-bridge:
+  ros2-esp-rover-bridge:
     build:
       context: .
       dockerfile: Dockerfile.ros2
-    image: unist-orachard-ros2-rover-bridge:latest
-    container_name: unist-orachard-ros2-rover-bridge
+    image: unist-orachard-ros2-esp-rover-bridge:latest
+    container_name: unist-orachard-ros2-esp-rover-bridge
     restart: unless-stopped
     network_mode: host
     ipc: host
-    privileged: true
+    security_opt:
+      - no-new-privileges:true
     environment:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
-      ROVER_TRANSPORT: "${ROVER_TRANSPORT:-serial}"
-      ROVER_SERIAL_PORT: "${ROVER_SERIAL_PORT:-/dev/ttyTHS1}"
-      ROVER_SERIAL_BAUDRATE: "${ROVER_SERIAL_BAUDRATE:-115200}"
-      ROVER_ALLOW_NETWORK: "0"
-      ROVER_PROBE_SERIAL_ON_START: "${ROVER_PROBE_SERIAL_ON_START:-1}"
-      ROVER_BASE_URL: "${ROVER_BASE_URL:-http://192.168.4.1}"
+      ROVER_SERIAL_PORT: "/dev/ubts-motor"
+      ROVER_ESP_IDENTITY: "${ROVER_ESP_IDENTITY:-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001}"
+      ROVER_CONTROL_SOCKET: "/run/ubts-rover/control.sock"
       ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
-      ROVER_COMMAND_FILE: "/app/runtime/rover_command.json"
-      ROVER_CMD_TOPIC: "${ROVER_CMD_TOPIC:-/cmd_vel}"
-      ROVER_STATUS_TOPIC: "${ROVER_STATUS_TOPIC:-/rover/status}"
+    devices:
+      - "${ROVER_ESP_DEVICE:-/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0}:/dev/ubts-motor"
     volumes:
       - ./runtime:/app/runtime
-      - /dev:/dev
-    device_cgroup_rules:
-      - "c 204:* rwm"
-      - "c 240:* rwm"
-      - "c 4:* rwm"
-    command:
-      - /bin/bash
-      - -lc
-      - |
-        source /opt/ros/iron/setup.bash
-        python3 /app/scripts/wave_rover_bridge.py \
-          --transport "$${ROVER_TRANSPORT}" \
-          --serial-port "$${ROVER_SERIAL_PORT}" \
-          --serial-baudrate "$${ROVER_SERIAL_BAUDRATE}" \
-          --base-url "$${ROVER_BASE_URL}" \
-          --cmd-topic "$${ROVER_CMD_TOPIC}" \
-          --status-topic "$${ROVER_STATUS_TOPIC}" \
-          --status-file "$${ROVER_BRIDGE_STATUS_FILE}" \
-          --command-file "$${ROVER_COMMAND_FILE}" \
-          --no-allow-network \
-          --probe-serial-on-start
+      - /run/ubts-rover:/run/ubts-rover
+      - /run/lock:/run/lock
+      - /run/udev:/run/udev:ro
+    command: ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && python3 -m scripts.rover_control_bridge"]
 
   ros2-data-recorder:
     build:

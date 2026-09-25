@@ -13,7 +13,6 @@ source_setup() {
   set -u
 }
 
-DEFAULT_PORT="/dev/ttyUSB0"
 CONFIGURED_PORT="${LIDAR_SERIAL_PORT:-}"
 RESTART_DELAY="${LIDAR_DRIVER_RESTART_DELAY_S:-2}"
 
@@ -28,28 +27,9 @@ source_setup /opt/ros/iron/setup.bash
 source_setup /opt/sllidar_ros2_ws/install/setup.bash
 
 resolve_port() {
-  if [ -n "$CONFIGURED_PORT" ] && [ "$CONFIGURED_PORT" != "$DEFAULT_PORT" ] && [ -e "$CONFIGURED_PORT" ]; then
+  # Only this container's pinned device is permitted. Never scan CP210*/ttyUSB*.
+  if [ -n "$CONFIGURED_PORT" ] && [ -c "$CONFIGURED_PORT" ]; then
     printf '%s\n' "$CONFIGURED_PORT"
-    return 0
-  fi
-  for pattern in \
-    "/dev/serial/by-id/*CP210*" \
-    "/dev/serial/by-id/*Silicon*" \
-    "/dev/serial/by-id/*Slamtec*" \
-    "/dev/ttyUSB*"; do
-    for candidate in $pattern; do
-      if [ -e "$candidate" ]; then
-        printf '%s\n' "$candidate"
-        return 0
-      fi
-    done
-  done
-  if [ -n "$CONFIGURED_PORT" ] && [ -e "$CONFIGURED_PORT" ]; then
-    printf '%s\n' "$CONFIGURED_PORT"
-    return 0
-  fi
-  if [ -e "$DEFAULT_PORT" ]; then
-    printf '%s\n' "$DEFAULT_PORT"
     return 0
   fi
   return 1
@@ -83,7 +63,7 @@ while true; do
   fi
   while kill -0 "$driver_pid" 2>/dev/null; do
     if [ ! -e "$PORT" ]; then
-      log unplugged "LiDAR serial device disappeared: $PORT; stopping driver and rescanning"
+      log unplugged "LiDAR serial device disappeared: $PORT; stopping driver"
       if [ -n "$driver_pgid" ]; then
         kill -TERM "-$driver_pgid" 2>/dev/null || true
       else
@@ -104,6 +84,6 @@ while true; do
   wait "$driver_pid"
   code=$?
   set -e
-  log exited "SLLIDAR driver exited with code $code; rescanning device"
+  log exited "SLLIDAR driver exited with code $code; waiting for the configured device"
   sleep "$RESTART_DELAY"
 done

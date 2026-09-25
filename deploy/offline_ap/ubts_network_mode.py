@@ -165,6 +165,15 @@ def ensure_ap_profile() -> str:
         autoconnect = nmcli_value("-g", "connection.autoconnect", "connection", "show", "uuid", managed_uuid)
         address = nmcli_value("-g", "ipv4.addresses", "connection", "show", "uuid", managed_uuid)
         if mode == "ap" and profile_ssid == SSID and autoconnect == "no" and AP_CIDR in address:
+            band = nmcli_value("-g", "802-11-wireless.band", "connection", "show", "uuid", managed_uuid)
+            channel = nmcli_value("-g", "802-11-wireless.channel", "connection", "show", "uuid", managed_uuid)
+            powersave = nmcli_value("-g", "802-11-wireless.powersave", "connection", "show", "uuid", managed_uuid)
+            if band != "bg" or channel != "6" or not (powersave.startswith("2") or powersave == "disable"):
+                if interface_snapshot()["ap_active"]:
+                    raise CommandError("active AP must be disconnected before changing its 2.4GHz profile")
+                run(["nmcli", "connection", "modify", "uuid", managed_uuid,
+                     "802-11-wireless.band", "bg", "802-11-wireless.channel", "6",
+                     "802-11-wireless.powersave", "2"])
             return managed_uuid
         snapshot = interface_snapshot()
         if snapshot["ap_active"]:

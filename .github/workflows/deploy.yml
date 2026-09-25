@@ -96,13 +96,17 @@ jobs:
             COMPOSE="docker-compose"
           fi
           python3 -m compileall dashboard_server scripts
-          python3 -m unittest discover -s tests -p 'test_*.py'
-          TARGET_SERVICES="vision-ai-worker ros2-camera-bridge ros2-lidar-bridge ros2-imu-driver ros2-imu-bridge ros2-data-recorder dashboard"
+          TARGET_SERVICES="ros2-esp-rover-bridge ros2-lidar-driver vision-ai-worker ros2-camera-bridge ros2-lidar-bridge ros2-imu-driver ros2-imu-bridge ros2-data-recorder dashboard"
           $COMPOSE build $TARGET_SERVICES
+          docker run --rm --network none -e ROS_DOMAIN_ID=173 \
+            --volume "$APP_DIR:/workspace:ro" --tmpfs /workspace/runtime:rw --tmpfs /workspace/data:rw \
+            --workdir /workspace unist-orachard-ros2-esp-rover-bridge:latest \
+            /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -B -m unittest discover -s tests'
+          install -m 0755 deploy/offline_ap/ubts_network_mode.py /usr/local/sbin/ubts-network-mode
 
           # Compose 1.29 cannot inspect Docker 29's newer image metadata while
           # recreating an existing container. Remove only the service being
-          # replaced; sensor drivers, rover bridge and Portainer stay running.
+          # replaced; unlisted services and Portainer stay running.
           recreate_service() {
             service="$1"
             container="$2"
@@ -114,6 +118,11 @@ jobs:
             $COMPOSE up --no-deps -d "$service"
           }
 
+          test -s data/rover-control-token
+          docker update --restart=no unist-orachard-ros2-rover-bridge >/dev/null 2>&1 || true
+          docker stop unist-orachard-ros2-rover-bridge >/dev/null 2>&1 || true
+          recreate_service ros2-esp-rover-bridge unist-orachard-ros2-esp-rover-bridge
+          recreate_service ros2-lidar-driver unist-orachard-ros2-lidar-driver
           recreate_service vision-ai-worker unist-orachard-vision-ai
           recreate_service ros2-camera-bridge unist-orachard-ros2-camera-bridge
           recreate_service ros2-lidar-bridge unist-orachard-ros2-lidar-bridge
