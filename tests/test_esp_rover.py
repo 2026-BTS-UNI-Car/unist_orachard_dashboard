@@ -47,6 +47,12 @@ class RoverControlTest(unittest.TestCase):
         self.assertEqual(self.core.reason, "input_expired")
         self.assertEqual(self.motor.calls[-1], "STOP")
 
+    def test_continuous_chord_and_speed_updates_do_not_insert_stop(self):
+        self.motor.calls.clear()
+        for left, right in ((30, 30), (30, 45), (40, 60), (40, 40)):
+            self.send("drive", left=left, right=right, deadman=True)
+        self.assertEqual(self.motor.calls, [(30, 30), (30, 45), (40, 60), (40, 40)])
+
     def test_stop_revokes_already_queued_motion(self):
         delayed = self.request("drive", left=100, right=100, deadman=True)
         self.core.stop()
@@ -120,3 +126,23 @@ class RoverControlTest(unittest.TestCase):
         bridge.step()
         self.assertEqual(future.result()["error"], "stop_barrier")
         self.assertFalse(bridge.snapshot["armed"])
+
+
+class WheelTransitionTest(unittest.TestCase):
+    def test_v2_speed_updates_keep_active_direction_pins_nonzero(self):
+        from scripts.esp_wheel_controller import PulseController, WheelController
+        for direction, active in (("forward", (b"D8", b"D3")), ("reverse", (b"D5", b"D0"))):
+            with self.subTest(direction=direction):
+                writes = []
+                wheel = WheelController(PulseController(writes.append, clock=lambda: 100.0))
+                wheel.observe_firmware(b"UBTS_WHEEL_PWM_V2 ready")
+                wheel.enable(True)
+                writes.clear()
+                for left, right in ((30, 30), (30, 45), (40, 60), (40, 40)):
+                    wheel.command(left=direction, right=direction, left_speed=left, right_speed=right)
+                for pin in active:
+                    targets = [int(line.split()[1]) for line in writes if line.startswith(pin + b" ")]
+                    self.assertEqual(len(targets), 4)
+                    self.assertTrue(all(value > 0 for value in targets))
+                self.assertNotIn(b"STOP\n", writes)
+                self.assertFalse(wheel.pending)

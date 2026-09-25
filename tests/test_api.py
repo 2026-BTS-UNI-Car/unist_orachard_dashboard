@@ -268,25 +268,34 @@ class DashboardApiTest(unittest.TestCase):
             self.post_json("/api/rover/stop", {})
         self.assertEqual(error.exception.code, 403)
 
-    def test_rover_control_auth_and_owner_binding(self):
+    def test_rover_control_without_password_and_owner_binding(self):
         from unittest.mock import patch
-        import tempfile
         cookie = self.session_cookie()
         def post(path, payload):
             req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}",
                 data=json.dumps(payload).encode(), headers={"Cookie": cookie, "Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=3) as response:
                 return json.load(response)
-        with tempfile.TemporaryDirectory() as tmp:
-            token = Path(tmp) / "token"
-            token.write_text("test-only-control-password-123456")
-            with patch.dict(os.environ, {"ROVER_CONTROL_TOKEN_FILE": str(token)}), patch("dashboard_server.rover_api.request", return_value={"ok": True}) as motor:
-                self.assertFalse(post("/api/rover/arm", {})["ok"])
-                motor.assert_not_called()
-                self.assertTrue(post("/api/rover/auth", {"password": token.read_text()})["ok"])
-                self.assertTrue(post("/api/rover/arm", {"owner": "client-cannot-choose"})["ok"])
-                self.assertNotEqual(motor.call_args.args[0]["owner"], "client-cannot-choose")
-                self.assertEqual(motor.call_args.args[0]["op"], "arm")
+        with patch("dashboard_server.rover_api.request", return_value={"ok": True}) as motor:
+            self.assertTrue(post("/api/rover/arm", {"owner": "client-cannot-choose"})["ok"])
+            owner = motor.call_args.args[0]["owner"]
+            self.assertNotEqual(owner, "client-cannot-choose")
+            self.assertEqual(motor.call_args.args[0]["op"], "arm")
+            for route, op in (("command", "drive"), ("release", "release"), ("stop", "stop")):
+                self.assertTrue(post(f"/api/rover/{route}", {})["ok"])
+                self.assertEqual(motor.call_args.args[0]["owner"], owner)
+                self.assertEqual(motor.call_args.args[0]["op"], op)
+
+    def test_rover_control_rejects_foreign_origin(self):
+        from unittest.mock import patch
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/rover/arm",
+            data=b"{}", headers={"Cookie": self.session_cookie(), "Origin": "https://other.invalid",
+                                 "Content-Type": "application/json"})
+        with patch("dashboard_server.rover_api.request") as motor:
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                urllib.request.urlopen(req, timeout=3)
+            self.assertEqual(error.exception.code, 403)
+            motor.assert_not_called()
 
     def test_recordings_api_reads_archive_and_downloads_tarball(self):
         root = Path(__file__).resolve().parents[1] / "runtime" / "recordings" / "unit_lidar_archive"
@@ -767,7 +776,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("id=\"roverRecordBothButton\"", html)
         self.assertIn("id=\"roverRecordStartButton\"", html)
         self.assertIn("id=\"roverRecordingTimer\"", html)
-        self.assertIn("id=\"roverControlPassword\"", html)
+        self.assertNotIn("id=\"roverControlPassword\"", html)
+        self.assertIn("aria-pressed=\"false\">조종 활성화 OFF", html)
         self.assertIn("id=\"roverArmButton\"", html)
         self.assertIn("data-lidar-overlay-mode=\"both\"", html)
         self.assertIn("data-archive-overlay-mode=\"overlay\"", html)

@@ -161,6 +161,7 @@ const state = {
 	    currentLinear: 0,
 	    currentAngular: 0,
 	    activeKeys: new Set(),
+	    speedKeys: new Set(),
 	    activeButton: "",
 	    stoppingWithFade: false,
 	    commandTimer: null,
@@ -3995,7 +3996,7 @@ function setRoverSpeed(value, persist) {
   state.roverControl.speedPct = Math.max(0, Math.min(100, Number(value) || 0));
   text("roverSpeedValue", `${Math.round(state.roverControl.speedPct)}%`);
   const slider = $("roverSpeedSlider");
-  if (slider && document.activeElement !== slider) slider.value = String(Math.round(state.roverControl.speedPct));
+  if (slider) slider.value = String(Math.round(state.roverControl.speedPct));
   if (persist) {
     try {
       localStorage.setItem(ROVER_SPEED_KEY, String(Math.round(state.roverControl.speedPct)));
@@ -4020,13 +4021,6 @@ function setRoverDrivePanelCollapsed(collapsed, persist) {
     } catch (_) {
       // Keep panel visibility session-local without storage.
     }
-  }
-  const motionActive = hasActiveRoverInput()
-    || state.roverControl.stoppingWithFade
-    || Math.abs(state.roverControl.currentLinear) > 0.001
-    || Math.abs(state.roverControl.currentAngular) > 0.001;
-  if (persist && state.roverControl.panelCollapsed && motionActive) {
-    stopRoverNow("drive_panel_hidden");
   }
 }
 
@@ -4141,50 +4135,61 @@ function archiveOverlayRenderMode() {
 }
 
 function roverKeyFromEvent(event) {
-  const physical = /^Key[WASD]$/.test(event.code || "") ? event.code.slice(3) : event.key;
+  const physical = /^Key[WASDQE]$/.test(event.code || "") ? event.code.slice(3) : event.key;
   const key = String(physical || "").toLowerCase();
-  return ["w", "a", "s", "d"].includes(key) ? key : "";
+  return ["w", "a", "s", "d", "q", "e"].includes(key) ? key : "";
 }
 
 function roverKeyTargetBlocked(event) {
+  if (event.target?.id === "roverSpeedSlider" && event.target?.type === "range") return false;
   return ["INPUT", "TEXTAREA", "SELECT"].includes(event.target?.tagName) || event.target?.isContentEditable;
 }
 
 async function armEspRover() {
   const c = state.roverControl;
-  if (c.inFlight || c.lease) return;
+  if (c.lease) { await stopRoverNow("operator_disarm"); return; }
+  if (c.inFlight || c.disarming) return;
   c.inFlight = true;
+  c.arming = true;
+  renderRoverButtons();
   const epoch = c.epoch || 0;
   try {
-    const input = $("roverControlPassword");
-    if (input?.value) {
-      const auth = await postJson("/api/rover/auth", {password: input.value});
-      input.value = "";
-      if (!auth.ok) throw new Error("조종 암호를 확인하세요.");
-    }
     const result = await postJson("/api/rover/arm");
     if (!result.ok) throw new Error(result.error);
     if (epoch !== (c.epoch || 0)) { await postJson("/api/rover/stop", {reason: "cancelled_arm"}); return; }
     c.lease = result.lease; c.ticket = result.ticket; c.seq = result.seq;
     c.pendingRelease = false;
-    setRoverCommandStatus("ok", "조종 활성화 · WASD/방향 버튼을 누르는 동안 이동 · Esc 즉시 정지");
+    setRoverCommandStatus("ok", "조종 활성화 · WASD 이동 · Q/E 속도 −5/+5% · Esc 즉시 정지");
+    ensureRoverCommandTimer();
+    renderRoverMotionReadout();
   } catch (err) { setRoverCommandStatus("bad", err.message); }
-  finally { c.inFlight = false; }
+  finally { c.inFlight = false; c.arming = false; renderRoverButtons(); }
 }
 
 function handleRoverKeyDown(event) {
+  if (currentRoute() !== "/rover-control") return;
   if (event.key === "Escape") { stopRoverNow("escape"); return; }
-  if (currentRoute() !== "/rover-control" || roverKeyTargetBlocked(event) || event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
-  if (state.roverControl.panelCollapsed || !state.roverControl.lease) return;
+  if (roverKeyTargetBlocked(event) || event.ctrlKey || event.altKey || event.metaKey) return;
+  const c = state.roverControl;
+  if (!c.lease) return;
   const key = roverKeyFromEvent(event);
   if (!key) return;
   event.preventDefault();
-  state.roverControl.activeKeys.add(key);
-  state.roverControl.activeButton = "";
+  if (event.repeat) return;
+  if (key === "q" || key === "e") {
+    if (c.speedKeys.has(key)) return;
+    c.speedKeys.add(key);
+    setRoverSpeed(c.speedPct + (key === "q" ? -5 : 5), true);
+    return;
+  }
+  if (c.activeKeys.has(key)) return;
+  c.activeKeys.add(key);
+  c.activeButton = "";
   updateRoverMotion();
 }
 function handleRoverKeyUp(event) {
   const key = roverKeyFromEvent(event);
+  if (key === "q" || key === "e") { state.roverControl.speedKeys.delete(key); return; }
   if (!key || !state.roverControl.activeKeys.has(key)) return;
   state.roverControl.activeKeys.delete(key);
   if (hasActiveRoverInput()) updateRoverMotion();
@@ -4208,8 +4213,14 @@ function roverMotionVector() {
     forward = c.activeButton === "forward" ? 1 : c.activeButton === "backward" ? -1 : 0;
     turn = c.activeButton === "right" ? 1 : c.activeButton === "left" ? -1 : 0;
   }
-  const divisor = Math.max(1, Math.abs(forward - turn), Math.abs(forward + turn));
-  return {left: Math.round((forward + turn) / divisor * c.speedPct), right: Math.round((forward - turn) / divisor * c.speedPct)};
+  const speed = c.speedPct;
+  if (forward && turn) {
+    // Keep the inside wheel at the selected speed in both travel directions.
+    const outside = Math.min(100, speed * 1.5);
+    return {left: Math.round(forward * (turn > 0 ? outside : speed)),
+      right: Math.round(forward * (turn < 0 ? outside : speed))};
+  }
+  return {left: Math.round((forward + turn) * speed), right: Math.round((forward - turn) * speed)};
 }
 function ensureRoverCommandTimer() {
   if (!state.roverControl.commandTimer) state.roverControl.commandTimer = setInterval(stepRoverMotion, 140);
@@ -4220,6 +4231,7 @@ function clearRoverCommandTimer() {
 }
 function updateRoverMotion() {
   state.roverControl.pendingRelease = false;
+  state.roverControl.inputDirty = true;
   ensureRoverCommandTimer();
   renderRoverButtons();
   stepRoverMotion();
@@ -4231,6 +4243,7 @@ async function stepRoverMotion() {
   const motion = roverMotionVector();
   const op = c.pendingRelease ? "release" : hasActiveRoverInput() ? "command" : "keepalive";
   c.pendingRelease = false;
+  c.inputDirty = false;
   c.inFlight = true;
   const epoch = c.epoch || 0;
   try {
@@ -4243,18 +4256,26 @@ async function stepRoverMotion() {
     renderRoverMotionReadout();
   } catch (err) {
     if (epoch === (c.epoch || 0)) { stopRoverNow("command_failed"); setRoverCommandStatus("bad", `정지 · ${err.message} · 다시 활성화하세요.`); }
-  } finally { c.inFlight = false; }
+  } finally {
+    c.inFlight = false;
+    // Flush the latest input as soon as the previous request returns, without a queue.
+    if (epoch === (c.epoch || 0) && c.inputDirty) stepRoverMotion();
+  }
 }
 function releaseRoverInput(reason = "release") {
   const c = state.roverControl;
   c.activeButton = ""; c.activeKeys.clear(); c.pendingRelease = true;
+  c.inputDirty = true;
   renderRoverButtons(); stepRoverMotion();
 }
 async function stopRoverNow(reason = "operator_stop") {
   const c = state.roverControl;
   c.epoch = (c.epoch || 0) + 1;
+  const epoch = c.epoch;
+  c.disarming = true;
   c.lease = c.ticket = null;
   c.activeButton = ""; c.activeKeys.clear();
+  c.speedKeys.clear(); c.inputDirty = false;
   c.pendingRelease = false; c.left = c.right = 0;
   c.linear = c.angular = c.currentLinear = c.currentAngular = 0;
   c.stoppingWithFade = false;
@@ -4264,6 +4285,7 @@ async function stopRoverNow(reason = "operator_stop") {
     const result = await postJson("/api/rover/stop", {reason});
     setRoverCommandStatus(result.ok ? "ok" : "bad", result.ok ? "정지 요청 접수 · 다시 조종하려면 활성화하세요." : result.error);
   } catch (_) { setRoverCommandStatus("bad", "응답 없음 · 입력 만료 정지 대기 · 연결 복구 후 상태를 확인하세요."); }
+  finally { if (epoch === c.epoch) c.disarming = false; renderRoverButtons(); }
 }
 function roverCommandMessage(payload) { return payload.ok ? "ESP 요청 접수" : payload.error || "제어 실패"; }
 
@@ -4275,6 +4297,14 @@ function setRoverCommandStatus(kind, message) {
 }
 
 function renderRoverButtons() {
+  const armButton = $("roverArmButton");
+  if (armButton) {
+    const c = state.roverControl;
+    armButton.textContent = c.arming ? "활성화 중…" : c.disarming ? "해제 중…" : c.lease ? "조종 활성화 ON" : "조종 활성화 OFF";
+    armButton.setAttribute("aria-pressed", String(Boolean(c.lease)));
+    armButton.disabled = Boolean(c.arming || c.disarming);
+    armButton.classList.toggle("active", Boolean(c.lease));
+  }
   document.querySelectorAll("[data-rover-drive]").forEach((button) => {
     const action = button.dataset.roverDrive || "";
     const activeByKey = (action === "forward" && state.roverControl.activeKeys.has("w"))

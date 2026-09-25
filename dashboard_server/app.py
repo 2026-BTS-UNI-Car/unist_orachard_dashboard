@@ -4,7 +4,6 @@ import argparse
 import base64
 import gzip
 import hashlib
-import hmac
 import json
 import mimetypes
 import os
@@ -416,27 +415,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         payload = self._read_json_body()
         if not isinstance(payload, dict):
             self.send_error(400, "Object required")
-            return
-        if path == "/api/rover/auth":
-            try:
-                expected = Path(os.environ.get("ROVER_CONTROL_TOKEN_FILE", "/app/data/rover-control-token")).read_text().strip()
-            except OSError:
-                expected = ""
-            supplied = payload.get("password", "")
-            valid = isinstance(supplied, str) and len(expected) >= 20 and hmac.compare_digest(supplied.encode(), expected.encode())
-            with _SESSION_LOCK:
-                item = _SESSIONS.get(session, {})
-                allowed_at = item.get("rover_auth_after", 0)
-                valid = valid and time.time() >= allowed_at
-                item["rover_auth_after"] = time.time() + 2
-                if valid:
-                    item["rover_authorized_until"] = time.time() + 3600
-            self._send_json({"ok": bool(valid), "error": None if valid else "control_password_required"})
-            return
-        with _SESSION_LOCK:
-            authorized = _SESSIONS.get(session, {}).get("rover_authorized_until", 0) > time.time()
-        if not authorized:
-            self._send_json({"ok": False, "error": "control_password_required"})
             return
         operations = {"/api/rover/arm": "arm", "/api/rover/command": "drive", "/api/rover/release": "release",
                       "/api/rover/keepalive": "keepalive", "/api/rover/stop": "stop"}

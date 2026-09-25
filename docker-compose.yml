@@ -37,7 +37,6 @@ services:
       CAMERA_SETTINGS_FILE: "/app/runtime/camera_settings.json"
       ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
       ROVER_CONTROL_SOCKET: "/run/ubts-rover/control.sock"
-      ROVER_CONTROL_TOKEN_FILE: "/app/data/rover-control-token"
       RECORDER_API_URL: "http://127.0.0.1:8790"
       DATA_RECORDER_STATUS_FILE: "/app/runtime/data_recorder_status.json"
       RECORDING_ARCHIVE_DIR: "/app/runtime/recordings"

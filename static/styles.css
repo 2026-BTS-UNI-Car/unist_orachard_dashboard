@@ -941,7 +941,7 @@ h2 {
 .rover-drive-panel h2 { white-space: nowrap; }
 .rover-drive-panel .drive-head-actions { margin-top: 12px; justify-content: space-between; }
 .rover-arm-controls { display: grid; gap: 8px; margin: 12px 0; min-width: 0; }
-.rover-arm-controls input, select[data-network-profile] {
+select[data-network-profile] {
   width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line);
   border-radius: 8px; color: var(--text); background: var(--surface); font: inherit;
 }

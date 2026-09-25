@@ -118,7 +118,6 @@ jobs:
             $COMPOSE up --no-deps -d "$service"
           }
 
-          test -s data/rover-control-token
           docker update --restart=no unist-orachard-ros2-rover-bridge >/dev/null 2>&1 || true
           docker stop unist-orachard-ros2-rover-bridge >/dev/null 2>&1 || true
           recreate_service ros2-esp-rover-bridge unist-orachard-ros2-esp-rover-bridge
