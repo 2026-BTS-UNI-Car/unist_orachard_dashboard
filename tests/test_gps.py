@@ -145,15 +145,68 @@ class DecoderTests(unittest.TestCase):
                 serial.open()
                 with self.assertRaises(OSError): other.open()
                 serial.read()
-                self.assertEqual(os.read(master, 4096), ubx_packet(10, 4)+ubx_packet(1, 7)+ubx_packet(1, 20))
+                self.assertEqual(os.read(master, 4096), ubx_packet(10, 4)+ubx_packet(1, 7)+ubx_packet(1, 20)
+                                 +nmea('EIGNQ,GGA')+nmea('EIGNQ,RMC')+nmea('EIGPQ,GGA')+nmea('EIGPQ,RMC'))
                 os.write(master, pvt())
                 deadline = time.monotonic()+1; frames = []
                 while not frames and time.monotonic() < deadline:
                     frames.extend(serial.read()); time.sleep(.01)
                 self.assertTrue(frames[0]['valid'])
                 self.assertFalse(serial.snapshot()['driver']['configuration_writes'])
+                # Once navigation responds, fallback NMEA queries no longer add traffic.
+                serial.next_poll = 0; serial.read()
+                self.assertEqual(os.read(master, 4096), ubx_packet(10, 4)+ubx_packet(1, 7)+ubx_packet(1, 20))
             finally:
                 serial.close(); other.close(); os.close(master); os.close(slave)
+
+    @unittest.skipIf(sys.platform == 'win32', 'Linux UART implementation')
+    def test_auto_baud_reaches_921600_and_passive_mode_writes_nothing(self):
+        import pty
+        from scripts.gps_ros2_driver import GpsSerial
+        master, slave = pty.openpty(); os.set_blocking(master, False)
+        with tempfile.TemporaryDirectory() as temp:
+            serial = GpsSerial(os.ttyname(slave), lock_path=str(Path(temp)/'lock'), poll_ubx=False)
+            try:
+                serial.open()
+                for _ in range(len(serial.BAUDS)-1):
+                    serial.connected_at = time.monotonic()-6; serial.read()
+                status = serial.snapshot()['driver']
+                self.assertEqual(status['baud'], 921600)
+                self.assertEqual(status['baud_attempts'], list(serial.BAUDS))
+                self.assertIsNone(status['uart_counters'])  # PTY has no hardware counters.
+                self.assertGreaterEqual(status['serial_open_s'], 0)
+                with self.assertRaises(BlockingIOError): os.read(master, 4096)
+            finally:
+                serial.close(); os.close(master); os.close(slave)
+
+    @unittest.skipIf(sys.platform == 'win32', 'Linux UART implementation')
+    def test_console_guard_uses_kernel_device_name_for_docker_alias(self):
+        import pty
+        from scripts.gps_ros2_driver import GpsSerial, serial_device_name
+        master, slave = pty.openpty(); port = os.ttyname(slave)
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                root=Path(temp); device=os.stat(port).st_rdev
+                target=root/'devices/ttyTCU0'; target.mkdir(parents=True)
+                entry=root/'dev/char'/f'{os.major(device)}:{os.minor(device)}'; entry.parent.mkdir(parents=True)
+                entry.symlink_to(target, target_is_directory=True)
+                self.assertEqual(serial_device_name(port, root), 'ttyTCU0')
+                serial=GpsSerial('/dev/ubts-gps', lock_path=str(root/'unused.lock'))
+                with patch('scripts.gps_ros2_driver.serial_device_name', return_value='ttyTCU0'), \
+                     patch.object(Path, 'read_text', return_value='console=ttyTCU0,115200 console=tty0'):
+                    with self.assertRaisesRegex(OSError, 'system console'): serial.open()
+                self.assertIsNone(serial.fd); self.assertFalse((root/'unused.lock').exists())
+        finally: os.close(master); os.close(slave)
+
+    @unittest.skipIf(sys.platform == 'win32', 'Linux UART implementation')
+    def test_uart_counters_are_relative_to_open_and_handle_wrap(self):
+        from scripts.gps_ros2_driver import GpsSerial
+        serial=GpsSerial('/dev/unused')
+        serial.fd=10; serial.counter_baseline={'rx':0xfffffffe,'tx':500,'frame':2}
+        with patch('scripts.gps_ros2_driver.serial_counters', return_value={'rx':3,'tx':524,'frame':2}):
+            driver=serial.snapshot()['driver']
+        self.assertEqual(driver['uart_counters'], {'rx':5,'tx':24,'frame':0})
+        self.assertEqual(driver['uart_counters_scope'], 'since_uart_open')
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):

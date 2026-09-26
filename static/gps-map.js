@@ -142,8 +142,11 @@ function paintLive() {
   const sample = age > 3 ? {...latest, valid:false, state:'stale'} : latest;
   live.update(sample, frames);
   const driver = latest.driver || {};
-  text('roverGpsConnection', driver.error || `${driver.serial_open ? 'UART 열림' : 'UART 대기'} · ${driver.baud || '—'} baud · 수신 ${driver.bytes_received ?? 0} bytes · 유효 패킷 ${driver.valid_packets ?? 0}`);
-  text('roverGpsAge', latest.received_at ? `${number(age, 1)}초 전 GPS 표본` : 'GPS 표본 수신 전');
+  const uart = driver.uart_counters;
+  const errors = uart ? (uart.frame || 0)+(uart.parity || 0)+(uart.overrun || 0)+(uart.buf_overrun || 0) : 0;
+  text('roverGpsConnection', driver.error || `${driver.serial_open ? 'UART 열림' : 'UART 대기'} · ${driver.baud || '—'} baud · 수신 ${driver.bytes_received ?? 0} bytes · 유효 패킷 ${driver.valid_packets ?? 0}${errors ? ` · UART 오류 ${errors}` : ''}`);
+  const detection = driver.auto_baud && driver.baud_attempts?.length ? ` · ${driver.baud_attempts.length}개 통신 속도 확인` : '';
+  text('roverGpsAge', latest.received_at ? `${number(age, 1)}초 전 GPS 표본` : `GPS 응답 수신 전${detection}`);
 }
 function connect() {
   if (!active() || socket) return;

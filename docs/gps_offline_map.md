@@ -20,15 +20,26 @@ GPS UART는 GPS 드라이버만 엽니다. 웹 브리지와 기록기는 ROS 토
 실제 연결 위치는 아직 확인되지 않았습니다. 다른 UART나 USB 장치를 추측해서
 자동으로 여는 동작은 없습니다. 장치가 확인되면 `.env`에
 `GPS_SERIAL_DEVICE=/dev/serial/by-id/...`를 지정할 수 있습니다.
-`GPS_BAUD=0`은 38400/9600/115200/57600/19200/230400/460800 순으로 자동 탐색합니다.
+`GPS_BAUD=0`은 38400/9600/115200/57600/19200/230400/460800/921600 순으로 자동 탐색합니다.
 고정 속도가 확인되면 예를 들어 `GPS_BAUD=38400`으로 지정합니다.
 
 드라이버가 보내는 UBX 메시지는 읽기 전용 MON-VER, NAV-PVT,
-NAV-HPPOSLLH 조회뿐입니다. CFG, 리셋, 플래시 저장, 펌웨어 및 핀mux 변경은 없습니다.
+NAV-HPPOSLLH 조회뿐입니다. 위치 응답이 없으면 GN/GP talker에 GGA/RMC NMEA
+조회를 추가합니다. UBX 입력 또는 정기 NMEA 출력이 꺼진 수신기도 조회할 수 있도록
+하며, 응답이 돌아오면 NMEA 추가 조회를 멈춥니다. `--no-poll-ubx`는 모든 송신을
+끄고 수동 수신만 합니다. CFG, 리셋, 플래시 저장, 펌웨어 및 핀mux 변경은 없습니다.
 NMEA와 UBX 체크섬을 검증하고 부분 패킷, 잘못된 좌표와 수신 끊김을 처리합니다.
 위치가 확정되지 않으면 좌표를 생성하지 않습니다. ROS에서는 STATUS_NO_FIX와 NaN,
 웹 JSON에서는 `valid:false`와 null로 구분합니다. 3초간 새 위치가 없으면 마지막
 위치를 회색으로 표시하며 현재 위치로 취급하지 않습니다.
+
+원격 진단 시 `/api/gps`의 `driver.serial_device`는 Docker 별칭에 대응하는 실제
+커널 장치명입니다. 이 이름으로 시스템 콘솔을 차단합니다. `baud_attempts`는 현재
+포트를 연 이후 시도한 속도이며, `serial_open_s`는 그 경과 시간입니다.
+`uart_counters`는 포트를 연 시점부터의 커널 RX/TX, framing/parity/overflow 수치로,
+지원하지 않는 USB 드라이버/PTY에서는 null입니다. UART TX 증가는 커널 송신 처리의
+증거이며 실제 핀 전압이나 GPS 응답을 증명하지 않습니다. `bytes_received`와
+`valid_packets`를 함께 확인해야 합니다.
 
 ## 지도 사용
 
@@ -111,26 +122,51 @@ curl http://127.0.0.1:8080/api/gps
 GPS 서비스만 중지하려면 `docker compose stop ros2-gps-driver ros2-gps-bridge`를
 사용합니다. 드라이버는 종료 시 UART 설정과 잠금을 해제합니다.
 
-### 2026-09-26 확인 결과
+### 2026-09-26 초기 확인 및 원격 추가 진단
 
 - UART를 7가지 baud에서 열고 읽기 전용 UBX 조회까지 했으나 수신 0 bytes.
 - 40핀 헤더 관련 I2C 버스 0/7의 GNSS 주소 0x42에서 응답 없음.
 - GPIO/핀mux/수신기 설정·펌웨어는 변경하지 않음. 실제 위치/RTK는 미확인.
-- `ttyTHS1` 소유 프로세스 없음, 시스템 콘솔은 ttyTCU0/tty0임을 확인.
+- 최초 조사 시 `ttyTHS1` 소유 프로세스 없음. 배포 후에는 GPS 드라이버만 소유하며,
+  시스템 콘솔은 ttyTCU0/tty0임을 확인.
 - GPS 파서, 스트림 ACK, 지도 범위 전송, GPS 기록/재생 등 격리된 ROS 테스트 통과.
 - 별도 네트워크 격리 ROS domain 173에서 네 센서 동시 rosbag 및 타임라인 기록 확인.
   7초 표본: LiDAR 14, Camera 14, IMU 67, GPS 34 타임라인 프레임.
 
-이는 안테나가 위성을 못 잡는 상황과 다릅니다. 위성 fix가 없어도 UART의 NMEA 또는
-UBX 응답은 수신되어야 합니다. 전원, 공통 GND, 연결 대상, TX/RX 배선을 확인해야
-합니다. 공식 40핀 UART는 Jetson 10번 RX ← GPS TX, Jetson 8번 TX → GPS RX입니다.
-제품의 전원 입력과 3.3V 신호 레벨을 실물 실크 및 매뉴얼로 확인한 후 배선하세요.
+현장 확인이 불가능한 상태에서 추가로 조사한 결과:
+
+- 실제 포트 `serial@3100000 → ttyTHS1`은 활성화되어 있고 RX/TX pinmux는
+  `uarta`, RX input enable=1, TX tristate=0이다. 점유 충돌이나 flow control은 없다.
+- L4T 36.5에서 알려진 UART DMA 문제와 달리 현재 UART는 이미 RX/TX 모두 PIO
+  모드이며 live device tree에도 DMA 속성이 없다. 따라서 해당 DMA 수정의 재적용이나
+  재부팅은 하지 않았다.
+- 약 8시간 실행 후 드라이버 수신은 0 bytes였다. 커널 송신 카운터는 증가했지만
+  수신 카운터는 2, framing 오류도 2에서 유지되었다. 유효 GPS 패킷은 없었다.
+  이 수치는 부팅 이후 누적값이며 이후 API 진단 수치는 포트를 연 이후 증가량이다.
+- `ttyTHS2`는 `serial@3140000`으로, NVIDIA가 설명하는 Orin Nano의 가상 UART이다.
+  실제 다른 헤더 UART로 추정하여 열지 않았다. ttyTCU0는 사용 중인 디버그 콘솔이다.
+- USB 직렬 장치는 기존 ESP와 LiDAR 두 개뿐이며 별도의 GNSS USB 장치는 없다.
+  현재 ESP 펌웨어에도 GPS 수신/중계 기능은 없다.
+
+따라서 현재는 **위치 fix 실패가 아니라 호스트에서 GPS 통신 응답을 확인하지 못한
+상태**다. GPS 자체의 전원/배선 불량으로 단정할 수는 없다. 수신기 UART2는 기본
+RTCM 인터페이스이고 출력/입력 프로토콜 설정에 따라 NMEA/UBX 응답이 없을 수 있다.
+어느 핀에 연결되었는지 모르는 상태에서 전원 GPIO, 핀mux 또는 수신기 설정을
+추측해서 바꾸지 않는다. 자동 감지와 재접속은 계속 동작하므로 유효 데이터가 들어오면
+지도와 기록기에 전달된다. 실제 전압/배선과 수신기 내부 설정은 원격 소프트웨어만으로
+확정하지 못했다.
+
+참고용 정상 UART 배선은 Jetson 10번 RX ← GPS TX, Jetson 8번 TX → GPS RX,
+공통 GND다. 전원 입력은 캐리어 보드 사양에 따라 다르며 모듈 칩 전압과 혼동하지 않는다.
 
 ## 출처 및 라이선스
 
 - [제품 UB-ZED03](https://www.devicemart.co.kr/goods/view?no=15887632)
 - [u-blox ZED-F9P integration manual](https://content.u-blox.com/sites/default/files/ZED-F9P_IntegrationManual_UBX-18010802.pdf)
 - [NVIDIA Orin Nano carrier specification](https://developer.nvidia.com/downloads/assets/embedded/secure/jetson/orin_nano/docs/jetson_orin_nano_devkit_carrier_board_specification_sp.pdf)
+- [NVIDIA L4T 36.5 UART DMA 문제와 PIO 우회 설명](https://forums.developer.nvidia.com/t/solved-uart-serial-port-not-working-after-upgradint-to-jetpack-6-2-2-orin-nano-nx/363837/7)
+- [NVIDIA Orin Nano UART 매핑 설명](https://forums.developer.nvidia.com/t/to-use-uart2-ttyths2-as-a-standart-uart/339534)
+- [u-blox HPG 1.32 NMEA GNQ/GPQ 조회](https://content.u-blox.com/sites/default/files/documents/u-blox-F9-HPG-1.32_InterfaceDescription_UBX-22008968.pdf)
 - [Protomaps 다운로드](https://docs.protomaps.com/basemaps/downloads), [OSM ODbL 및 저작자 표시](https://www.openstreetmap.org/copyright)
 - [Protomaps fonts/sprites](https://github.com/protomaps/basemaps-assets), revision `028c18f713baecad011301ff7a69acc39bcc2ae7`
 - 렌더러: MapLibre GL JS 6.11.2; PMTiles JS 4.5.0; Protomaps basemaps style 5.7.2.

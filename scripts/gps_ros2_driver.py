@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """One UART owner; NMEA/UBX input to NavSatFix and a lossless quality payload.
 
-Only read-only UBX polls are sent. No CFG, reset, rate, flash or firmware writes.
+Only read-only UBX/NMEA polls are sent. No CFG, reset, rate or flash writes.
 """
 from __future__ import annotations
 
 import argparse
+import array
 import fcntl
 import glob
 import json
@@ -22,6 +23,30 @@ if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
 from dashboard_server.gps import GnssDecoder, fresh_snapshot, ubx_packet, valid_position
 
 
+def serial_device_name(port, sysfs_root=Path('/sys')):
+    """Resolve Docker's renamed device node through its kernel major/minor."""
+    device = os.stat(port)
+    if not stat.S_ISCHR(device.st_mode): raise OSError('GPS port is not a character device')
+    entry = sysfs_root / 'dev/char' / f'{os.major(device.st_rdev)}:{os.minor(device.st_rdev)}'
+    return entry.resolve().name if entry.exists() else Path(port).resolve().name
+
+
+def serial_counters(fd):
+    """Linux serial_icounter_struct; unsupported USB/PTY drivers return None."""
+    values = array.array('i', [0]*20)
+    try: fcntl.ioctl(fd, termios.TIOCGICOUNT, values, True)
+    except OSError: return None
+    names = ('cts', 'dsr', 'rng', 'dcd', 'rx', 'tx', 'frame', 'overrun', 'parity', 'brk', 'buf_overrun')
+    return {name: value & 0xffffffff for name, value in zip(names, values) if name in names[4:]}
+
+
+def nmea_poll(talker, message):
+    body = f'EI{talker}Q,{message}'.encode('ascii')
+    checksum = 0
+    for value in body: checksum ^= value
+    return b'$'+body+f'*{checksum:02X}\r\n'.encode('ascii')
+
+
 def serial_owners(port):
     target = os.stat(port).st_rdev
     owners = set()
@@ -36,7 +61,7 @@ def serial_owners(port):
 
 
 class GpsSerial:
-    BAUDS = (38400, 9600, 115200, 57600, 19200, 230400, 460800)
+    BAUDS = (38400, 9600, 115200, 57600, 19200, 230400, 460800, 921600)
 
     def __init__(self, port, baud=0, lock_path='/run/ubts-gps/serial.lock', poll_ubx=True):
         self.port, self.fixed_baud, self.poll_ubx = port, baud, poll_ubx
@@ -51,9 +76,16 @@ class GpsSerial:
         self.connected_at = 0
         self.next_poll = 0
         self.last_good_packet = None
+        self.device_name = None
+        self.counter_baseline = None
+        self.opened_at = None
+        self.baud_attempts = []
 
     def open(self):
-        if 'console='+Path(self.port).name in Path('/proc/cmdline').read_text():
+        self.device_name = serial_device_name(self.port)
+        consoles = {item.split('=', 1)[1].split(',', 1)[0]
+                    for item in Path('/proc/cmdline').read_text().split() if item.startswith('console=')}
+        if self.device_name in consoles:
             raise OSError('GPS port is the system console')
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock_fd = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
@@ -64,6 +96,9 @@ class GpsSerial:
             self.fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
             self.original = termios.tcgetattr(self.fd)
             fcntl.ioctl(self.fd, termios.TIOCEXCL)
+            self.counter_baseline = serial_counters(self.fd)
+            self.opened_at = time.monotonic()
+            self.baud_attempts = []
             self.set_baud(self.baud)
         except Exception:
             self.close(); raise
@@ -77,6 +112,7 @@ class GpsSerial:
         termios.tcsetattr(self.fd, termios.TCSANOW, cfg)
         termios.tcflush(self.fd, termios.TCIFLUSH)
         self.baud = baud
+        if baud not in self.baud_attempts: self.baud_attempts.append(baud)
         self.connected_at = time.monotonic()
         self.decoder.buffer.clear()
         self.last_good_packet = None
@@ -100,6 +136,11 @@ class GpsSerial:
             # Query data only, including receivers configured without periodic output.
             polls = ubx_packet(1, 7) + ubx_packet(1, 20)
             if not self.decoder.identity: polls = ubx_packet(10, 4) + polls
+            # A receiver can have UBX input disabled and periodic NMEA output off.
+            # Query both common talker IDs until it provides a navigation sample.
+            if self.decoder.last_sample_at is None or time.time()-self.decoder.last_sample_at > 3:
+                polls += b''.join(nmea_poll(talker, message)
+                                  for talker in ('GN', 'GP') for message in ('GGA', 'RMC'))
             try: os.write(self.fd, polls)
             except BlockingIOError: pass
             self.next_poll = now + 1.0
@@ -107,10 +148,17 @@ class GpsSerial:
         return frames
 
     def snapshot(self):
+        counts = serial_counters(self.fd) if self.fd is not None else None
+        if counts is not None and self.counter_baseline is not None:
+            counts = {name: (value-self.counter_baseline[name]) & 0xffffffff for name, value in counts.items()}
+        else: counts = None
         driver = dict(serial_port=self.port, serial_open=self.fd is not None, baud=self.baud,
                       auto_baud=not self.fixed_baud, bytes_received=self.bytes_received,
                       valid_packets=self.decoder.packets, rejected_packets=self.decoder.rejected,
-                      receiver=self.decoder.identity, error=self.error, configuration_writes=False)
+                      receiver=self.decoder.identity, error=self.error, configuration_writes=False,
+                      serial_device=self.device_name, baud_attempts=list(self.baud_attempts),
+                      serial_open_s=round(time.monotonic()-self.opened_at, 1) if self.opened_at is not None else None,
+                      uart_counters=counts, uart_counters_scope='since_uart_open' if counts is not None else None)
         return fresh_snapshot(self.decoder.sample, self.decoder.last_sample_at, driver=driver)
 
     def close(self):
@@ -120,6 +168,8 @@ class GpsSerial:
                 fcntl.ioctl(self.fd, termios.TIOCNXCL)
             except OSError: pass
             os.close(self.fd); self.fd = None
+        self.opened_at = None
+        self.counter_baseline = None
         if self.lock_fd is not None:
             os.close(self.lock_fd); self.lock_fd = None
 
