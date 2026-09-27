@@ -125,6 +125,7 @@ def prepare(release):
     override={'services':{s:{'image':tags['web' if s=='dashboard' else 'ros2']} for s in TARGETS}}
     (backup/'new-images.json').write_text(json.dumps(override))
     # No hardware, host network or persistent recordings are exposed to tests.
+    for name in ['runtime','data']:(release/name).mkdir(exist_ok=True)
     run('docker','run','--rm','--network','none','-e','FAN_HOLD_INTERVAL_S=0','-e','ROS_DOMAIN_ID=173',
         '-v',f'{release}:/workspace:ro','--tmpfs','/workspace/runtime:rw','--tmpfs','/workspace/data:rw',
         '-w','/workspace',tags['ros2'],'bash','-lc','source /opt/ros/iron/setup.bash && python3 -B -m unittest discover -s tests')
