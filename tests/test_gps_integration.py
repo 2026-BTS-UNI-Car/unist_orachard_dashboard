@@ -29,7 +29,7 @@ class GpsRecordingIntegration(unittest.TestCase):
             log=(root/'recorder.log').open('w')
             process=subprocess.Popen([sys.executable,'-m','scripts.data_recorder_service','--port',str(port),
                 '--archive-dir',str(root/'recordings'),'--status-file',str(root/'status.json'),
-                '--camera-preview-width','160','--camera-vision-wait-timeout-s','0'],stdout=log,stderr=subprocess.STDOUT)
+                '--camera-preview-width','160'],stdout=log,stderr=subprocess.STDOUT)
             node=None
             def api(route, payload=None):
                 request=urllib.request.Request(f'http://127.0.0.1:{port}{route}',

@@ -60,6 +60,30 @@ def code_members(path):
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def snapshot_image(name,data,tag,backup):
+    if subprocess.run(['docker','image','inspect',data['Image']],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:
+        run('docker','tag',data['Image'],tag)
+        return
+    # Export the mounted root filesystem when the old layer metadata is absent.
+    # Docker export excludes all bind-mounted runtime, recordings and devices.
+    # No service pause, image-store repair or daemon restart is needed.
+    archive=backup/f'{name}-rootfs.tar'
+    run('docker','export','-o',str(archive),name)
+    cmd=['docker','import']
+    config=data['Config']
+    for key in ['Entrypoint','Cmd']:
+        if config.get(key):cmd+=['--change',key.upper()+' '+json.dumps(config[key])]
+    for key in ['WorkingDir','User']:
+        if config.get(key):cmd+=['--change',('WORKDIR' if key=='WorkingDir' else 'USER')+' '+config[key]]
+    for env in config.get('Env',[]):
+        key,value=env.split('=',1);cmd+=['--change','ENV '+key+'='+json.dumps(value)]
+    cmd+=[str(archive),tag]
+    # Do not include environment-bearing arguments in exceptions/logs.
+    result=subprocess.run(cmd,capture_output=True)
+    if result.returncode:raise RuntimeError(f'rootfs import failed for {name}; backup tar retained')
+    print('SNAPSHOT',name,archive.stat().st_size,flush=True)
+
+
 def prepare(release):
     count=guard()
     revision=(release/'REVISION').read_text().strip()
@@ -70,13 +94,10 @@ def prepare(release):
     for name in [*TARGETS.values(),AI]:
         data=inspect(name)
         baseline['targets'][name]={'id':data['Id'],'image':data['Image'],'restart':data['HostConfig']['RestartPolicy']['Name'],'running':data['State']['Running']}
+        # AI is stopped but its existing container is preserved for rollback.
+        if name==AI:continue
         tag=f'ubts-rollback/{name}:{revision[:12]}'
-        if subprocess.run(['docker','image','inspect',data['Image']],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:
-            run('docker','tag',data['Image'],tag)
-        else:
-            # Some deployed containers outlive their deleted image metadata.
-            # Snapshot their existing filesystem without pausing sensor services.
-            run('docker','commit','--pause=false',name,tag)
+        snapshot_image(name,data,tag,backup)
         baseline['targets'][name]['backup_image']=json.loads(subprocess.check_output(['docker','image','inspect',tag]))[0]['Id']
         baseline['targets'][name]['tag']=tag
     for name in subprocess.check_output(['docker','ps','--format','{{.Names}}'],text=True).splitlines():
