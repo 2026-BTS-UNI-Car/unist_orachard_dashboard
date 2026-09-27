@@ -3028,3 +3028,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
     flex-direction: column;
   }
 }
+
+.simulation-banner { position: sticky; top: 0; z-index: 100; padding: 8px 18px; background: #174a68; color: #fff; text-align: center; font-weight: 700; }
+.simulation-banner[hidden] { display: none; }

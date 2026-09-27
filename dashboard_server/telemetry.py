@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import base64
 import hashlib
 import http.client
@@ -23,11 +22,6 @@ from typing import Any
 import urllib.request
 from collections import OrderedDict
 
-from dashboard_server.camera_analysis import CameraOverlayStabilizer, analyze_camera_frame_payload, current_source_native_camera_overlay
-from dashboard_server.lidar_analysis import analyze_points, current_lidar_overlay_algorithm
-from dashboard_server.orchard_mapping import MAP_ALGORITHM_NAME, build_orchard_map, current_orchard_map_cache
-
-
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
 DEFAULT_TELEMETRY_FILE = ROOT / "runtime" / "telemetry_snapshot.json"
@@ -41,31 +35,73 @@ DEFAULT_ROVER_BRIDGE_STATUS_FILE = ROOT / "runtime" / "rover_bridge_status.json"
 DEFAULT_DATA_RECORDER_STATUS_FILE = ROOT / "runtime" / "data_recorder_status.json"
 DEFAULT_RECORDING_ARCHIVE_DIR = ROOT / "runtime" / "recordings"
 PLAYBACK_CACHE_SCHEMA = "orchard.timeline.playback_cache.v1"
-PLAYBACK_CACHE_REVISION = "binary_jpeg_segment_sidecar_v1"
+PLAYBACK_CACHE_REVISION = "raw_sensor_segment_v2"
 PLAYBACK_DASHBOARD_PROFILE = "dashboard-compact-v1"
 PLAYBACK_LIDAR_POINT_FIELDS = ("x_m", "y_m", "distance_m", "quality", "angle_deg")
 PLAYBACK_SEGMENT_SECONDS = 4.0
 DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES = 8 * 1024 * 1024 * 1024
 DEFAULT_CAMERA_VIEW_MODES = [
-    {"resolution": "1920x1080", "width": 1920, "height": 1080, "fps": [30], "label": "1080p 16:9"},
-    {"resolution": "1280x720", "width": 1280, "height": 720, "fps": [60], "label": "720p 16:9"},
-    {"resolution": "1024x768", "width": 1024, "height": 768, "fps": [30], "label": "768p 4:3"},
-    {"resolution": "800x600", "width": 800, "height": 600, "fps": [60], "label": "600p 4:3"},
-    {"resolution": "640x480", "width": 640, "height": 480, "fps": [30], "label": "480p 4:3"},
-    {"resolution": "320x240", "width": 320, "height": 240, "fps": [30], "label": "240p 4:3"},
-    {"resolution": "1280x1024", "width": 1280, "height": 1024, "fps": [30], "label": "1024p 5:4"},
+    {
+        "resolution": "1920x1080",
+        "width": 1920,
+        "height": 1080,
+        "fps": [30],
+        "label": "1080p 16:9",
+    },
+    {
+        "resolution": "1280x720",
+        "width": 1280,
+        "height": 720,
+        "fps": [60],
+        "label": "720p 16:9",
+    },
+    {
+        "resolution": "1024x768",
+        "width": 1024,
+        "height": 768,
+        "fps": [30],
+        "label": "768p 4:3",
+    },
+    {
+        "resolution": "800x600",
+        "width": 800,
+        "height": 600,
+        "fps": [60],
+        "label": "600p 4:3",
+    },
+    {
+        "resolution": "640x480",
+        "width": 640,
+        "height": 480,
+        "fps": [30],
+        "label": "480p 4:3",
+    },
+    {
+        "resolution": "320x240",
+        "width": 320,
+        "height": 240,
+        "fps": [30],
+        "label": "240p 4:3",
+    },
+    {
+        "resolution": "1280x1024",
+        "width": 1280,
+        "height": 1024,
+        "fps": [30],
+        "label": "1024p 5:4",
+    },
 ]
-DEFAULT_LIDAR_BAUDS = [1_000_000, 460_800, 256_000, 115_200]
+DEFAULT_LIDAR_BAUDS = [1000000, 460800, 256000, 115200]
 DEFAULT_LIDAR_SCAN_DURATION_S = 3.0
 DEFAULT_LIDAR_SCAN_MAX_POINTS = 1800
 DEFAULT_FAN_STATE_FILE = ROOT / "data" / "fan_state.json"
-RPLIDAR_STOP = bytes([0xA5, 0x25])
-RPLIDAR_SCAN = bytes([0xA5, 0x20])
-RPLIDAR_SCAN_DESCRIPTOR = bytes([0xA5, 0x5A, 0x05, 0x00, 0x00, 0x40, 0x81])
-TIOCMGET = 0x5415
-TIOCMSET = 0x5418
-TIOCM_DTR = 0x002
-TIOCM_RTS = 0x004
+RPLIDAR_STOP = bytes([165, 37])
+RPLIDAR_SCAN = bytes([165, 32])
+RPLIDAR_SCAN_DESCRIPTOR = bytes([165, 90, 5, 0, 0, 64, 129])
+TIOCMGET = 21525
+TIOCMSET = 21528
+TIOCM_DTR = 2
+TIOCM_RTS = 4
 
 
 def _read_text(path: str | Path) -> str | None:
@@ -109,7 +145,7 @@ def _safe_int(value: str | None) -> int | None:
 def _pct(used: int, total: int) -> float | None:
     if total <= 0:
         return None
-    return round((used / total) * 100.0, 1)
+    return round(used / total * 100.0, 1)
 
 
 def _cpu_display_label(name: str) -> str:
@@ -131,41 +167,100 @@ class DockerSocketHTTPConnection(http.client.HTTPConnection):
 class TelemetryProvider:
     def __init__(self, config_path: str | Path | None = None):
         self.started_at = time.time()
-        self.config_path = Path(config_path or os.environ.get("DASHBOARD_CONFIG", DEFAULT_CONFIG))
+        self.config_path = Path(
+            config_path or os.environ.get("DASHBOARD_CONFIG", DEFAULT_CONFIG)
+        )
         self.config = _load_json(self.config_path)
         self.mode = os.environ.get("DASHBOARD_MODE", self.config.get("mode", "live"))
         telemetry_file = Path(
-            os.environ.get("TELEMETRY_FILE", self.config.get("telemetry_file", str(DEFAULT_TELEMETRY_FILE)))
+            os.environ.get(
+                "TELEMETRY_FILE",
+                self.config.get("telemetry_file", str(DEFAULT_TELEMETRY_FILE)),
+            )
         )
-        self.telemetry_file = telemetry_file if telemetry_file.is_absolute() else ROOT / telemetry_file
+        self.telemetry_file = (
+            telemetry_file if telemetry_file.is_absolute() else ROOT / telemetry_file
+        )
         lidar_bridge_file = Path(
-            os.environ.get("LIDAR_BRIDGE_STATUS_FILE", str(DEFAULT_LIDAR_BRIDGE_STATUS_FILE))
+            os.environ.get(
+                "LIDAR_BRIDGE_STATUS_FILE", str(DEFAULT_LIDAR_BRIDGE_STATUS_FILE)
+            )
         )
-        self.lidar_bridge_status_file = lidar_bridge_file if lidar_bridge_file.is_absolute() else ROOT / lidar_bridge_file
+        self.lidar_bridge_status_file = (
+            lidar_bridge_file
+            if lidar_bridge_file.is_absolute()
+            else ROOT / lidar_bridge_file
+        )
         camera_driver_file = Path(
-            os.environ.get("CAMERA_DRIVER_STATUS_FILE", str(DEFAULT_CAMERA_DRIVER_STATUS_FILE))
+            os.environ.get(
+                "CAMERA_DRIVER_STATUS_FILE", str(DEFAULT_CAMERA_DRIVER_STATUS_FILE)
+            )
         )
-        self.camera_driver_status_file = camera_driver_file if camera_driver_file.is_absolute() else ROOT / camera_driver_file
+        self.camera_driver_status_file = (
+            camera_driver_file
+            if camera_driver_file.is_absolute()
+            else ROOT / camera_driver_file
+        )
         camera_bridge_file = Path(
-            os.environ.get("CAMERA_BRIDGE_STATUS_FILE", str(DEFAULT_CAMERA_BRIDGE_STATUS_FILE))
+            os.environ.get(
+                "CAMERA_BRIDGE_STATUS_FILE", str(DEFAULT_CAMERA_BRIDGE_STATUS_FILE)
+            )
         )
-        self.camera_bridge_status_file = camera_bridge_file if camera_bridge_file.is_absolute() else ROOT / camera_bridge_file
-        imu_driver_file = Path(os.environ.get("IMU_DRIVER_STATUS_FILE", str(DEFAULT_IMU_DRIVER_STATUS_FILE)))
-        self.imu_driver_status_file = imu_driver_file if imu_driver_file.is_absolute() else ROOT / imu_driver_file
-        imu_bridge_file = Path(os.environ.get("IMU_BRIDGE_STATUS_FILE", str(DEFAULT_IMU_BRIDGE_STATUS_FILE)))
-        self.imu_bridge_status_file = imu_bridge_file if imu_bridge_file.is_absolute() else ROOT / imu_bridge_file
+        self.camera_bridge_status_file = (
+            camera_bridge_file
+            if camera_bridge_file.is_absolute()
+            else ROOT / camera_bridge_file
+        )
+        imu_driver_file = Path(
+            os.environ.get(
+                "IMU_DRIVER_STATUS_FILE", str(DEFAULT_IMU_DRIVER_STATUS_FILE)
+            )
+        )
+        self.imu_driver_status_file = (
+            imu_driver_file if imu_driver_file.is_absolute() else ROOT / imu_driver_file
+        )
+        imu_bridge_file = Path(
+            os.environ.get(
+                "IMU_BRIDGE_STATUS_FILE", str(DEFAULT_IMU_BRIDGE_STATUS_FILE)
+            )
+        )
+        self.imu_bridge_status_file = (
+            imu_bridge_file if imu_bridge_file.is_absolute() else ROOT / imu_bridge_file
+        )
         camera_settings_file = Path(
             os.environ.get("CAMERA_SETTINGS_FILE", str(DEFAULT_CAMERA_SETTINGS_FILE))
         )
-        self.camera_settings_file = camera_settings_file if camera_settings_file.is_absolute() else ROOT / camera_settings_file
-        rover_bridge_file = Path(
-            os.environ.get("ROVER_BRIDGE_STATUS_FILE", str(DEFAULT_ROVER_BRIDGE_STATUS_FILE))
+        self.camera_settings_file = (
+            camera_settings_file
+            if camera_settings_file.is_absolute()
+            else ROOT / camera_settings_file
         )
-        self.rover_bridge_status_file = rover_bridge_file if rover_bridge_file.is_absolute() else ROOT / rover_bridge_file
-        recorder_status_file = Path(os.environ.get("DATA_RECORDER_STATUS_FILE", str(DEFAULT_DATA_RECORDER_STATUS_FILE)))
-        self.data_recorder_status_file = recorder_status_file if recorder_status_file.is_absolute() else ROOT / recorder_status_file
-        archive_dir = Path(os.environ.get("RECORDING_ARCHIVE_DIR", str(DEFAULT_RECORDING_ARCHIVE_DIR)))
-        self.recording_archive_dir = archive_dir if archive_dir.is_absolute() else ROOT / archive_dir
+        rover_bridge_file = Path(
+            os.environ.get(
+                "ROVER_BRIDGE_STATUS_FILE", str(DEFAULT_ROVER_BRIDGE_STATUS_FILE)
+            )
+        )
+        self.rover_bridge_status_file = (
+            rover_bridge_file
+            if rover_bridge_file.is_absolute()
+            else ROOT / rover_bridge_file
+        )
+        recorder_status_file = Path(
+            os.environ.get(
+                "DATA_RECORDER_STATUS_FILE", str(DEFAULT_DATA_RECORDER_STATUS_FILE)
+            )
+        )
+        self.data_recorder_status_file = (
+            recorder_status_file
+            if recorder_status_file.is_absolute()
+            else ROOT / recorder_status_file
+        )
+        archive_dir = Path(
+            os.environ.get("RECORDING_ARCHIVE_DIR", str(DEFAULT_RECORDING_ARCHIVE_DIR))
+        )
+        self.recording_archive_dir = (
+            archive_dir if archive_dir.is_absolute() else ROOT / archive_dir
+        )
         playback_cache_dir = Path(
             os.environ.get(
                 "RECORDING_PLAYBACK_CACHE_DIR",
@@ -173,11 +268,17 @@ class TelemetryProvider:
             )
         )
         self.recording_playback_cache_dir = (
-            playback_cache_dir if playback_cache_dir.is_absolute() else ROOT / playback_cache_dir
+            playback_cache_dir
+            if playback_cache_dir.is_absolute()
+            else ROOT / playback_cache_dir
         )
-        self.recorder_api_url = os.environ.get("RECORDER_API_URL", "http://127.0.0.1:8790").rstrip("/")
+        self.recorder_api_url = os.environ.get(
+            "RECORDER_API_URL", "http://127.0.0.1:8790"
+        ).rstrip("/")
         self.network_control_enabled = _env_bool("NETWORK_CONTROL_ENABLED", False)
-        self.network_mode_helper = os.environ.get("NETWORK_MODE_HELPER", "/usr/local/sbin/ubts-network-mode")
+        self.network_mode_helper = os.environ.get(
+            "NETWORK_MODE_HELPER", "/usr/local/sbin/ubts-network-mode"
+        )
         self.host_root = Path(os.environ.get("HOST_ROOT", "/host-root"))
         if not self.host_root.exists():
             self.host_root = Path("/")
@@ -194,20 +295,32 @@ class TelemetryProvider:
         self._external_ip_next_refresh = 0.0
         self._last_lidar_test: dict[str, Any] | None = None
         self._last_lidar_scan: dict[str, Any] | None = None
-        self._timeline_cache: OrderedDict[str, tuple[int, int, dict[str, Any]]] = OrderedDict()
+        self._timeline_cache: OrderedDict[str, tuple[int, int, dict[str, Any]]] = (
+            OrderedDict()
+        )
         self._timeline_cache_lock = threading.RLock()
-        self._timeline_cache_limit = max(1, int(os.environ.get("ARCHIVE_TIMELINE_CACHE_COUNT", "2")))
+        self._timeline_cache_limit = max(
+            1, int(os.environ.get("ARCHIVE_TIMELINE_CACHE_COUNT", "2"))
+        )
         self._playback_cache_lock = threading.RLock()
         self._rover_status_cache: dict[str, Any] | None = None
         self._rover_status_next_refresh = 0.0
-        self._rover_status_timeout_s = max(0.1, float(os.environ.get("ROVER_STATUS_TIMEOUT_S", "0.35")))
-        self._rover_status_refresh_s = max(1.0, float(os.environ.get("ROVER_STATUS_REFRESH_S", "5.0")))
+        self._rover_status_timeout_s = max(
+            0.1, float(os.environ.get("ROVER_STATUS_TIMEOUT_S", "0.35"))
+        )
+        self._rover_status_refresh_s = max(
+            1.0, float(os.environ.get("ROVER_STATUS_REFRESH_S", "5.0"))
+        )
         self._fan_hwmon_cache: dict[str, Any] | None = None
         self._power_hwmon_cache: Path | None = None
-        self._fan_hold_interval_s = max(0.0, float(os.environ.get("FAN_HOLD_INTERVAL_S", "1.5")))
+        self._fan_hold_interval_s = max(
+            0.0, float(os.environ.get("FAN_HOLD_INTERVAL_S", "1.5"))
+        )
         self._fan_hold_thread: threading.Thread | None = None
         if self._fan_hold_interval_s > 0:
-            self._fan_hold_thread = threading.Thread(target=self._fan_hold_loop, daemon=True)
+            self._fan_hold_thread = threading.Thread(
+                target=self._fan_hold_loop, daemon=True
+            )
             self._fan_hold_thread.start()
 
     def health(self) -> dict[str, Any]:
@@ -220,7 +333,9 @@ class TelemetryProvider:
         }
 
     def telemetry(self) -> dict[str, Any]:
-        external = _load_json(self.telemetry_file) if self.telemetry_file.exists() else {}
+        external = (
+            _load_json(self.telemetry_file) if self.telemetry_file.exists() else {}
+        )
         connection = self.connection(external)
         payload = {
             "meta": self._meta(),
@@ -231,7 +346,6 @@ class TelemetryProvider:
             "connection": connection,
             "rover": external.get("rover", self.rover_status()),
             "sensors": connection["sensors"],
-            "fusion": external.get("fusion", self._not_connected("fusion")),
             "experiment": external.get("experiment", self._not_connected("experiment")),
             "mission": external.get("mission", self._mission_status()),
             "services": connection["services"],
@@ -240,7 +354,9 @@ class TelemetryProvider:
         return payload
 
     def connection(self, external: dict[str, Any] | None = None) -> dict[str, Any]:
-        external = external or (_load_json(self.telemetry_file) if self.telemetry_file.exists() else {})
+        external = external or (
+            _load_json(self.telemetry_file) if self.telemetry_file.exists() else {}
+        )
         lidar_bridge = self._lidar_bridge_status()
         camera_bridge = self._camera_bridge_status()
         imu_bridge = self._imu_bridge_status()
@@ -253,7 +369,9 @@ class TelemetryProvider:
             "imu_bridge": imu_bridge,
             "rover_bridge": rover_bridge,
             "rover": self.rover_status(),
-            "services": self._services(external, lidar_bridge, camera_bridge, imu_bridge, rover_bridge),
+            "services": self._services(
+                external, lidar_bridge, camera_bridge, imu_bridge, rover_bridge
+            ),
             "sensors": self._sensors(external, lidar_bridge, camera_bridge, imu_bridge),
         }
 
@@ -266,10 +384,14 @@ class TelemetryProvider:
             "hostname": self._hostname(),
             "platform": platform.platform(),
             "architecture": platform.machine(),
-            "jetson_release": _read_text(os.environ.get("JETSON_RELEASE_FILE", "/etc/nv_tegra_release")),
+            "jetson_release": _read_text(
+                os.environ.get("JETSON_RELEASE_FILE", "/etc/nv_tegra_release")
+            ),
             "service_uptime_s": round(time.time() - self.started_at, 1),
             "os_uptime_s": self._os_uptime_s(),
-            "loadavg": os.getloadavg() if hasattr(os, "getloadavg") else [0.0, 0.0, 0.0],
+            "loadavg": os.getloadavg()
+            if hasattr(os, "getloadavg")
+            else [0.0, 0.0, 0.0],
             "cpu": cpu,
             "memory": memory,
             "swap": swap,
@@ -307,20 +429,30 @@ class TelemetryProvider:
             )
         self._last_net = counters
         self._last_sample_at = now
-        active = [iface for iface in interfaces if iface.get("state") == "up" and iface["name"] != "lo"]
+        active = [
+            iface
+            for iface in interfaces
+            if iface.get("state") == "up" and iface["name"] != "lo"
+        ]
         primary_ipv4 = self._primary_ipv4(interfaces)
         primary_interface = self._primary_interface(primary_ipv4, interfaces)
         traffic_interfaces = [iface for iface in interfaces if iface["name"] != "lo"]
         return {
             "hostname": self._hostname(),
-            "interfaces": sorted(interfaces, key=lambda item: (item["name"] == "lo", item["name"])),
+            "interfaces": sorted(
+                interfaces, key=lambda item: (item["name"] == "lo", item["name"])
+            ),
             "active_interfaces": [iface["name"] for iface in active],
             "primary_ipv4": primary_ipv4,
             "primary_interface": primary_interface,
             "external_ip": self._cached_external_ip(),
             "external_ip_error": self._external_ip_error,
-            "total_rx_bps": round(sum(iface["rx_bps"] for iface in traffic_interfaces), 1),
-            "total_tx_bps": round(sum(iface["tx_bps"] for iface in traffic_interfaces), 1),
+            "total_rx_bps": round(
+                sum((iface["rx_bps"] for iface in traffic_interfaces)), 1
+            ),
+            "total_tx_bps": round(
+                sum((iface["tx_bps"] for iface in traffic_interfaces)), 1
+            ),
             "control": self.network_control_status(),
         }
 
@@ -339,14 +471,22 @@ class TelemetryProvider:
 
     def set_network_mode(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.network_control_enabled:
-            return {"ok": False, "state": "disabled", "error": "Network control is disabled."}
+            return {
+                "ok": False,
+                "state": "disabled",
+                "error": "Network control is disabled.",
+            }
         action = str(payload.get("action") or "").strip().lower()
         confirmations = {
             "ap": "disconnect_wifi_and_enable_ap",
             "wifi": "leave_ap_and_scan_known_wifi",
         }
         if action not in confirmations:
-            return {"ok": False, "state": "bad_action", "error": "action must be ap or wifi"}
+            return {
+                "ok": False,
+                "state": "bad_action",
+                "error": "action must be ap or wifi",
+            }
         if str(payload.get("confirm") or "") != confirmations[action]:
             return {"ok": False, "state": "confirmation_required", "action": action}
         result = self._network_mode_command(f"request-{action}")
@@ -386,9 +526,16 @@ class TelemetryProvider:
                 "error": f"Host helper not found: {helper}",
             }
         try:
-            proc = subprocess.run(argv, check=False, capture_output=True, text=True, timeout=5)
+            proc = subprocess.run(
+                argv, check=False, capture_output=True, text=True, timeout=5
+            )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            return {"ok": False, "enabled": True, "state": "helper_error", "error": str(exc)}
+            return {
+                "ok": False,
+                "enabled": True,
+                "state": "helper_error",
+                "error": str(exc),
+            }
         output = (proc.stdout or "").strip().splitlines()
         try:
             result = json.loads(output[-1]) if output else {}
@@ -398,15 +545,21 @@ class TelemetryProvider:
             result = {}
         result.setdefault("ok", proc.returncode == 0)
         result.setdefault("state", "ok" if proc.returncode == 0 else "helper_failed")
-        if proc.returncode != 0 and not result.get("error"):
-            result["error"] = (proc.stderr or proc.stdout or f"exit {proc.returncode}").strip()[:500]
+        if proc.returncode != 0 and (not result.get("error")):
+            result["error"] = (
+                proc.stderr or proc.stdout or f"exit {proc.returncode}"
+            ).strip()[:500]
         result["enabled"] = True
         result["runner"] = runner
         return result
 
     def docker(self) -> dict[str, Any]:
         if not Path(self.docker_socket).exists():
-            return {"available": False, "error": "docker socket not mounted", "containers": []}
+            return {
+                "available": False,
+                "error": "docker socket not mounted",
+                "containers": [],
+            }
         try:
             info = self._docker_get_json("/info")
             version = self._docker_get_json("/version")
@@ -432,7 +585,9 @@ class TelemetryProvider:
                     "memory_limit": stats.get("memory_limit"),
                     "rx_bytes": stats.get("rx_bytes"),
                     "tx_bytes": stats.get("tx_bytes"),
-                    "self": self._is_self_container(container_id, container.get("Names") or []),
+                    "self": self._is_self_container(
+                        container_id, container.get("Names") or []
+                    ),
                 }
             )
         running = [row for row in rows if row.get("state") == "running"]
@@ -454,9 +609,13 @@ class TelemetryProvider:
                 "total": len(rows),
                 "running": len(running),
                 "stopped": len(rows) - len(running),
-                "cpu_percent": round(sum(row.get("cpu_percent") or 0.0 for row in rows), 1),
-                "memory_usage": sum(row.get("memory_usage") or 0 for row in rows),
-                "memory_limit": max([row.get("memory_limit") or 0 for row in rows] or [0]),
+                "cpu_percent": round(
+                    sum((row.get("cpu_percent") or 0.0 for row in rows)), 1
+                ),
+                "memory_usage": sum((row.get("memory_usage") or 0 for row in rows)),
+                "memory_limit": max(
+                    [row.get("memory_limit") or 0 for row in rows] or [0]
+                ),
             },
             "containers": rows,
         }
@@ -489,7 +648,9 @@ class TelemetryProvider:
             "mounts": detail.get("Mounts", []),
             "ports": network_settings.get("Ports") or {},
             "stats": stats,
-            "self": self._is_self_container(detail.get("Id") or safe_id, [detail.get("Name") or ""]),
+            "self": self._is_self_container(
+                detail.get("Id") or safe_id, [detail.get("Name") or ""]
+            ),
         }
 
     def docker_container_action(self, container_id: str, action: str) -> dict[str, Any]:
@@ -513,11 +674,18 @@ class TelemetryProvider:
                 "state": "self_container_blocked",
                 "error": "Dashboard container cannot control itself from the dashboard UI.",
             }
-        suffix = {"start": "/start", "stop": "/stop?t=10", "restart": "/restart?t=10"}[action]
+        suffix = {"start": "/start", "stop": "/stop?t=10", "restart": "/restart?t=10"}[
+            action
+        ]
         try:
             status, body = self._docker_post_raw(f"/containers/{safe_id}{suffix}")
         except OSError as exc:
-            return {"ok": False, "id": full_id[:12], "action": action, "error": str(exc)}
+            return {
+                "ok": False,
+                "id": full_id[:12],
+                "action": action,
+                "error": str(exc),
+            }
         ok = status in {204, 304}
         return {
             "ok": ok,
@@ -528,7 +696,9 @@ class TelemetryProvider:
             "message": body.decode("utf-8", errors="replace")[:500] if body else "",
         }
 
-    def docker_container_logs(self, container_id: str, tail: int = 160) -> dict[str, Any]:
+    def docker_container_logs(
+        self, container_id: str, tail: int = 160
+    ) -> dict[str, Any]:
         safe_id = str(container_id or "").strip().lstrip("/")
         if not safe_id:
             return {"ok": False, "error": "container_id_required", "lines": []}
@@ -551,8 +721,12 @@ class TelemetryProvider:
     def lidar_status(self) -> dict[str, Any]:
         candidates = self._lidar_candidates()
         present = [item for item in candidates if item["exists"]]
-        selected = present[0] if present else (candidates[0] if candidates else None)
-        holders = self._device_holders(selected["open_path"]) if selected and selected["exists"] else []
+        selected = present[0] if present else candidates[0] if candidates else None
+        holders = (
+            self._device_holders(selected["open_path"])
+            if selected and selected["exists"]
+            else []
+        )
         state = "detected" if present else "not_found"
         if holders:
             state = "in_use"
@@ -562,7 +736,9 @@ class TelemetryProvider:
             "device": selected["display_path"] if selected else None,
             "open_path": selected["open_path"] if selected else None,
             "by_id": selected["by_id"] if selected else None,
-            "driver_hint": self._lidar_driver_hint(selected["display_path"] if selected else ""),
+            "driver_hint": self._lidar_driver_hint(
+                selected["display_path"] if selected else ""
+            ),
             "holders": holders,
             "test_supported": False,
             "test_mode": "ros2_subscribe_only",
@@ -616,19 +792,32 @@ class TelemetryProvider:
         settings = _load_json(self.camera_settings_file)
         if not settings:
             driver = self._camera_driver_status()
-            requested = driver.get("requested") if isinstance(driver.get("requested"), dict) else {}
-            width = requested.get("width") or int(os.environ.get("CAMERA_WIDTH", "1280"))
-            height = requested.get("height") or int(os.environ.get("CAMERA_HEIGHT", "720"))
+            requested = (
+                driver.get("requested")
+                if isinstance(driver.get("requested"), dict)
+                else {}
+            )
+            width = requested.get("width") or int(
+                os.environ.get("CAMERA_WIDTH", "1280")
+            )
+            height = requested.get("height") or int(
+                os.environ.get("CAMERA_HEIGHT", "720")
+            )
             fps = requested.get("fps") or float(os.environ.get("CAMERA_FPS", "60"))
             settings = {
                 "resolution": f"{int(width)}x{int(height)}",
                 "width": int(width),
                 "height": int(height),
                 "fps": fps,
-                "fourcc": requested.get("fourcc") or os.environ.get("CAMERA_FOURCC", "MJPG"),
+                "fourcc": requested.get("fourcc")
+                or os.environ.get("CAMERA_FOURCC", "MJPG"),
                 "source": "driver_default",
             }
-        return {"ok": True, "settings": settings, "settings_file": str(self.camera_settings_file)}
+        return {
+            "ok": True,
+            "settings": settings,
+            "settings_file": str(self.camera_settings_file),
+        }
 
     def set_camera_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         driver_status = self._camera_driver_status()
@@ -641,7 +830,11 @@ class TelemetryProvider:
                 height = int(payload.get("height"))
                 resolution = f"{width}x{height}"
             except (TypeError, ValueError):
-                return {"ok": False, "error": "camera_resolution_required", "supported_view_modes": modes}
+                return {
+                    "ok": False,
+                    "error": "camera_resolution_required",
+                    "supported_view_modes": modes,
+                }
         mode = mode_by_resolution.get(resolution)
         if mode is None:
             return {
@@ -655,7 +848,7 @@ class TelemetryProvider:
             requested_fps = float(payload.get("fps"))
         except (TypeError, ValueError):
             requested_fps = allowed_fps[-1] if allowed_fps else 30.0
-        if not any(abs(requested_fps - value) < 0.05 for value in allowed_fps):
+        if not any((abs(requested_fps - value) < 0.05 for value in allowed_fps)):
             return {
                 "ok": False,
                 "error": "unsupported_camera_fps",
@@ -664,8 +857,17 @@ class TelemetryProvider:
                 "allowed_fps": mode.get("fps", []),
                 "supported_view_modes": modes,
             }
-        fps: int | float = int(round(requested_fps)) if abs(requested_fps - round(requested_fps)) < 0.05 else round(requested_fps, 2)
-        fourcc = str(payload.get("fourcc") or os.environ.get("CAMERA_FOURCC", "MJPG")).strip().upper()[:4] or "MJPG"
+        fps: int | float = (
+            int(round(requested_fps))
+            if abs(requested_fps - round(requested_fps)) < 0.05
+            else round(requested_fps, 2)
+        )
+        fourcc = (
+            str(payload.get("fourcc") or os.environ.get("CAMERA_FOURCC", "MJPG"))
+            .strip()
+            .upper()[:4]
+            or "MJPG"
+        )
         settings = {
             "updated_at": time.time(),
             "source": "dashboard",
@@ -678,7 +880,11 @@ class TelemetryProvider:
         try:
             _write_json_atomic(self.camera_settings_file, settings)
         except OSError as exc:
-            return {"ok": False, "error": str(exc), "settings_file": str(self.camera_settings_file)}
+            return {
+                "ok": False,
+                "error": str(exc),
+                "settings_file": str(self.camera_settings_file),
+            }
         return {
             "ok": True,
             "message": "camera capture settings saved; ROS2 camera driver will reopen the device",
@@ -691,8 +897,12 @@ class TelemetryProvider:
         driver_status = self._camera_driver_status()
         candidates = self._camera_candidates()
         present = [item for item in candidates if item["exists"]]
-        selected = present[0] if present else (candidates[0] if candidates else None)
-        holders = self._device_holders(selected["open_path"]) if selected and selected["exists"] else []
+        selected = present[0] if present else candidates[0] if candidates else None
+        holders = (
+            self._device_holders(selected["open_path"])
+            if selected and selected["exists"]
+            else []
+        )
         state = "detected" if present else "not_found"
         if holders:
             state = "in_use"
@@ -724,20 +934,27 @@ class TelemetryProvider:
             "topic": "/camera/image_raw",
             "camera_info_topic": "/camera/camera_info",
             "supported_view_modes": supported_modes,
-            "supported_view_modes_source": "v4l2" if driver_status.get("supported_view_modes") else "fallback",
+            "supported_view_modes_source": "v4l2"
+            if driver_status.get("supported_view_modes")
+            else "fallback",
             "conflict_policy": "Dashboard는 /dev/video 장치를 열지 않습니다. ROS2 camera driver가 장치를 소유하고 /camera/image_raw를 발행합니다.",
         }
 
     def rover_status(self) -> dict[str, Any]:
         from dashboard_server.rover_api import request
-        return {**request({"op": "status"}), "control_page": "/rover-control", "mode": "esp_manual"}
+
+        return {
+            **request({"op": "status"}),
+            "control_page": "/rover-control",
+            "mode": "esp_manual",
+        }
 
     def set_rover_command(self, payload: dict[str, Any]) -> dict[str, Any]:
-        # All web control must pass the authenticated handler and lease protocol.
         return {"ok": False, "error": "legacy_command_file_removed"}
 
     def stop_rover(self, payload=None):
         from dashboard_server.rover_api import request
+
         return request({"op": "stop"})
 
     def recording_status(self) -> dict[str, Any]:
@@ -766,15 +983,35 @@ class TelemetryProvider:
     def start_recording(self, payload: dict[str, Any]) -> dict[str, Any]:
         kind = str(payload.get("kind") or "").strip().lower()
         if kind not in {"lidar", "camera", "both"}:
-            return {"ok": False, "state": "invalid_kind", "error": "kind must be lidar, camera, or both"}
+            return {
+                "ok": False,
+                "state": "invalid_kind",
+                "error": "kind must be lidar, camera, or both",
+            }
         raw_include_imu = payload.get("include_imu", True)
-        include_imu = raw_include_imu if isinstance(raw_include_imu, bool) else str(raw_include_imu).strip().lower() in {"1", "true", "yes", "on"}
+        include_imu = (
+            raw_include_imu
+            if isinstance(raw_include_imu, bool)
+            else str(raw_include_imu).strip().lower() in {"1", "true", "yes", "on"}
+        )
         raw_gps = payload.get("include_gps", True)
-        include_gps = raw_gps if isinstance(raw_gps, bool) else str(raw_gps).lower() in {"1", "true", "yes", "on"}
-        result = self._recorder_post("/start", {"kind": kind, "include_imu": include_imu, "include_gps": include_gps})
+        include_gps = (
+            raw_gps
+            if isinstance(raw_gps, bool)
+            else str(raw_gps).lower() in {"1", "true", "yes", "on"}
+        )
+        result = self._recorder_post(
+            "/start",
+            {"kind": kind, "include_imu": include_imu, "include_gps": include_gps},
+        )
         if result.get("ok"):
             return result
-        return {"ok": False, "state": "recorder_unavailable", "error": result.get("error"), "status": self.recording_status()}
+        return {
+            "ok": False,
+            "state": "recorder_unavailable",
+            "error": result.get("error"),
+            "status": self.recording_status(),
+        }
 
     def zero_imu(self) -> dict[str, Any]:
         result = self._recorder_post("/imu/zero", {})
@@ -798,16 +1035,24 @@ class TelemetryProvider:
                     name=f"playback-cache-{recording_id[:32]}",
                 ).start()
             return result
-        return {"ok": False, "state": "recorder_unavailable", "error": result.get("error"), "status": self.recording_status()}
+        return {
+            "ok": False,
+            "state": "recorder_unavailable",
+            "error": result.get("error"),
+            "status": self.recording_status(),
+        }
 
     def recordings(self) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
         if self.recording_archive_dir.exists():
-            for path in sorted(self.recording_archive_dir.iterdir(), key=lambda item: item.stat().st_mtime if item.exists() else 0, reverse=True):
+            for path in sorted(
+                self.recording_archive_dir.iterdir(),
+                key=lambda item: item.stat().st_mtime if item.exists() else 0,
+                reverse=True,
+            ):
                 if not path.is_dir():
                     continue
                 metadata = _load_json(path / "metadata.json")
-                analysis = _load_json(path / "analysis.json")
                 timeline_summary = self._recording_timeline_summary(path, metadata)
                 rows.append(
                     {
@@ -818,20 +1063,22 @@ class TelemetryProvider:
                         "finished_at": metadata.get("finished_at"),
                         "duration_s": metadata.get("duration_s"),
                         "path": str(path),
-                        "analysis": {
-                            "walls": len(analysis.get("walls", [])),
-                            "objects": len(analysis.get("objects", [])),
-                        },
                         "timeline": timeline_summary,
                     }
                 )
-        return {"ok": True, "archive_dir": str(self.recording_archive_dir), "recordings": rows}
+        return {
+            "ok": True,
+            "archive_dir": str(self.recording_archive_dir),
+            "recordings": rows,
+        }
 
     def _recording_archive_count(self) -> int:
         if not self.recording_archive_dir.exists():
             return 0
         try:
-            return sum(1 for path in self.recording_archive_dir.iterdir() if path.is_dir())
+            return sum(
+                (1 for path in self.recording_archive_dir.iterdir() if path.is_dir())
+            )
         except OSError:
             return 0
 
@@ -841,12 +1088,23 @@ class TelemetryProvider:
         metadata: dict[str, Any],
         preview_scan: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        metadata_summary = metadata.get("timeline") if isinstance(metadata.get("timeline"), dict) else {}
-        topics = metadata.get("topics") if isinstance(metadata.get("topics"), list) else []
+        metadata_summary = (
+            metadata.get("timeline")
+            if isinstance(metadata.get("timeline"), dict)
+            else {}
+        )
+        topics = (
+            metadata.get("topics") if isinstance(metadata.get("topics"), list) else []
+        )
         metadata_imu_frames = metadata_summary.get("imu_frames")
-        if metadata_imu_frames is None and not any(
-            str(topic).startswith("/imu/") or str(topic) == "/orchard/imu/calibration"
-            for topic in topics
+        if metadata_imu_frames is None and (
+            not any(
+                (
+                    str(topic).startswith("/imu/")
+                    or str(topic) == "/orchard/imu/calibration"
+                    for topic in topics
+                )
+            )
         ):
             metadata_imu_frames = 0
         summary: dict[str, Any] = {
@@ -866,23 +1124,20 @@ class TelemetryProvider:
             "source": "metadata",
         }
         if (
-            (summary["lidar_frames"] is not None or summary["camera_frames"] is not None)
-            and summary["imu_frames"] is not None
-        ):
+            summary["lidar_frames"] is not None or summary["camera_frames"] is not None
+        ) and summary["imu_frames"] is not None:
             return summary
-
         timeline_path = path / "timeline.json"
         if not timeline_path.exists():
             summary.update({"ok": False, "source": "missing"})
             return summary
         try:
-            if timeline_path.stat().st_size > 2_000_000:
+            if timeline_path.stat().st_size > 2000000:
                 summary.update({"source": "deferred", "deferred": True})
                 return summary
         except OSError:
             summary.update({"source": "deferred", "deferred": True})
             return summary
-
         timeline = _load_json(timeline_path)
         if not timeline:
             summary.update({"ok": False, "source": "unreadable"})
@@ -894,13 +1149,19 @@ class TelemetryProvider:
                 "lidar_frames": len(timeline.get("lidar", {}).get("frames", [])),
                 "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
                 "imu_frames": len((timeline.get("imu") or {}).get("frames", [])),
-                "gps_frames": (timeline.get("gps") or {}).get("frame_count", len((timeline.get("gps") or {}).get("frames", []))),
+                "gps_frames": (timeline.get("gps") or {}).get(
+                    "frame_count", len((timeline.get("gps") or {}).get("frames", []))
+                ),
                 "imu_calibration_valid": bool(
                     (timeline.get("imu") or {}).get("calibration", {}).get("valid")
-                    or (timeline.get("imu") or {}).get("calibration", {}).get("calibration", {}).get("valid")
+                    or (timeline.get("imu") or {})
+                    .get("calibration", {})
+                    .get("calibration", {})
+                    .get("valid")
                 ),
                 "algorithm": timeline.get("algorithm") or summary.get("algorithm"),
-                "coordinate_frame": timeline.get("coordinate_frame") or summary.get("coordinate_frame"),
+                "coordinate_frame": timeline.get("coordinate_frame")
+                or summary.get("coordinate_frame"),
                 "source": "timeline",
             }
         )
@@ -911,25 +1172,27 @@ class TelemetryProvider:
         if path is None or not path.exists():
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
         metadata = _load_json(path / "metadata.json")
-        analysis = _load_json(path / "analysis.json")
         preview_scan = _load_json(path / "preview_scan.json")
-        timeline_summary = self._recording_timeline_summary(path, metadata, preview_scan=preview_scan)
+        timeline_summary = self._recording_timeline_summary(
+            path, metadata, preview_scan=preview_scan
+        )
         source_video = self.recording_video(recording_id)
-        public_video = {key: value for key, value in (source_video or {}).items() if key != "path"}
+        public_video = {
+            key: value for key, value in (source_video or {}).items() if key != "path"
+        }
         return {
             "ok": True,
             "recording": {
                 "id": metadata.get("id") or path.name,
                 "kind": metadata.get("kind"),
                 "metadata": metadata,
-                "analysis": analysis,
                 "preview_scan": preview_scan,
                 "timeline_summary": timeline_summary,
                 "download_url": f"/api/recordings/{path.name}/download",
                 "source_video": public_video or None,
-                "video_url": (
-                    f"/api/recordings/{path.name}/video?v={source_video.get('bytes')}" if source_video else None
-                ),
+                "video_url": f"/api/recordings/{path.name}/video?v={source_video.get('bytes')}"
+                if source_video
+                else None,
             },
         }
 
@@ -970,12 +1233,19 @@ class TelemetryProvider:
         if path is None or not path.exists():
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
         timeline_path = path / "timeline.json"
+
         def response(timeline):
             timeline = self._with_recorded_gps(path, timeline, start_s, duration_s)
-            return {"ok": True, "timeline": self._playback_response_profile(timeline, profile)}
+            return {
+                "ok": True,
+                "timeline": self._playback_response_profile(timeline, profile),
+            }
+
         playback_request = self._playback_segment_request(start_s, duration_s)
         if playback_request is not None:
-            cached_segment = self._cached_playback_segment(path, timeline_path, playback_request)
+            cached_segment = self._cached_playback_segment(
+                path, timeline_path, playback_request
+            )
             if cached_segment:
                 return response(cached_segment)
         timeline = self._load_recording_timeline(timeline_path)
@@ -983,7 +1253,9 @@ class TelemetryProvider:
             return {"ok": False, "error": "timeline_not_found", "id": recording_id}
         if start_s is not None or duration_s is not None:
             if playback_request is not None:
-                cached_segment = self._build_playback_cache(path, timeline_path, timeline, playback_request)
+                cached_segment = self._build_playback_cache(
+                    path, timeline_path, timeline, playback_request
+                )
                 if cached_segment:
                     self._drop_timeline_cache(timeline_path)
                     return response(cached_segment)
@@ -994,11 +1266,17 @@ class TelemetryProvider:
     def _with_recorded_gps(self, path, timeline, start_s, duration_s):
         """Read the full GPS sidecar by time window, including old samples past the RAM tail."""
         gps_path = path / "gps.jsonl"
-        if not gps_path.is_file(): return timeline
+        if not gps_path.is_file():
+            return timeline
         try:
-            start = max(0., float(start_s)) if start_s is not None else 0.
-            end = start + max(.1, float(duration_s)) if duration_s is not None else float("inf")
-        except (ValueError, TypeError): return timeline
+            start = max(0.0, float(start_s)) if start_s is not None else 0.0
+            end = (
+                start + max(0.1, float(duration_s))
+                if duration_s is not None
+                else float("inf")
+            )
+        except (ValueError, TypeError):
+            return timeline
         frames = []
         before = None
         try:
@@ -1007,20 +1285,33 @@ class TelemetryProvider:
                     try:
                         frame = json.loads(line)
                         t = float(frame["t_s"])
-                        if not math.isfinite(t) or not isinstance(frame.get("sample"), dict): continue
-                    except (ValueError, TypeError, KeyError): continue
+                        if not math.isfinite(t) or not isinstance(
+                            frame.get("sample"), dict
+                        ):
+                            continue
+                    except (ValueError, TypeError, KeyError):
+                        continue
                     if t < start:
                         before = frame
                         continue
-                    if not frames and before is not None: frames.append(before)
+                    if not frames and before is not None:
+                        frames.append(before)
                     frames.append(frame)
-                    if t > end: break
-            if not frames and before is not None: frames.append(before)
-        except OSError: return timeline
-        return {**timeline, "gps": {**(timeline.get("gps") or {}), "frames": frames},
-                "sync": {**(timeline.get("sync") or {}), "segment_gps_frames": len(frames)}}
+                    if t > end:
+                        break
+            if not frames and before is not None:
+                frames.append(before)
+        except OSError:
+            return timeline
+        return {
+            **timeline,
+            "gps": {**(timeline.get("gps") or {}), "frames": frames},
+            "sync": {**(timeline.get("sync") or {}), "segment_gps_frames": len(frames)},
+        }
 
-    def _playback_response_profile(self, timeline: dict[str, Any], profile: Any) -> dict[str, Any]:
+    def _playback_response_profile(
+        self, timeline: dict[str, Any], profile: Any
+    ) -> dict[str, Any]:
         """Compact only the dashboard playback response; the archive stays lossless.
 
         The default timeline API remains unchanged for ROS/research consumers.  The
@@ -1030,7 +1321,6 @@ class TelemetryProvider:
         """
         if str(profile or "") != PLAYBACK_DASHBOARD_PROFILE:
             return timeline
-
         result = dict(timeline)
         lidar = dict(timeline.get("lidar") or {})
         compact_lidar_frames: list[dict[str, Any]] = []
@@ -1045,7 +1335,6 @@ class TelemetryProvider:
             compact_lidar_frames.append(frame)
         lidar["frames"] = compact_lidar_frames
         result["lidar"] = lidar
-
         imu = dict(timeline.get("imu") or {})
         compact_imu_frames: list[dict[str, Any]] = []
         for source_frame in imu.get("frames", []) or []:
@@ -1056,7 +1345,12 @@ class TelemetryProvider:
                     continue
                 frame[sample_name] = {
                     key: sample[key]
-                    for key in ("frame_id", "euler_deg", "angular_velocity", "linear_acceleration")
+                    for key in (
+                        "frame_id",
+                        "euler_deg",
+                        "angular_velocity",
+                        "linear_acceleration",
+                    )
                     if key in sample
                 }
             magnetic = frame.get("magnetic")
@@ -1069,7 +1363,6 @@ class TelemetryProvider:
             compact_imu_frames.append(frame)
         imu["frames"] = compact_imu_frames
         result["imu"] = imu
-
         playback = dict(timeline.get("playback") or {})
         playback.update(
             {
@@ -1081,8 +1374,10 @@ class TelemetryProvider:
         result["playback"] = playback
         return result
 
-    def recording_camera_frame(self, recording_id: str, filename: str) -> dict[str, Any] | None:
-        if not re.fullmatch(r"frame-[0-9a-f]{24}\.jpg", str(filename or "")):
+    def recording_camera_frame(
+        self, recording_id: str, filename: str
+    ) -> dict[str, Any] | None:
+        if not re.fullmatch("frame-[0-9a-f]{24}\\.jpg", str(filename or "")):
             return None
         archive = self.recording_archive_path(recording_id)
         if archive is None or not archive.is_dir():
@@ -1105,7 +1400,9 @@ class TelemetryProvider:
             "etag": filename.removeprefix("frame-").removesuffix(".jpg"),
         }
 
-    def _playback_segment_request(self, start_s: Any, duration_s: Any) -> tuple[float, int] | None:
+    def _playback_segment_request(
+        self, start_s: Any, duration_s: Any
+    ) -> tuple[float, int] | None:
         if start_s is None or duration_s is None:
             return None
         try:
@@ -1118,14 +1415,14 @@ class TelemetryProvider:
         index = int(round(start / PLAYBACK_SEGMENT_SECONDS))
         if abs(start - index * PLAYBACK_SEGMENT_SECONDS) > 0.001:
             return None
-        return start, index
+        return (start, index)
 
     def _playback_source_signature(self, timeline_path: Path) -> tuple[int, int] | None:
         try:
             stat = timeline_path.stat()
         except OSError:
             return None
-        return stat.st_mtime_ns, stat.st_size
+        return (stat.st_mtime_ns, stat.st_size)
 
     def _playback_cache_path(self, archive: Path, timeline_path: Path) -> Path | None:
         signature = self._playback_source_signature(timeline_path)
@@ -1134,29 +1431,34 @@ class TelemetryProvider:
         token = f"{signature[0]}-{signature[1]}-{PLAYBACK_CACHE_REVISION}"
         return self.recording_playback_cache_dir / archive.name / token
 
-    def _valid_playback_manifest(self, cache_dir: Path, timeline_path: Path) -> dict[str, Any] | None:
+    def _valid_playback_manifest(
+        self, cache_dir: Path, timeline_path: Path
+    ) -> dict[str, Any] | None:
         manifest = _load_json(cache_dir / "manifest.json")
         signature = self._playback_source_signature(timeline_path)
         if (
             not manifest
             or signature is None
             or manifest.get("schema") != PLAYBACK_CACHE_SCHEMA
-            or manifest.get("revision") != PLAYBACK_CACHE_REVISION
-            or manifest.get("source_mtime_ns") != signature[0]
-            or manifest.get("source_bytes") != signature[1]
-            or float(manifest.get("segment_duration_s") or 0.0) != PLAYBACK_SEGMENT_SECONDS
+            or (manifest.get("revision") != PLAYBACK_CACHE_REVISION)
+            or (manifest.get("source_mtime_ns") != signature[0])
+            or (manifest.get("source_bytes") != signature[1])
+            or (
+                float(manifest.get("segment_duration_s") or 0.0)
+                != PLAYBACK_SEGMENT_SECONDS
+            )
         ):
             return None
         return manifest
 
     def _cached_playback_segment(
-        self,
-        archive: Path,
-        timeline_path: Path,
-        request: tuple[float, int],
+        self, archive: Path, timeline_path: Path, request: tuple[float, int]
     ) -> dict[str, Any] | None:
         cache_dir = self._playback_cache_path(archive, timeline_path)
-        if cache_dir is None or self._valid_playback_manifest(cache_dir, timeline_path) is None:
+        if (
+            cache_dir is None
+            or self._valid_playback_manifest(cache_dir, timeline_path) is None
+        ):
             return None
         _, index = request
         return _load_json(cache_dir / "segments" / f"segment-{index:06d}.json") or None
@@ -1187,12 +1489,19 @@ class TelemetryProvider:
                     *(timeline.get("camera", {}).get("frames", []) or []),
                     *((timeline.get("imu") or {}).get("frames", []) or []),
                 ]
-                duration = max((float(frame.get("t_s") or 0.0) for frame in all_frames), default=0.0)
-            segment_count = max(1, int(math.ceil(max(0.001, duration) / PLAYBACK_SEGMENT_SECONDS)))
+                duration = max(
+                    (float(frame.get("t_s") or 0.0) for frame in all_frames),
+                    default=0.0,
+                )
+            segment_count = max(
+                1, int(math.ceil(max(0.001, duration) / PLAYBACK_SEGMENT_SECONDS))
+            )
             camera_files: set[str] = set()
             for index in range(segment_count):
                 start = index * PLAYBACK_SEGMENT_SECONDS
-                segment = self._recording_timeline_segment(timeline, start, PLAYBACK_SEGMENT_SECONDS)
+                segment = self._recording_timeline_segment(
+                    timeline, start, PLAYBACK_SEGMENT_SECONDS
+                )
                 for frame in segment.get("camera", {}).get("frames", []):
                     encoded = frame.get("data")
                     if not encoded:
@@ -1211,8 +1520,7 @@ class TelemetryProvider:
                         tmp_path.replace(frame_path)
                     camera_files.add(filename)
                     frame["frame_url"] = (
-                        f"/api/recordings/{archive.name}/camera-frame/{filename}"
-                        f"?v={signature[0]}-{signature[1]}"
+                        f"/api/recordings/{archive.name}/camera-frame/{filename}?v={signature[0]}-{signature[1]}"
                     )
                     frame["transport"] = "binary-jpeg-http-cache-v1"
                 segment["playback"] = {
@@ -1225,7 +1533,12 @@ class TelemetryProvider:
                 segment_path = segments_dir / f"segment-{index:06d}.json"
                 tmp_segment = segment_path.with_suffix(".json.tmp")
                 tmp_segment.write_text(
-                    json.dumps(segment, ensure_ascii=False, separators=(",", ":"), allow_nan=False),
+                    json.dumps(
+                        segment,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    ),
                     encoding="utf-8",
                 )
                 tmp_segment.replace(segment_path)
@@ -1267,25 +1580,6 @@ class TelemetryProvider:
         finally:
             self._drop_timeline_cache(timeline_path)
 
-    def recording_orchard_map(self, recording_id: str) -> dict[str, Any]:
-        path = self.recording_archive_path(recording_id)
-        if path is None or not path.exists():
-            return {"ok": False, "error": "recording_not_found", "id": recording_id}
-        timeline_path = path / "timeline.json"
-        cache_path = self.recording_archive_dir.parent / "orchard_analysis" / f"{path.name}_orchard_map.json"
-        cached = self._cached_orchard_map(cache_path, timeline_path)
-        if cached:
-            return cached
-        timeline = self._load_recording_timeline(timeline_path)
-        if not timeline:
-            return {"ok": False, "error": "timeline_not_found", "id": recording_id}
-        payload = {"ok": True, "id": recording_id, "map": build_orchard_map(timeline)}
-        try:
-            _write_json_atomic(cache_path, payload)
-        except OSError:
-            pass
-        return payload
-
     def _load_recording_timeline(self, timeline_path: Path) -> dict[str, Any]:
         try:
             stat = timeline_path.stat()
@@ -1308,21 +1602,9 @@ class TelemetryProvider:
                 self._timeline_cache.popitem(last=False)
         return timeline
 
-    def _cached_orchard_map(self, cache_path: Path, timeline_path: Path) -> dict[str, Any] | None:
-        if not cache_path.exists() or not timeline_path.exists():
-            return None
-        try:
-            if cache_path.stat().st_mtime < timeline_path.stat().st_mtime:
-                return None
-        except OSError:
-            return None
-        payload = _load_json(cache_path)
-        if not current_orchard_map_cache(payload):
-            return None
-        payload["cached"] = True
-        return payload
-
-    def _recording_timeline_segment(self, timeline: dict[str, Any], start_s: Any = None, duration_s: Any = None) -> dict[str, Any]:
+    def _recording_timeline_segment(
+        self, timeline: dict[str, Any], start_s: Any = None, duration_s: Any = None
+    ) -> dict[str, Any]:
         try:
             start = max(0.0, float(start_s if start_s is not None else 0.0))
         except (TypeError, ValueError):
@@ -1333,29 +1615,54 @@ class TelemetryProvider:
             duration = 8.0
         duration = max(0.5, min(60.0, duration))
         end = start + duration
-        payload = {key: value for key, value in timeline.items() if key not in {"lidar", "camera", "imu"}}
+        payload = {
+            key: value
+            for key, value in timeline.items()
+            if key not in {"lidar", "camera", "imu"}
+        }
         payload["segment"] = {
             "start_s": round(start, 3),
             "end_s": round(end, 3),
             "duration_s": round(duration, 3),
             "partial": True,
         }
-        lidar_frames = self._timeline_frames_between(timeline.get("lidar", {}).get("frames", []), start, end)
-        payload["lidar"] = {"frames": self._reanalyze_lidar_segment_frames(lidar_frames)}
-        camera_frames = self._timeline_frames_between(timeline.get("camera", {}).get("frames", []), start, end)
-        camera_rows = self._analyze_camera_segment_frames(camera_frames)
-        native_video = bool(timeline.get("video") or (timeline.get("sync") or {}).get("native_video"))
+        lidar_frames = self._timeline_frames_between(
+            timeline.get("lidar", {}).get("frames", []), start, end
+        )
+        payload["lidar"] = {"frames": self._raw_sensor_frames(lidar_frames)}
+        camera_frames = self._timeline_frames_between(
+            timeline.get("camera", {}).get("frames", []), start, end
+        )
+        camera_rows = self._raw_sensor_frames(camera_frames)
+        native_video = bool(
+            timeline.get("video") or (timeline.get("sync") or {}).get("native_video")
+        )
         if native_video:
-            camera_rows = [{key: value for key, value in frame.items() if key != "data"} for frame in camera_rows]
+            camera_rows = [
+                {key: value for key, value in frame.items() if key != "data"}
+                for frame in camera_rows
+            ]
         payload["camera"] = {"frames": camera_rows}
-        imu_frames = self._timeline_frames_between(timeline.get("imu", {}).get("frames", []), start, end)
+        imu_frames = self._timeline_frames_between(
+            timeline.get("imu", {}).get("frames", []), start, end
+        )
         payload["imu"] = {
-            **{key: value for key, value in (timeline.get("imu") or {}).items() if key != "frames"},
+            **{
+                key: value
+                for key, value in (timeline.get("imu") or {}).items()
+                if key != "frames"
+            },
             "frames": imu_frames,
         }
         payload["gps"] = {
-            **{key: value for key, value in (timeline.get("gps") or {}).items() if key != "frames"},
-            "frames": self._timeline_frames_between((timeline.get("gps") or {}).get("frames", []), start, end),
+            **{
+                key: value
+                for key, value in (timeline.get("gps") or {}).items()
+                if key != "frames"
+            },
+            "frames": self._timeline_frames_between(
+                (timeline.get("gps") or {}).get("frames", []), start, end
+            ),
         }
         payload["sync"] = {
             **(timeline.get("sync") or {}),
@@ -1366,45 +1673,20 @@ class TelemetryProvider:
         }
         return payload
 
-    def _reanalyze_lidar_segment_frames(self, frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        tracks: dict[str, dict[str, Any]] = {}
-        next_track_id = 1
-        rows: list[dict[str, Any]] = []
-        for frame in frames:
-            row = dict(frame)
-            if current_lidar_overlay_algorithm(row.get("overlay")):
-                rows.append(row)
-                continue
-            points = row.get("points") or []
-            try:
-                now = float(row.get("t_s") or 0.0)
-                overlay, tracks, next_track_id = analyze_points(points, tracks, next_track_id, now=now)
-                row["overlay"] = overlay
-            except Exception:
-                pass
-            rows.append(row)
-        return rows
+    def _raw_sensor_frames(self, frames):
+        return [
+            {
+                k: v
+                for k, v in frame.items()
+                if k
+                not in {"overlay", "analysis", "vision_sync", "inference_input_policy"}
+            }
+            for frame in frames
+        ]
 
-    def _analyze_camera_segment_frames(self, frames: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        rows: list[dict[str, Any]] = []
-        stabilizer = CameraOverlayStabilizer()
-        for frame in frames:
-            row = dict(frame)
-            existing = row.get("overlay")
-            if current_source_native_camera_overlay(existing, frame=row):
-                rows.append(row)
-                continue
-            try:
-                row["overlay"] = stabilizer.update(
-                    analyze_camera_frame_payload(row, require_source_native_provenance=True),
-                    float(row.get("t_s") or 0.0),
-                )
-            except Exception:
-                pass
-            rows.append(row)
-        return rows
-
-    def _timeline_frames_between(self, frames: list[dict[str, Any]], start: float, end: float) -> list[dict[str, Any]]:
+    def _timeline_frames_between(
+        self, frames: list[dict[str, Any]], start: float, end: float
+    ) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         previous: dict[str, Any] | None = None
         for frame in frames:
@@ -1417,13 +1699,13 @@ class TelemetryProvider:
                 continue
             if stamp >= end:
                 break
-            if previous and not rows:
+            if previous and (not rows):
                 rows.append(previous)
             rows.append(frame)
         return rows
 
     def recording_archive_path(self, recording_id: str) -> Path | None:
-        safe = re.sub(r"[^A-Za-z0-9_.-]", "", str(recording_id or ""))
+        safe = re.sub("[^A-Za-z0-9_.-]", "", str(recording_id or ""))
         if not safe:
             return None
         path = (self.recording_archive_dir / safe).resolve()
@@ -1437,7 +1719,9 @@ class TelemetryProvider:
 
     def _recorder_get(self, path: str) -> dict[str, Any]:
         try:
-            with urllib.request.urlopen(f"{self.recorder_api_url}{path}", timeout=1.0) as res:
+            with urllib.request.urlopen(
+                f"{self.recorder_api_url}{path}", timeout=1.0
+            ) as res:
                 data = json.loads(res.read().decode("utf-8"))
                 data.setdefault("ok", 200 <= int(res.status) < 300)
                 return data
@@ -1460,7 +1744,9 @@ class TelemetryProvider:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    def _bounded_float(self, value: Any, low: float, high: float, default: float = 0.0) -> float:
+    def _bounded_float(
+        self, value: Any, low: float, high: float, default: float = 0.0
+    ) -> float:
         try:
             numeric = float(value)
         except (TypeError, ValueError):
@@ -1497,8 +1783,10 @@ class TelemetryProvider:
         pwm_enable = _safe_int(_read_text(hwmon.get("enable_path")))
         rpm = _safe_int(_read_text(hwmon.get("rpm_path")))
         mode = "auto" if nvfancontrol.get("active") else "manual"
-        if not desired and mode == "manual" and pwm is not None:
-            self._save_fan_desired_state({"mode": "manual", "pwm": pwm, "adopted": True})
+        if not desired and mode == "manual" and (pwm is not None):
+            self._save_fan_desired_state(
+                {"mode": "manual", "pwm": pwm, "adopted": True}
+            )
             desired = self._fan_desired_state()
         return {
             "ok": True,
@@ -1529,22 +1817,43 @@ class TelemetryProvider:
             self._save_fan_desired_state({"mode": "auto"})
             result = self._fan_systemctl("start")
             status = self._fan_status_snapshot()
-            return {"ok": bool(result.get("ok")), "action": "auto", "systemctl": result, "status": status}
+            return {
+                "ok": bool(result.get("ok")),
+                "action": "auto",
+                "systemctl": result,
+                "status": status,
+            }
         hwmon = self._fan_hwmon()
         if not hwmon:
-            return {"ok": False, "state": "not_found", "message": "팬 제어 장치를 찾지 못했습니다.", "status": self.fan_status()}
+            return {
+                "ok": False,
+                "state": "not_found",
+                "message": "팬 제어 장치를 찾지 못했습니다.",
+                "status": self.fan_status(),
+            }
         stop = self._fan_systemctl("stop")
         enable = self._write_fan_value(hwmon.get("enable_path"), "1")
         current = self._fan_status_snapshot()
         pwm = current.get("pwm")
         self._save_fan_desired_state({"mode": "manual", "pwm": pwm})
         ok = bool(enable.get("ok"))
-        return {"ok": ok, "action": "manual", "systemctl": stop, "enable": enable, "status": self._fan_status_snapshot()}
+        return {
+            "ok": ok,
+            "action": "manual",
+            "systemctl": stop,
+            "enable": enable,
+            "status": self._fan_status_snapshot(),
+        }
 
     def set_fan_pwm(self, pwm: Any, preset: str | None = None) -> dict[str, Any]:
         hwmon = self._fan_hwmon()
         if not hwmon:
-            return {"ok": False, "state": "not_found", "message": "팬 제어 장치를 찾지 못했습니다.", "status": self.fan_status()}
+            return {
+                "ok": False,
+                "state": "not_found",
+                "message": "팬 제어 장치를 찾지 못했습니다.",
+                "status": self.fan_status(),
+            }
         try:
             value = int(pwm)
         except (TypeError, ValueError):
@@ -1554,11 +1863,17 @@ class TelemetryProvider:
         safety = self._fan_pwm_safety(value, status.get("temperature_c"))
         if not safety["ok"]:
             return {"ok": False, **safety, "status": status}
-        stop = self._fan_systemctl("stop") if status.get("mode") == "auto" else {"ok": True, "state": "already_manual"}
+        stop = (
+            self._fan_systemctl("stop")
+            if status.get("mode") == "auto"
+            else {"ok": True, "state": "already_manual"}
+        )
         enable = self._write_fan_value(hwmon.get("enable_path"), "1")
         write = self._write_fan_value(hwmon.get("pwm_path"), str(value))
         if write.get("ok"):
-            self._save_fan_desired_state({"mode": "manual", "pwm": value, "preset": preset})
+            self._save_fan_desired_state(
+                {"mode": "manual", "pwm": value, "preset": preset}
+            )
         return {
             "ok": bool(write.get("ok")),
             "pwm": value,
@@ -1572,7 +1887,12 @@ class TelemetryProvider:
     def set_fan_preset(self, preset: str) -> dict[str, Any]:
         presets = self._fan_presets()
         if preset not in presets:
-            return {"ok": False, "state": "bad_preset", "message": f"Unknown fan preset: {preset}", "presets": presets}
+            return {
+                "ok": False,
+                "state": "bad_preset",
+                "message": f"Unknown fan preset: {preset}",
+                "presets": presets,
+            }
         result = self.set_fan_pwm(presets[preset], preset=preset)
         result["preset"] = preset
         return result
@@ -1612,8 +1932,9 @@ class TelemetryProvider:
                 if found:
                     self._fan_hwmon_cache = found
                     return found
-
-        for root in sorted(self.sys_root.glob("devices/platform/*pwm*fan*/hwmon/hwmon*")):
+        for root in sorted(
+            self.sys_root.glob("devices/platform/*pwm*fan*/hwmon/hwmon*")
+        ):
             found = inspect(root)
             if found:
                 self._fan_hwmon_cache = found
@@ -1632,22 +1953,43 @@ class TelemetryProvider:
             command = [systemctl, action, "nvfancontrol"]
             runner = "systemctl"
         elif nsenter:
-            command = [nsenter, "-t", "1", "-m", "-u", "-i", "-n", "-p", "systemctl", action, "nvfancontrol"]
+            command = [
+                nsenter,
+                "-t",
+                "1",
+                "-m",
+                "-u",
+                "-i",
+                "-n",
+                "-p",
+                "systemctl",
+                action,
+                "nvfancontrol",
+            ]
             runner = "nsenter-systemctl"
         else:
-            return {"ok": False, "known": False, "active": False, "state": "systemctl_missing", "action": action}
+            return {
+                "ok": False,
+                "known": False,
+                "active": False,
+                "state": "systemctl_missing",
+                "action": action,
+            }
         try:
             proc = subprocess.run(
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=4,
+                command, check=False, capture_output=True, text=True, timeout=4
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            return {"ok": False, "known": False, "active": False, "state": "systemctl_error", "error": str(exc), "action": action}
+            return {
+                "ok": False,
+                "known": False,
+                "active": False,
+                "state": "systemctl_error",
+                "error": str(exc),
+                "action": action,
+            }
         output = (proc.stdout or proc.stderr or "").strip()
-        active = action == "is-active" and output == "active" and proc.returncode == 0
+        active = action == "is-active" and output == "active" and (proc.returncode == 0)
         return {
             "ok": proc.returncode == 0,
             "known": True,
@@ -1660,16 +2002,30 @@ class TelemetryProvider:
 
     def _write_fan_value(self, path: Path | None, value: str) -> dict[str, Any]:
         hwmon = self._fan_hwmon()
-        allowed = {str(hwmon.get("pwm_path")), str(hwmon.get("enable_path"))} if hwmon else set()
+        allowed = (
+            {str(hwmon.get("pwm_path")), str(hwmon.get("enable_path"))}
+            if hwmon
+            else set()
+        )
         if not path or str(path) not in allowed:
             return {"ok": False, "state": "path_not_allowed", "path": str(path or "")}
         target = Path(path)
-        if target.name == "pwm1_enable" and not target.exists():
-            return {"ok": True, "state": "not_present", "path": str(path), "skipped": True}
+        if target.name == "pwm1_enable" and (not target.exists()):
+            return {
+                "ok": True,
+                "state": "not_present",
+                "path": str(path),
+                "skipped": True,
+            }
         try:
             target.write_text(str(value), encoding="utf-8")
         except OSError as exc:
-            return {"ok": False, "state": "write_error", "path": str(path), "error": str(exc)}
+            return {
+                "ok": False,
+                "state": "write_error",
+                "path": str(path),
+                "error": str(exc),
+            }
         return {"ok": True, "path": str(path), "value": str(value)}
 
     def _fan_presets(self) -> dict[str, int]:
@@ -1687,20 +2043,37 @@ class TelemetryProvider:
         if temperature_c is None:
             return {"level": "unknown", "message": "Temperature sensor unavailable."}
         if temperature_c >= 80:
-            return {"level": "critical", "message": "80°C 이상입니다. 자동 제어 또는 PWM 255를 권장합니다."}
+            return {
+                "level": "critical",
+                "message": "80°C 이상입니다. 자동 제어 또는 PWM 255를 권장합니다.",
+            }
         if temperature_c >= 75:
-            return {"level": "hot", "message": "75°C 이상에서는 낮은 PWM 설정을 제한합니다."}
+            return {
+                "level": "hot",
+                "message": "75°C 이상에서는 낮은 PWM 설정을 제한합니다.",
+            }
         if temperature_c >= 50:
-            return {"level": "warm", "message": "50°C 이상에서는 fan off preset을 제한합니다."}
+            return {
+                "level": "warm",
+                "message": "50°C 이상에서는 fan off preset을 제한합니다.",
+            }
         return {"level": "normal", "message": "현재 온도는 정상 범위입니다."}
 
     def _fan_pwm_safety(self, pwm: int, temperature_c: float | None) -> dict[str, Any]:
         if temperature_c is None:
             return {"ok": True, "state": "temperature_unknown"}
         if temperature_c >= 75 and pwm < 160:
-            return {"ok": False, "state": "temperature_guard", "message": "75°C 이상에서는 PWM 160 미만을 적용하지 않습니다."}
+            return {
+                "ok": False,
+                "state": "temperature_guard",
+                "message": "75°C 이상에서는 PWM 160 미만을 적용하지 않습니다.",
+            }
         if temperature_c >= 50 and pwm == 0:
-            return {"ok": False, "state": "temperature_guard", "message": "50°C 이상에서는 팬 끄기를 적용하지 않습니다."}
+            return {
+                "ok": False,
+                "state": "temperature_guard",
+                "message": "50°C 이상에서는 팬 끄기를 적용하지 않습니다.",
+            }
         return {"ok": True, "state": "safe"}
 
     def _fan_state_path(self) -> Path:
@@ -1709,7 +2082,9 @@ class TelemetryProvider:
         return path if path.is_absolute() else ROOT / path
 
     def _host_boot_id(self) -> str | None:
-        return _read_text(self.proc_root / "sys/kernel/random/boot_id") or _read_text("/proc/sys/kernel/random/boot_id")
+        return _read_text(self.proc_root / "sys/kernel/random/boot_id") or _read_text(
+            "/proc/sys/kernel/random/boot_id"
+        )
 
     def _fan_desired_state(self) -> dict[str, Any]:
         data = _load_json(self._fan_state_path())
@@ -1718,11 +2093,15 @@ class TelemetryProvider:
         if data.get("mode") == "manual":
             current_boot = self._host_boot_id()
             saved_boot = data.get("boot_id")
-            if current_boot and saved_boot and saved_boot != current_boot:
-                self._save_fan_desired_state({"mode": "auto", "recovered_after_reboot": True})
+            if current_boot and saved_boot and (saved_boot != current_boot):
+                self._save_fan_desired_state(
+                    {"mode": "auto", "recovered_after_reboot": True}
+                )
                 return {"mode": "auto", "recovered_after_reboot": True}
-            if current_boot and not saved_boot:
-                self._save_fan_desired_state({"mode": "auto", "recovered_from_legacy_manual_state": True})
+            if current_boot and (not saved_boot):
+                self._save_fan_desired_state(
+                    {"mode": "auto", "recovered_from_legacy_manual_state": True}
+                )
                 return {"mode": "auto", "recovered_from_legacy_manual_state": True}
         return data
 
@@ -1730,7 +2109,9 @@ class TelemetryProvider:
         data = {
             **payload,
             "boot_id": self._host_boot_id(),
-            "updated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+            "updated_at": datetime.now(timezone.utc)
+            .astimezone()
+            .isoformat(timespec="seconds"),
         }
         path = self._fan_state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1784,7 +2165,11 @@ class TelemetryProvider:
         return root if root.exists() else Path("/dev")
 
     def _camera_device_root(self) -> Path:
-        root = Path(os.environ.get("CAMERA_DEV_ROOT", os.environ.get("LIDAR_DEV_ROOT", "/host-dev")))
+        root = Path(
+            os.environ.get(
+                "CAMERA_DEV_ROOT", os.environ.get("LIDAR_DEV_ROOT", "/host-dev")
+            )
+        )
         return root if root.exists() else Path("/dev")
 
     def _host_device_label(self, path: Path, resolve: bool = True) -> str:
@@ -1799,14 +2184,22 @@ class TelemetryProvider:
     def _open_device_path(self, path: str | Path) -> Path:
         raw = Path(path)
         root = self._lidar_device_root()
-        if raw.is_absolute() and str(raw).startswith("/dev/") and root != Path("/dev"):
+        if (
+            raw.is_absolute()
+            and str(raw).startswith("/dev/")
+            and (root != Path("/dev"))
+        ):
             return root / raw.relative_to("/dev")
         return raw
 
     def _open_camera_device_path(self, path: str | Path) -> Path:
         raw = Path(path)
         root = self._camera_device_root()
-        if raw.is_absolute() and str(raw).startswith("/dev/") and root != Path("/dev"):
+        if (
+            raw.is_absolute()
+            and str(raw).startswith("/dev/")
+            and (root != Path("/dev"))
+        ):
             return root / raw.relative_to("/dev")
         return raw
 
@@ -1816,12 +2209,13 @@ class TelemetryProvider:
         configured = os.environ.get("LIDAR_DEVICE")
         if configured:
             paths.append(self._open_device_path(configured))
-        by_id_root = Path(os.environ.get("LIDAR_BY_ID_ROOT", str(root / "serial/by-id")))
+        by_id_root = Path(
+            os.environ.get("LIDAR_BY_ID_ROOT", str(root / "serial/by-id"))
+        )
         if by_id_root.exists():
             paths.extend(sorted(by_id_root.glob("*")))
         for pattern in ("ttyUSB*", "ttyACM*"):
             paths.extend(sorted(root.glob(pattern)))
-
         rows = []
         seen: set[str] = set()
         for path in paths:
@@ -1837,7 +2231,9 @@ class TelemetryProvider:
                 {
                     "display_path": self._host_device_label(resolved),
                     "open_path": str(resolved),
-                    "by_id": self._host_device_label(path, resolve=False) if "/serial/by-id/" in str(path) else None,
+                    "by_id": self._host_device_label(path, resolve=False)
+                    if "/serial/by-id/" in str(path)
+                    else None,
                     "exists": resolved.exists(),
                 }
             )
@@ -1863,7 +2259,6 @@ class TelemetryProvider:
             paths.extend(sorted(by_id_root.glob("*camera*")))
             paths.extend(sorted(by_id_root.glob("*USB*")))
         paths.extend(sorted(root.glob("video*")))
-
         rows = []
         seen: set[str] = set()
         for path in paths:
@@ -1879,7 +2274,9 @@ class TelemetryProvider:
                 {
                     "display_path": self._host_device_label_for_root(resolved, root),
                     "open_path": str(resolved),
-                    "by_id": self._host_device_label_for_root(path, root, resolve=False) if "/v4l/by-id/" in str(path) else None,
+                    "by_id": self._host_device_label_for_root(path, root, resolve=False)
+                    if "/v4l/by-id/" in str(path)
+                    else None,
                     "exists": resolved.exists(),
                 }
             )
@@ -1897,7 +2294,9 @@ class TelemetryProvider:
             data["alive"] = False
         return data
 
-    def _camera_supported_view_modes(self, driver_status: dict[str, Any]) -> list[dict[str, Any]]:
+    def _camera_supported_view_modes(
+        self, driver_status: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         raw_modes = driver_status.get("supported_view_modes")
         if raw_modes:
             raw_resolutions = set()
@@ -1910,11 +2309,17 @@ class TelemetryProvider:
                 if "x" in resolution:
                     raw_resolutions.add(resolution.lower())
             product_modes = self._normalized_camera_modes(DEFAULT_CAMERA_VIEW_MODES)
-            filtered = [item for item in product_modes if item["resolution"].lower() in raw_resolutions]
+            filtered = [
+                item
+                for item in product_modes
+                if item["resolution"].lower() in raw_resolutions
+            ]
             if filtered:
                 return filtered
         if not raw_modes:
-            raw_modes = driver_status.get("default_view_modes") or DEFAULT_CAMERA_VIEW_MODES
+            raw_modes = (
+                driver_status.get("default_view_modes") or DEFAULT_CAMERA_VIEW_MODES
+            )
         return self._normalized_camera_modes(raw_modes)
 
     def _normalized_camera_modes(self, raw_modes: list[Any]) -> list[dict[str, Any]]:
@@ -1945,17 +2350,28 @@ class TelemetryProvider:
                 except (TypeError, ValueError):
                     continue
                 if value >= 1:
-                    fps_values.append(int(round(value)) if abs(value - round(value)) < 0.05 else round(value, 2))
+                    fps_values.append(
+                        int(round(value))
+                        if abs(value - round(value)) < 0.05
+                        else round(value, 2)
+                    )
             fps_values = sorted({value for value in fps_values if value >= 1})
             if not fps_values:
                 fps_values = [30]
-            row = {"resolution": resolution, "width": width, "height": height, "fps": fps_values}
+            row = {
+                "resolution": resolution,
+                "width": width,
+                "height": height,
+                "fps": fps_values,
+            }
             if item.get("label"):
                 row["label"] = str(item.get("label"))
             rows.append(row)
         return rows
 
-    def _host_device_label_for_root(self, path: Path, root: Path, resolve: bool = True) -> str:
+    def _host_device_label_for_root(
+        self, path: Path, root: Path, resolve: bool = True
+    ) -> str:
         try:
             target = path.resolve() if resolve else path.absolute()
             relative = target.relative_to(root.resolve())
@@ -1991,8 +2407,12 @@ class TelemetryProvider:
                     break
             if not matched:
                 continue
-            cmdline = _read_text(pid_dir / "cmdline") or _read_text(pid_dir / "comm") or ""
-            holders.append({"pid": int(pid_dir.name), "cmd": cmdline.replace("\x00", " ").strip()})
+            cmdline = (
+                _read_text(pid_dir / "cmdline") or _read_text(pid_dir / "comm") or ""
+            )
+            holders.append(
+                {"pid": int(pid_dir.name), "cmd": cmdline.replace("\x00", " ").strip()}
+            )
         return holders
 
     def _rplidar_probe(self, path: str) -> dict[str, Any]:
@@ -2010,7 +2430,9 @@ class TelemetryProvider:
                 continue
             if response["ok"]:
                 return response
-            errors.append({"baud": baud, "error": response.get("message", "no_response")})
+            errors.append(
+                {"baud": baud, "error": response.get("message", "no_response")}
+            )
         return {
             "ok": False,
             "state": "no_protocol_response",
@@ -2031,7 +2453,9 @@ class TelemetryProvider:
                 errors.append({"baud": baud, "error": "baud_not_supported_by_termios"})
                 continue
             try:
-                response = self._rplidar_normal_scan_at_baud(path, baud, speed, duration_s, max_points)
+                response = self._rplidar_normal_scan_at_baud(
+                    path, baud, speed, duration_s, max_points
+                )
             except OSError as exc:
                 errors.append({"baud": baud, "error": str(exc)})
                 continue
@@ -2044,7 +2468,9 @@ class TelemetryProvider:
                 "raw_bytes": response.get("raw_bytes"),
                 "motor_line": response.get("motor_line"),
             }
-            errors.append({key: value for key, value in error.items() if value is not None})
+            errors.append(
+                {key: value for key, value in error.items() if value is not None}
+            )
         return {
             "ok": False,
             "state": "no_scan_data",
@@ -2057,12 +2483,7 @@ class TelemetryProvider:
         }
 
     def _rplidar_normal_scan_at_baud(
-        self,
-        path: str,
-        baud: int,
-        speed: int,
-        duration_s: float,
-        max_points: int,
+        self, path: str, baud: int, speed: int, duration_s: float, max_points: int
     ) -> dict[str, Any]:
         fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         raw = bytearray()
@@ -2084,7 +2505,7 @@ class TelemetryProvider:
             termios.tcflush(fd, termios.TCIFLUSH)
             os.write(fd, RPLIDAR_SCAN)
             deadline = time.time() + duration_s
-            while time.time() < deadline and len(raw) < 240_000:
+            while time.time() < deadline and len(raw) < 240000:
                 try:
                     chunk = os.read(fd, 8192)
                 except BlockingIOError:
@@ -2102,7 +2523,6 @@ class TelemetryProvider:
                 pass
             self._set_lidar_modem_lines(fd, "off")
             os.close(fd)
-
         payload = self._scan_payload(bytes(raw))
         nodes = self._parse_normal_scan_nodes(payload)
         if not nodes:
@@ -2118,7 +2538,6 @@ class TelemetryProvider:
                 "motor_line": line_report,
                 "points": [],
             }
-
         rendered = self._decimate_points(nodes, max_points)
         distances = [point["distance_m"] for point in nodes]
         angles = [point["angle_deg"] for point in nodes]
@@ -2152,7 +2571,7 @@ class TelemetryProvider:
         exact = raw.find(RPLIDAR_SCAN_DESCRIPTOR)
         if exact >= 0:
             return raw[exact + len(RPLIDAR_SCAN_DESCRIPTOR) :]
-        marker = raw.find(b"\xA5\x5A")
+        marker = raw.find(b"\xa5Z")
         if marker >= 0 and len(raw) >= marker + 7:
             return raw[marker + 7 :]
         return raw
@@ -2162,14 +2581,14 @@ class TelemetryProvider:
         i = 0
         while i <= len(data) - 5:
             b0, b1, b2, b3, b4 = data[i : i + 5]
-            start_flag = b0 & 0x01
-            inverse_start_flag = (b0 >> 1) & 0x01
-            check_bit = b1 & 0x01
-            if (start_flag ^ inverse_start_flag) != 1 or check_bit != 1:
+            start_flag = b0 & 1
+            inverse_start_flag = b0 >> 1 & 1
+            check_bit = b1 & 1
+            if start_flag ^ inverse_start_flag != 1 or check_bit != 1:
                 i += 1
                 continue
-            angle_deg = ((b1 >> 1) | (b2 << 7)) / 64.0
-            distance_m = ((b3 | (b4 << 8)) / 4.0) / 1000.0
+            angle_deg = (b1 >> 1 | b2 << 7) / 64.0
+            distance_m = (b3 | b4 << 8) / 4.0 / 1000.0
             if 0.05 <= distance_m <= 30.0 and 0.0 <= angle_deg < 360.0:
                 rad = math.radians(angle_deg)
                 nodes.append(
@@ -2186,11 +2605,16 @@ class TelemetryProvider:
             i += 1
         return nodes
 
-    def _decimate_points(self, points: list[dict[str, Any]], max_points: int) -> list[dict[str, Any]]:
+    def _decimate_points(
+        self, points: list[dict[str, Any]], max_points: int
+    ) -> list[dict[str, Any]]:
         if len(points) <= max_points:
             return points
         step = len(points) / max_points
-        return [points[min(len(points) - 1, int(index * step))] for index in range(max_points)]
+        return [
+            points[min(len(points) - 1, int(index * step))]
+            for index in range(max_points)
+        ]
 
     def _angle_coverage(self, points: list[dict[str, Any]]) -> float:
         if not points:
@@ -2200,7 +2624,9 @@ class TelemetryProvider:
 
     def _set_lidar_modem_lines(self, fd: int, mode: str) -> dict[str, Any]:
         try:
-            flags = struct.unpack("I", fcntl.ioctl(fd, TIOCMGET, struct.pack("I", 0)))[0]
+            flags = struct.unpack("I", fcntl.ioctl(fd, TIOCMGET, struct.pack("I", 0)))[
+                0
+            ]
             if mode == "dtr_rts":
                 flags |= TIOCM_DTR | TIOCM_RTS
             elif mode == "rts":
@@ -2217,14 +2643,18 @@ class TelemetryProvider:
 
     def _lidar_scan_duration(self) -> float:
         try:
-            value = float(os.environ.get("LIDAR_SCAN_DURATION_S", DEFAULT_LIDAR_SCAN_DURATION_S))
+            value = float(
+                os.environ.get("LIDAR_SCAN_DURATION_S", DEFAULT_LIDAR_SCAN_DURATION_S)
+            )
         except ValueError:
             value = DEFAULT_LIDAR_SCAN_DURATION_S
         return round(max(0.3, min(4.0, value)), 2)
 
     def _lidar_scan_max_points(self) -> int:
         try:
-            value = int(os.environ.get("LIDAR_SCAN_MAX_POINTS", DEFAULT_LIDAR_SCAN_MAX_POINTS))
+            value = int(
+                os.environ.get("LIDAR_SCAN_MAX_POINTS", DEFAULT_LIDAR_SCAN_MAX_POINTS)
+            )
         except ValueError:
             value = DEFAULT_LIDAR_SCAN_MAX_POINTS
         return max(120, min(5000, value))
@@ -2241,7 +2671,9 @@ class TelemetryProvider:
                 continue
         return values or DEFAULT_LIDAR_BAUDS
 
-    def _rplidar_probe_at_baud(self, path: str, baud: int, speed: int) -> dict[str, Any]:
+    def _rplidar_probe_at_baud(
+        self, path: str, baud: int, speed: int
+    ) -> dict[str, Any]:
         fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         try:
             attrs = termios.tcgetattr(fd)
@@ -2253,13 +2685,13 @@ class TelemetryProvider:
             attrs[5] = speed
             termios.tcsetattr(fd, termios.TCSANOW, attrs)
             termios.tcflush(fd, termios.TCIOFLUSH)
-            os.write(fd, bytes([0xA5, 0x25]))
+            os.write(fd, bytes([165, 37]))
             time.sleep(0.05)
-            info_raw = self._serial_command(fd, bytes([0xA5, 0x50]), 27, 0.9)
-            health_raw = self._serial_command(fd, bytes([0xA5, 0x52]), 10, 0.7)
+            info_raw = self._serial_command(fd, bytes([165, 80]), 27, 0.9)
+            health_raw = self._serial_command(fd, bytes([165, 82]), 10, 0.7)
         finally:
             os.close(fd)
-        if not info_raw.startswith(b"\xA5\x5A"):
+        if not info_raw.startswith(b"\xa5Z"):
             return {"ok": False, "message": f"no RPLIDAR response at {baud} bps"}
         info = self._parse_rplidar_info(info_raw)
         health = self._parse_rplidar_health(health_raw)
@@ -2278,7 +2710,9 @@ class TelemetryProvider:
             "conflict_policy": "GET_INFO/GET_HEALTH only; no scan command; serial port closed immediately after test.",
         }
 
-    def _serial_command(self, fd: int, command: bytes, expected: int, timeout_s: float) -> bytes:
+    def _serial_command(
+        self, fd: int, command: bytes, expected: int, timeout_s: float
+    ) -> bytes:
         termios.tcflush(fd, termios.TCIOFLUSH)
         os.write(fd, command)
         deadline = time.time() + timeout_s
@@ -2307,49 +2741,63 @@ class TelemetryProvider:
         }
 
     def _parse_rplidar_health(self, data: bytes) -> dict[str, Any] | None:
-        if not data.startswith(b"\xA5\x5A") or len(data) < 10:
+        if not data.startswith(b"\xa5Z") or len(data) < 10:
             return None
         payload = data[7:10]
-        status = {0: "good", 1: "warning", 2: "error"}.get(payload[0], f"unknown_{payload[0]}")
-        return {"status": status, "error_code": payload[1] | (payload[2] << 8)}
+        status = {0: "good", 1: "warning", 2: "error"}.get(
+            payload[0], f"unknown_{payload[0]}"
+        )
+        return {"status": status, "error_code": payload[1] | payload[2] << 8}
 
-    def plan(self) -> dict[str, Any]:
-        return {
-            "research_topic": "과수원 환경에서 Vision-LiDAR 센서 기반 신뢰도 동적 조절을 이용한 행간 중심선 추정 및 경로추종 안정화",
-            "team": "유니주행차",
-            "partner": "한국자동차연구원",
-            "focus": [
-                "ROS2 기반 자율주행 아키텍처",
-                "LiDAR 기반 과수 인식 및 과수열 검출",
-                "RGB 카메라 기반 주행 가능 영역 보완",
-                "IMU 기반 자세 및 주행 상태 추정",
-                "Vision-LiDAR 신뢰도 동적 가중치 조절",
-                "과수원 주행 테스트 및 성능 검증",
-            ],
-            "milestones": [
-                {"month": "5월", "label": "선행연구 분석, 자율주행 이론 스터디", "status": "done"},
-                {"month": "6월", "label": "구동 시스템 설계, 센서 요구사항 정의", "status": "done"},
-                {"month": "7월", "label": "자율주행 자동차 제작, 회로 제작 및 센서 보정", "status": "planned"},
-                {"month": "8월", "label": "예측 모델 구축, 추가 개선 장비 구매", "status": "planned"},
-                {"month": "9월", "label": "주행 테스트 및 성능 검증", "status": "planned"},
-                {"month": "10월", "label": "실험 데이터 분석, 전문가 피드백", "status": "planned"},
-                {"month": "11월", "label": "논문 작성, 학회 참가", "status": "planned"},
-                {"month": "12월", "label": "결과물 제출 및 최종성과발표회", "status": "planned"},
-            ],
-        }
+    def plan(self):
+        return {"research_topic": "2D LiDAR 기반 UBTS 로버의 원본 센서 대시보드", "team": "유니주행차", "partner": "UNIST",
+                "focus": ["RPLIDAR S2 단일 평면 스캔", "UVC 카메라 원본 영상", "BNO085 자세와 가속도", "수동 조종 및 센서 상태 관찰", "GPS 미연결 상태 유지"],
+                "milestones": [{"month": "1단계", "label": "원본 센서 대시보드", "status": "done"}, {"month": "2단계", "label": "Gazebo 2D 센서 및 가상 주행", "status": "planned"}, {"month": "추후", "label": "시연 녹화와 실차 보정", "status": "planned"}]}
 
     def site_map(self) -> dict[str, Any]:
         return {
             "routes": [
                 {"path": "/", "label": "Overview", "summary": "핵심 상태"},
-                {"path": "/connection", "label": "Connection", "summary": "LiDAR, ROS2 bridge, sensor links"},
-                {"path": "/system", "label": "System", "summary": "CPU, Memory, Swap, Network, Power, Disk"},
-                {"path": "/network", "label": "Network", "summary": "IP, interface, RX/TX throughput"},
-                {"path": "/docker", "label": "Docker", "summary": "Docker engine and containers"},
-                {"path": "/fan", "label": "Fan Control", "summary": "Jetson 온도와 수동 PWM"},
-                {"path": "/research", "label": "Research", "summary": "연구 일정과 ROS2 연결 상태"},
-                {"path": "/rover-control", "label": "Rover Control", "summary": "ESP8266 원본 UI proxy와 ROS bridge 준비 상태"},
-                {"path": "/docs", "label": "Docs", "summary": "운영 문서와 Markdown viewer"},
+                {
+                    "path": "/connection",
+                    "label": "Connection",
+                    "summary": "LiDAR, ROS2 bridge, sensor links",
+                },
+                {
+                    "path": "/system",
+                    "label": "System",
+                    "summary": "CPU, Memory, Swap, Network, Power, Disk",
+                },
+                {
+                    "path": "/network",
+                    "label": "Network",
+                    "summary": "IP, interface, RX/TX throughput",
+                },
+                {
+                    "path": "/docker",
+                    "label": "Docker",
+                    "summary": "Docker engine and containers",
+                },
+                {
+                    "path": "/fan",
+                    "label": "Fan Control",
+                    "summary": "Jetson 온도와 수동 PWM",
+                },
+                {
+                    "path": "/research",
+                    "label": "Research",
+                    "summary": "연구 일정과 ROS2 연결 상태",
+                },
+                {
+                    "path": "/rover-control",
+                    "label": "Rover Control",
+                    "summary": "ESP8266 원본 UI proxy와 ROS bridge 준비 상태",
+                },
+                {
+                    "path": "/docs",
+                    "label": "Docs",
+                    "summary": "운영 문서와 Markdown viewer",
+                },
             ]
         }
 
@@ -2401,7 +2849,12 @@ class TelemetryProvider:
                 "owner": "ros2_driver_and_recorder",
                 "dashboard_access": "subscribe_only",
             },
-            "encoder": {"ok": False, "state": "not_connected", "topic": "/wheel/encoder", "frame_id": "base_link"},
+            "encoder": {
+                "ok": False,
+                "state": "not_connected",
+                "topic": "/wheel/encoder",
+                "frame_id": "base_link",
+            },
             "mavlink": {"ok": False, "state": "not_connected"},
         }
 
@@ -2418,7 +2871,6 @@ class TelemetryProvider:
                 sensors[key] = {**sensors[key], **value}
             else:
                 sensors[key] = value
-
         bridge = lidar_bridge or self._lidar_bridge_status()
         lidar = dict(sensors.get("lidar", {}))
         if bridge.get("scan_topic_alive"):
@@ -2431,7 +2883,9 @@ class TelemetryProvider:
                     "source": bridge.get("source", "ros2"),
                     "point_count": bridge.get("point_count", 0),
                     "last_scan_age_sec": bridge.get("last_scan_age_sec"),
-                    "frame_id": bridge.get("frame_id") or lidar.get("frame_id") or "laser",
+                    "frame_id": bridge.get("frame_id")
+                    or lidar.get("frame_id")
+                    or "laser",
                 }
             )
         elif bridge.get("alive"):
@@ -2468,7 +2922,9 @@ class TelemetryProvider:
                     "connected": True,
                     "state": "frame_live",
                     "severity": "ok",
-                    "frame_id": bridge_camera.get("frame_id") or camera.get("frame_id") or "camera_link_optical",
+                    "frame_id": bridge_camera.get("frame_id")
+                    or camera.get("frame_id")
+                    or "camera_link_optical",
                     "source_width": bridge_camera.get("source_width"),
                     "source_height": bridge_camera.get("source_height"),
                     "last_frame_age_sec": bridge_camera.get("last_frame_age_sec"),
@@ -2482,7 +2938,8 @@ class TelemetryProvider:
                     "connected": False,
                     "state": "video_node_missing",
                     "severity": "error",
-                    "error": camera_status.get("driver_last_error") or "USB camera detected, but /dev/video node is missing",
+                    "error": camera_status.get("driver_last_error")
+                    or "USB camera detected, but /dev/video node is missing",
                 }
             )
         elif bridge_camera.get("alive"):
@@ -2501,7 +2958,7 @@ class TelemetryProvider:
         sensors["camera"] = camera
         bridge_imu = imu_bridge or self._imu_bridge_status()
         driver_imu = self._imu_driver_status()
-        recorder_imu = (self.recording_status().get("imu_pipeline") or {})
+        recorder_imu = self.recording_status().get("imu_pipeline") or {}
         imu = dict(sensors.get("imu", {}))
         imu.update(
             {
@@ -2512,22 +2969,45 @@ class TelemetryProvider:
                 "raw_topic": driver_imu.get("raw_topic", "/imu/data_raw"),
                 "corrected_topic": "/imu/data",
                 "mag_topic": driver_imu.get("mag_topic", "/imu/mag"),
-                "frame_id": driver_imu.get("frame_id") or (bridge_imu.get("raw") or {}).get("frame_id") or "imu_link",
-                "orientation_convention": driver_imu.get("orientation_convention", "sensor_native_unverified_mount"),
+                "frame_id": driver_imu.get("frame_id")
+                or (bridge_imu.get("raw") or {}).get("frame_id")
+                or "imu_link",
+                "orientation_convention": driver_imu.get(
+                    "orientation_convention", "sensor_native_unverified_mount"
+                ),
                 "rep145_ready": driver_imu.get("rep145_ready", False),
                 "rep145_blocker": driver_imu.get("rep145_blocker"),
                 "raw": bridge_imu.get("raw") or recorder_imu.get("latest_raw") or {},
-                "corrected": bridge_imu.get("corrected") or recorder_imu.get("latest_corrected") or {},
-                "magnetic": bridge_imu.get("magnetic") or recorder_imu.get("latest_magnetic") or {},
-                "calibration": bridge_imu.get("calibration") or recorder_imu.get("calibration") or {},
-                "last_imu_age_s": bridge_imu.get("last_imu_age_s", recorder_imu.get("last_raw_age_s")),
-                "sample_count": bridge_imu.get("raw_count", recorder_imu.get("raw_received_count", 0)),
+                "corrected": bridge_imu.get("corrected")
+                or recorder_imu.get("latest_corrected")
+                or {},
+                "magnetic": bridge_imu.get("magnetic")
+                or recorder_imu.get("latest_magnetic")
+                or {},
+                "calibration": bridge_imu.get("calibration")
+                or recorder_imu.get("calibration")
+                or {},
+                "last_imu_age_s": bridge_imu.get(
+                    "last_imu_age_s", recorder_imu.get("last_raw_age_s")
+                ),
+                "sample_count": bridge_imu.get(
+                    "raw_count", recorder_imu.get("raw_received_count", 0)
+                ),
             }
         )
         if bridge_imu.get("imu_topic_alive") or recorder_imu.get("raw_topic_alive"):
-            imu.update({"ok": True, "connected": True, "state": "imu_live", "severity": "ok"})
+            imu.update(
+                {"ok": True, "connected": True, "state": "imu_live", "severity": "ok"}
+            )
         elif bridge_imu.get("updated_at") or driver_imu.get("updated_at"):
-            imu.update({"ok": False, "connected": False, "state": "waiting_for_imu", "severity": "waiting"})
+            imu.update(
+                {
+                    "ok": False,
+                    "connected": False,
+                    "state": "waiting_for_imu",
+                    "severity": "waiting",
+                }
+            )
         sensors["imu"] = imu
         return sensors
 
@@ -2549,12 +3029,29 @@ class TelemetryProvider:
     ) -> dict[str, Any]:
         services = {
             "dashboard": {"ok": True, "state": "serving", "port": 8080},
-            "cloudflared": {"ok": True, "state": "tunnel_configured", "host": "bts.sarihub.com"},
+            "cloudflared": {
+                "ok": True,
+                "state": "tunnel_configured",
+                "host": "bts.sarihub.com",
+            },
             "ros2_bridge": {"ok": False, "state": "not_connected"},
             "lidar_bridge": {"ok": False, "state": "not_connected", "topic": "/scan"},
-            "camera_bridge": {"ok": False, "state": "not_connected", "topic": "/camera/image_raw"},
-            "imu_bridge": {"ok": False, "state": "not_connected", "topic": "/imu/data_raw"},
-            "rover_bridge": {"ok": False, "state": "not_connected", "host": None, "mode": "serial_only"},
+            "camera_bridge": {
+                "ok": False,
+                "state": "not_connected",
+                "topic": "/camera/image_raw",
+            },
+            "imu_bridge": {
+                "ok": False,
+                "state": "not_connected",
+                "topic": "/imu/data_raw",
+            },
+            "rover_bridge": {
+                "ok": False,
+                "state": "not_connected",
+                "host": None,
+                "mode": "serial_only",
+            },
             "data_recorder": {"ok": False, "state": "not_connected"},
         }
         services.update(external.get("services", {}))
@@ -2562,7 +3059,9 @@ class TelemetryProvider:
         if bridge.get("alive"):
             lidar_service = {
                 "ok": bool(bridge.get("scan_topic_alive")),
-                "state": "scan_live" if bridge.get("scan_topic_alive") else "bridge_online",
+                "state": "scan_live"
+                if bridge.get("scan_topic_alive")
+                else "bridge_online",
                 "topic": "/scan",
                 "source": bridge.get("source", "ros2"),
                 "point_count": bridge.get("point_count", 0),
@@ -2574,17 +3073,25 @@ class TelemetryProvider:
         if camera.get("alive"):
             services["camera_bridge"] = {
                 "ok": bool(camera.get("frame_topic_alive")),
-                "state": "frame_live" if camera.get("frame_topic_alive") else "bridge_online",
+                "state": "frame_live"
+                if camera.get("frame_topic_alive")
+                else "bridge_online",
                 "topic": "/camera/image_raw",
                 "frame_count": camera.get("frame_count", 0),
                 "last_frame_age_sec": camera.get("last_frame_age_sec"),
-                "resolution": self._resolution_text(camera.get("source_width"), camera.get("source_height")),
+                "resolution": self._resolution_text(
+                    camera.get("source_width"), camera.get("source_height")
+                ),
                 "source_fps": camera.get("source_fps"),
             }
         imu = imu_bridge or self._imu_bridge_status()
         services["imu_bridge"] = {
             "ok": bool(imu.get("imu_topic_alive")),
-            "state": "imu_live" if imu.get("imu_topic_alive") else "bridge_online" if imu.get("updated_at") else "not_connected",
+            "state": "imu_live"
+            if imu.get("imu_topic_alive")
+            else "bridge_online"
+            if imu.get("updated_at")
+            else "not_connected",
             "topic": "/imu/data_raw",
             "corrected_topic": "/imu/data",
             "raw_count": imu.get("raw_count", 0),
@@ -2593,9 +3100,14 @@ class TelemetryProvider:
         }
         rover = self.rover_status()
         rover_bridge = rover_bridge or self._rover_bridge_status()
-        rover_bridge_ok = bool(rover_bridge.get("alive")) and (
-            rover_bridge.get("transport") != "serial" or bool(rover_bridge.get("serial_open"))
-        ) and not rover_bridge.get("last_error")
+        rover_bridge_ok = (
+            bool(rover_bridge.get("alive"))
+            and (
+                rover_bridge.get("transport") != "serial"
+                or bool(rover_bridge.get("serial_open"))
+            )
+            and (not rover_bridge.get("last_error"))
+        )
         services["rover_bridge"] = {
             "ok": rover_bridge_ok,
             "state": rover_bridge.get("state", "not_connected"),
@@ -2611,7 +3123,9 @@ class TelemetryProvider:
         recorder = self.recording_status()
         services["data_recorder"] = {
             "ok": bool(recorder.get("ok")),
-            "state": "recording" if recorder.get("active") else recorder.get("state", "not_connected"),
+            "state": "recording"
+            if recorder.get("active")
+            else recorder.get("state", "not_connected"),
             "active": bool(recorder.get("active")),
             "kind": recorder.get("kind"),
             "recording_id": recorder.get("recording_id"),
@@ -2622,7 +3136,8 @@ class TelemetryProvider:
             "include_imu": recorder.get("include_imu", True),
             "include_gps": recorder.get("include_gps", True),
             "imu_pipeline": recorder.get("imu_pipeline"),
-            "status_url": recorder.get("status_url") or f"{self.recorder_api_url}/status",
+            "status_url": recorder.get("status_url")
+            or f"{self.recorder_api_url}/status",
         }
         return services
 
@@ -2640,12 +3155,14 @@ class TelemetryProvider:
             last_scan_age = None if last_scan_age is None else float(last_scan_age)
         except (TypeError, ValueError):
             last_scan_age = None
-        scan_alive = bool(alive and last_scan_age is not None and last_scan_age < 2.0)
+        scan_alive = bool(alive and last_scan_age is not None and (last_scan_age < 2.0))
         return {
             "alive": alive,
             "scan_topic_alive": scan_alive,
             "status_age_sec": status_age,
-            "last_scan_age_sec": round(last_scan_age, 3) if last_scan_age is not None else None,
+            "last_scan_age_sec": round(last_scan_age, 3)
+            if last_scan_age is not None
+            else None,
             "point_count": int(data.get("point_count") or 0),
             "source": data.get("source") or "ros2",
             "frame_id": data.get("frame_id") or "laser",
@@ -2668,12 +3185,16 @@ class TelemetryProvider:
             last_frame_age = None if last_frame_age is None else float(last_frame_age)
         except (TypeError, ValueError):
             last_frame_age = None
-        frame_alive = bool(alive and last_frame_age is not None and last_frame_age < 2.0)
+        frame_alive = bool(
+            alive and last_frame_age is not None and (last_frame_age < 2.0)
+        )
         return {
             "alive": alive,
             "frame_topic_alive": frame_alive,
             "status_age_sec": status_age,
-            "last_frame_age_sec": round(last_frame_age, 3) if last_frame_age is not None else None,
+            "last_frame_age_sec": round(last_frame_age, 3)
+            if last_frame_age is not None
+            else None,
             "frame_count": int(data.get("frame_count") or 0),
             "source_width": data.get("source_width"),
             "source_height": data.get("source_height"),
@@ -2697,7 +3218,9 @@ class TelemetryProvider:
         return {
             **data,
             "alive": alive,
-            "state": data.get("state") if age is not None and age <= 3.0 else "not_connected",
+            "state": data.get("state")
+            if age is not None and age <= 3.0
+            else "not_connected",
             "status_age_sec": age,
             "updated_at": updated_at or None,
             "status_file": str(self.imu_driver_status_file),
@@ -2713,13 +3236,19 @@ class TelemetryProvider:
         status_age = round(now - updated_at, 3) if updated_at else None
         alive = status_age is not None and status_age <= 3.0
         try:
-            sample_age = float(data.get("last_imu_age_s")) if data.get("last_imu_age_s") is not None else None
+            sample_age = (
+                float(data.get("last_imu_age_s"))
+                if data.get("last_imu_age_s") is not None
+                else None
+            )
         except (TypeError, ValueError):
             sample_age = None
         return {
             **data,
             "alive": alive,
-            "imu_topic_alive": bool(alive and sample_age is not None and sample_age < 1.0),
+            "imu_topic_alive": bool(
+                alive and sample_age is not None and (sample_age < 1.0)
+            ),
             "corrected_topic_alive": bool(alive and data.get("corrected_topic_alive")),
             "last_imu_age_s": round(sample_age, 4) if sample_age is not None else None,
             "updated_at": updated_at or None,
@@ -2734,11 +3263,16 @@ class TelemetryProvider:
         except (TypeError, ValueError):
             age = float("inf")
         alive = 0 <= age < 3
-        return {**data, "alive": alive, "ok": bool(alive and data.get("connected")),
-                "connected": bool(alive and data.get("connected")),
-                "serial_open": bool(alive and data.get("serial_open")),
-                "state": data.get("state", "disarmed") if alive else "unavailable",
-                "mode": "esp_manual", "automatic_input_enabled": False}
+        return {
+            **data,
+            "alive": alive,
+            "ok": bool(alive and data.get("connected")),
+            "connected": bool(alive and data.get("connected")),
+            "serial_open": bool(alive and data.get("serial_open")),
+            "state": data.get("state", "disarmed") if alive else "unavailable",
+            "mode": "esp_manual",
+            "automatic_input_enabled": False,
+        }
 
     def _resolution_text(self, width: Any, height: Any) -> str | None:
         try:
@@ -2751,13 +3285,30 @@ class TelemetryProvider:
     def _alerts(self, external: dict[str, Any]) -> list[dict[str, str]]:
         alerts = list(external.get("alerts", []))
         if not external.get("rover"):
-            alerts.append({"level": "info", "message": "ROS2/로버 텔레메트리 파일이 아직 연결되지 않았습니다."})
+            alerts.append(
+                {
+                    "level": "info",
+                    "message": "ROS2/로버 텔레메트리 파일이 아직 연결되지 않았습니다.",
+                }
+            )
         if not Path(self.docker_socket).exists():
-            alerts.append({"level": "warn", "message": "Docker socket이 컨테이너에 마운트되지 않았습니다."})
+            alerts.append(
+                {
+                    "level": "warn",
+                    "message": "Docker socket이 컨테이너에 마운트되지 않았습니다.",
+                }
+            )
         return alerts
 
     def _hostname(self) -> str:
-        return _read_text(os.environ.get("DASHBOARD_HOSTNAME_FILE", str(self.host_root / "etc/hostname"))) or socket.gethostname()
+        return (
+            _read_text(
+                os.environ.get(
+                    "DASHBOARD_HOSTNAME_FILE", str(self.host_root / "etc/hostname")
+                )
+            )
+            or socket.gethostname()
+        )
 
     def _cpu_percent(self) -> dict[str, Any]:
         current = self._read_cpu_times()
@@ -2770,11 +3321,21 @@ class TelemetryProvider:
                 continue
             idle_delta = values["idle"] - previous["idle"]
             total_delta = values["total"] - previous["total"]
-            percent = None if total_delta <= 0 else round(max(0.0, min(100.0, 100.0 * (1.0 - idle_delta / total_delta))), 1)
+            percent = (
+                None
+                if total_delta <= 0
+                else round(
+                    max(0.0, min(100.0, 100.0 * (1.0 - idle_delta / total_delta))), 1
+                )
+            )
             if name == "cpu":
                 result["total_percent"] = percent
             else:
-                index = int(name[3:]) if name.startswith("cpu") and name[3:].isdigit() else len(result["cores"])
+                index = (
+                    int(name[3:])
+                    if name.startswith("cpu") and name[3:].isdigit()
+                    else len(result["cores"])
+                )
                 result["cores"].append(
                     {
                         "name": name,
@@ -2809,7 +3370,11 @@ class TelemetryProvider:
         total = values.get("MemTotal", 0) * 1024
         available = values.get("MemAvailable", 0) * 1024
         used = max(0, total - available)
-        display_total = int(os.environ.get("MEMORY_DISPLAY_TOTAL_BYTES", DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES))
+        display_total = int(
+            os.environ.get(
+                "MEMORY_DISPLAY_TOTAL_BYTES", DEFAULT_MEMORY_DISPLAY_TOTAL_BYTES
+            )
+        )
         return {
             "total": total,
             "available": available,
@@ -2825,7 +3390,12 @@ class TelemetryProvider:
         total = values.get("SwapTotal", 0) * 1024
         free = values.get("SwapFree", 0) * 1024
         used = max(0, total - free)
-        return {"total": total, "free": free, "used": used, "percent": _pct(used, total)}
+        return {
+            "total": total,
+            "free": free,
+            "used": used,
+            "percent": _pct(used, total),
+        }
 
     def _meminfo(self) -> dict[str, int]:
         text = _read_text(self.proc_root / "meminfo")
@@ -2874,12 +3444,20 @@ class TelemetryProvider:
         findmnt = shutil.which("findmnt")
         if not findmnt:
             return []
-        command = [findmnt, "-b", "-J", "-o", "TARGET,SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%"]
+        command = [
+            findmnt,
+            "-b",
+            "-J",
+            "-o",
+            "TARGET,SOURCE,FSTYPE,SIZE,USED,AVAIL,USE%",
+        ]
         nsenter = shutil.which("nsenter")
         if nsenter:
             command = [nsenter, "-t", "1", "-m", "--", *command]
         try:
-            proc = subprocess.run(command, check=False, capture_output=True, text=True, timeout=4)
+            proc = subprocess.run(
+                command, check=False, capture_output=True, text=True, timeout=4
+            )
         except (OSError, subprocess.TimeoutExpired):
             return []
         if proc.returncode != 0:
@@ -2888,7 +3466,6 @@ class TelemetryProvider:
             payload = json.loads(proc.stdout)
         except json.JSONDecodeError:
             return []
-
         rows: list[dict[str, Any]] = []
         seen: set[tuple[str, str]] = set()
         for item in self._flatten_findmnt(payload.get("filesystems", [])):
@@ -2912,7 +3489,7 @@ class TelemetryProvider:
                     usage = shutil.disk_usage(host_path)
                 except OSError:
                     continue
-                total, used, free = usage.total, usage.used, usage.free
+                total, used, free = (usage.total, usage.used, usage.free)
             rows.append(
                 {
                     "mount": target,
@@ -2936,7 +3513,9 @@ class TelemetryProvider:
                 rows.extend(self._flatten_findmnt(children))
         return rows
 
-    def _is_storage_mount(self, target: str, source: str, fstype: str, total: int) -> bool:
+    def _is_storage_mount(
+        self, target: str, source: str, fstype: str, total: int
+    ) -> bool:
         if not target or total <= 0:
             return False
         ignored_fs = {
@@ -2984,7 +3563,9 @@ class TelemetryProvider:
             return False
         if source.startswith("/dev/"):
             return True
-        return target in {"/", "/boot", "/boot/efi"} or target.startswith(("/media/", "/mnt/", "/home/"))
+        return target in {"/", "/boot", "/boot/efi"} or target.startswith(
+            ("/media/", "/mnt/", "/home/")
+        )
 
     def _os_uptime_s(self) -> float | None:
         text = _read_text(self.proc_root / "uptime")
@@ -3009,7 +3590,7 @@ class TelemetryProvider:
                 continue
             power_w = None
             if voltage_mv is not None:
-                power_w = round((voltage_mv * current_ma) / 1_000_000.0, 3)
+                power_w = round(voltage_mv * current_ma / 1000000.0, 3)
             rails.append(
                 {
                     "name": label,
@@ -3018,12 +3599,23 @@ class TelemetryProvider:
                     "power_w": power_w,
                 }
             )
-        total_rail = next((rail for rail in rails if rail["name"] == "VDD_IN" and rail["power_w"] is not None), None)
+        total_rail = next(
+            (
+                rail
+                for rail in rails
+                if rail["name"] == "VDD_IN" and rail["power_w"] is not None
+            ),
+            None,
+        )
         if total_rail:
             total_w = total_rail["power_w"]
             source = "VDD_IN"
         else:
-            total_w = round(sum(rail["power_w"] or 0.0 for rail in rails), 3) if rails else None
+            total_w = (
+                round(sum((rail["power_w"] or 0.0 for rail in rails)), 3)
+                if rails
+                else None
+            )
             source = "sum"
         return {
             "available": bool(rails),
@@ -3096,10 +3688,14 @@ class TelemetryProvider:
             ipaddress.ip_address(value)
             self._external_ip_value = value
             self._external_ip_error = None
-            self._external_ip_next_refresh = now + int(os.environ.get("EXTERNAL_IP_CACHE_S", "300"))
+            self._external_ip_next_refresh = now + int(
+                os.environ.get("EXTERNAL_IP_CACHE_S", "300")
+            )
         except (OSError, UnicodeDecodeError, ValueError, IndexError) as exc:
             self._external_ip_error = str(exc)
-            self._external_ip_next_refresh = now + int(os.environ.get("EXTERNAL_IP_RETRY_S", "60"))
+            self._external_ip_next_refresh = now + int(
+                os.environ.get("EXTERNAL_IP_RETRY_S", "60")
+            )
         return self._external_ip_value
 
     def _primary_ipv4(self, interfaces: list[dict[str, Any]]) -> str | None:
@@ -3109,7 +3705,7 @@ class TelemetryProvider:
                 sock.settimeout(0.2)
                 sock.connect((target, 80))
                 value = sock.getsockname()[0]
-                if value and not value.startswith("127."):
+                if value and (not value.startswith("127.")):
                     return value
         except OSError:
             pass
@@ -3117,11 +3713,13 @@ class TelemetryProvider:
             if iface["name"] == "lo":
                 continue
             for value in iface.get("ipv4") or []:
-                if value and not value.startswith("127."):
+                if value and (not value.startswith("127.")):
                     return value
         return None
 
-    def _primary_interface(self, primary_ipv4: str | None, interfaces: list[dict[str, Any]]) -> str | None:
+    def _primary_interface(
+        self, primary_ipv4: str | None, interfaces: list[dict[str, Any]]
+    ) -> str | None:
         if not primary_ipv4:
             return None
         for iface in interfaces:
@@ -3136,7 +3734,7 @@ class TelemetryProvider:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             request = struct.pack("256s", name[:15].encode("utf-8"))
-            response = fcntl_ioctl(sock, 0x8915, request)
+            response = fcntl_ioctl(sock, 35093, request)
             return [socket.inet_ntoa(response[20:24])]
         except OSError:
             return []
@@ -3167,8 +3765,10 @@ class TelemetryProvider:
             response = conn.getresponse()
             body = response.read()
             if response.status >= 400:
-                raise OSError(f"Docker API {path} returned {response.status}: {body.decode('utf-8', errors='replace')[:300]}")
-            return response.status, body
+                raise OSError(
+                    f"Docker API {path} returned {response.status}: {body.decode('utf-8', errors='replace')[:300]}"
+                )
+            return (response.status, body)
         finally:
             conn.close()
 
@@ -3179,22 +3779,24 @@ class TelemetryProvider:
             os.environ.get("DASHBOARD_CONTAINER_NAME", ""),
             os.environ.get("COMPOSE_SERVICE", ""),
         }
-        return {str(name).strip().lstrip("/") for name in names if str(name or "").strip()}
+        return {
+            str(name).strip().lstrip("/") for name in names if str(name or "").strip()
+        }
 
     def _detect_self_container_id(self) -> str | None:
         explicit = os.environ.get("DASHBOARD_CONTAINER_ID")
-        if explicit and re.fullmatch(r"[0-9a-f]{12,64}", explicit):
+        if explicit and re.fullmatch("[0-9a-f]{12,64}", explicit):
             return explicit
         by_name = self._container_id_by_known_name()
         if by_name:
             return by_name
         candidates: list[str] = []
         hostname = os.environ.get("HOSTNAME") or socket.gethostname()
-        if re.fullmatch(r"[0-9a-f]{12,64}", hostname or ""):
+        if re.fullmatch("[0-9a-f]{12,64}", hostname or ""):
             candidates.append(hostname)
         text = _read_text("/proc/self/cgroup") or ""
-        candidates.extend(re.findall(r"[0-9a-f]{64}", text))
-        candidates.extend(re.findall(r"docker-([0-9a-f]{64})\\.scope", text))
+        candidates.extend(re.findall("[0-9a-f]{64}", text))
+        candidates.extend(re.findall("docker-([0-9a-f]{64})\\\\.scope", text))
         for candidate in candidates:
             matched = self._inspect_container_name_matches(candidate)
             if matched:
@@ -3213,7 +3815,11 @@ class TelemetryProvider:
         for container in containers:
             names = container.get("Names") or []
             labels = container.get("Labels") or {}
-            if self._container_names_match(names) or labels.get("com.docker.compose.service") in self._self_container_names:
+            if (
+                self._container_names_match(names)
+                or labels.get("com.docker.compose.service")
+                in self._self_container_names
+            ):
                 return container.get("Id")
         return None
 
@@ -3226,12 +3832,17 @@ class TelemetryProvider:
             return None
         config = detail.get("Config") or {}
         labels = config.get("Labels") or {}
-        if self._container_names_match([detail.get("Name") or ""]) or labels.get("com.docker.compose.service") in self._self_container_names:
+        if (
+            self._container_names_match([detail.get("Name") or ""])
+            or labels.get("com.docker.compose.service") in self._self_container_names
+        ):
             return detail.get("Id") or container_id
         return None
 
     def _container_names_match(self, names: list[str] | tuple[str, ...]) -> bool:
-        normalized = {str(name).strip().lstrip("/") for name in names if str(name or "").strip()}
+        normalized = {
+            str(name).strip().lstrip("/") for name in names if str(name or "").strip()
+        }
         return bool(normalized & self._self_container_names)
 
     def _detect_container_ids_from_mountinfo(self) -> list[str]:
@@ -3241,12 +3852,14 @@ class TelemetryProvider:
             for line in text.splitlines():
                 parts = line.split()
                 if len(parts) > 4 and parts[4] == "/":
-                    ids.extend(re.findall(r"[0-9a-f]{64}", line))
-                    ids.extend(re.findall(r"docker-([0-9a-f]{64})\\.scope", line))
+                    ids.extend(re.findall("[0-9a-f]{64}", line))
+                    ids.extend(re.findall("docker-([0-9a-f]{64})\\\\.scope", line))
                     break
         return ids
 
-    def _is_self_container(self, container_id: str | None, names: list[str] | tuple[str, ...] | None = None) -> bool:
+    def _is_self_container(
+        self, container_id: str | None, names: list[str] | tuple[str, ...] | None = None
+    ) -> bool:
         if names and self._container_names_match(names):
             return True
         if not container_id or not self._self_container_id:
@@ -3271,23 +3884,35 @@ class TelemetryProvider:
 
     def _docker_container_stats(self, container_id: str) -> dict[str, Any]:
         try:
-            stats = self._docker_get_json(f"/containers/{container_id}/stats?stream=false&one-shot=true")
+            stats = self._docker_get_json(
+                f"/containers/{container_id}/stats?stream=false&one-shot=true"
+            )
         except (OSError, json.JSONDecodeError):
             return {}
         cpu_stats = stats.get("cpu_stats", {})
         precpu_stats = stats.get("precpu_stats", {})
-        cpu_delta = cpu_stats.get("cpu_usage", {}).get("total_usage", 0) - precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
-        system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get("system_cpu_usage", 0)
-        online_cpus = cpu_stats.get("online_cpus") or len(cpu_stats.get("cpu_usage", {}).get("percpu_usage") or []) or 1
+        cpu_delta = cpu_stats.get("cpu_usage", {}).get(
+            "total_usage", 0
+        ) - precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+        system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get(
+            "system_cpu_usage", 0
+        )
+        online_cpus = (
+            cpu_stats.get("online_cpus")
+            or len(cpu_stats.get("cpu_usage", {}).get("percpu_usage") or [])
+            or 1
+        )
         cpu_percent = 0.0
         if cpu_delta > 0 and system_delta > 0:
-            cpu_percent = (cpu_delta / system_delta) * online_cpus * 100.0
+            cpu_percent = cpu_delta / system_delta * online_cpus * 100.0
         memory = stats.get("memory_stats", {})
-        memory_usage = max(0, memory.get("usage", 0) - memory.get("stats", {}).get("cache", 0))
+        memory_usage = max(
+            0, memory.get("usage", 0) - memory.get("stats", {}).get("cache", 0)
+        )
         memory_limit = memory.get("limit", 0)
         networks = stats.get("networks", {})
-        rx_bytes = sum(item.get("rx_bytes", 0) for item in networks.values())
-        tx_bytes = sum(item.get("tx_bytes", 0) for item in networks.values())
+        rx_bytes = sum((item.get("rx_bytes", 0) for item in networks.values()))
+        tx_bytes = sum((item.get("tx_bytes", 0) for item in networks.values()))
         return {
             "cpu_percent": round(cpu_percent, 1),
             "memory_usage": memory_usage,

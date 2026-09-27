@@ -20,7 +20,6 @@ COPY scripts/imu_ws_bridge.py ./scripts/imu_ws_bridge.py
 COPY scripts/esp_wheel_controller.py scripts/esp_motor.py scripts/rover_control_core.py scripts/rover_control_bridge.py scripts/stream_policy.py ./scripts/
 COPY scripts/data_recorder_service.py ./scripts/data_recorder_service.py
 COPY scripts/gps_ros2_driver.py scripts/gps_ws_bridge.py ./scripts/
-COPY scripts/recompute_archive_camera_overlays_from_rosbag.py ./scripts/recompute_archive_camera_overlays_from_rosbag.py
 
 EXPOSE 8765 8770 8775 8778 8790
 

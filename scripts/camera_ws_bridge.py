@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
 from __future__ import annotations
-
 import argparse
 import asyncio
 import base64
@@ -18,30 +16,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
-
 import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from dashboard_server.camera_analysis import (
-    DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
-    LOCAL_VISION_ALGORITHM_NAME,
-    LOCAL_VISION_ANALYSIS_REVISION,
-    VISION_INFERENCE_INPUT_POLICY_REVISION,
-    CameraOverlayStabilizer,
-    analyze_camera_image,
-    empty_camera_analysis,
-    prepare_camera_inference_frame,
-    scale_camera_overlay_geometry,
-)
-
-
-VISION_BEARINGS_SCHEMA = "orchard.camera_bearings.v1"
-VISION_TREE_CLASS = "orchard_tree_trunk"
-DEFAULT_VISION_TOPIC = "/orchard/vision/tree_bearings"
 CAMERA_INFO_IMAGE_PROVENANCE_REVISION = "camera_info_image_header_integrity_v2"
 DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S = 0.12
 CAMERA_BINARY_MAGIC = b"UBCF"
@@ -68,8 +48,8 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 def ros_stamp_payload(stamp_sec: int, stamp_nanosec: int) -> tuple[dict[str, int], int]:
     sec = max(0, int(stamp_sec))
-    nanosec = max(0, min(999_999_999, int(stamp_nanosec)))
-    return {"sec": sec, "nanosec": nanosec}, sec * 1_000_000_000 + nanosec
+    nanosec = max(0, min(999999999, int(stamp_nanosec)))
+    return ({"sec": sec, "nanosec": nanosec}, sec * 1000000000 + nanosec)
 
 
 def finite_number(value: Any) -> float | None:
@@ -84,7 +64,6 @@ def finite_number(value: Any) -> float | None:
 
 def nonnegative_integer(value: Any) -> int | None:
     """Return an exact non-negative integer without silently truncating metadata."""
-
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, int):
@@ -96,7 +75,7 @@ def nonnegative_integer(value: Any) -> int | None:
         integer = int(candidate)
         return integer if integer >= 0 else None
     if isinstance(value, float):
-        if not math.isfinite(value) or value < 0.0 or not value.is_integer():
+        if not math.isfinite(value) or value < 0.0 or (not value.is_integer()):
             return None
         return int(value)
     try:
@@ -108,44 +87,6 @@ def nonnegative_integer(value: Any) -> int | None:
         return None
 
 
-def probability(value: Any, default: float | None = None) -> float | None:
-    number = finite_number(value)
-    if number is None:
-        return default
-    return max(0.0, min(1.0, number))
-
-
-def sanitized_bbox(value: Any) -> list[float] | None:
-    if not isinstance(value, (list, tuple)) or len(value) < 4:
-        return None
-    values = [finite_number(item) for item in value[:4]]
-    if any(item is None for item in values):
-        return None
-    x, y, width, height = (float(item) for item in values)
-    if width <= 0.0 or height <= 0.0:
-        return None
-    return [x, y, width, height]
-
-
-def contour_points(value: Any, limit: int = 256) -> list[list[float]]:
-    output: list[list[float]] = []
-
-    def visit(item: Any) -> None:
-        if len(output) >= limit or not isinstance(item, (list, tuple)):
-            return
-        if len(item) >= 2:
-            x = finite_number(item[0])
-            y = finite_number(item[1])
-            if x is not None and y is not None:
-                output.append([round(x, 3), round(y, 3)])
-                return
-        for child in item:
-            visit(child)
-
-    visit(value)
-    return output
-
-
 def camera_info_payload(msg: Any) -> dict[str, Any]:
     stamp, stamp_ns = ros_stamp_payload(msg.header.stamp.sec, msg.header.stamp.nanosec)
     raw_k = getattr(msg, "k", None)
@@ -153,8 +94,6 @@ def camera_info_payload(msg: Any) -> dict[str, Any]:
     return {
         "width": int(getattr(msg, "width", 0) or 0),
         "height": int(getattr(msg, "height", 0) or 0),
-        # rclpy fixed-size arrays can expose NumPy-like containers whose
-        # truth value is intentionally ambiguous. Never boolean-coerce them.
         "k": [float(value) for value in (list(raw_k) if raw_k is not None else [])[:9]],
         "d": [float(value) for value in (list(raw_d) if raw_d is not None else [])],
         "distortion_model": str(getattr(msg, "distortion_model", "") or ""),
@@ -162,277 +101,6 @@ def camera_info_payload(msg: Any) -> dict[str, Any]:
         "stamp": stamp,
         "stamp_ns": stamp_ns,
     }
-
-
-def camera_info_image_provenance(
-    camera_info: dict[str, Any] | None,
-    *,
-    image_frame_id: str,
-    image_width: int,
-    image_height: int,
-    image_stamp_ns: int,
-    max_delta_s: float = DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
-    image_clock_integrity_ok: bool = True,
-    camera_info_clock_integrity_ok: bool = True,
-    image_clock_epoch: int = 0,
-    camera_info_clock_epoch: int = 0,
-    image_clock_regression_count: int = 0,
-    camera_info_clock_regression_count: int = 0,
-) -> dict[str, Any]:
-    """Validate that CameraInfo belongs to the image being inferred.
-
-    Operator calibration approval is necessary but not sufficient: header
-    identity, native dimensions, bounded sensor-stamp distance and monotonic
-    clock epochs must also agree.  Missing provenance always fails closed.
-    """
-
-    info = camera_info if isinstance(camera_info, dict) else {}
-    reasons: list[str] = []
-    image_frame = str(image_frame_id or "").strip()
-    info_frame_id = str(info.get("frame_id") or "").strip()
-    parsed_info_width = nonnegative_integer(info.get("width"))
-    parsed_info_height = nonnegative_integer(info.get("height"))
-    parsed_info_stamp_ns = nonnegative_integer(info.get("stamp_ns"))
-    parsed_image_width = nonnegative_integer(image_width)
-    parsed_image_height = nonnegative_integer(image_height)
-    parsed_image_stamp_ns = nonnegative_integer(image_stamp_ns)
-    info_width = parsed_info_width or 0
-    info_height = parsed_info_height or 0
-    info_stamp_ns = parsed_info_stamp_ns or 0
-    native_image_width = parsed_image_width or 0
-    native_image_height = parsed_image_height or 0
-    native_image_stamp_ns = parsed_image_stamp_ns or 0
-    requested_max_delta_s = finite_number(max_delta_s)
-    bounded_max_delta_s = max(
-        0.001,
-        min(
-            1.0,
-            requested_max_delta_s
-            if requested_max_delta_s is not None
-            else DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
-        ),
-    )
-    sync_delta_s = (
-        abs(info_stamp_ns - native_image_stamp_ns) / 1_000_000_000
-        if info_stamp_ns > 0 and native_image_stamp_ns > 0
-        else None
-    )
-    if not info:
-        reasons.append("camera_info_missing")
-    if parsed_info_width is None or parsed_info_height is None or parsed_info_stamp_ns is None:
-        reasons.append("camera_info_metadata_invalid")
-    if parsed_image_width is None or parsed_image_height is None or parsed_image_stamp_ns is None:
-        reasons.append("image_metadata_invalid")
-    if not image_frame or not info_frame_id or info_frame_id != image_frame:
-        reasons.append("frame_id_mismatch")
-    if (
-        native_image_width <= 0
-        or native_image_height <= 0
-        or info_width != native_image_width
-        or info_height != native_image_height
-    ):
-        reasons.append("native_dimensions_mismatch")
-    if native_image_stamp_ns <= 0 or info_stamp_ns <= 0:
-        reasons.append("sensor_stamp_missing")
-    elif sync_delta_s is None or sync_delta_s > bounded_max_delta_s:
-        reasons.append("camera_info_stale" if info_stamp_ns < native_image_stamp_ns else "camera_info_future")
-        reasons.append("sensor_stamp_outside_gate")
-    if not image_clock_integrity_ok:
-        reasons.append("image_clock_regression")
-    if not camera_info_clock_integrity_ok:
-        reasons.append("camera_info_clock_regression")
-    if int(image_clock_epoch) != int(camera_info_clock_epoch):
-        reasons.append("clock_epoch_mismatch")
-    raw_k = info.get("k") if isinstance(info.get("k"), list) else []
-    k = [finite_number(value) for value in raw_k[:9]]
-    if (
-        len(k) != 9
-        or any(value is None for value in k)
-        or float(k[0]) <= 0.0
-        or float(k[4]) <= 0.0
-        or not 0.0 <= float(k[2]) <= max(0.0, float(info_width))
-        or not 0.0 <= float(k[5]) <= max(0.0, float(info_height))
-    ):
-        reasons.append("intrinsics_invalid")
-    return {
-        "revision": CAMERA_INFO_IMAGE_PROVENANCE_REVISION,
-        "valid": not reasons,
-        "reason": reasons[0] if reasons else "validated",
-        "reasons": reasons,
-        "max_delta_s": bounded_max_delta_s,
-        "sync_delta_s": round(sync_delta_s, 9) if sync_delta_s is not None else None,
-        "gate": "strict_fail_closed",
-        "image_frame_id": image_frame,
-        "camera_info_frame_id": info_frame_id,
-        "image_width": native_image_width,
-        "image_height": native_image_height,
-        "camera_info_width": info_width,
-        "camera_info_height": info_height,
-        "image_stamp_ns": native_image_stamp_ns,
-        "camera_info_stamp_ns": info_stamp_ns,
-        "image_clock_integrity_ok": bool(image_clock_integrity_ok),
-        "camera_info_clock_integrity_ok": bool(camera_info_clock_integrity_ok),
-        "image_clock_epoch": int(image_clock_epoch),
-        "camera_info_clock_epoch": int(camera_info_clock_epoch),
-        "image_clock_regression_count": max(0, int(image_clock_regression_count)),
-        "camera_info_clock_regression_count": max(0, int(camera_info_clock_regression_count)),
-    }
-
-
-def projection_intrinsics(
-    image_width: int,
-    camera_info: dict[str, Any] | None,
-    nominal_fov_deg: float,
-    calibration_valid: bool,
-) -> dict[str, Any]:
-    width = max(1, int(image_width))
-    info = camera_info or {}
-    info_width = int(info.get("width") or 0)
-    k = info.get("k") or []
-    fx = finite_number(k[0]) if len(k) >= 3 else None
-    cx = finite_number(k[2]) if len(k) >= 3 else None
-    if info_width > 0 and fx is not None and cx is not None and fx > 0.0:
-        scale = width / info_width
-        return {
-            "fx_px": fx * scale,
-            "cx_px": cx * scale,
-            "source": "camera_info_operator_validated" if calibration_valid else "camera_info_nominal_or_unverified",
-            "bearing_valid": bool(calibration_valid),
-        }
-    fov_deg = max(20.0, min(150.0, float(nominal_fov_deg)))
-    fov_rad = math.radians(fov_deg)
-    return {
-        "fx_px": width / (2.0 * math.tan(fov_rad / 2.0)),
-        "cx_px": width / 2.0,
-        "source": f"nominal_fov_{fov_deg:g}deg_unverified",
-        "bearing_valid": False,
-    }
-
-
-def vision_tree_bearings_payload(
-    overlay: dict[str, Any] | None,
-    *,
-    stamp_sec: int,
-    stamp_nanosec: int,
-    frame_id: str = "camera_link",
-    camera_info: dict[str, Any] | None = None,
-    camera_info_provenance: dict[str, Any] | None = None,
-    calibration_valid: bool = False,
-    nominal_fov_deg: float = 70.0,
-) -> dict[str, Any]:
-    """Convert the shared worker-v4 overlay to the strict ROS bearing contract.
-
-    Bearings use REP-103 convention (left-positive), so pixels right of cx are
-    negative. CameraInfo is useful for the numeric pinhole projection but is
-    unverified unless calibration_valid is explicitly enabled by the operator.
-    No monocular detection is promoted to metric range.
-    """
-
-    stamp, stamp_ns = ros_stamp_payload(stamp_sec, stamp_nanosec)
-    overlay = overlay if isinstance(overlay, dict) else {}
-    image = overlay.get("image") if isinstance(overlay.get("image"), dict) else {}
-    image_width = int(image.get("width") or 0)
-    provenance = camera_info_provenance if isinstance(camera_info_provenance, dict) else {}
-    camera_info_valid = (
-        provenance.get("revision") == CAMERA_INFO_IMAGE_PROVENANCE_REVISION
-        and provenance.get("valid") is True
-    )
-    intrinsics = projection_intrinsics(
-        image_width,
-        camera_info if camera_info_valid else None,
-        nominal_fov_deg,
-        bool(calibration_valid and camera_info_valid),
-    )
-    contract_ok = (
-        overlay.get("ok") is True
-        and overlay.get("algorithm") == LOCAL_VISION_ALGORITHM_NAME
-        and overlay.get("revision") == LOCAL_VISION_ANALYSIS_REVISION
-        and image_width > 0
-    )
-    detections: list[dict[str, Any]] = []
-    if contract_ok:
-        fx = float(intrinsics["fx_px"])
-        cx = float(intrinsics["cx_px"])
-        for item in overlay.get("detections") or []:
-            if len(detections) >= 64:
-                break
-            if not isinstance(item, dict):
-                continue
-            if str(item.get("map_admission") or "pending") != "accepted":
-                continue
-            source_classes = [str(item[key]) for key in ("class_name", "label") if item.get(key) is not None]
-            if not source_classes or any(value != VISION_TREE_CLASS for value in source_classes):
-                continue
-            bbox = sanitized_bbox(item.get("bbox"))
-            confidence = probability(item.get("confidence"))
-            if bbox is None or confidence is None:
-                continue
-            center_u = bbox[0] + bbox[2] / 2.0
-            if not (0.0 <= center_u <= float(image_width)):
-                continue
-            bearing_rad = -math.atan((center_u - cx) / fx)
-            if not math.isfinite(bearing_rad) or not (-math.pi <= bearing_rad <= math.pi):
-                continue
-            tree_probability = probability(item.get("tree_probability"), confidence)
-            ood_score = probability(item.get("ood_score"), 1.0)
-            if tree_probability is None or ood_score is None:
-                continue
-            detection: dict[str, Any] = {
-                "class_name": VISION_TREE_CLASS,
-                "label": VISION_TREE_CLASS,
-                "bearing_rad": round(bearing_rad, 8),
-                "confidence": round(confidence, 6),
-                "tree_probability": round(tree_probability, 6),
-                "ood_score": round(ood_score, 6),
-                "bbox": [round(value, 3) for value in bbox],
-                "calibrated_metric": False,
-                "map_admission": "accepted",
-                "stable": item.get("stable") is True,
-                "stable_hits": max(0, int(finite_number(item.get("stable_hits")) or 0)),
-            }
-            track_id = str(item.get("track_id") or "").strip()
-            if track_id:
-                detection["track_id"] = track_id[:128]
-            contour = contour_points(item.get("contour"))
-            if contour:
-                detection["contour"] = contour
-            detections.append(detection)
-
-    error = ""
-    if not contract_ok:
-        error = str(overlay.get("error") or overlay.get("method") or "vision_worker_contract_invalid")
-    return {
-        "schema": VISION_BEARINGS_SCHEMA,
-        "ok": bool(contract_ok),
-        "algorithm": LOCAL_VISION_ALGORITHM_NAME,
-        "revision": LOCAL_VISION_ANALYSIS_REVISION,
-        "stamp": stamp,
-        "stamp_ns": stamp_ns,
-        "frame_id": str(frame_id or "camera_link"),
-        "calibration": {
-            "bearing_valid": bool(intrinsics["bearing_valid"]),
-            "metric_range_valid": False,
-            "operator_validation_requested": bool(calibration_valid),
-            "camera_info_provenance_valid": bool(camera_info_valid),
-            "camera_info_provenance_revision": provenance.get("revision"),
-            "camera_info_provenance_reason": provenance.get("reason") or "provenance_missing",
-            "camera_info_provenance_reasons": list(
-                provenance.get("reasons") or ([] if camera_info_valid else ["provenance_missing"])
-            ),
-            "camera_info_sync_delta_s": provenance.get("sync_delta_s"),
-            "camera_info_provenance": copy.deepcopy(provenance),
-        },
-        "detections": detections if contract_ok else [],
-        "source": "camera_ws_bridge_shared_worker_v4",
-        "output": "bearing_only_no_monocular_metric_promotion",
-        "bearing_convention": "REP-103 left-positive; pixel-right is negative",
-        "intrinsics_source": intrinsics["source"],
-        "error": error,
-    }
-
-
-def scale_overlay_geometry(overlay: dict[str, Any] | None, width: int, height: int) -> dict[str, Any]:
-    return scale_camera_overlay_geometry(overlay, width, height)
 
 
 @dataclass
@@ -468,33 +136,27 @@ class CameraState:
     camera_info_clock_epoch: int = 0
     image_clock_regression_count: int = 0
     camera_info_clock_regression_count: int = 0
-    vision_overlay: dict[str, Any] | None = None
-    vision_payload: dict[str, Any] | None = None
-    vision_generation: int = 0
-    vision_processed_frame_count: int = 0
-    vision_inference_count: int = 0
-    vision_failure_count: int = 0
-    vision_dropped_frame_count: int = 0
-    vision_publish_count: int = 0
-    vision_last_duration_ms: float | None = None
-    vision_last_inference_at: float | None = None
-    vision_last_success_at: float | None = None
-    vision_last_interval_ms: float | None = None
-    vision_last_publish_at: float | None = None
-    vision_input_policy: dict[str, Any] | None = None
     client_count: int = 0
     error: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
 
-    def update_frame(self, frame_id: str, stamp_sec: int, stamp_nanosec: int, frame_bgr: Any, encoding: str) -> None:
+    def update_frame(
+        self,
+        frame_id: str,
+        stamp_sec: int,
+        stamp_nanosec: int,
+        frame_bgr: Any,
+        encoding: str,
+    ) -> None:
         with self.lock:
             _, stamp_ns = ros_stamp_payload(stamp_sec, stamp_nanosec)
-            if self.image_last_stamp_ns is not None and stamp_ns <= self.image_last_stamp_ns:
+            if (
+                self.image_last_stamp_ns is not None
+                and stamp_ns <= self.image_last_stamp_ns
+            ):
                 self.image_clock_epoch += 1
                 self.image_clock_regression_count += 1
             self.image_last_stamp_ns = stamp_ns
-            # Preserve a missing Image frame_id so the calibration gate cannot
-            # manufacture a match with the default optical frame.
             self.image_frame_id = str(frame_id or "").strip()
             self.stamp_sec = int(stamp_sec)
             self.stamp_nanosec = int(stamp_nanosec)
@@ -519,7 +181,10 @@ class CameraState:
         with self.lock:
             row = copy.deepcopy(payload)
             stamp_ns = nonnegative_integer(row.get("stamp_ns")) or 0
-            if self.camera_info_last_stamp_ns is not None and stamp_ns <= self.camera_info_last_stamp_ns:
+            if (
+                self.camera_info_last_stamp_ns is not None
+                and stamp_ns <= self.camera_info_last_stamp_ns
+            ):
                 self.camera_info_clock_epoch += 1
                 self.camera_info_clock_regression_count += 1
             self.camera_info_last_stamp_ns = stamp_ns
@@ -543,10 +208,22 @@ class CameraState:
             self.preview_stamp_nanosec = int(stamp_nanosec)
             self.preview_jpeg = bytes(jpeg)
             info = self.camera_info or {}
-            width_match = re.search(r"(?:^|;)\s*width=(\d+)(?:;|$)", compressed_format, re.I)
-            height_match = re.search(r"(?:^|;)\s*height=(\d+)(?:;|$)", compressed_format, re.I)
-            self.preview_width = int(width_match.group(1)) if width_match else int(info.get("width") or self.source_width or 0) or None
-            self.preview_height = int(height_match.group(1)) if height_match else int(info.get("height") or self.source_height or 0) or None
+            width_match = re.search(
+                "(?:^|;)\\s*width=(\\d+)(?:;|$)", compressed_format, re.I
+            )
+            height_match = re.search(
+                "(?:^|;)\\s*height=(\\d+)(?:;|$)", compressed_format, re.I
+            )
+            self.preview_width = (
+                int(width_match.group(1))
+                if width_match
+                else int(info.get("width") or self.source_width or 0) or None
+            )
+            self.preview_height = (
+                int(height_match.group(1))
+                if height_match
+                else int(info.get("height") or self.source_height or 0) or None
+            )
             now = time.time()
             self.preview_last_frame_at = now
             self.preview_frame_count += 1
@@ -556,99 +233,33 @@ class CameraState:
             self.preview_fps_window_count += 1
             elapsed = now - self.preview_fps_window_started_at
             if elapsed >= 1.0:
-                self.preview_source_fps = round(self.preview_fps_window_count / elapsed, 1)
+                self.preview_source_fps = round(
+                    self.preview_fps_window_count / elapsed, 1
+                )
                 self.preview_fps_window_started_at = now
                 self.preview_fps_window_count = 0
 
     def preview_snapshot(self, include_jpeg: bool = True) -> dict[str, Any]:
         with self.lock:
-            _, stamp_ns = ros_stamp_payload(self.preview_stamp_sec, self.preview_stamp_nanosec)
-            age = None if self.preview_last_frame_at is None else round(time.time() - self.preview_last_frame_at, 3)
+            _, stamp_ns = ros_stamp_payload(
+                self.preview_stamp_sec, self.preview_stamp_nanosec
+            )
+            age = (
+                None
+                if self.preview_last_frame_at is None
+                else round(time.time() - self.preview_last_frame_at, 3)
+            )
             return {
                 "jpeg": self.preview_jpeg if include_jpeg else None,
                 "frame_id": self.preview_frame_id,
-                "stamp_s": stamp_ns / 1_000_000_000,
+                "stamp_s": stamp_ns / 1000000000,
                 "last_frame_age_sec": age,
                 "frame_count": self.preview_frame_count,
                 "source_fps": self.preview_source_fps,
                 "source_width": self.preview_width,
                 "source_height": self.preview_height,
-                "vision_overlay": copy.deepcopy(self.vision_overlay),
-                "vision_generation": self.vision_generation,
-                "vision_inference_count": self.vision_inference_count,
-                "vision_detection_count": len((self.vision_payload or {}).get("detections") or []),
                 "error": self.error,
             }
-
-    def inference_input_after(
-        self,
-        processed_frame_count: int,
-        camera_info_sync_max_delta_s: float = DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
-    ) -> dict[str, Any] | None:
-        with self.lock:
-            if self.frame_bgr is None or self.frame_count <= processed_frame_count:
-                return None
-            _, image_stamp_ns = ros_stamp_payload(self.stamp_sec, self.stamp_nanosec)
-            provenance = camera_info_image_provenance(
-                self.camera_info,
-                image_frame_id=self.image_frame_id,
-                image_width=int(self.source_width or 0),
-                image_height=int(self.source_height or 0),
-                image_stamp_ns=image_stamp_ns,
-                max_delta_s=camera_info_sync_max_delta_s,
-                image_clock_integrity_ok=self.image_clock_regression_count == 0,
-                camera_info_clock_integrity_ok=self.camera_info_clock_regression_count == 0,
-                image_clock_epoch=self.image_clock_epoch,
-                camera_info_clock_epoch=int((self.camera_info or {}).get("_clock_epoch") or 0),
-                image_clock_regression_count=self.image_clock_regression_count,
-                camera_info_clock_regression_count=self.camera_info_clock_regression_count,
-            )
-            return {
-                "frame_bgr": self.frame_bgr.copy(),
-                "frame_count": self.frame_count,
-                "stamp_sec": self.stamp_sec,
-                "stamp_nanosec": self.stamp_nanosec,
-                "camera_info": copy.deepcopy(self.camera_info),
-                "camera_info_provenance": provenance,
-            }
-
-    def update_vision(
-        self,
-        overlay: dict[str, Any],
-        payload: dict[str, Any],
-        processed_frame_count: int,
-        duration_ms: float,
-        skipped_frames: int,
-        input_policy: dict[str, Any] | None = None,
-    ) -> None:
-        with self.lock:
-            completed_at = time.time()
-            self.vision_overlay = copy.deepcopy(overlay)
-            self.vision_payload = copy.deepcopy(payload)
-            self.vision_generation += 1
-            self.vision_processed_frame_count = processed_frame_count
-            self.vision_inference_count += 1
-            self.vision_dropped_frame_count += max(0, skipped_frames)
-            self.vision_last_duration_ms = round(duration_ms, 1)
-            if self.vision_last_inference_at is not None:
-                self.vision_last_interval_ms = round((completed_at - self.vision_last_inference_at) * 1000.0, 1)
-            self.vision_last_inference_at = completed_at
-            self.vision_input_policy = copy.deepcopy(input_policy or {})
-            if payload.get("ok") is not True:
-                self.vision_failure_count += 1
-            else:
-                self.vision_last_success_at = completed_at
-
-    def pending_vision(self, last_generation: int) -> tuple[int, dict[str, Any] | None]:
-        with self.lock:
-            if self.vision_generation <= last_generation or self.vision_payload is None:
-                return last_generation, None
-            return self.vision_generation, copy.deepcopy(self.vision_payload)
-
-    def mark_published(self) -> None:
-        with self.lock:
-            self.vision_publish_count += 1
-            self.vision_last_publish_at = time.time()
 
     def set_error(self, message: str) -> None:
         with self.lock:
@@ -660,15 +271,23 @@ class CameraState:
 
     def snapshot(self, include_frame: bool = True) -> dict[str, Any]:
         with self.lock:
-            frame = None if not include_frame or self.frame_bgr is None else self.frame_bgr.copy()
-            age = None if self.last_frame_at is None else round(time.time() - self.last_frame_at, 3)
+            frame = (
+                None
+                if not include_frame or self.frame_bgr is None
+                else self.frame_bgr.copy()
+            )
+            age = (
+                None
+                if self.last_frame_at is None
+                else round(time.time() - self.last_frame_at, 3)
+            )
             stamp, stamp_ns = ros_stamp_payload(self.stamp_sec, self.stamp_nanosec)
             now = time.time()
             return {
                 "frame_id": self.image_frame_id,
                 "stamp": stamp,
                 "stamp_ns": stamp_ns,
-                "stamp_s": stamp_ns / 1_000_000_000,
+                "stamp_s": stamp_ns / 1000000000,
                 "frame_bgr": frame,
                 "source_width": self.source_width,
                 "source_height": self.source_height,
@@ -681,42 +300,6 @@ class CameraState:
                 "camera_info_clock_epoch": self.camera_info_clock_epoch,
                 "image_clock_regression_count": self.image_clock_regression_count,
                 "camera_info_clock_regression_count": self.camera_info_clock_regression_count,
-                "vision_overlay": copy.deepcopy(self.vision_overlay),
-                "vision_generation": self.vision_generation,
-                "vision_processed_frame_count": self.vision_processed_frame_count,
-                "vision_inference_count": self.vision_inference_count,
-                "vision_failure_count": self.vision_failure_count,
-                "vision_dropped_frame_count": self.vision_dropped_frame_count,
-                "vision_publish_count": self.vision_publish_count,
-                "vision_last_duration_ms": self.vision_last_duration_ms,
-                "vision_last_inference_at": self.vision_last_inference_at,
-                "vision_last_success_at": self.vision_last_success_at,
-                "vision_last_success_age_sec": (
-                    round(now - self.vision_last_success_at, 3)
-                    if self.vision_last_success_at is not None
-                    else None
-                ),
-                "vision_last_interval_ms": self.vision_last_interval_ms,
-                "vision_effective_hz": (
-                    round(1000.0 / self.vision_last_interval_ms, 3)
-                    if self.vision_last_interval_ms is not None and self.vision_last_interval_ms > 0.0
-                    else None
-                ),
-                "vision_last_publish_at": self.vision_last_publish_at,
-                "vision_input_policy": copy.deepcopy(self.vision_input_policy or {}),
-                "vision_detection_count": len((self.vision_payload or {}).get("detections") or []),
-                "vision_ok": (self.vision_payload or {}).get("ok") is True,
-                "vision_bearing_valid": bool(((self.vision_payload or {}).get("calibration") or {}).get("bearing_valid")),
-                "vision_metric_range_valid": bool(((self.vision_payload or {}).get("calibration") or {}).get("metric_range_valid")),
-                "vision_payload_schema": (self.vision_payload or {}).get("schema"),
-                "vision_payload_algorithm": (self.vision_payload or {}).get("algorithm"),
-                "vision_payload_revision": (self.vision_payload or {}).get("revision"),
-                "vision_payload_source": (self.vision_payload or {}).get("source"),
-                "vision_payload_frame_id": (self.vision_payload or {}).get("frame_id"),
-                "vision_payload_error": (self.vision_payload or {}).get("error"),
-                "vision_camera_info_provenance": copy.deepcopy(
-                    ((self.vision_payload or {}).get("calibration") or {})
-                ),
                 "client_count": self.client_count,
                 "error": self.error,
             }
@@ -729,103 +312,28 @@ def frame_topic_alive(snapshot: dict[str, Any]) -> bool:
 
 def preview_topic_alive(snapshot: dict[str, Any]) -> bool:
     age = snapshot.get("last_frame_age_sec")
-    return snapshot.get("frame_count", 0) > 0 and age is not None and age < 2.0
+    return snapshot.get("frame_count", 0) > 0 and age is not None and (age < 2.0)
 
 
-def status_payload(
-    state: CameraState,
-    *,
-    image_topic: str,
-    compressed_topic: str,
-    camera_info_topic: str,
-    vision_topic: str,
-    vision_hz: float,
-    calibration_valid: bool,
-    inference_width: int = 0,
-    inference_jpeg_quality: int = DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
-    camera_info_sync_max_delta_s: float = DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
-) -> dict[str, Any]:
-    snap = state.snapshot(include_frame=False)
-    preview = state.preview_snapshot(include_jpeg=False)
-    raw_alive = frame_topic_alive(snap)
-    compressed_alive = preview_topic_alive(preview)
-    alive = compressed_alive or raw_alive
-    camera_info_provenance = snap["vision_camera_info_provenance"]
+def status_payload(state, *, image_topic, compressed_topic, camera_info_topic):
+    preview = state.preview_snapshot(False)
+    raw = state.snapshot(False)
+    snap = preview if preview_topic_alive(preview) else raw
+    alive = frame_topic_alive(snap)
     return {
         "type": "camera_bridge_status",
         "updated_at": time.time(),
         "frame_topic_alive": alive,
-        "last_frame_age_sec": preview["last_frame_age_sec"] if compressed_alive else snap["last_frame_age_sec"],
-        "frame_count": preview["frame_count"] if compressed_alive else snap["frame_count"],
-        "source_fps": preview["source_fps"] if compressed_alive else snap["source_fps"],
-        "source_width": preview["source_width"] if compressed_alive else snap["source_width"],
-        "source_height": preview["source_height"] if compressed_alive else snap["source_height"],
-        "encoding": "jpeg" if compressed_alive else snap["encoding"],
-        "frame_id": preview["frame_id"] if compressed_alive else snap["frame_id"],
-        "compressed_frame_topic_alive": compressed_alive,
-        "raw_frame_topic_alive": raw_alive,
-        "client_count": snap["client_count"],
-        "topics": {
-            "image": image_topic,
-            "compressed_image": compressed_topic,
-            "camera_info": camera_info_topic,
-            "vision_bearings": vision_topic,
-        },
-        "vision_publisher": {
-            "always_on": True,
-            "latest_only": True,
-            "coalescing": "single_slot_newest_frame_no_backlog",
-            "target_hz": vision_hz,
-            "schema": VISION_BEARINGS_SCHEMA,
-            "algorithm": LOCAL_VISION_ALGORITHM_NAME,
-            "revision": LOCAL_VISION_ANALYSIS_REVISION,
-            "input_policy": {
-                "revision": VISION_INFERENCE_INPUT_POLICY_REVISION,
-                "mode": "source_native" if int(inference_width) <= 0 else "bounded_width",
-                "requested_width": max(0, int(inference_width)),
-                "jpeg_quality": max(40, min(95, int(inference_jpeg_quality))),
-                "preview_decoupled": True,
-                "last_actual": snap["vision_input_policy"],
-            },
-            "bearing_calibration_requested": bool(calibration_valid),
-            "bearing_valid": snap["vision_bearing_valid"],
-            "bearing_calibration_valid": snap["vision_bearing_valid"],
-            "metric_range_valid": snap["vision_metric_range_valid"],
-            "camera_info_sync_max_delta_s": max(0.001, min(1.0, float(camera_info_sync_max_delta_s))),
-            "camera_info_provenance_valid": camera_info_provenance.get("camera_info_provenance_valid") is True,
-            "camera_info_provenance_revision": camera_info_provenance.get("camera_info_provenance_revision"),
-            "camera_info_provenance_reason": camera_info_provenance.get("camera_info_provenance_reason"),
-            "camera_info_provenance_reasons": camera_info_provenance.get("camera_info_provenance_reasons") or [],
-            "camera_info_sync_delta_s": camera_info_provenance.get("camera_info_sync_delta_s"),
-            "image_clock_regression_count": snap["image_clock_regression_count"],
-            "camera_info_clock_regression_count": snap["camera_info_clock_regression_count"],
-            "camera_info_count": snap["camera_info_count"],
-            "inference_count": snap["vision_inference_count"],
-            "failure_count": snap["vision_failure_count"],
-            "dropped_frame_count": snap["vision_dropped_frame_count"],
-            "processed_frame_count": snap["vision_processed_frame_count"],
-            "source_frame_count": snap["frame_count"],
-            "publish_count": snap["vision_publish_count"],
-            "last_duration_ms": snap["vision_last_duration_ms"],
-            "last_interval_ms": snap["vision_last_interval_ms"],
-            "effective_hz": snap["vision_effective_hz"],
-            "last_inference_at": snap["vision_last_inference_at"],
-            "last_success_at": snap["vision_last_success_at"],
-            "last_success_age_sec": snap["vision_last_success_age_sec"],
-            "last_publish_at": snap["vision_last_publish_at"],
-            "detection_count": snap["vision_detection_count"],
-            "ok": snap["vision_ok"],
-            "last_payload": {
-                "schema": snap["vision_payload_schema"],
-                "algorithm": snap["vision_payload_algorithm"],
-                "revision": snap["vision_payload_revision"],
-                "source": snap["vision_payload_source"],
-                "frame_id": snap["vision_payload_frame_id"],
-                "ok": snap["vision_ok"],
-                "error": snap["vision_payload_error"],
-            },
-        },
-        "error": snap["error"] or (None if alive else f"ROS2 {compressed_topic} and {image_topic} are not being received yet."),
+        "last_frame_age_sec": snap["last_frame_age_sec"],
+        "frame_count": snap["frame_count"],
+        "source_fps": snap["source_fps"],
+        "source_width": snap["source_width"],
+        "source_height": snap["source_height"],
+        "frame_id": snap["frame_id"],
+        "image_topic": image_topic,
+        "compressed_topic": compressed_topic,
+        "camera_info_topic": camera_info_topic,
+        "error": snap["error"] or (None if alive else "Camera topic waiting"),
     }
 
 
@@ -833,7 +341,10 @@ def write_status(path: Path, payload: dict[str, Any]) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(f"{path.suffix}.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        tmp.write_text(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
         tmp.replace(path)
     except OSError:
         pass
@@ -857,17 +368,29 @@ def image_to_bgr(msg: Any) -> Any:
     width = int(getattr(msg, "width", 0) or 0)
     encoding = str(getattr(msg, "encoding", "") or "").lower()
     data = bytes(getattr(msg, "data", b"") or b"")
-    if height <= 0 or width <= 0 or not data:
+    if height <= 0 or width <= 0 or (not data):
         raise ValueError("empty image message")
-    channels = 4 if encoding in {"bgra8", "rgba8"} else 3 if encoding in {"bgr8", "rgb8"} else 1
+    channels = (
+        4
+        if encoding in {"bgra8", "rgba8"}
+        else 3
+        if encoding in {"bgr8", "rgb8"}
+        else 1
+    )
     if encoding not in {"bgr8", "rgb8", "bgra8", "rgba8", "mono8", "8uc1"}:
         raise ValueError(f"unsupported image encoding: {encoding}")
     row_bytes = width * channels
     step = int(getattr(msg, "step", 0) or row_bytes)
     if step < row_bytes or len(data) < height * step:
         raise ValueError("image message data is shorter than height*step")
-    packed = np.frombuffer(data, dtype=np.uint8, count=height * step).reshape((height, step))[:, :row_bytes]
-    arr = packed.reshape((height, width, channels)) if channels > 1 else packed.reshape((height, width))
+    packed = np.frombuffer(data, dtype=np.uint8, count=height * step).reshape(
+        (height, step)
+    )[:, :row_bytes]
+    arr = (
+        packed.reshape((height, width, channels))
+        if channels > 1
+        else packed.reshape((height, width))
+    )
     if encoding == "bgr8":
         return arr.copy()
     if encoding == "rgb8":
@@ -878,107 +401,31 @@ def image_to_bgr(msg: Any) -> Any:
     return cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
 
 
-def vision_inference_thread(
-    state: CameraState,
-    stop: threading.Event,
-    *,
-    target_hz: float,
-    inference_width: int,
-    inference_jpeg_quality: int = DEFAULT_VISION_INFERENCE_JPEG_QUALITY,
-    output_frame: str,
-    calibration_valid: bool,
-    nominal_fov_deg: float,
-    camera_info_sync_max_delta_s: float = DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S,
-) -> None:
-    interval_s = 1.0 / max(0.1, target_hz)
-    stabilizer = CameraOverlayStabilizer()
-    last_processed = 0
-    next_at = time.monotonic()
-    while not stop.is_set():
-        wait_s = next_at - time.monotonic()
-        if wait_s > 0.0 and stop.wait(min(wait_s, 0.1)):
-            break
-        if time.monotonic() < next_at:
-            continue
-        sample = state.inference_input_after(last_processed, camera_info_sync_max_delta_s)
-        if sample is None:
-            stop.wait(0.02)
-            continue
-        frame_count = int(sample["frame_count"])
-        frame = sample["frame_bgr"]
-        skipped = max(0, frame_count - last_processed - 1)
-        started = time.perf_counter()
-        input_policy: dict[str, Any] = {
-            "revision": VISION_INFERENCE_INPUT_POLICY_REVISION,
-            "mode": "source_native" if int(inference_width) <= 0 else "bounded_width",
-            "requested_width": max(0, int(inference_width)),
-            "jpeg_quality": max(40, min(95, int(inference_jpeg_quality))),
-            "preview_decoupled": True,
-        }
-        try:
-            inference_frame, input_policy = prepare_camera_inference_frame(frame, inference_width)
-            input_policy["jpeg_quality"] = max(40, min(95, int(inference_jpeg_quality)))
-            height, width = inference_frame.shape[:2]
-            stamp_s = int(sample["stamp_sec"]) + int(sample["stamp_nanosec"]) / 1_000_000_000
-            overlay = stabilizer.update(
-                analyze_camera_image(inference_frame, jpeg_quality=input_policy["jpeg_quality"]),
-                stamp_s or time.time(),
-            )
-            if not isinstance(overlay.get("image"), dict):
-                overlay["image"] = {}
-            overlay["image"].setdefault("width", width)
-            overlay["image"].setdefault("height", height)
-            overlay["inference_input_policy"] = copy.deepcopy(input_policy)
-        except Exception as exc:
-            overlay = empty_camera_analysis("vision_loop_exception", str(exc))
-            bridge_log("vision_inference_error", error=str(exc))
-        payload = vision_tree_bearings_payload(
-            overlay,
-            stamp_sec=sample["stamp_sec"],
-            stamp_nanosec=sample["stamp_nanosec"],
-            frame_id=output_frame,
-            camera_info=sample["camera_info"],
-            camera_info_provenance=sample["camera_info_provenance"],
-            calibration_valid=calibration_valid,
-            nominal_fov_deg=nominal_fov_deg,
-        )
-        payload["inference_input_policy"] = copy.deepcopy(input_policy)
-        duration_ms = (time.perf_counter() - started) * 1000.0
-        state.update_vision(overlay, payload, frame_count, duration_ms, skipped, input_policy)
-        last_processed = frame_count
-        next_at = max(next_at + interval_s, time.monotonic())
-        if state.vision_inference_count == 1 or state.vision_inference_count % max(1, int(target_hz * 10)) == 0:
-            bridge_log(
-                "vision_inference",
-                count=state.vision_inference_count,
-                ok=payload["ok"],
-                detections=len(payload["detections"]),
-                duration_ms=round(duration_ms, 1),
-                dropped=state.vision_dropped_frame_count,
-            )
-
-
 def ros_thread(
     state: CameraState,
     image_topic: str,
     compressed_topic: str,
     camera_info_topic: str,
-    vision_topic: str,
     ready: threading.Event,
     stop: threading.Event,
 ) -> None:
     try:
         import rclpy
         from rclpy.node import Node
-        from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+        from rclpy.parameter import Parameter
+        from rclpy.qos import (
+            DurabilityPolicy,
+            HistoryPolicy,
+            QoSProfile,
+            ReliabilityPolicy,
+        )
         from sensor_msgs.msg import CameraInfo, CompressedImage, Image
-        from std_msgs.msg import String
+
     except ImportError as exc:
         state.set_error(f"ROS2 Python packages are required on Jetson: {exc}")
         bridge_log("ros_import_error", error=str(exc))
         ready.set()
         return
-
     sensor_qos = QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
         depth=1,
@@ -988,12 +435,14 @@ def ros_thread(
 
     class BridgeNode(Node):
         def __init__(self):
-            super().__init__("ubts_camera_ws_bridge")
+            super().__init__("ubts_camera_ws_bridge", parameter_overrides=[Parameter("use_sim_time", value=os.environ.get("DASHBOARD_MODE") == "simulation")])
             self.create_subscription(Image, image_topic, self.on_image, sensor_qos)
-            self.create_subscription(CompressedImage, compressed_topic, self.on_compressed, sensor_qos)
-            self.create_subscription(CameraInfo, camera_info_topic, self.on_camera_info, sensor_qos)
-            self.vision_publisher = self.create_publisher(String, vision_topic, 10)
-            self.create_timer(0.02, self.publish_latest_vision)
+            self.create_subscription(
+                CompressedImage, compressed_topic, self.on_compressed, sensor_qos
+            )
+            self.create_subscription(
+                CameraInfo, camera_info_topic, self.on_camera_info, sensor_qos
+            )
             self.last_published_generation = 0
             self.last_log_at = 0.0
             bridge_log(
@@ -1001,7 +450,6 @@ def ros_thread(
                 image_topic=image_topic,
                 compressed_topic=compressed_topic,
                 camera_info_topic=camera_info_topic,
-                vision_topic=vision_topic,
                 subscription_qos="best_effort_keep_last_1",
             )
 
@@ -1011,7 +459,13 @@ def ros_thread(
             except Exception as exc:
                 state.set_error(str(exc))
                 return
-            state.update_frame(msg.header.frame_id, msg.header.stamp.sec, msg.header.stamp.nanosec, frame, msg.encoding)
+            state.update_frame(
+                msg.header.frame_id,
+                msg.header.stamp.sec,
+                msg.header.stamp.nanosec,
+                frame,
+                msg.encoding,
+            )
             now = time.time()
             if state.frame_count == 1 or now - self.last_log_at >= 10:
                 self.last_log_at = now
@@ -1039,21 +493,11 @@ def ros_thread(
             except Exception as exc:
                 state.set_error(str(exc))
 
-        def publish_latest_vision(self) -> None:
-            generation, payload = state.pending_vision(self.last_published_generation)
-            if payload is None:
-                return
-            message = String()
-            message.data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-            self.vision_publisher.publish(message)
-            self.last_published_generation = generation
-            state.mark_published()
-
     rclpy.init()
     node = BridgeNode()
     ready.set()
     try:
-        while rclpy.ok() and not stop.is_set():
+        while rclpy.ok() and (not stop.is_set()):
             rclpy.spin_once(node, timeout_sec=0.1)
     finally:
         node.destroy_node()
@@ -1068,10 +512,20 @@ def client_settings(actual_path: str) -> dict[str, Any]:
         width = int(width_text)
         height = int(height_text)
     except (ValueError, TypeError):
-        width, height = 1280, 720
-    allowed = {(320, 180), (640, 360), (320, 240), (640, 480), (800, 600), (1024, 768), (1280, 720), (1280, 1024), (1920, 1080)}
+        width, height = (1280, 720)
+    allowed = {
+        (320, 180),
+        (640, 360),
+        (320, 240),
+        (640, 480),
+        (800, 600),
+        (1024, 768),
+        (1280, 720),
+        (1280, 1024),
+        (1920, 1080),
+    }
     if (width, height) not in allowed:
-        width, height = 1280, 720
+        width, height = (1280, 720)
     try:
         fps = int((params.get("fps") or ["30"])[0])
     except (TypeError, ValueError):
@@ -1099,12 +553,8 @@ def client_settings(actual_path: str) -> dict[str, Any]:
 
 def encode_binary_camera_frame(metadata: dict[str, Any], jpeg: bytes) -> bytes:
     """Pack one JPEG and its metadata into one binary WebSocket message."""
-
     metadata_bytes = json.dumps(
-        metadata,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        allow_nan=False,
+        metadata, ensure_ascii=False, separators=(",", ":"), allow_nan=False
     ).encode("utf-8")
     return (
         CAMERA_BINARY_MAGIC
@@ -1115,17 +565,20 @@ def encode_binary_camera_frame(metadata: dict[str, Any], jpeg: bytes) -> bytes:
     )
 
 
-def encode_camera_preview(frame: Any, width: int, height: int, quality: int) -> tuple[bytes | None, float]:
+def encode_camera_preview(
+    frame: Any, width: int, height: int, quality: int
+) -> tuple[bytes | None, float]:
     started = time.perf_counter()
     out = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
     ok, encoded = cv2.imencode(".jpg", out, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
     elapsed_ms = (time.perf_counter() - started) * 1000.0
-    return (encoded.tobytes() if ok else None), elapsed_ms
+    return (encoded.tobytes() if ok else None, elapsed_ms)
 
 
-async def wait_for_camera_decode_ack(websocket: Any, frame_count: int, timeout_s: float = 1.0) -> int | None:
+async def wait_for_camera_decode_ack(
+    websocket: Any, frame_count: int, timeout_s: float = 1.0
+) -> int | None:
     """Return the newest acknowledgement that covers ``frame_count``."""
-
     deadline = time.monotonic() + max(0.1, float(timeout_s))
     while True:
         remaining = deadline - time.monotonic()
@@ -1154,24 +607,45 @@ async def wait_for_camera_decode_ack(websocket: Any, frame_count: int, timeout_s
 def network_preview(frame_snap, settings, budget, compressed):
     """Resize/re-encode even compressed ROS previews; never alter source frames."""
     from scripts.stream_policy import fit_size
-    frame = cv2.imdecode(np.frombuffer(frame_snap["jpeg"], dtype=np.uint8), cv2.IMREAD_COLOR) if compressed else frame_snap["frame_bgr"]
+
+    frame = (
+        cv2.imdecode(
+            np.frombuffer(frame_snap["jpeg"], dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        if compressed
+        else frame_snap["frame_bgr"]
+    )
     if frame is None:
         raise ValueError("camera preview decode failed")
     source_height, source_width = frame.shape[:2]
     limit_width, limit_height, _, quality, _ = budget.values
-    width, height = fit_size(source_width, source_height, min(settings["width"], limit_width), min(settings["height"], limit_height))
-    jpeg, elapsed = encode_camera_preview(frame, width, height, min(settings["quality"], quality))
-    return jpeg, elapsed, width, height, source_width, source_height
+    width, height = fit_size(
+        source_width,
+        source_height,
+        min(settings["width"], limit_width),
+        min(settings["height"], limit_height),
+    )
+    jpeg, elapsed = encode_camera_preview(
+        frame, width, height, min(settings["quality"], quality)
+    )
+    return (jpeg, elapsed, width, height, source_width, source_height)
 
 
-async def serve_websocket(state: CameraState, host: str, port: int, path: str, stop: threading.Event) -> None:
+async def serve_websocket(
+    state: CameraState, host: str, port: int, path: str, stop: threading.Event
+) -> None:
     import websockets
     from scripts.stream_policy import StreamBudget
+
     preview_cache = {}
 
     async def handler(websocket, legacy_path=None):
         request = getattr(websocket, "request", None)
-        actual_path = getattr(request, "path", path) if request is not None else legacy_path or getattr(websocket, "path", path)
+        actual_path = (
+            getattr(request, "path", path)
+            if request is not None
+            else legacy_path or getattr(websocket, "path", path)
+        )
         if urlparse(actual_path).path != path:
             await websocket.close(code=1008, reason="unsupported path")
             return
@@ -1183,7 +657,17 @@ async def serve_websocket(state: CameraState, host: str, port: int, path: str, s
         last_status = 0.0
         state.adjust_clients(1)
         try:
-            await websocket.send(json.dumps({"type": "socket", "ok": True, "transport": settings["transport"], "flow": "decode-ack" if ack_flow else "none", "latest_only": True}))
+            await websocket.send(
+                json.dumps(
+                    {
+                        "type": "socket",
+                        "ok": True,
+                        "transport": settings["transport"],
+                        "flow": "decode-ack" if ack_flow else "none",
+                        "latest_only": True,
+                    }
+                )
+            )
             while not stop.is_set():
                 started = time.monotonic()
                 preview = state.preview_snapshot(include_jpeg=False)
@@ -1191,41 +675,84 @@ async def serve_websocket(state: CameraState, host: str, port: int, path: str, s
                 snap = preview if compressed else state.snapshot(include_frame=False)
                 alive = compressed or frame_topic_alive(snap)
                 if started - last_status >= 1:
-                    await asyncio.wait_for(websocket.send(json.dumps({
-                        "type": "status", "frame_topic_alive": alive, "last_frame_age_sec": snap["last_frame_age_sec"],
-                        "frame_count": snap["frame_count"], "source_fps": snap["source_fps"],
-                        "source_width": snap["source_width"], "source_height": snap["source_height"],
-                        "requested_fps": min(settings["fps"], budget.values[2]), "profile": budget.profile,
-                        "budget_bytes_s": budget.values[4], "latest_only": True, "max_inflight_frames": 1,
-                        "flow": "decode-ack" if ack_flow else "none", "preview_decoupled": True,
-                    }, separators=(",", ":"))), timeout=2)
+                    await asyncio.wait_for(
+                        websocket.send(
+                            json.dumps(
+                                {
+                                    "type": "status",
+                                    "frame_topic_alive": alive,
+                                    "last_frame_age_sec": snap["last_frame_age_sec"],
+                                    "frame_count": snap["frame_count"],
+                                    "source_fps": snap["source_fps"],
+                                    "source_width": snap["source_width"],
+                                    "source_height": snap["source_height"],
+                                    "requested_fps": min(
+                                        settings["fps"], budget.values[2]
+                                    ),
+                                    "profile": budget.profile,
+                                    "budget_bytes_s": budget.values[4],
+                                    "latest_only": True,
+                                    "max_inflight_frames": 1,
+                                    "flow": "decode-ack" if ack_flow else "none",
+                                    "preview_decoupled": True,
+                                },
+                                separators=(",", ":"),
+                            )
+                        ),
+                        timeout=2,
+                    )
                     last_status = started
                 count = int(snap["frame_count"] or 0)
                 if not alive or count == last_count:
                     await asyncio.sleep(0.03)
                     continue
-                frame = state.preview_snapshot(include_jpeg=True) if compressed else state.snapshot()
+                frame = (
+                    state.preview_snapshot(include_jpeg=True)
+                    if compressed
+                    else state.snapshot()
+                )
                 count = int(frame["frame_count"] or 0)
-                key = (compressed, count, settings["width"], settings["height"], settings["quality"], budget.values)
+                key = (
+                    compressed,
+                    count,
+                    settings["width"],
+                    settings["height"],
+                    settings["quality"],
+                    budget.values,
+                )
                 if key not in preview_cache:
-                    encoded = await asyncio.to_thread(network_preview, frame, settings, budget, compressed)
+                    encoded = await asyncio.to_thread(
+                        network_preview, frame, settings, budget, compressed
+                    )
                     if len(preview_cache) >= 8:
                         preview_cache.pop(next(iter(preview_cache)))
                     preview_cache[key] = encoded
-                jpeg, elapsed, width, height, source_width, source_height = preview_cache[key]
+                jpeg, elapsed, width, height, source_width, source_height = (
+                    preview_cache[key]
+                )
                 if jpeg is None:
                     await asyncio.sleep(0.1)
                     continue
-                overlay = scale_overlay_geometry(frame["vision_overlay"], width, height)
-                if budget.values[0] <= 320:
-                    # Original AI/ROS/archive data is untouched; low-rate live view is image-first.
-                    overlay = {"ok": True, "preview_overlay_disabled": True, "image": {"width": width, "height": height}}
-                metadata = {"type": "frame", "mime": "image/jpeg", "width": width, "height": height,
-                            "source_width": source_width, "source_height": source_height,
-                            "frame_id": frame["frame_id"], "stamp": frame["stamp_s"], "frame_count": count,
-                            "source_fps": frame["source_fps"], "overlay": overlay, "transport": settings["transport"],
-                            "flow": "decode-ack" if ack_flow else "none", "encoded_bytes": len(jpeg), "encode_ms": round(elapsed, 2),
-                            "source_transport": "ros2-compressed-jpeg" if compressed else "ros2-raw-bgr", "preview_decoupled": True}
+                metadata = {
+                    "type": "frame",
+                    "mime": "image/jpeg",
+                    "width": width,
+                    "height": height,
+                    "source_width": source_width,
+                    "source_height": source_height,
+                    "frame_id": frame["frame_id"],
+                    "stamp": frame["stamp_s"],
+                    "frame_count": count,
+                    "source_fps": frame["source_fps"],
+                    "transport": settings["transport"],
+                    "flow": "decode-ack" if ack_flow else "none",
+                    "encoded_bytes": len(jpeg),
+                    "encode_ms": round(elapsed, 2),
+                    "source_transport": "ros2-compressed-jpeg"
+                    if compressed
+                    else "ros2-raw-bgr",
+                    "preview_decoupled": True,
+                }
                 if binary:
                     message = encode_binary_camera_frame(metadata, jpeg)
                 else:
@@ -1235,13 +762,18 @@ async def serve_websocket(state: CameraState, host: str, port: int, path: str, s
                 await asyncio.wait_for(websocket.send(message), timeout=2)
                 last_count = count
                 if ack_flow:
-                    acknowledged = await wait_for_camera_decode_ack(websocket, count, timeout_s=2)
+                    acknowledged = await wait_for_camera_decode_ack(
+                        websocket, count, timeout_s=2
+                    )
                     if acknowledged is None:
-                        # Never clear the outstanding window and enqueue another stale image.
-                        await websocket.close(code=1013, reason="preview acknowledgement timeout")
+                        await websocket.close(
+                            code=1013, reason="preview acknowledgement timeout"
+                        )
                         return
                     budget.acknowledge(time.monotonic() - sent)
-                delay = budget.delay(len(message), min(settings["fps"], budget.values[2])) - (time.monotonic() - started)
+                delay = budget.delay(
+                    len(message), min(settings["fps"], budget.values[2])
+                ) - (time.monotonic() - started)
                 if delay > 0:
                     await asyncio.sleep(delay)
         except Exception as exc:
@@ -1249,132 +781,80 @@ async def serve_websocket(state: CameraState, host: str, port: int, path: str, s
         finally:
             state.adjust_clients(-1)
 
-    async with websockets.serve(handler, host, port, max_size=4096, max_queue=2, write_limit=16384,
-                                compression=None, ping_interval=20, ping_timeout=20, close_timeout=1):
+    async with websockets.serve(
+        handler,
+        host,
+        port,
+        max_size=4096,
+        max_queue=2,
+        write_limit=16384,
+        compression=None,
+        ping_interval=20,
+        ping_timeout=20,
+        close_timeout=1,
+    ):
         while not stop.is_set():
             await asyncio.sleep(0.2)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Bridge ROS2 Image/CameraInfo to WebSocket and strict tree-bearing ROS JSON.")
+def main():
+    parser = argparse.ArgumentParser(description="ROS camera to raw JPEG WebSocket")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8770)
     parser.add_argument("--path", default="/ws/camera")
-    parser.add_argument("--topic", default=os.environ.get("CAMERA_IMAGE_TOPIC", "/camera/image_raw"))
-    parser.add_argument("--compressed-topic", default=os.environ.get("CAMERA_COMPRESSED_TOPIC", "/camera/image_jpeg"))
-    parser.add_argument("--camera-info-topic", default=os.environ.get("CAMERA_INFO_TOPIC", "/camera/camera_info"))
-    parser.add_argument("--vision-topic", default=os.environ.get("ORCHARD_VISION_BEARINGS_TOPIC", DEFAULT_VISION_TOPIC))
-    parser.add_argument("--vision-hz", type=float, default=float(os.environ.get("ORCHARD_VISION_PUBLISH_HZ", "5.0")))
     parser.add_argument(
-        "--vision-inference-width",
-        "--vision-width",
-        dest="vision_inference_width",
-        type=int,
-        default=int(os.environ.get("ORCHARD_VISION_INFERENCE_WIDTH", os.environ.get("ORCHARD_VISION_WIDTH", "0"))),
-        help="Maximum AI inference width; 0 keeps the source/native resolution. --vision-width is a compatibility alias.",
+        "--topic", default=os.environ.get("CAMERA_IMAGE_TOPIC", "/camera/image_raw")
     )
     parser.add_argument(
-        "--vision-inference-jpeg-quality",
-        type=int,
-        default=int(os.environ.get("ORCHARD_VISION_INFERENCE_JPEG_QUALITY", str(DEFAULT_VISION_INFERENCE_JPEG_QUALITY))),
-    )
-    parser.add_argument("--vision-output-frame", default=os.environ.get("ORCHARD_VISION_FRAME_ID", "camera_link"))
-    parser.add_argument("--vision-nominal-fov-deg", type=float, default=float(os.environ.get("CAMERA_FOV_DEG", "70.0")))
-    parser.add_argument(
-        "--camera-info-sync-max-delta-s",
-        type=float,
-        default=float(os.environ.get("ORCHARD_CAMERA_INFO_SYNC_MAX_DELTA_S", str(DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S))),
+        "--compressed-topic",
+        default=os.environ.get("CAMERA_COMPRESSED_TOPIC", "/camera/image_jpeg"),
     )
     parser.add_argument(
-        "--bearing-calibration-valid",
-        default=env_bool("ORCHARD_VISION_BEARING_CALIBRATION_VALID", False),
-        action=argparse.BooleanOptionalAction,
-        help="Enable only after camera intrinsics have been independently validated; CameraInfo presence alone is insufficient.",
+        "--camera-info-topic",
+        default=os.environ.get("CAMERA_INFO_TOPIC", "/camera/camera_info"),
     )
-    parser.add_argument("--status-file", default=os.environ.get("CAMERA_BRIDGE_STATUS_FILE", "/app/runtime/camera_bridge_status.json"))
-    parser.add_argument("--status-interval-s", type=float, default=float(os.environ.get("CAMERA_BRIDGE_STATUS_INTERVAL_S", "0.5")))
+    parser.add_argument(
+        "--status-file",
+        default=os.environ.get(
+            "CAMERA_BRIDGE_STATUS_FILE", "/app/runtime/camera_bridge_status.json"
+        ),
+    )
     args = parser.parse_args()
-    args.vision_hz = max(0.1, min(30.0, args.vision_hz))
-    args.vision_inference_width = 0 if args.vision_inference_width <= 0 else max(160, min(3840, args.vision_inference_width))
-    args.vision_inference_jpeg_quality = max(40, min(95, args.vision_inference_jpeg_quality))
-    args.camera_info_sync_max_delta_s = max(0.001, min(1.0, args.camera_info_sync_max_delta_s))
-    bridge_log(
-        "start",
+    state, stop, ready = CameraState(), threading.Event(), threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stop.set())
+    kwargs = dict(
         image_topic=args.topic,
         compressed_topic=args.compressed_topic,
         camera_info_topic=args.camera_info_topic,
-        vision_topic=args.vision_topic,
-        vision_hz=args.vision_hz,
-        vision_inference_width=args.vision_inference_width,
-        vision_inference_mode="source_native" if args.vision_inference_width == 0 else "bounded_width",
-        vision_inference_jpeg_quality=args.vision_inference_jpeg_quality,
-        vision_input_policy_revision=VISION_INFERENCE_INPUT_POLICY_REVISION,
-        preview_decoupled=True,
-        output_frame=args.vision_output_frame,
-        bearing_calibration_valid=bool(args.bearing_calibration_valid),
-        camera_info_sync_max_delta_s=args.camera_info_sync_max_delta_s,
-        metric_range_valid=False,
-        status_file=args.status_file,
     )
-    state = CameraState()
-    stop = threading.Event()
-    ready = threading.Event()
-    status_kwargs = {
-        "image_topic": args.topic,
-        "compressed_topic": args.compressed_topic,
-        "camera_info_topic": args.camera_info_topic,
-        "vision_topic": args.vision_topic,
-        "vision_hz": args.vision_hz,
-        "calibration_valid": bool(args.bearing_calibration_valid),
-        "inference_width": args.vision_inference_width,
-        "inference_jpeg_quality": args.vision_inference_jpeg_quality,
-        "camera_info_sync_max_delta_s": args.camera_info_sync_max_delta_s,
-    }
     threads = [
         threading.Thread(
-            target=status_writer_thread,
-            args=(state, Path(args.status_file), args.status_interval_s, stop, status_kwargs),
-            daemon=True,
-        ),
-        threading.Thread(
-            target=vision_inference_thread,
-            args=(state, stop),
-            kwargs={
-                "target_hz": args.vision_hz,
-                "inference_width": args.vision_inference_width,
-                "inference_jpeg_quality": args.vision_inference_jpeg_quality,
-                "output_frame": args.vision_output_frame,
-                "calibration_valid": bool(args.bearing_calibration_valid),
-                "nominal_fov_deg": args.vision_nominal_fov_deg,
-                "camera_info_sync_max_delta_s": args.camera_info_sync_max_delta_s,
-            },
-            daemon=True,
-        ),
-        threading.Thread(
             target=ros_thread,
-            args=(state, args.topic, args.compressed_topic, args.camera_info_topic, args.vision_topic, ready, stop),
+            args=(
+                state,
+                args.topic,
+                args.compressed_topic,
+                args.camera_info_topic,
+                ready,
+                stop,
+            ),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=status_writer_thread,
+            args=(state, Path(args.status_file), 0.5, stop, kwargs),
             daemon=True,
         ),
     ]
     for thread in threads:
         thread.start()
-    ready.wait(timeout=8)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, stop.set)
-        except (NotImplementedError, RuntimeError):
-            pass
     try:
-        loop.run_until_complete(serve_websocket(state, args.host, args.port, args.path, stop))
-    except KeyboardInterrupt:
-        stop.set()
+        asyncio.run(serve_websocket(state, args.host, args.port, args.path, stop))
     finally:
         stop.set()
         for thread in threads:
             thread.join(timeout=2)
-        loop.close()
     return 0
 
 

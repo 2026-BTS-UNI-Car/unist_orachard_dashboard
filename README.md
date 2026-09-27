@@ -1,4 +1,9 @@
-# UNIST Orchard Rover Dashboard
+# UBTS Raw Sensor Dashboard
+
+Camera, LaserScan, IMU and GPS display with manual ESP control. AI workers, tree/fusion overlays and model downloads have been removed.
+
+See [raw sensor deployment](docs/raw_sensor_dashboard.md). Existing runtime/data and recorded originals are preserved.
+
 
 GPS UART driver, offline Korea maps and synchronized GPS recording: [GPS setup and operation](docs/gps_offline_map.md)
 

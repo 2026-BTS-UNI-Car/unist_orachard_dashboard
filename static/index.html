@@ -1,1016 +1,892 @@
-<!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>UBTS Dashboard</title>
-    <link rel="icon" href="/static/favicon.ico" sizes="any" />
-    <link rel="icon" href="/static/assets/favicon.png" type="image/png" />
-    <link rel="apple-touch-icon" href="/static/assets/apple-touch-icon.png" />
-    <script>
+<!DOCTYPE html>
+
+<html lang="ko" data-runtime-mode="live">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>UBTS Dashboard</title>
+<link href="/static/favicon.ico" rel="icon" sizes="any"/>
+<link href="/static/assets/favicon.png" rel="icon" type="image/png"/>
+<link href="/static/assets/apple-touch-icon.png" rel="apple-touch-icon"/>
+<script>
       try {
         document.documentElement.dataset.theme = localStorage.getItem("ubts-theme") || "dark";
       } catch (_) {
         document.documentElement.dataset.theme = "dark";
       }
     </script>
-    <link rel="stylesheet" href="/static/styles.css" />
-    <link rel="stylesheet" href="/static/vendor/maplibre-gl/maplibre-gl.css" />
-    <link rel="stylesheet" href="/static/gps-map.css" />
-  </head>
-  <body>
-    <button id="mobileNavBackdrop" class="mobile-nav-backdrop" type="button" aria-label="메뉴 닫기"></button>
-    <header class="mobile-topbar">
-      <a class="mobile-brand" data-route="/" href="/">UBTS Dashboard</a>
-      <button id="mobileMenuButton" class="menu-button" type="button" aria-label="사이트맵 열기" aria-controls="sidebar" aria-expanded="false">
-        <span></span>
-        <span></span>
-        <span></span>
-      </button>
-    </header>
-    <div class="app-shell">
-      <aside id="sidebar" class="sidebar" aria-label="Site map">
-        <a class="brand-block" data-route="/" href="/">
-          <span>
-            <small>UBTS</small>
-            <strong>Dashboard</strong>
-          </span>
-        </a>
-        <nav class="nav-list">
-          <a data-route="/" href="/">Overview</a>
-          <a data-route="/connection" href="/connection">Connection</a>
-          <a data-route="/system" href="/system">System</a>
-          <a data-route="/network" href="/network">Network</a>
-          <a data-route="/docker" href="/docker">Docker</a>
-          <a data-route="/fan" href="/fan">Fan Control</a>
-          <a data-route="/research" href="/research">Research</a>
-          <a data-route="/rover-control" href="/rover-control">Rover Control</a>
-          <a data-route="/docs" href="/docs">Docs</a>
-        </nav>
-        <div class="sidebar-footer">
-          <button id="themeToggle" class="theme-toggle" type="button" aria-label="테마 변경" aria-pressed="false">
-            <span class="theme-track"><i></i></span>
-            <b id="themeLabel">Dark</b>
-          </button>
-          <span id="connectionState" class="status-pill neutral">checking</span>
-          <small id="updatedAt">--</small>
-        </div>
-      </aside>
+<link href="/static/styles.css" rel="stylesheet"/>
+<link href="/static/vendor/maplibre-gl/maplibre-gl.css" rel="stylesheet"/>
+<link href="/static/gps-map.css" rel="stylesheet"/>
+</head>
+<body>
+<div hidden="" class="simulation-banner" role="status">SIMULATION · Gazebo 센서 · 실제 Jetson에 연결되지 않음</div>
+<button aria-label="메뉴 닫기" class="mobile-nav-backdrop" id="mobileNavBackdrop" type="button"></button>
+<header class="mobile-topbar">
+<a class="mobile-brand" data-route="/" href="/">UBTS Dashboard</a>
+<button aria-controls="sidebar" aria-expanded="false" aria-label="사이트맵 열기" class="menu-button" id="mobileMenuButton" type="button">
+<span></span>
+<span></span>
+<span></span>
+</button>
+</header>
+<div class="app-shell">
+<aside aria-label="Site map" class="sidebar" id="sidebar">
+<a class="brand-block" data-route="/" href="/">
+<span>
+<small>UBTS</small>
+<strong>Dashboard</strong>
+</span>
+</a>
+<nav class="nav-list">
+<a data-route="/" href="/">Overview</a>
+<a data-route="/connection" href="/connection">Connection</a>
+<a data-route="/system" href="/system">System</a>
+<a data-route="/network" href="/network">Network</a>
+<a data-route="/docker" href="/docker">Docker</a>
+<a data-route="/fan" href="/fan">Fan Control</a>
+<a data-route="/research" href="/research">Research</a>
+<a data-route="/rover-control" href="/rover-control">Rover Control</a>
+<a data-route="/docs" href="/docs">Docs</a>
+</nav>
+<div class="sidebar-footer">
+<button aria-label="테마 변경" aria-pressed="false" class="theme-toggle" id="themeToggle" type="button">
+<span class="theme-track"><i></i></span>
+<b id="themeLabel">Dark</b>
+</button>
+<span class="status-pill neutral" id="connectionState">checking</span>
+<small id="updatedAt">--</small>
+</div>
+</aside>
+<main class="main-surface">
+<section class="page page-overview" data-page="/">
+<header class="page-head">
+<div class="hero-copy">
+<p class="eyebrow">Live operations</p>
+<h1>UBTS Dashboard</h1>
+<p>Jetson Orin Nano, 네트워크, 컨테이너, 로버 연결 상태를 실시간으로 확인합니다.</p>
+</div>
+</header>
+<section class="kpi-grid">
+<article class="kpi">
+<span>CPU</span>
+<strong id="overviewCpu">--</strong>
+<small id="overviewLoad">load --</small>
+</article>
+<article class="kpi">
+<span>Memory</span>
+<strong id="overviewMemory">--</strong>
+<small id="overviewMemoryText">--</small>
+</article>
+<article class="kpi">
+<span>External IP</span>
+<strong id="overviewNetwork">--</strong>
+<small id="overviewNetworkText">--</small>
+</article>
+<article class="kpi">
+<span>Docker</span>
+<strong id="overviewDocker">--</strong>
+<small id="overviewDockerText">--</small>
+</article>
+</section>
+<section class="dashboard-grid">
+<article class="panel chart-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Resources</p>
+<h2>CPU / Memory</h2>
+</div>
+<a class="text-link" href="/system">details</a>
+</div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="280" id="chartOverviewSystem" width="900"></canvas>
+<div class="chart-readout compact" id="overviewSystemReadout"></div>
+</div>
+</article>
+<article class="panel chart-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Throughput</p>
+<h2>Network RX / TX</h2>
+</div>
+<a class="text-link" href="/network">details</a>
+</div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="280" id="chartOverviewNetwork" width="900"></canvas>
+<div class="chart-readout compact" id="overviewNetworkReadout"></div>
+</div>
+</article>
+<article class="panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Connection</p>
+<h2>ROS2 / Rover</h2>
+</div>
+</div>
+<div class="status-list" id="overviewServices"></div>
+</article>
+<article class="panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Host</p>
+<h2>Jetson 정보</h2>
+</div>
+</div>
+<dl class="detail-list">
+<div><dt>Hostname</dt><dd id="hostName">--</dd></div>
+<div><dt>Uptime</dt><dd id="hostUptime">--</dd></div>
+<div><dt>Temperature</dt><dd id="hostTemp">--</dd></div>
+<div><dt>Power</dt><dd id="hostPower">--</dd></div>
+<div><dt>External IP</dt><dd id="hostExternalIp">--</dd></div>
+<div><dt>Internal Host</dt><dd id="hostInternalIp">--</dd></div>
+</dl>
+</article>
+</section>
+</section>
+<section class="page" data-page="/connection">
+<header class="page-head">
+<div class="hero-copy">
+<p class="eyebrow">Connection</p>
+<h1>연결 상태</h1>
+<p>LiDAR, ROS2 bridge, sensor link를 실제 장치 점유 상태를 고려해서 확인합니다.</p>
+</div>
+</header>
+<section class="kpi-grid">
+<article class="kpi">
+<span>LiDAR</span>
+<strong id="connectionLidarState">--</strong>
+<small id="connectionLidarDevice">--</small>
+</article>
+<article class="kpi">
+<span>Protocol</span>
+<strong id="connectionLidarProtocol">--</strong>
+<small id="connectionLidarSubtext">--</small>
+</article>
+<article class="kpi">
+<span>Health</span>
+<strong id="connectionLidarHealth">--</strong>
+<small id="connectionLidarHealthText">--</small>
+</article>
+<article class="kpi">
+<span>Camera</span>
+<strong id="connectionCameraState">--</strong>
+<small id="connectionCameraDevice">--</small>
+</article>
+</section>
+<section class="dashboard-grid">
+<article class="panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Serial check</p>
+<h2>RPLIDAR 상태 확인</h2>
+</div>
+<button class="action-button" id="lidarTestButton" type="button">상태 새로고침</button>
+</div>
+<div class="test-result" id="lidarTestResult">대기 중</div>
+<div class="probe-grid">
+<article class="probe-card">
+<span>Device</span>
+<strong id="lidarDeviceDetail">--</strong>
+<small>serial endpoint</small>
+</article>
+<article class="probe-card">
+<span>Stable ID</span>
+<strong id="lidarByIdDetail">--</strong>
+<small>reboot-safe path</small>
+</article>
+<article class="probe-card">
+<span>Driver</span>
+<strong id="lidarDriverDetail">--</strong>
+<small>USB bridge</small>
+</article>
+<article class="probe-card">
+<span>Last Check</span>
+<strong id="lidarLastTestDetail">--</strong>
+<small>status refresh</small>
+</article>
+</div>
+</article>
+<article class="panel wide">
+<div class="panel-head">
+<div>
+<p class="eyebrow">ROS2 /scan</p>
+<h2>2D LiDAR 지도</h2>
+</div>
+<div class="panel-actions">
+<button class="action-button secondary" id="lidarLiveButton" type="button">실시간 연결</button>
+<button class="action-button secondary" disabled="" id="lidarDownloadButton" type="button">현재 지도 다운로드</button>
 
-      <main class="main-surface">
-        <section class="page page-overview" data-page="/">
-          <header class="page-head">
-            <div class="hero-copy">
-              <p class="eyebrow">Live operations</p>
-              <h1>UBTS Dashboard</h1>
-              <p>Jetson Orin Nano, 네트워크, 컨테이너, 로버 연결 상태를 실시간으로 확인합니다.</p>
-            </div>
-          </header>
 
-          <section class="kpi-grid">
-            <article class="kpi">
-              <span>CPU</span>
-              <strong id="overviewCpu">--</strong>
-              <small id="overviewLoad">load --</small>
-            </article>
-            <article class="kpi">
-              <span>Memory</span>
-              <strong id="overviewMemory">--</strong>
-              <small id="overviewMemoryText">--</small>
-            </article>
-            <article class="kpi">
-              <span>External IP</span>
-              <strong id="overviewNetwork">--</strong>
-              <small id="overviewNetworkText">--</small>
-            </article>
-            <article class="kpi">
-              <span>Docker</span>
-              <strong id="overviewDocker">--</strong>
-              <small id="overviewDockerText">--</small>
-            </article>
-          </section>
+</div>
+</div>
+<div class="test-result" id="lidarScanResult">실시간 연결 대기 중</div>
+<div class="lidar-map-frame">
+<div class="lidar-map-stage">
+<canvas class="lidar-map" height="720" id="lidarScanCanvas" width="720"></canvas>
+</div>
+<div>
+<div class="map-control">
+<div>
+<span>Range</span>
+<strong data-lidar-range-value="" id="lidarRangeValue">Auto</strong>
+</div>
+<div aria-label="LiDAR 지도 범위" class="map-zoom-buttons">
+<button data-lidar-range="out" type="button">−</button>
+<button data-lidar-range="reset" type="button">Auto</button>
+<button data-lidar-range="in" type="button">+</button>
+</div>
+<label class="map-range-slider" for="lidarRangeSlider">
+<span>Zoom</span>
+<input data-lidar-range-slider="" id="lidarRangeSlider" max="30" min="1" step="0.1" type="range" value="25"/>
+</label>
+</div>
+<div class="map-control">
+<div>
+<span>Points</span>
+<strong data-lidar-point-value="" id="lidarPointValue">900 pts</strong>
+</div>
+<div aria-label="LiDAR point 수" class="map-zoom-buttons">
+<button data-lidar-points="down" type="button">−</button>
+<button data-lidar-points="reset" type="button">900</button>
+<button data-lidar-points="up" type="button">+</button>
+</div>
+<label class="map-range-slider" for="lidarPointSlider">
+<span>Point limit</span>
+<input data-lidar-point-slider="" id="lidarPointSlider" max="3200" min="50" step="50" type="range" value="900"/>
+</label>
+</div>
+<div class="chart-readout" id="lidarScanStats"></div>
+<div aria-label="LiDAR 다운로드 형식" class="segmented-control download-mode">
+<button data-lidar-download="json" type="button">JSON</button>
+<button data-lidar-download="csv" type="button">CSV</button>
+<button data-lidar-download="png" type="button">PNG</button>
+</div>
+</div>
+</div>
+</article>
+<article class="panel wide">
+<div class="panel-head">
+<div>
+<p class="eyebrow">ROS2 /camera/image_raw</p>
+<h2>카메라 실시간 화면</h2>
+</div>
+<div class="panel-actions">
+<button class="action-button secondary" id="cameraLiveButton" type="button">실시간 연결</button>
 
-          <section class="dashboard-grid">
-            <article class="panel chart-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Resources</p>
-                  <h2>CPU / Memory</h2>
-                </div>
-                <a class="text-link" href="/system">details</a>
-              </div>
-              <div class="chart-frame">
-                <canvas id="chartOverviewSystem" class="resource-chart" width="900" height="280"></canvas>
-                <div id="overviewSystemReadout" class="chart-readout compact"></div>
-              </div>
-            </article>
+</div>
+</div>
+<div class="test-result" id="cameraLiveResult">실시간 연결 대기 중</div>
+<div class="camera-live-layout">
+<figure class="camera-frame">
+<img alt="ROS2 camera live frame" id="cameraLiveImage"/>
 
-            <article class="panel chart-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Throughput</p>
-                  <h2>Network RX / TX</h2>
-                </div>
-                <a class="text-link" href="/network">details</a>
-              </div>
-              <div class="chart-frame">
-                <canvas id="chartOverviewNetwork" class="resource-chart" width="900" height="280"></canvas>
-                <div id="overviewNetworkReadout" class="chart-readout compact"></div>
-              </div>
-            </article>
+<figcaption id="cameraFrameCaption">ROS2 프레임 대기 중</figcaption>
+</figure>
+<div class="camera-controls">
+<div class="map-control">
+<div>
+<span>Resolution</span>
+<strong data-camera-resolution-value="" id="cameraResolutionValue">1280x720</strong>
+</div>
+<select aria-label="카메라 캡처 해상도" data-camera-resolution-select="" id="cameraResolutionSelect">
+<option selected="" value="1280x720">1280x720</option>
+<option value="1920x1080">1920x1080</option>
+</select>
+</div>
+<div class="map-control">
+<div>
+<span>Frame rate</span>
+<strong data-camera-fps-value="" id="cameraFpsValue">60 fps</strong>
+</div>
+<select aria-label="카메라 캡처 FPS" data-camera-fps-select="" id="cameraFpsSelect">
+<option selected="" value="60">60 fps</option>
+<option value="30">30 fps</option>
+</select>
+</div>
+<div class="chart-readout" id="cameraLiveStats"></div>
+</div>
+</div>
+</article>
+<article class="panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Runtime</p>
+<h2>서비스 연결</h2>
+</div>
+</div>
+<div class="status-list" id="connectionServices"></div>
+</article>
+<article class="panel wide">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Sensors</p>
+<h2>ROS2 센서 링크</h2>
+</div>
+</div>
+<div class="status-list" id="connectionSensors"></div>
+</article>
+</section>
+</section>
+<section class="page" data-page="/system">
+<header class="page-head">
+<p class="eyebrow">System resources</p>
+<h1>시스템 리소스</h1>
+<p>CPU, Memory, Swap, Network, Power를 실시간 그래프로 표시합니다.</p>
+</header>
+<section class="resource-grid">
+<article class="panel resource-card">
+<div class="panel-head">
+<div>
+<h2>CPU</h2>
+<small id="cpuModeText">통합 그래프</small>
+</div>
+<div class="panel-actions">
+<strong id="systemCpuValue">--</strong>
+<div aria-label="CPU 그래프 표시 방식" class="segmented-control">
+<button data-cpu-mode="combined" type="button">통합</button>
+<button data-cpu-mode="separate" type="button">코어별</button>
+</div>
+</div>
+</div>
+<div class="cpu-mode-view" id="cpuCombinedView">
+<div class="chart-frame">
+<canvas class="resource-chart" height="260" id="chartCpu" width="900"></canvas>
+<div class="chart-readout" id="cpuReadout"></div>
+</div>
+</div>
+<div class="cpu-mode-view core-chart-grid" hidden="" id="cpuSeparateView"></div>
+<div class="core-grid" id="coreList"></div>
+</article>
+<article class="panel resource-card">
+<div class="panel-head"><h2>Memory</h2><strong id="systemMemoryValue">--</strong></div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="260" id="chartMemory" width="900"></canvas>
+<div class="chart-readout" id="memoryReadout"></div>
+</div>
+<div class="progress" id="memoryBar"><i></i></div>
+<small id="memoryDetail">--</small>
+</article>
+<article class="panel resource-card">
+<div class="panel-head"><h2>Swap</h2><strong id="systemSwapValue">--</strong></div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="260" id="chartSwap" width="900"></canvas>
+<div class="chart-readout" id="swapReadout"></div>
+</div>
+</article>
+<article class="panel resource-card">
+<div class="panel-head"><h2>Network</h2><strong id="systemNetworkValue">--</strong></div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="260" id="chartSystemNetwork" width="900"></canvas>
+<div class="chart-readout" id="systemNetworkReadout"></div>
+</div>
+</article>
+<article class="panel resource-card">
+<div class="panel-head"><h2>Power</h2><strong id="systemPowerValue">--</strong></div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="260" id="chartPower" width="900"></canvas>
+<div class="chart-readout" id="powerReadout"></div>
+</div>
+</article>
+</section>
+<section class="panel">
+<div class="panel-head">
+<div><p class="eyebrow">Storage</p><h2>Disk</h2></div>
+<strong id="diskSummary">--</strong>
+</div>
+<div class="disk-list" id="diskList"></div>
+</section>
+</section>
+<section class="page" data-page="/network">
+<header class="page-head">
+<p class="eyebrow">Network</p>
+<h1>네트워크 상태</h1>
+<p>외부 접속 주소와 Jetson host 주소, 실시간 RX/TX 처리량만 우선 표시합니다.</p>
+</header>
+<section class="network-focus-grid">
+<article class="kpi">
+<span>External IP</span>
+<strong id="networkExternalIp">--</strong>
+<small id="networkExternalIpText">public endpoint</small>
+</article>
+<article class="kpi">
+<span>Internal Host</span>
+<strong id="networkInternalIp">--</strong>
+<small id="networkInternalIpText">host route</small>
+</article>
+</section>
+<section class="panel network-mode-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Jetson Wi-Fi mode</p>
+<h2>오프라인 AP / 저장된 Wi-Fi</h2>
+</div>
+<span class="tag" id="networkModeTag">확인 중</span>
+</div>
+<div class="panel-actions network-mode-actions">
+<button class="action-button primary" disabled="" id="networkEnableApButton" type="button">AP 전환</button>
+<button class="action-button secondary" disabled="" id="networkScanWifiButton" type="button">Wi-Fi 검색</button>
+</div>
+<div class="chart-readout" id="networkModeReadout"></div>
+<div class="test-result" id="networkModeResult">네트워크 제어 상태를 확인하고 있습니다.</div>
+<small class="control-note">AP: BTS_Jetson · 클라이언트가 1분 없으면 저장된 Wi-Fi를 1분간 검색한 뒤 다시 AP로 복귀합니다.</small>
+</section>
+<section class="dashboard-grid">
+<article class="panel chart-panel wide">
+<div class="panel-head">
+<div><p class="eyebrow">Live throughput</p><h2>RX / TX</h2></div>
+<strong id="networkThroughput">--</strong>
+</div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="320" id="chartNetwork" width="1200"></canvas>
+<div class="chart-readout" id="networkReadout"></div>
+</div>
+</article>
+<article class="panel">
+<div class="panel-head">
+<div><p class="eyebrow">Interfaces</p><h2>연결 정보</h2></div>
+</div>
+<div class="interface-list" id="interfaceList"></div>
+</article>
+</section>
+</section>
+<section class="page" data-page="/docker">
+<header class="page-head">
+<p class="eyebrow">Docker</p>
+<h1>컨테이너 대시보드</h1>
+<p>Docker Engine과 컨테이너 리소스 사용량을 표시합니다.</p>
+</header>
+<section class="kpi-grid">
+<article class="kpi"><span>Containers</span><strong id="dockerContainerCount">--</strong><small id="dockerRunningText">--</small></article>
+<article class="kpi"><span>Images</span><strong id="dockerImageCount">--</strong><small id="dockerVersion">--</small></article>
+<article class="kpi"><span>Container CPU</span><strong id="dockerCpuTotal">--</strong><small>sum of visible stats</small></article>
+<article class="kpi"><span>Container Memory</span><strong id="dockerMemTotal">--</strong><small id="dockerMemText">--</small></article>
+</section>
+<section class="dashboard-grid">
+<article class="panel chart-panel">
+<div class="panel-head"><h2>Container CPU</h2><strong id="dockerCpuChartValue">--</strong></div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="260" id="chartDockerCpu" width="900"></canvas>
+<div class="chart-readout" id="dockerCpuReadout"></div>
+</div>
+</article>
+<article class="panel chart-panel">
+<div class="panel-head"><h2>Container Memory</h2><strong id="dockerMemChartValue">--</strong></div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="260" id="chartDockerMem" width="900"></canvas>
+<div class="chart-readout" id="dockerMemReadout"></div>
+</div>
+</article>
+</section>
+<section class="panel">
+<div class="panel-head">
+<div><p class="eyebrow">Containers</p><h2>컨테이너 목록</h2></div>
+</div>
+<div class="container-list" id="containerList"></div>
+</section>
+<section class="panel">
+<div class="panel-head">
+<div><p class="eyebrow">Inspect</p><h2 id="containerDetailTitle">컨테이너 상세</h2></div>
+<div class="container-toolbar">
+<div class="container-actions" id="containerActions"></div>
+<button class="action-button secondary" id="containerRefreshButton" type="button">새로고침</button>
+</div>
+</div>
+<div class="container-detail" id="containerDetail">
+<div class="empty-state">컨테이너를 선택하세요.</div>
+</div>
+<pre class="log-view" id="containerLogs">로그 대기 중</pre>
+</section>
+</section>
+<section class="page" data-page="/fan">
+<header class="page-head">
+<p class="eyebrow">Jetson cooling</p>
+<h1>Fan Control</h1>
+<p>Jetson 온도를 확인하면서 팬 PWM을 직접 조정합니다.</p>
+</header>
+<section class="fan-control-grid">
+<article class="kpi"><span>Temperature</span><strong id="fanTempValue">--</strong><small id="fanTempText">thermal max</small></article>
+<article class="panel fan-pwm-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Manual PWM</p>
+<h2>팬 출력</h2>
+</div>
+<div class="fan-head-actions">
+<strong id="fanPwmValue">--</strong>
+<label class="fan-mode-toggle" for="fanAutoToggle">
+<input id="fanAutoToggle" type="checkbox"/>
+<span class="fan-toggle-track"><i></i></span>
+<span class="fan-toggle-copy">
+<b id="fanModeValue">--</b>
+<small id="fanModeText">nvfancontrol</small>
+</span>
+</label>
+</div>
+</div>
+<div class="test-result" id="fanControlStatus">상태 확인 중</div>
+<label class="slider-row fan-slider-row">
+<span>PWM</span>
+<input id="fanPwmSlider" max="255" min="0" step="1" type="range" value="0"/>
+<b id="fanSliderValue">0</b>
+</label>
+<div class="preset-grid compact">
+<button data-fan-preset="quiet" type="button">80</button>
+<button data-fan-preset="normal" type="button">160</button>
+<button data-fan-preset="max" type="button">255</button>
+</div>
+</article>
+</section>
+<section class="dashboard-grid">
+<article class="panel chart-panel wide">
+<div class="panel-head"><h2>Fan Temperature</h2><strong id="fanTempChartValue">--</strong></div>
+<div class="chart-frame">
+<canvas class="resource-chart" height="260" id="chartFanTemp" width="900"></canvas>
+<div class="chart-readout" id="fanTempReadout"></div>
+</div>
+</article>
+</section>
+</section>
+<section class="page" data-page="/research">
+<header class="page-head">
+<p class="eyebrow">Research</p>
+<h1>연구 연결 상태</h1>
+<p>실제 ROS2 bridge가 연결되면 이 페이지에 연구 지표가 채워집니다.</p>
+</header>
+<section class="dashboard-grid">
+<article class="panel">
+<div class="panel-head">
+<div><p class="eyebrow">ROS2 sensors</p><h2>센서 텔레메트리</h2></div>
+</div>
+<div class="status-list" id="sensorList"></div>
+</article>
+<article class="panel">
+<div class="panel-head">
+<div><p class="eyebrow">Experiment</p><h2>실험 데이터</h2></div>
+</div>
+<dl class="detail-list">
+<div><dt>Rover</dt><dd id="roverState">연결 전</dd></div>
 
-            <article class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Connection</p>
-                  <h2>ROS2 / Rover</h2>
-                </div>
-              </div>
-              <div id="overviewServices" class="status-list"></div>
-            </article>
+<div><dt>Experiment</dt><dd id="experimentState">연결 전</dd></div>
+</dl>
+</article>
+</section>
+<section class="panel">
+<div class="panel-head">
+<div><p class="eyebrow">Roadmap</p><h2>수행계획 진행도</h2></div>
+</div>
+<div class="timeline" id="milestoneList"></div>
+</section>
+</section>
+<section class="page" data-page="/rover-control">
+<header class="page-head">
+<p class="eyebrow" id="roverModeLabel">LIVE ROVER</p>
+<h1>Rover Control</h1><label>전송 품질 <select aria-label="전송 품질 선택" data-network-profile=""><option value="auto">자동 조절</option><option value="tiny">64 kbps</option><option value="slow">매우 느린 망</option><option value="balanced">균형</option><option value="detail">고화질</option></select></label>
+<p>조종 활성화를 켠 뒤 WASD 또는 방향 버튼을 누르세요. Q/E로 주행 중 속도를 조절할 수 있습니다.</p>
+</header>
+<section class="kpi-grid">
+<article class="kpi"><span id="roverControllerLabel">ESP8266</span><strong id="roverControlState">--</strong><small id="roverControlBase">--</small></article>
+<article class="kpi"><span>Mode</span><strong id="roverProxyState">--</strong><small>단일 사용자 수동 조종</small></article>
+<article class="kpi"><span>ROS2</span><strong id="roverRosState">--</strong><small>모터 상태 관측</small></article>
+<article class="kpi"><span>Archive</span><strong id="roverRecorderState">--</strong><small id="roverRecorderKind">대기</small></article>
+</section>
+<section class="rover-layout">
+<article class="panel rover-live-panel rover-lidar-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Live</p>
+<h2>LiDAR</h2>
+</div>
+<button class="action-button secondary" id="roverLidarToggle" type="button">LiDAR 시작</button>
+</div>
+<div class="lidar-map-stage rover-lidar-stage">
+<canvas class="lidar-map" height="520" id="roverLidarCanvas" width="520"></canvas>
+</div>
+<div class="rover-sensor-controls">
+<div class="map-control compact">
+<div>
+<span>Range</span>
+<strong data-lidar-range-value="" id="roverLidarRangeValue">Auto</strong>
+</div>
+<div aria-label="Rover LiDAR 지도 범위" class="map-zoom-buttons">
+<button data-lidar-range="out" type="button">−</button>
+<button data-lidar-range="reset" type="button">Auto</button>
+<button data-lidar-range="in" type="button">+</button>
+</div>
+<label class="map-range-slider" for="roverLidarRangeSlider">
+<span>Zoom</span>
+<input data-lidar-range-slider="" id="roverLidarRangeSlider" max="30" min="1" step="0.1" type="range" value="25"/>
+</label>
+</div>
+<div class="map-control compact">
+<div>
+<span>Points</span>
+<strong data-lidar-point-value="" id="roverLidarPointValue">900 pts</strong>
+</div>
+<label class="map-range-slider" for="roverLidarPointSlider">
+<span>Stream limit</span>
+<input data-lidar-point-slider="" id="roverLidarPointSlider" max="3200" min="50" step="50" type="range" value="900"/>
+</label>
+</div>
+</div>
 
-            <article class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Host</p>
-                  <h2>Jetson 정보</h2>
-                </div>
-              </div>
-              <dl class="detail-list">
-                <div><dt>Hostname</dt><dd id="hostName">--</dd></div>
-                <div><dt>Uptime</dt><dd id="hostUptime">--</dd></div>
-                <div><dt>Temperature</dt><dd id="hostTemp">--</dd></div>
-                <div><dt>Power</dt><dd id="hostPower">--</dd></div>
-                <div><dt>External IP</dt><dd id="hostExternalIp">--</dd></div>
-                <div><dt>Internal Host</dt><dd id="hostInternalIp">--</dd></div>
-              </dl>
-            </article>
-          </section>
-        </section>
 
-        <section class="page" data-page="/connection">
-          <header class="page-head">
-            <div class="hero-copy">
-              <p class="eyebrow">Connection</p>
-              <h1>연결 상태</h1>
-              <p>LiDAR, ROS2 bridge, sensor link를 실제 장치 점유 상태를 고려해서 확인합니다.</p>
-            </div>
-          </header>
+<div class="chart-readout" id="roverLidarStats"></div>
+</article>
+<article class="panel rover-live-panel rover-camera-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Live</p>
+<h2>카메라</h2>
+</div>
+<button class="action-button secondary" id="roverCameraToggle" type="button">스트리밍 시작</button>
+</div>
+<div class="rover-camera-frame">
+<img alt="Rover camera stream" id="roverCameraImage"/>
 
-          <section class="kpi-grid">
-            <article class="kpi">
-              <span>LiDAR</span>
-              <strong id="connectionLidarState">--</strong>
-              <small id="connectionLidarDevice">--</small>
-            </article>
-            <article class="kpi">
-              <span>Protocol</span>
-              <strong id="connectionLidarProtocol">--</strong>
-              <small id="connectionLidarSubtext">--</small>
-            </article>
-            <article class="kpi">
-              <span>Health</span>
-              <strong id="connectionLidarHealth">--</strong>
-              <small id="connectionLidarHealthText">--</small>
-            </article>
-            <article class="kpi">
-              <span>Camera</span>
-              <strong id="connectionCameraState">--</strong>
-              <small id="connectionCameraDevice">--</small>
-            </article>
-          </section>
+<span id="roverCameraCaption">stream 대기</span>
+</div>
+<div class="rover-sensor-controls">
+<div class="map-control compact">
+<div>
+<span>Resolution</span>
+<strong data-camera-resolution-value="" id="roverCameraResolutionValue">1280x720</strong>
+</div>
+<select aria-label="Rover camera capture resolution" data-camera-resolution-select="" id="roverCameraResolutionSelect"></select>
+</div>
+<div class="map-control compact">
+<div>
+<span>Frame rate</span>
+<strong data-camera-fps-value="" id="roverCameraFpsValue">60 fps</strong>
+</div>
+<select aria-label="Rover camera capture FPS" data-camera-fps-select="" id="roverCameraFpsSelect"></select>
+</div>
+</div>
 
-          <section class="dashboard-grid">
-            <article class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Serial check</p>
-                  <h2>RPLIDAR 상태 확인</h2>
-                </div>
-                <button id="lidarTestButton" class="action-button" type="button">상태 새로고침</button>
-              </div>
-              <div id="lidarTestResult" class="test-result">대기 중</div>
-              <div class="probe-grid">
-                <article class="probe-card">
-                  <span>Device</span>
-                  <strong id="lidarDeviceDetail">--</strong>
-                  <small>serial endpoint</small>
-                </article>
-                <article class="probe-card">
-                  <span>Stable ID</span>
-                  <strong id="lidarByIdDetail">--</strong>
-                  <small>reboot-safe path</small>
-                </article>
-                <article class="probe-card">
-                  <span>Driver</span>
-                  <strong id="lidarDriverDetail">--</strong>
-                  <small>USB bridge</small>
-                </article>
-                <article class="probe-card">
-                  <span>Last Check</span>
-                  <strong id="lidarLastTestDetail">--</strong>
-                  <small>status refresh</small>
-                </article>
-              </div>
-            </article>
+<div class="chart-readout" id="roverCameraStats"></div>
+</article>
+<article class="panel rover-gps-panel wide">
+<div class="panel-head">
+<div><p class="eyebrow">Live · Offline Map</p><h2>GPS · 로버 위치</h2></div>
+<div class="gps-map-actions"><span class="tag" data-state="waiting" id="roverGpsFixState">수신 대기</span><button aria-pressed="true" class="action-button primary" id="roverGpsFollow" type="button">로버 중심 추적 중</button></div>
+</div>
+<div aria-label="로버 GPS 오프라인 지도" class="gps-map" id="roverGpsMap" role="region"></div>
+<div class="gps-readouts">
+<div><span>위도 · 경도</span><strong id="roverGpsPosition">GPS 위치 수신 대기</strong></div>
+<div><span>수신 상태</span><strong id="roverGpsQuality">GPS 데이터 없음</strong></div>
+<div><span>수신기 보고 정확도</span><strong id="roverGpsAccuracy">정확도 미보고</strong></div>
+<div><span>이동 속도</span><strong id="roverGpsSpeed">— km/h</strong></div>
+</div>
+<div class="gps-map-footer"><span id="roverGpsMapStatus">오프라인 지도 준비 중</span><span id="roverGpsAge">GPS 표본 수신 전</span></div>
+<p class="gps-caption" id="roverGpsAltitude">현재 위치가 확정되면 표시됩니다.</p>
+<p class="gps-caption">드래그로 지도 둘러보기 · 휠/두 손가락으로 확대·축소 · 로버 중심 버튼으로 추적 재개. 첫 위치 수신 전에는 울산 지도를 표시합니다.</p>
+<details class="gps-diagnostics"><summary>GPS 연결 정보</summary><p id="roverGpsConnection">GPS 브리지 연결 대기</p><p>RTK FIX는 보정 데이터가 실제 수신될 때 표시됩니다. 지도는 Jetson에 저장되어 인터넷 없이 사용할 수 있습니다.</p></details>
+</article>
+<article class="panel rover-live-panel rover-imu-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Live ROS 2</p>
+<h2>IMU</h2>
+</div>
+<div class="panel-actions">
+<button class="action-button secondary" disabled="" id="roverImuZeroButton" type="button">현재 자세 영점</button>
+<button class="action-button secondary" id="roverImuToggle" type="button">IMU 시작</button>
+</div>
+</div>
+<div class="imu-attitude-stage">
+<canvas class="imu-attitude-canvas" height="280" id="roverImuCanvas" width="520"></canvas>
+<span id="roverImuCaption">/imu/data_raw 대기</span>
+</div>
+<div class="imu-heading-row">
+<span>Heading</span>
+<strong id="roverImuHeading">--°</strong>
+<span class="tag" id="roverImuCalibrationState">idle</span>
+</div>
+<div class="chart-readout" id="roverImuStats"></div>
+<div class="test-result" id="roverImuZeroResult">ROS2 IMU 연결 후 현재 자세를 0점으로 설정할 수 있습니다.</div>
+</article>
+<article class="panel rover-drive-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Drive</p>
+<h2>주행 제어</h2>
+</div>
+<div class="drive-head-actions">
+<button class="action-button secondary" id="roverDrivePanelToggle" type="button">조종 패널 숨기기</button>
+<button class="action-button danger" id="roverStopButton" type="button">STOP</button>
+</div>
+</div>
+<div class="rover-arm-controls">
+<button aria-pressed="false" class="action-button primary" id="roverArmButton" type="button">조종 활성화 OFF</button>
+</div>
+<div class="rover-speed-control">
+<label for="roverSpeedSlider">
+<span>Speed · Q −5 / E +5</span>
+<strong id="roverSpeedValue">25%</strong>
+</label>
+<input id="roverSpeedSlider" max="100" min="0" step="1" type="range" value="25"/>
+</div>
+<div class="chart-readout compact" id="roverMotionReadout"></div>
+<div aria-label="Rover drive pad" class="rover-pad">
+<button data-rover-drive="forward" type="button">W</button>
+<button data-rover-drive="left" type="button">A</button>
+<button data-rover-drive="stop" type="button">STOP</button>
+<button data-rover-drive="right" type="button">D</button>
+<button data-rover-drive="backward" type="button">S</button>
+</div>
+<p>키·버튼 놓기: 서서히 정지 · STOP/Esc/창 이탈: 즉시 정지 후 조종 해제</p>
+<p>W+A / W+D / S+A / S+D: 이동하며 좌·우로 회전 · 안쪽 바퀴는 설정 속도, 바깥쪽은 1.5배(최대 100%). 속도 100%에서는 추가 회전 여유가 없습니다.</p>
+<div class="test-result" id="roverCommandStatus">명령 대기 중</div>
+</article>
+<article class="panel rover-record-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Archive</p>
+<h2>기록 제어</h2>
+</div>
+<div class="record-head-actions">
+<span class="tag" id="roverRecordingTimer">00:00</span>
+<button class="action-button danger" id="roverRecordStopButton" type="button">중지</button>
+</div>
+</div>
+<button class="action-button primary record-start-button" id="roverRecordStartButton" type="button">기록 시작</button>
+<div aria-label="recording kind" class="record-button-grid" role="group">
+<button class="action-button secondary" data-record-kind="lidar" id="roverRecordLidarButton" type="button">LiDAR</button>
+<button class="action-button secondary" data-record-kind="camera" id="roverRecordCameraButton" type="button">Camera</button>
+<button class="action-button secondary" data-record-kind="both" id="roverRecordBothButton" type="button">LiDAR+Camera</button>
+</div>
+<label class="switch-control record-imu-option">
+<input checked="" id="roverRecordImuToggle" type="checkbox"/>
+<span>IMU 함께 기록 (기본) · 시작 시 정지 자세 보정</span>
+</label>
+<label class="switch-control record-imu-option"><input checked="" id="roverRecordGpsToggle" type="checkbox"/><span>GPS 함께 기록 (기본) · 위치·정확도·수신 상태</span></label>
+<div class="test-result" id="roverRecordingStatus">기록 대기 중</div>
+</article>
+<article class="panel wide">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Runtime</p>
+<h2>연동 상태</h2>
+</div>
+</div>
+<div class="status-list" id="roverControlDetails"></div>
+</article>
+<article class="panel wide">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Archive</p>
+<h2>기록 데이터</h2>
+</div>
+<button class="action-button secondary" id="roverArchiveRefreshButton" type="button">새로고침</button>
+</div>
+<div class="archive-layout">
+<div class="archive-list" id="roverArchiveList"></div>
+<div class="archive-preview">
+<div class="archive-player-toolbar">
+<button class="action-button secondary" id="roverArchivePlayButton" type="button">재생</button>
+<span class="tag" id="roverArchiveTime">00:00 / 00:00</span>
+<label class="switch-control">
+<input checked="" id="roverArchiveSyncToggle" type="checkbox"/>
+<span>동시 재생</span>
+</label>
+</div>
+<input class="archive-scrubber" id="roverArchiveScrubber" max="0" min="0" step="0.01" type="range" value="0"/>
+<div class="map-control compact archive-map-control">
+<div>
+<span>Archive range</span>
+<strong id="roverArchiveRangeValue">25m</strong>
+</div>
+<label class="map-range-slider" for="roverArchiveRangeSlider">
+<span>Zoom</span>
+<input id="roverArchiveRangeSlider" max="30" min="1" step="0.1" type="range" value="25"/>
+</label>
+</div>
 
-            <article class="panel wide">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">ROS2 /scan</p>
-                  <h2>2D LiDAR 지도</h2>
-                </div>
-                <div class="panel-actions">
-                  <button id="lidarLiveButton" class="action-button secondary" type="button">실시간 연결</button>
-                  <button id="lidarDownloadButton" class="action-button secondary" type="button" disabled>현재 지도 다운로드</button>
-                  <div class="segmented-control overlay-mode" aria-label="LiDAR overlay mode">
-                    <button type="button" data-lidar-overlay-mode="raw">LiDAR</button>
-                    <button type="button" data-lidar-overlay-mode="both">LiDAR+Overlay</button>
-                    <button type="button" data-lidar-overlay-mode="overlay">Overlay</button>
-                  </div>
-                  <div class="segmented-control perception-mode" aria-label="Perception overlay source">
-                    <button type="button" data-perception-overlay="lidar">2D Objects</button>
-                    <button type="button" data-perception-overlay="camera">Camera</button>
-                    <button type="button" data-perception-overlay="fusion">Fusion Trees</button>
-                  </div>
-                </div>
-              </div>
-              <div id="lidarScanResult" class="test-result">실시간 연결 대기 중</div>
-              <div class="lidar-map-frame">
-                <div class="lidar-map-stage">
-                  <canvas id="lidarScanCanvas" class="lidar-map" width="720" height="720"></canvas>
-                </div>
-                <div>
-                  <div class="map-control">
-                    <div>
-                      <span>Range</span>
-                      <strong id="lidarRangeValue" data-lidar-range-value>Auto</strong>
-                    </div>
-                    <div class="map-zoom-buttons" aria-label="LiDAR 지도 범위">
-                      <button type="button" data-lidar-range="out">−</button>
-                      <button type="button" data-lidar-range="reset">Auto</button>
-                      <button type="button" data-lidar-range="in">+</button>
-                    </div>
-                    <label class="map-range-slider" for="lidarRangeSlider">
-                      <span>Zoom</span>
-                      <input id="lidarRangeSlider" data-lidar-range-slider type="range" min="1" max="30" step="0.1" value="25" />
-                    </label>
-                  </div>
-                  <div class="map-control">
-                    <div>
-                      <span>Points</span>
-                      <strong id="lidarPointValue" data-lidar-point-value>900 pts</strong>
-                    </div>
-                    <div class="map-zoom-buttons" aria-label="LiDAR point 수">
-                      <button type="button" data-lidar-points="down">−</button>
-                      <button type="button" data-lidar-points="reset">900</button>
-                      <button type="button" data-lidar-points="up">+</button>
-                    </div>
-                    <label class="map-range-slider" for="lidarPointSlider">
-                      <span>Point limit</span>
-                      <input id="lidarPointSlider" data-lidar-point-slider type="range" min="50" max="3200" step="50" value="900" />
-                    </label>
-                  </div>
-                  <div id="lidarScanStats" class="chart-readout"></div>
-                  <div class="segmented-control download-mode" aria-label="LiDAR 다운로드 형식">
-                    <button type="button" data-lidar-download="json">JSON</button>
-                    <button type="button" data-lidar-download="csv">CSV</button>
-                    <button type="button" data-lidar-download="png">PNG</button>
-                  </div>
-                </div>
-              </div>
-            </article>
 
-            <article class="panel wide">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">ROS2 /camera/image_raw</p>
-                  <h2>카메라 실시간 화면</h2>
-                </div>
-                <div class="panel-actions">
-                  <button id="cameraLiveButton" class="action-button secondary" type="button">실시간 연결</button>
-                  <div class="segmented-control camera-overlay-mode compact-control" aria-label="camera overlay mode">
-                    <button type="button" data-camera-overlay-mode="raw">Camera</button>
-                    <button type="button" data-camera-overlay-mode="both">Camera+Overlay</button>
-                    <button type="button" data-camera-overlay-mode="overlay">Overlay</button>
-                  </div>
-                </div>
-              </div>
-              <div id="cameraLiveResult" class="test-result">실시간 연결 대기 중</div>
-              <div class="camera-live-layout">
-                <figure class="camera-frame">
-                  <img id="cameraLiveImage" alt="ROS2 camera live frame" />
-                  <canvas id="cameraLiveOverlayCanvas" class="camera-overlay-canvas" width="1280" height="720"></canvas>
-                  <figcaption id="cameraFrameCaption">ROS2 프레임 대기 중</figcaption>
-                </figure>
-                <div class="camera-controls">
-                  <div class="map-control">
-                    <div>
-                      <span>Resolution</span>
-                      <strong id="cameraResolutionValue" data-camera-resolution-value>1280x720</strong>
-                    </div>
-                    <select id="cameraResolutionSelect" data-camera-resolution-select aria-label="카메라 캡처 해상도">
-                      <option value="1280x720" selected>1280x720</option>
-                      <option value="1920x1080">1920x1080</option>
-                    </select>
-                  </div>
-                  <div class="map-control">
-                    <div>
-                      <span>Frame rate</span>
-                      <strong id="cameraFpsValue" data-camera-fps-value>60 fps</strong>
-                    </div>
-                    <select id="cameraFpsSelect" data-camera-fps-select aria-label="카메라 캡처 FPS">
-                      <option value="60" selected>60 fps</option>
-                      <option value="30">30 fps</option>
-                    </select>
-                  </div>
-                  <div id="cameraLiveStats" class="chart-readout"></div>
-                </div>
-              </div>
-            </article>
 
-            <article class="panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Runtime</p>
-                  <h2>서비스 연결</h2>
-                </div>
-              </div>
-              <div id="connectionServices" class="status-list"></div>
-            </article>
+<div class="archive-media-grid">
+<div class="lidar-map-stage rover-lidar-stage">
+<canvas class="lidar-map" height="520" id="roverArchiveLidarCanvas" width="520"></canvas>
+</div>
+<figure class="archive-camera-frame">
+<video id="roverArchiveCameraVideo" muted="" playsinline="" preload="metadata"></video>
+<img alt="Archived camera preview" id="roverArchiveCameraImage"/>
 
-            <article class="panel wide">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Sensors</p>
-                  <h2>ROS2 센서 링크</h2>
-                </div>
-              </div>
-              <div id="connectionSensors" class="status-list"></div>
-            </article>
-          </section>
-        </section>
+<figcaption id="roverArchiveCameraCaption">camera preview 대기</figcaption>
+</figure>
+</div>
+<div class="status-list" id="roverArchiveDetails"></div>
+<section class="archive-gps-panel" hidden="" id="roverArchiveGpsPanel">
+<div class="panel-head mini"><div><p class="eyebrow">Time-aligned GPS</p><h3>기록된 로버 위치</h3></div><button aria-pressed="true" class="action-button secondary" id="roverArchiveGpsFollow" type="button">로버 중심 추적 중</button></div>
+<div aria-label="기록 GPS 동기 재생 지도" class="gps-map gps-archive-map" id="roverArchiveGpsMap" role="region"></div>
+<div class="gps-readouts"><div><span>위도 · 경도</span><strong id="roverArchiveGpsPosition">기록 선택 대기</strong></div><div><span>수신 상태</span><strong id="roverArchiveGpsQuality">—</strong></div><div><span>수신기 보고 정확도</span><strong id="roverArchiveGpsAccuracy">—</strong></div><div><span>이동 속도</span><strong id="roverArchiveGpsSpeed">—</strong></div></div>
+<div class="gps-map-footer"><span id="roverArchiveGpsTime">GPS 타임라인 대기</span><span id="roverArchiveGpsMapStatus"></span></div>
+<p class="gps-caption" id="roverArchiveGpsAltitude"></p>
+</section>
+<section class="archive-imu-panel" hidden="" id="roverArchiveImuPanel">
+<div class="panel-head mini">
+<div>
+<p class="eyebrow">Time-aligned ROS 2</p>
+<h3>Recorded IMU</h3>
+</div>
+<span class="tag" id="roverArchiveImuTime">IMU -- / Δ --</span>
+</div>
+<div class="archive-imu-grid">
+<div class="imu-attitude-stage archive-imu-attitude-stage">
+<canvas class="imu-attitude-canvas" height="280" id="roverArchiveImuCanvas" width="520"></canvas>
+<span id="roverArchiveImuCaption">IMU timeline 대기</span>
+</div>
+<div class="chart-readout compact" id="roverArchiveImuStats"></div>
+</div>
+</section>
 
-        <section class="page" data-page="/system">
-          <header class="page-head">
-            <p class="eyebrow">System resources</p>
-            <h1>시스템 리소스</h1>
-            <p>CPU, Memory, Swap, Network, Power를 실시간 그래프로 표시합니다.</p>
-          </header>
-
-          <section class="resource-grid">
-            <article class="panel resource-card">
-              <div class="panel-head">
-                <div>
-                  <h2>CPU</h2>
-                  <small id="cpuModeText">통합 그래프</small>
-                </div>
-                <div class="panel-actions">
-                  <strong id="systemCpuValue">--</strong>
-                  <div class="segmented-control" aria-label="CPU 그래프 표시 방식">
-                    <button type="button" data-cpu-mode="combined">통합</button>
-                    <button type="button" data-cpu-mode="separate">코어별</button>
-                  </div>
-                </div>
-              </div>
-              <div id="cpuCombinedView" class="cpu-mode-view">
-                <div class="chart-frame">
-                  <canvas id="chartCpu" class="resource-chart" width="900" height="260"></canvas>
-                  <div id="cpuReadout" class="chart-readout"></div>
-                </div>
-              </div>
-              <div id="cpuSeparateView" class="cpu-mode-view core-chart-grid" hidden></div>
-              <div id="coreList" class="core-grid"></div>
-            </article>
-            <article class="panel resource-card">
-              <div class="panel-head"><h2>Memory</h2><strong id="systemMemoryValue">--</strong></div>
-              <div class="chart-frame">
-                <canvas id="chartMemory" class="resource-chart" width="900" height="260"></canvas>
-                <div id="memoryReadout" class="chart-readout"></div>
-              </div>
-              <div id="memoryBar" class="progress"><i></i></div>
-              <small id="memoryDetail">--</small>
-            </article>
-            <article class="panel resource-card">
-              <div class="panel-head"><h2>Swap</h2><strong id="systemSwapValue">--</strong></div>
-              <div class="chart-frame">
-                <canvas id="chartSwap" class="resource-chart" width="900" height="260"></canvas>
-                <div id="swapReadout" class="chart-readout"></div>
-              </div>
-            </article>
-            <article class="panel resource-card">
-              <div class="panel-head"><h2>Network</h2><strong id="systemNetworkValue">--</strong></div>
-              <div class="chart-frame">
-                <canvas id="chartSystemNetwork" class="resource-chart" width="900" height="260"></canvas>
-                <div id="systemNetworkReadout" class="chart-readout"></div>
-              </div>
-            </article>
-            <article class="panel resource-card">
-              <div class="panel-head"><h2>Power</h2><strong id="systemPowerValue">--</strong></div>
-              <div class="chart-frame">
-                <canvas id="chartPower" class="resource-chart" width="900" height="260"></canvas>
-                <div id="powerReadout" class="chart-readout"></div>
-              </div>
-            </article>
-          </section>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div><p class="eyebrow">Storage</p><h2>Disk</h2></div>
-              <strong id="diskSummary">--</strong>
-            </div>
-            <div id="diskList" class="disk-list"></div>
-          </section>
-        </section>
-
-        <section class="page" data-page="/network">
-          <header class="page-head">
-            <p class="eyebrow">Network</p>
-            <h1>네트워크 상태</h1>
-            <p>외부 접속 주소와 Jetson host 주소, 실시간 RX/TX 처리량만 우선 표시합니다.</p>
-          </header>
-
-          <section class="network-focus-grid">
-            <article class="kpi">
-              <span>External IP</span>
-              <strong id="networkExternalIp">--</strong>
-              <small id="networkExternalIpText">public endpoint</small>
-            </article>
-            <article class="kpi">
-              <span>Internal Host</span>
-              <strong id="networkInternalIp">--</strong>
-              <small id="networkInternalIpText">host route</small>
-            </article>
-          </section>
-
-          <section class="panel network-mode-panel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">Jetson Wi-Fi mode</p>
-                <h2>오프라인 AP / 저장된 Wi-Fi</h2>
-              </div>
-              <span id="networkModeTag" class="tag">확인 중</span>
-            </div>
-            <div class="panel-actions network-mode-actions">
-              <button id="networkEnableApButton" class="action-button primary" type="button" disabled>AP 전환</button>
-              <button id="networkScanWifiButton" class="action-button secondary" type="button" disabled>Wi-Fi 검색</button>
-            </div>
-            <div id="networkModeReadout" class="chart-readout"></div>
-            <div id="networkModeResult" class="test-result">네트워크 제어 상태를 확인하고 있습니다.</div>
-            <small class="control-note">AP: BTS_Jetson · 클라이언트가 1분 없으면 저장된 Wi-Fi를 1분간 검색한 뒤 다시 AP로 복귀합니다.</small>
-          </section>
-
-          <section class="dashboard-grid">
-            <article class="panel chart-panel wide">
-              <div class="panel-head">
-                <div><p class="eyebrow">Live throughput</p><h2>RX / TX</h2></div>
-                <strong id="networkThroughput">--</strong>
-              </div>
-              <div class="chart-frame">
-                <canvas id="chartNetwork" class="resource-chart" width="1200" height="320"></canvas>
-                <div id="networkReadout" class="chart-readout"></div>
-              </div>
-            </article>
-            <article class="panel">
-              <div class="panel-head">
-                <div><p class="eyebrow">Interfaces</p><h2>연결 정보</h2></div>
-              </div>
-              <div id="interfaceList" class="interface-list"></div>
-            </article>
-          </section>
-        </section>
-
-        <section class="page" data-page="/docker">
-          <header class="page-head">
-            <p class="eyebrow">Docker</p>
-            <h1>컨테이너 대시보드</h1>
-            <p>Docker Engine과 컨테이너 리소스 사용량을 표시합니다.</p>
-          </header>
-
-          <section class="kpi-grid">
-            <article class="kpi"><span>Containers</span><strong id="dockerContainerCount">--</strong><small id="dockerRunningText">--</small></article>
-            <article class="kpi"><span>Images</span><strong id="dockerImageCount">--</strong><small id="dockerVersion">--</small></article>
-            <article class="kpi"><span>Container CPU</span><strong id="dockerCpuTotal">--</strong><small>sum of visible stats</small></article>
-            <article class="kpi"><span>Container Memory</span><strong id="dockerMemTotal">--</strong><small id="dockerMemText">--</small></article>
-          </section>
-
-          <section class="dashboard-grid">
-            <article class="panel chart-panel">
-              <div class="panel-head"><h2>Container CPU</h2><strong id="dockerCpuChartValue">--</strong></div>
-              <div class="chart-frame">
-                <canvas id="chartDockerCpu" class="resource-chart" width="900" height="260"></canvas>
-                <div id="dockerCpuReadout" class="chart-readout"></div>
-              </div>
-            </article>
-            <article class="panel chart-panel">
-              <div class="panel-head"><h2>Container Memory</h2><strong id="dockerMemChartValue">--</strong></div>
-              <div class="chart-frame">
-                <canvas id="chartDockerMem" class="resource-chart" width="900" height="260"></canvas>
-                <div id="dockerMemReadout" class="chart-readout"></div>
-              </div>
-            </article>
-          </section>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div><p class="eyebrow">Containers</p><h2>컨테이너 목록</h2></div>
-            </div>
-            <div id="containerList" class="container-list"></div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div><p class="eyebrow">Inspect</p><h2 id="containerDetailTitle">컨테이너 상세</h2></div>
-              <div class="container-toolbar">
-                <div id="containerActions" class="container-actions"></div>
-                <button id="containerRefreshButton" class="action-button secondary" type="button">새로고침</button>
-              </div>
-            </div>
-            <div id="containerDetail" class="container-detail">
-              <div class="empty-state">컨테이너를 선택하세요.</div>
-            </div>
-            <pre id="containerLogs" class="log-view">로그 대기 중</pre>
-          </section>
-        </section>
-
-        <section class="page" data-page="/fan">
-          <header class="page-head">
-            <p class="eyebrow">Jetson cooling</p>
-            <h1>Fan Control</h1>
-            <p>Jetson 온도를 확인하면서 팬 PWM을 직접 조정합니다.</p>
-          </header>
-
-          <section class="fan-control-grid">
-            <article class="kpi"><span>Temperature</span><strong id="fanTempValue">--</strong><small id="fanTempText">thermal max</small></article>
-            <article class="panel fan-pwm-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Manual PWM</p>
-                  <h2>팬 출력</h2>
-                </div>
-                <div class="fan-head-actions">
-                  <strong id="fanPwmValue">--</strong>
-                  <label class="fan-mode-toggle" for="fanAutoToggle">
-                    <input id="fanAutoToggle" type="checkbox" />
-                    <span class="fan-toggle-track"><i></i></span>
-                    <span class="fan-toggle-copy">
-                      <b id="fanModeValue">--</b>
-                      <small id="fanModeText">nvfancontrol</small>
-                    </span>
-                  </label>
-                </div>
-              </div>
-              <div id="fanControlStatus" class="test-result">상태 확인 중</div>
-              <label class="slider-row fan-slider-row">
-                <span>PWM</span>
-                <input id="fanPwmSlider" type="range" min="0" max="255" step="1" value="0" />
-                <b id="fanSliderValue">0</b>
-              </label>
-              <div class="preset-grid compact">
-                <button type="button" data-fan-preset="quiet">80</button>
-                <button type="button" data-fan-preset="normal">160</button>
-                <button type="button" data-fan-preset="max">255</button>
-              </div>
-            </article>
-          </section>
-
-          <section class="dashboard-grid">
-            <article class="panel chart-panel wide">
-              <div class="panel-head"><h2>Fan Temperature</h2><strong id="fanTempChartValue">--</strong></div>
-              <div class="chart-frame">
-                <canvas id="chartFanTemp" class="resource-chart" width="900" height="260"></canvas>
-                <div id="fanTempReadout" class="chart-readout"></div>
-              </div>
-            </article>
-          </section>
-        </section>
-
-        <section class="page" data-page="/research">
-          <header class="page-head">
-            <p class="eyebrow">Research</p>
-            <h1>연구 연결 상태</h1>
-            <p>실제 ROS2 bridge가 연결되면 이 페이지에 연구 지표가 채워집니다.</p>
-          </header>
-
-          <section class="dashboard-grid">
-            <article class="panel">
-              <div class="panel-head">
-                <div><p class="eyebrow">ROS2 sensors</p><h2>센서 텔레메트리</h2></div>
-              </div>
-              <div id="sensorList" class="status-list"></div>
-            </article>
-            <article class="panel">
-              <div class="panel-head">
-                <div><p class="eyebrow">Experiment</p><h2>실험 데이터</h2></div>
-              </div>
-              <dl class="detail-list">
-                <div><dt>Rover</dt><dd id="roverState">연결 전</dd></div>
-                <div><dt>Fusion</dt><dd id="fusionState">연결 전</dd></div>
-                <div><dt>Experiment</dt><dd id="experimentState">연결 전</dd></div>
-              </dl>
-            </article>
-          </section>
-
-          <section class="panel">
-            <div class="panel-head">
-              <div><p class="eyebrow">Roadmap</p><h2>수행계획 진행도</h2></div>
-            </div>
-            <div id="milestoneList" class="timeline"></div>
-          </section>
-        </section>
-
-        <section class="page" data-page="/rover-control">
-          <header class="page-head">
-            <p class="eyebrow">ESP8266 ROVER</p>
-            <h1>Rover Control</h1><label>전송 품질 <select data-network-profile aria-label="전송 품질 선택"><option value="auto">자동 조절</option><option value="tiny">64 kbps</option><option value="slow">매우 느린 망</option><option value="balanced">균형</option><option value="detail">고화질</option></select></label>
-              <p>조종 활성화를 켠 뒤 WASD 또는 방향 버튼을 누르세요. Q/E로 주행 중 속도를 조절할 수 있습니다.</p>
-          </header>
-
-          <section class="kpi-grid">
-            <article class="kpi"><span>ESP USB</span><strong id="roverControlState">--</strong><small id="roverControlBase">--</small></article>
-            <article class="kpi"><span>Mode</span><strong id="roverProxyState">--</strong><small>단일 사용자 수동 조종</small></article>
-            <article class="kpi"><span>ROS2</span><strong id="roverRosState">--</strong><small>모터 상태 관측</small></article>
-            <article class="kpi"><span>Archive</span><strong id="roverRecorderState">--</strong><small id="roverRecorderKind">대기</small></article>
-          </section>
-
-          <section class="rover-layout">
-            <article class="panel rover-live-panel rover-lidar-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Live</p>
-                  <h2>LiDAR</h2>
-                </div>
-                <button id="roverLidarToggle" class="action-button secondary" type="button">LiDAR 시작</button>
-              </div>
-              <div class="lidar-map-stage rover-lidar-stage">
-                <canvas id="roverLidarCanvas" class="lidar-map" width="520" height="520"></canvas>
-              </div>
-              <div class="rover-sensor-controls">
-                <div class="map-control compact">
-                  <div>
-                    <span>Range</span>
-                    <strong id="roverLidarRangeValue" data-lidar-range-value>Auto</strong>
-                  </div>
-                  <div class="map-zoom-buttons" aria-label="Rover LiDAR 지도 범위">
-                    <button type="button" data-lidar-range="out">−</button>
-                    <button type="button" data-lidar-range="reset">Auto</button>
-                    <button type="button" data-lidar-range="in">+</button>
-                  </div>
-                  <label class="map-range-slider" for="roverLidarRangeSlider">
-                    <span>Zoom</span>
-                    <input id="roverLidarRangeSlider" data-lidar-range-slider type="range" min="1" max="30" step="0.1" value="25" />
-                  </label>
-                </div>
-                <div class="map-control compact">
-                  <div>
-                    <span>Points</span>
-                    <strong id="roverLidarPointValue" data-lidar-point-value>900 pts</strong>
-                  </div>
-                  <label class="map-range-slider" for="roverLidarPointSlider">
-                    <span>Stream limit</span>
-                    <input id="roverLidarPointSlider" data-lidar-point-slider type="range" min="50" max="3200" step="50" value="900" />
-                  </label>
-                </div>
-              </div>
-              <div class="segmented-control overlay-mode" aria-label="Rover LiDAR overlay mode">
-                <button type="button" data-lidar-overlay-mode="raw">LiDAR</button>
-                <button type="button" data-lidar-overlay-mode="both">LiDAR+Overlay</button>
-                <button type="button" data-lidar-overlay-mode="overlay">Overlay</button>
-              </div>
-              <div class="segmented-control perception-mode" aria-label="Rover perception overlay source">
-                <button type="button" data-perception-overlay="lidar">2D Objects</button>
-                <button type="button" data-perception-overlay="camera">Camera</button>
-                <button type="button" data-perception-overlay="fusion">Fusion Trees</button>
-              </div>
-              <div id="roverLidarStats" class="chart-readout"></div>
-            </article>
-
-            <article class="panel rover-live-panel rover-camera-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Live</p>
-                  <h2>카메라</h2>
-                </div>
-                <button id="roverCameraToggle" class="action-button secondary" type="button">스트리밍 시작</button>
-              </div>
-              <div class="rover-camera-frame">
-                <img id="roverCameraImage" alt="Rover camera stream" />
-                <canvas id="roverCameraOverlayCanvas" class="camera-overlay-canvas" width="1280" height="720"></canvas>
-                <span id="roverCameraCaption">stream 대기</span>
-              </div>
-              <div class="rover-sensor-controls">
-                <div class="map-control compact">
-                  <div>
-                    <span>Resolution</span>
-                    <strong id="roverCameraResolutionValue" data-camera-resolution-value>1280x720</strong>
-                  </div>
-                  <select id="roverCameraResolutionSelect" data-camera-resolution-select aria-label="Rover camera capture resolution"></select>
-                </div>
-                <div class="map-control compact">
-                  <div>
-                    <span>Frame rate</span>
-                    <strong id="roverCameraFpsValue" data-camera-fps-value>60 fps</strong>
-                  </div>
-                  <select id="roverCameraFpsSelect" data-camera-fps-select aria-label="Rover camera capture FPS"></select>
-                </div>
-              </div>
-              <div class="segmented-control camera-overlay-mode" aria-label="Rover camera overlay mode">
-                <button type="button" data-camera-overlay-mode="raw">Camera</button>
-                <button type="button" data-camera-overlay-mode="both">Camera+Overlay</button>
-                <button type="button" data-camera-overlay-mode="overlay">Overlay</button>
-              </div>
-              <div id="roverCameraStats" class="chart-readout"></div>
-            </article>
-
-            <article class="panel rover-gps-panel wide">
-              <div class="panel-head">
-                <div><p class="eyebrow">Live · Offline Map</p><h2>GPS · 로버 위치</h2></div>
-                <div class="gps-map-actions"><span id="roverGpsFixState" class="tag" data-state="waiting">수신 대기</span><button id="roverGpsFollow" class="action-button primary" type="button" aria-pressed="true">로버 중심 추적 중</button></div>
-              </div>
-              <div id="roverGpsMap" class="gps-map" role="region" aria-label="로버 GPS 오프라인 지도"></div>
-              <div class="gps-readouts">
-                <div><span>위도 · 경도</span><strong id="roverGpsPosition">GPS 위치 수신 대기</strong></div>
-                <div><span>수신 상태</span><strong id="roverGpsQuality">GPS 데이터 없음</strong></div>
-                <div><span>수신기 보고 정확도</span><strong id="roverGpsAccuracy">정확도 미보고</strong></div>
-                <div><span>이동 속도</span><strong id="roverGpsSpeed">— km/h</strong></div>
-              </div>
-              <div class="gps-map-footer"><span id="roverGpsMapStatus">오프라인 지도 준비 중</span><span id="roverGpsAge">GPS 표본 수신 전</span></div>
-              <p id="roverGpsAltitude" class="gps-caption">현재 위치가 확정되면 표시됩니다.</p>
-              <p class="gps-caption">드래그로 지도 둘러보기 · 휠/두 손가락으로 확대·축소 · 로버 중심 버튼으로 추적 재개. 첫 위치 수신 전에는 울산 지도를 표시합니다.</p>
-              <details class="gps-diagnostics"><summary>GPS 연결 정보</summary><p id="roverGpsConnection">GPS 브리지 연결 대기</p><p>RTK FIX는 보정 데이터가 실제 수신될 때 표시됩니다. 지도는 Jetson에 저장되어 인터넷 없이 사용할 수 있습니다.</p></details>
-            </article>
-
-            <article class="panel rover-live-panel rover-imu-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Live ROS 2</p>
-                  <h2>IMU</h2>
-                </div>
-                <div class="panel-actions">
-                  <button id="roverImuZeroButton" class="action-button secondary" type="button" disabled>현재 자세 영점</button>
-                  <button id="roverImuToggle" class="action-button secondary" type="button">IMU 시작</button>
-                </div>
-              </div>
-              <div class="imu-attitude-stage">
-                <canvas id="roverImuCanvas" class="imu-attitude-canvas" width="520" height="280"></canvas>
-                <span id="roverImuCaption">/imu/data_raw 대기</span>
-              </div>
-              <div class="imu-heading-row">
-                <span>Heading</span>
-                <strong id="roverImuHeading">--°</strong>
-                <span id="roverImuCalibrationState" class="tag">idle</span>
-              </div>
-              <div id="roverImuStats" class="chart-readout"></div>
-              <div id="roverImuZeroResult" class="test-result">ROS2 IMU 연결 후 현재 자세를 0점으로 설정할 수 있습니다.</div>
-            </article>
-
-            <article class="panel rover-drive-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Drive</p>
-                  <h2>주행 제어</h2>
-                </div>
-                <div class="drive-head-actions">
-                  <button id="roverDrivePanelToggle" class="action-button secondary" type="button">조종 패널 숨기기</button>
-                  <button id="roverStopButton" class="action-button danger" type="button">STOP</button>
-                </div>
-              </div>
-              <div class="rover-arm-controls">
-                <button id="roverArmButton" class="action-button primary" type="button" aria-pressed="false">조종 활성화 OFF</button>
-              </div>
-              <div class="rover-speed-control">
-                <label for="roverSpeedSlider">
-                  <span>Speed · Q −5 / E +5</span>
-                  <strong id="roverSpeedValue">25%</strong>
-                </label>
-                <input id="roverSpeedSlider" type="range" min="0" max="100" step="1" value="25" />
-              </div>
-              <div id="roverMotionReadout" class="chart-readout compact"></div>
-              <div class="rover-pad" aria-label="Rover drive pad">
-                <button type="button" data-rover-drive="forward">W</button>
-                <button type="button" data-rover-drive="left">A</button>
-                <button type="button" data-rover-drive="stop">STOP</button>
-                <button type="button" data-rover-drive="right">D</button>
-                <button type="button" data-rover-drive="backward">S</button>
-              </div>
-              <p>키·버튼 놓기: 서서히 정지 · STOP/Esc/창 이탈: 즉시 정지 후 조종 해제</p>
-              <p>W+A / W+D / S+A / S+D: 이동하며 좌·우로 회전 · 안쪽 바퀴는 설정 속도, 바깥쪽은 1.5배(최대 100%). 속도 100%에서는 추가 회전 여유가 없습니다.</p>
-              <div id="roverCommandStatus" class="test-result">명령 대기 중</div>
-            </article>
-
-            <article class="panel rover-record-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Archive</p>
-                  <h2>기록 제어</h2>
-                </div>
-                <div class="record-head-actions">
-                  <span id="roverRecordingTimer" class="tag">00:00</span>
-                  <button id="roverRecordStopButton" class="action-button danger" type="button">중지</button>
-                </div>
-              </div>
-              <button id="roverRecordStartButton" class="action-button primary record-start-button" type="button">기록 시작</button>
-              <div class="record-button-grid" role="group" aria-label="recording kind">
-                <button id="roverRecordLidarButton" class="action-button secondary" type="button" data-record-kind="lidar">LiDAR</button>
-                <button id="roverRecordCameraButton" class="action-button secondary" type="button" data-record-kind="camera">Camera</button>
-                <button id="roverRecordBothButton" class="action-button secondary" type="button" data-record-kind="both">LiDAR+Camera</button>
-              </div>
-              <label class="switch-control record-imu-option">
-                <input id="roverRecordImuToggle" type="checkbox" checked />
-                <span>IMU 함께 기록 (기본) · 시작 시 정지 자세 보정</span>
-              </label>
-              <label class="switch-control record-imu-option"><input id="roverRecordGpsToggle" type="checkbox" checked /><span>GPS 함께 기록 (기본) · 위치·정확도·수신 상태</span></label>
-              <div id="roverRecordingStatus" class="test-result">기록 대기 중</div>
-            </article>
-
-            <article class="panel wide">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Runtime</p>
-                  <h2>연동 상태</h2>
-                </div>
-              </div>
-              <div id="roverControlDetails" class="status-list"></div>
-            </article>
-
-            <article class="panel wide">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Archive</p>
-                  <h2>기록 데이터</h2>
-                </div>
-                <button id="roverArchiveRefreshButton" class="action-button secondary" type="button">새로고침</button>
-              </div>
-              <div class="archive-layout">
-                <div id="roverArchiveList" class="archive-list"></div>
-                <div class="archive-preview">
-                  <div class="archive-player-toolbar">
-                    <button id="roverArchivePlayButton" class="action-button secondary" type="button">재생</button>
-                    <span id="roverArchiveTime" class="tag">00:00 / 00:00</span>
-                    <label class="switch-control">
-                      <input id="roverArchiveSyncToggle" type="checkbox" checked />
-                      <span>동시 재생</span>
-                    </label>
-                    <label class="switch-control">
-                      <input id="roverArchiveOverlayToggle" type="checkbox" checked />
-                      <span>오버레이</span>
-                    </label>
-                  </div>
-                  <input id="roverArchiveScrubber" class="archive-scrubber" type="range" min="0" max="0" step="0.01" value="0" />
-                  <div class="map-control compact archive-map-control">
-                    <div>
-                      <span>Archive range</span>
-                      <strong id="roverArchiveRangeValue">25m</strong>
-                    </div>
-                    <label class="map-range-slider" for="roverArchiveRangeSlider">
-                      <span>Zoom</span>
-                      <input id="roverArchiveRangeSlider" type="range" min="1" max="30" step="0.1" value="25" />
-                    </label>
-                  </div>
-                  <div class="segmented-control overlay-mode archive-overlay-mode" aria-label="archive lidar mode">
-                    <button type="button" data-archive-overlay-mode="raw">LiDAR</button>
-                    <button type="button" data-archive-overlay-mode="both">LiDAR+Overlay</button>
-                    <button type="button" data-archive-overlay-mode="overlay">Overlay</button>
-                  </div>
-                  <div class="segmented-control camera-overlay-mode archive-camera-overlay-mode" aria-label="archive camera mode">
-                    <button type="button" data-camera-overlay-mode="raw">Camera</button>
-                    <button type="button" data-camera-overlay-mode="both">Camera+Overlay</button>
-                    <button type="button" data-camera-overlay-mode="overlay">Overlay</button>
-                  </div>
-                  <div class="segmented-control perception-mode" aria-label="archive perception overlay source">
-                    <button type="button" data-perception-overlay="lidar">2D Objects</button>
-                    <button type="button" data-perception-overlay="camera">Camera</button>
-                    <button type="button" data-perception-overlay="fusion">Fusion Trees</button>
-                  </div>
-                  <div class="archive-media-grid">
-                    <div class="lidar-map-stage rover-lidar-stage">
-                      <canvas id="roverArchiveLidarCanvas" class="lidar-map" width="520" height="520"></canvas>
-                    </div>
-                    <figure class="archive-camera-frame">
-                      <video id="roverArchiveCameraVideo" playsinline muted preload="metadata"></video>
-                      <img id="roverArchiveCameraImage" alt="Archived camera preview" />
-                      <canvas id="roverArchiveCameraOverlayCanvas" class="camera-overlay-canvas" width="1280" height="720"></canvas>
-                      <figcaption id="roverArchiveCameraCaption">camera preview 대기</figcaption>
-                    </figure>
-                  </div>
-                  <div id="roverArchiveDetails" class="status-list"></div>
-                  <section id="roverArchiveGpsPanel" class="archive-gps-panel" hidden>
-                    <div class="panel-head mini"><div><p class="eyebrow">Time-aligned GPS</p><h3>기록된 로버 위치</h3></div><button id="roverArchiveGpsFollow" class="action-button secondary" type="button" aria-pressed="true">로버 중심 추적 중</button></div>
-                    <div id="roverArchiveGpsMap" class="gps-map gps-archive-map" role="region" aria-label="기록 GPS 동기 재생 지도"></div>
-                    <div class="gps-readouts"><div><span>위도 · 경도</span><strong id="roverArchiveGpsPosition">기록 선택 대기</strong></div><div><span>수신 상태</span><strong id="roverArchiveGpsQuality">—</strong></div><div><span>수신기 보고 정확도</span><strong id="roverArchiveGpsAccuracy">—</strong></div><div><span>이동 속도</span><strong id="roverArchiveGpsSpeed">—</strong></div></div>
-                    <div class="gps-map-footer"><span id="roverArchiveGpsTime">GPS 타임라인 대기</span><span id="roverArchiveGpsMapStatus"></span></div>
-                    <p id="roverArchiveGpsAltitude" class="gps-caption"></p>
-                  </section>
-                  <section id="roverArchiveImuPanel" class="archive-imu-panel" hidden>
-                    <div class="panel-head mini">
-                      <div>
-                        <p class="eyebrow">Time-aligned ROS 2</p>
-                        <h3>Recorded IMU</h3>
-                      </div>
-                      <span id="roverArchiveImuTime" class="tag">IMU -- / Δ --</span>
-                    </div>
-                    <div class="archive-imu-grid">
-                      <div class="imu-attitude-stage archive-imu-attitude-stage">
-                        <canvas id="roverArchiveImuCanvas" class="imu-attitude-canvas" width="520" height="280"></canvas>
-                        <span id="roverArchiveImuCaption">IMU timeline 대기</span>
-                      </div>
-                      <div id="roverArchiveImuStats" class="chart-readout compact"></div>
-                    </div>
-                  </section>
-                  <div class="orchard-map-panel">
-                    <div class="panel-head mini">
-                      <div>
-                        <p class="eyebrow">Orchard Map</p>
-                        <h3>과수 위치 지도</h3>
-                      </div>
-                      <div class="map-zoom-buttons" aria-label="Orchard map controls">
-                        <button id="roverOrchardMapZoomOut" type="button">−</button>
-                        <button id="roverOrchardMapReset" type="button">Reset</button>
-                        <button id="roverOrchardMapZoomIn" type="button">+</button>
-                        <button id="roverOrchardMapDownload" type="button">Fusion PNG</button>
-                      </div>
-                    </div>
-                    <div class="orchard-map-timeline">
-                      <input id="roverOrchardMapScrubber" class="archive-scrubber" type="range" min="0" max="0" step="0.01" value="0" aria-label="과수 위치 지도 재생 위치" />
-                      <span id="roverOrchardMapTime" class="tag">00:00 / 00:00</span>
-                    </div>
-                    <div class="orchard-map-grid">
-                      <article class="orchard-map-card">
-                        <div class="map-card-head">
-                          <span>LiDAR-only</span>
-                          <small id="roverOrchardMapLidarStats">--</small>
-                        </div>
-                        <canvas id="roverOrchardMapLidarCanvas" class="orchard-map-canvas" data-orchard-map-layer="lidar" width="720" height="520"></canvas>
-                      </article>
-                      <article class="orchard-map-card">
-                        <div class="map-card-head">
-                          <span>Camera-only</span>
-                          <small id="roverOrchardMapCameraStats">--</small>
-                        </div>
-                        <canvas id="roverOrchardMapCameraCanvas" class="orchard-map-canvas" data-orchard-map-layer="camera" width="720" height="520"></canvas>
-                      </article>
-                      <article class="orchard-map-card">
-                        <div class="map-card-head">
-                          <span>Weighted Fusion</span>
-                          <small id="roverOrchardMapFusionStats">--</small>
-                        </div>
-                        <canvas id="roverOrchardMapFusionCanvas" class="orchard-map-canvas" data-orchard-map-layer="fusion" width="720" height="520"></canvas>
-                      </article>
-                    </div>
-                    <div id="roverOrchardMapStats" class="chart-readout compact"></div>
-                  </div>
-                  <div class="archive-download-actions">
-                    <a id="roverArchiveDownloadButton" class="archive-download-button" href="#" download hidden>
-                      <span>기록 데이터 다운로드</span>
-                      <small id="roverArchiveDownloadMeta">tar.gz</small>
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </article>
-          </section>
-        </section>
-
-        <section class="page" data-page="/docs">
-          <header class="page-head">
-            <p class="eyebrow">Docs</p>
-            <h1>문서</h1>
-            <p>대시보드 운영, Jetson 배포, LiDAR 연결, telemetry schema를 한 곳에서 확인합니다.</p>
-          </header>
-
-          <section class="docs-layout">
-            <aside class="panel docs-index-panel">
-              <div class="panel-head">
-                <div>
-                  <p class="eyebrow">Index</p>
-                  <h2>문서 목록</h2>
-                </div>
-              </div>
-              <div id="docsIndex" class="docs-index">
-                <div class="empty-state">문서 목록을 불러오는 중입니다.</div>
-              </div>
-            </aside>
-
-            <article class="panel docs-reader-panel">
-              <div class="doc-reader-head">
-                <div>
-                  <p id="docCategory" class="eyebrow">Docs</p>
-                  <h2 id="docTitle">문서를 선택하세요</h2>
-                  <small id="docSummary">왼쪽 목록에서 열 문서를 고릅니다.</small>
-                </div>
-                <a id="docPermalink" class="text-link" href="/docs">link</a>
-              </div>
-              <div id="docMarkdown" class="markdown-body">
-                <div class="empty-state">문서가 선택되지 않았습니다.</div>
-              </div>
-            </article>
-          </section>
-        </section>
-      </main>
-    </div>
-
-    <script src="/static/app.js"></script>
-    <script src="/static/vendor/pmtiles/pmtiles.js"></script>
-    <script type="module" src="/static/gps-map.js"></script>
-  </body>
+<div class="archive-download-actions">
+<a class="archive-download-button" download="" hidden="" href="#" id="roverArchiveDownloadButton">
+<span>기록 데이터 다운로드</span>
+<small id="roverArchiveDownloadMeta">tar.gz</small>
+</a>
+</div>
+</div>
+</div>
+</article>
+</section>
+</section>
+<section class="page" data-page="/docs">
+<header class="page-head">
+<p class="eyebrow">Docs</p>
+<h1>문서</h1>
+<p>대시보드 운영, Jetson 배포, LiDAR 연결, telemetry schema를 한 곳에서 확인합니다.</p>
+</header>
+<section class="docs-layout">
+<aside class="panel docs-index-panel">
+<div class="panel-head">
+<div>
+<p class="eyebrow">Index</p>
+<h2>문서 목록</h2>
+</div>
+</div>
+<div class="docs-index" id="docsIndex">
+<div class="empty-state">문서 목록을 불러오는 중입니다.</div>
+</div>
+</aside>
+<article class="panel docs-reader-panel">
+<div class="doc-reader-head">
+<div>
+<p class="eyebrow" id="docCategory">Docs</p>
+<h2 id="docTitle">문서를 선택하세요</h2>
+<small id="docSummary">왼쪽 목록에서 열 문서를 고릅니다.</small>
+</div>
+<a class="text-link" href="/docs" id="docPermalink">link</a>
+</div>
+<div class="markdown-body" id="docMarkdown">
+<div class="empty-state">문서가 선택되지 않았습니다.</div>
+</div>
+</article>
+</section>
+</section>
+</main>
+</div>
+<script src="/static/app.js"></script>
+<script src="/static/vendor/pmtiles/pmtiles.js"></script>
+<script src="/static/gps-map.js" type="module"></script>
+</body>
 </html>

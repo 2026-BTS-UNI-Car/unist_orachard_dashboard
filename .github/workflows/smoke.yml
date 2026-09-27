@@ -28,7 +28,7 @@ jobs:
         run: docker build --file Dockerfile --tag unist-orchard-dashboard:smoke .
       - name: Build ROS2 runtime image
         run: docker build --file Dockerfile.ros2 --tag unist-orchard-dashboard-ros2:smoke .
-      - name: ROS Iron camera bearing contract smoke
+      - name: ROS Iron raw sensor contract smoke
         run: |
           docker run --rm \
             --volume "$PWD:/workspace:ro" \

@@ -1,3 +1,4 @@
+const SIMULATION = document.documentElement.dataset.runtimeMode === "simulation";
 const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/docs"];
 const HISTORY_KEYS = ["cpu", "memory", "swap", "power", "temp", "rx", "tx", "dockerCpu", "dockerMemory", "fanTemp", "fanPwm"];
 const CORE_COLORS = ["#55e2b2", "#38d8ff", "#2f76ff", "#8238c9", "#f21b58", "#f4bd4f", "#7dd3fc", "#fb7185"];
@@ -9,20 +10,15 @@ const CPU_MODE_KEY = "ubts-cpu-chart-mode";
 const LIDAR_RANGE_KEY = "ubts-lidar-map-range-v2";
 const LIDAR_RANGE_AUTO_KEY = "ubts-lidar-map-range-auto-v2";
 const LIDAR_POINTS_KEY = "ubts-lidar-points-v1";
-const LIDAR_OVERLAY_MODE_KEY = "ubts-lidar-overlay-mode-v1";
-const ARCHIVE_OVERLAY_MODE_KEY = "ubts-archive-overlay-mode-v1";
-const ARCHIVE_OVERLAY_VISIBLE_KEY = "ubts-archive-overlay-visible-v1";
 const ARCHIVE_RANGE_KEY = "ubts-archive-lidar-range-v1";
 const ARCHIVE_SEGMENT_SECONDS = 4;
 const ARCHIVE_PLAYBACK_PROFILE = "dashboard-compact-v1";
 const ARCHIVE_IMU_SYNC_MAX_DELTA_S = 0.2;
-const PERCEPTION_OVERLAY_KEY = "ubts-perception-overlay-mode-v1";
 const LIDAR_SPEC_MAX_POINTS = 3200;
 const LIDAR_COORDINATE_FRAME = "lidar_bridge_xy_v1";
 const LIDAR_RECONNECT_DEBOUNCE_MS = 650;
 const CAMERA_RESOLUTION_KEY = "ubts-camera-resolution-v1";
 const CAMERA_FPS_KEY = "ubts-camera-fps-v1";
-const CAMERA_OVERLAY_MODE_KEY = "ubts-camera-overlay-mode-v1";
 const CAMERA_RECONNECT_DEBOUNCE_MS = 500;
 const CAMERA_BINARY_MAGIC = "UBCF";
 const CAMERA_BINARY_HEADER_SIZE = 9;
@@ -42,11 +38,7 @@ const DEFAULT_CAMERA_MODES = [
   { resolution: "320x240", width: 320, height: 240, fps: [30], label: "240p 4:3" },
   { resolution: "1280x1024", width: 1280, height: 1024, fps: [30], label: "1024p 5:4" },
 ];
-const ORCHARD_MAP_LAYERS = [
-  { id: "lidar", canvasId: "roverOrchardMapLidarCanvas", statsId: "roverOrchardMapLidarStats", label: "LiDAR-only", color: "#38d8ff" },
-  { id: "camera", canvasId: "roverOrchardMapCameraCanvas", statsId: "roverOrchardMapCameraStats", label: "Camera-only", color: "#55e2b2" },
-  { id: "fusion", canvasId: "roverOrchardMapFusionCanvas", statsId: "roverOrchardMapFusionStats", label: "Weighted Fusion", color: "#2f76ff" },
-];
+
 
 const state = {
   telemetry: null,
@@ -97,7 +89,6 @@ const state = {
 	    max: LIDAR_SPEC_MAX_POINTS,
 	    step: 50,
 	  },
-	  lidarOverlayMode: "both",
 	  cameraLive: {
     enabled: false,
     socket: null,
@@ -121,7 +112,6 @@ const state = {
     settingsInFlight: false,
     settingsError: "",
 	    lastFrameAt: null,
-	    lastOverlay: null,
 	    lastFrameSize: null,
     transport: "binary-v1",
     flow: "latest-ack",
@@ -151,7 +141,6 @@ const state = {
   cameraModes: DEFAULT_CAMERA_MODES,
   cameraModesSignature: JSON.stringify(DEFAULT_CAMERA_MODES),
   cameraModesSource: "fallback",
-  cameraOverlayMode: "both",
 	  roverControl: {
 	    speedPct: 25,
 	    linear: 0,
@@ -176,7 +165,6 @@ const state = {
 	    selectedId: null,
 	    selected: null,
 	    timeline: null,
-	    orchardMap: null,
 	    loading: false,
 	    actionInFlight: false,
 	    kind: "both",
@@ -205,13 +193,10 @@ const state = {
 	    lastPlaybackRenderAt: 0,
 	    lastLidarRenderKey: "",
 	    lastCameraRenderKey: "",
-	    lastCameraOverlayRenderKey: "",
 	    nativeVideoUrl: "",
 	    nativeVideoReady: false,
 	    nativeVideoError: "",
 	  },
-  perceptionOverlayMode: "fusion",
-  orchardMapView: { scale: 1, offsetX: 0, offsetY: 0, dragging: false, dragMoved: false, lastX: 0, lastY: 0 },
   selectedContainerId: null,
   containerDetail: null,
   containerLogs: null,
@@ -384,17 +369,19 @@ function renderRoute() {
   }
   if (route === "/connection") {
     renderActiveLidarMap();
-    renderLiveCameraOverlays();
+
     if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
     if (!state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
 	    if (!state.imuLive.socket && !state.imuLive.userStopped) startImuLive();
 	  } else if (route === "/rover-control") {
 	    renderActiveLidarMap();
-	    renderLiveCameraOverlays();
+
 	    renderRoverControl(state.telemetry || {});
 	    renderRecordingStatus();
 	    maybeRefreshRecordingStatus();
 	    if (!state.recordings.items.length && !state.recordings.loading) loadRecordings().catch(console.error);
+	    if (!state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
+	    if (!state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
 	    if (!state.imuLive.socket && !state.imuLive.userStopped) startImuLive();
 	  } else if (state.lidarLive.socket || state.lidarLive.enabled) {
 	    closeLidarLive("Live 화면 밖에서는 LiDAR WebSocket을 닫습니다.", { userStopped: false });
@@ -513,12 +500,10 @@ function initLidarTest() {
   document.querySelectorAll("[data-lidar-point-slider]").forEach((slider) => slider.addEventListener("input", (event) => {
     setLidarPointLimit(Number(event.target.value), { persist: true, reconnect: true });
   }));
-  document.querySelectorAll("[data-lidar-overlay-mode]").forEach((button) => {
-    button.addEventListener("click", () => setLidarOverlayMode(button.dataset.lidarOverlayMode, true));
-  });
+
   initLidarRange();
   initLidarPointLimit();
-  initLidarOverlayMode();
+
   setLidarDownloadFormat(state.lidarExport.format);
   renderLidarLiveState();
 }
@@ -527,8 +512,6 @@ function initCameraLive() {
   try {
     state.cameraLive.resolution = localStorage.getItem(CAMERA_RESOLUTION_KEY) || state.cameraLive.resolution;
     state.cameraLive.fps = Number(localStorage.getItem(CAMERA_FPS_KEY) || state.cameraLive.fps);
-    const storedOverlayMode = localStorage.getItem(CAMERA_OVERLAY_MODE_KEY);
-    if (["raw", "both", "overlay"].includes(storedOverlayMode)) state.cameraOverlayMode = storedOverlayMode;
   } catch (_) {
     // Camera controls remain usable without localStorage.
   }
@@ -541,12 +524,10 @@ function initCameraLive() {
     fps.value = String(state.cameraLive.fps);
     fps.addEventListener("change", () => setCameraSettings({ fps: Number(fps.value) }));
   });
-  document.querySelectorAll("[data-camera-overlay-mode]").forEach((button) => {
-    button.addEventListener("click", () => setCameraOverlayMode(button.dataset.cameraOverlayMode, true));
-  });
+
   $("cameraLiveButton")?.addEventListener("click", toggleCameraLive);
   updateCameraControls();
-  setCameraOverlayMode(state.cameraOverlayMode, false);
+
   renderCameraLiveState();
 }
 
@@ -709,22 +690,6 @@ function updateCameraControls() {
   });
 }
 
-function setCameraOverlayMode(mode, persist = false) {
-  state.cameraOverlayMode = ["raw", "both", "overlay"].includes(mode) ? mode : "both";
-  if (persist) {
-    try {
-      localStorage.setItem(CAMERA_OVERLAY_MODE_KEY, state.cameraOverlayMode);
-    } catch (_) {
-      // Ignore storage failures.
-    }
-  }
-  document.querySelectorAll("[data-camera-overlay-mode]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.cameraOverlayMode === state.cameraOverlayMode);
-  });
-  state.archivePlayback.lastCameraOverlayRenderKey = "";
-  renderLiveCameraOverlays();
-  renderArchiveFrame();
-}
 
 function syncSelectOptions(select, options) {
   const signature = JSON.stringify(options);
@@ -867,29 +832,6 @@ function updateLidarPointControls() {
   });
 }
 
-function initLidarOverlayMode() {
-  try {
-    state.lidarOverlayMode = localStorage.getItem(LIDAR_OVERLAY_MODE_KEY) || state.lidarOverlayMode;
-  } catch (_) {
-    // Overlay mode remains session-local without storage.
-  }
-  setLidarOverlayMode(state.lidarOverlayMode, false);
-}
-
-function setLidarOverlayMode(mode, persist = false) {
-  state.lidarOverlayMode = ["raw", "both", "overlay"].includes(mode) ? mode : "both";
-  if (persist) {
-    try {
-      localStorage.setItem(LIDAR_OVERLAY_MODE_KEY, state.lidarOverlayMode);
-    } catch (_) {
-      // Ignore storage failures.
-    }
-  }
-  document.querySelectorAll("[data-lidar-overlay-mode]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.lidarOverlayMode === state.lidarOverlayMode);
-  });
-  renderActiveLidarMap();
-}
 
 async function loadPlan() {
   state.plan = await getJson("/api/plan");
@@ -1047,7 +989,6 @@ function renderTelemetry(data) {
   text("dockerMemText", `${fmtBytes(docker.summary?.memory_usage)} / ${fmtBytes(docker.summary?.memory_limit)}`);
 
   text("roverState", data.rover?.state || "연결 전");
-  text("fusionState", data.fusion?.state || "연결 전");
   text("experimentState", data.experiment?.state || "연결 전");
   renderFan(fan);
 
@@ -1323,8 +1264,8 @@ function toggleCameraLive() {
 }
 
 function liveNetworkProfile() {
-  try { return localStorage.getItem("ubts-live-network-profile") || "auto"; }
-  catch (_) { return "auto"; }
+  try { return localStorage.getItem("ubts-live-network-profile") || (SIMULATION ? "detail" : "auto"); }
+  catch (_) { return SIMULATION ? "detail" : "auto"; }
 }
 function setLiveNetworkProfile(value) {
   if (!["auto", "tiny", "slow", "balanced", "detail"].includes(value)) return;
@@ -1574,7 +1515,6 @@ function handleCameraLivePayload(payload, binary = null) {
     state.cameraLive.sourceHeight = payload.source_height;
     state.cameraLive.frameId = payload.frame_id || state.cameraLive.frameId;
     state.cameraLive.lastFrameAt = Date.now();
-    state.cameraLive.lastOverlay = payload.overlay || null;
     state.cameraLive.lastFrameSize = {
       width: Number(payload.width || payload.source_width || 0),
       height: Number(payload.height || payload.source_height || 0),
@@ -1583,8 +1523,7 @@ function handleCameraLivePayload(payload, binary = null) {
     state.cameraLive.flow = payload.flow || state.cameraLive.flow;
     state.cameraLive.encodedBytes = Number(payload.encoded_bytes || binary?.blob?.size || 0);
     state.cameraLive.encodeMs = Number.isFinite(Number(payload.encode_ms)) ? Number(payload.encode_ms) : null;
-    const overlayError = cameraOverlayErrorText(payload.overlay);
-    state.cameraLive.error = overlayError;
+    state.cameraLive.error = "";
     if (binary?.blob) {
       displayBinaryCameraFrame(binary.blob, payload, binary.socket);
     } else {
@@ -1598,13 +1537,9 @@ function handleCameraLivePayload(payload, binary = null) {
     const output = payload.width && payload.height ? `${payload.width}x${payload.height}` : state.cameraLive.resolution;
     const rate = state.cameraLive.sourceFps || state.cameraLive.displayFps || state.cameraLive.fps;
     const modeText = source === output ? source : `source ${source} · output ${output}`;
-    if (overlayError) {
-      setCameraResult("error", `AI 비전 오류 · ${overlayError}`);
-    } else {
       setCameraResult("ok", `실시간 수신 중 · ${modeText} · ${cameraFpsLabel(rate)}`);
-    }
     renderCameraLiveState();
-    renderLiveCameraOverlays();
+
     renderLiveSensorLinks();
     return;
   }
@@ -1684,18 +1619,10 @@ function renderCameraLiveState(overrideLabel) {
   const observedFps = state.cameraLive.sourceFps || state.cameraLive.displayFps;
   const observedDetail = `ROS ${cameraFpsLabel(state.cameraLive.sourceFps)} · WS ${cameraFpsLabel(state.cameraLive.displayFps)}`;
   const colors = chartColors();
-  const overlayError = cameraOverlayErrorText(state.cameraLive.lastOverlay);
-  const overlayNotice = cameraOverlayNoticeText(state.cameraLive.lastOverlay);
-  const aiVisionValue = state.cameraLive.lastOverlay
-    ? overlayError ? "ERROR" : overlayNotice ? "NO MATCH" : "ON"
-    : "WAIT";
-  const aiVisionSub = overlayError || overlayNotice || state.cameraLive.lastOverlay?.backend || state.cameraLive.lastOverlay?.method || "local AI worker required";
-  const aiVisionColor = overlayError ? colors.rose : overlayNotice ? colors.amber : state.cameraLive.lastOverlay ? colors.good : colors.amber;
   renderReadout("cameraLiveStats", [
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
-    { label: "AI Vision", value: aiVisionValue, sub: aiVisionSub, color: aiVisionColor },
     { label: "Observed FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
   text("roverCameraCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · source ${source} · capture ${captureTarget}` : socketText);
@@ -1710,7 +1637,6 @@ function renderCameraLiveState(overrideLabel) {
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
-    { label: "AI Vision", value: aiVisionValue, sub: aiVisionSub, color: aiVisionColor },
     { label: "Observed FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
 }
@@ -1859,7 +1785,7 @@ function renderImuLiveState(overrideLabel) {
   const yaw = Number(euler.yaw);
   const calibration = state.imuLive.calibration || {};
   const calibrationState = calibration.state || (calibration.valid ? "ready" : "idle");
-  const sourceLabel = state.imuLive.correctedTopicAlive ? "base_link-corrected /imu/data" : "sensor-native raw /imu/data_raw";
+  const sourceLabel = state.imuLive.correctedTopicAlive ? "base_link-corrected /imu/data" : SIMULATION ? "Gazebo FLU /imu/data_raw" : "sensor-native raw /imu/data_raw";
   const statusLabel = overrideLabel || (state.imuLive.topicAlive ? sourceLabel : state.imuLive.error || "IMU 대기");
   const button = $("roverImuToggle");
   if (button) {
@@ -1868,13 +1794,13 @@ function renderImuLiveState(overrideLabel) {
   }
   const zeroButton = $("roverImuZeroButton");
   if (zeroButton) {
-    zeroButton.disabled = state.imuLive.zeroInFlight || !state.imuLive.topicAlive;
-    zeroButton.textContent = state.imuLive.zeroInFlight ? "영점 적용 중" : "현재 자세 영점";
+    zeroButton.disabled = SIMULATION || state.imuLive.zeroInFlight || !state.imuLive.topicAlive;
+    zeroButton.textContent = SIMULATION ? "시뮬 기준 자세" : state.imuLive.zeroInFlight ? "영점 적용 중" : "현재 자세 영점";
   }
   const zeroResult = $("roverImuZeroResult");
   if (zeroResult) {
     zeroResult.className = `test-result ${state.imuLive.zeroState === "idle" ? "" : state.imuLive.zeroState}`.trim();
-    zeroResult.textContent = state.imuLive.zeroMessage;
+    zeroResult.textContent = SIMULATION ? "Gazebo 월드 기준 자세 · 중력 포함 · 자력계 미제공 · 실제 BNO085 보정값 아님" : state.imuLive.zeroMessage;
   }
   text("roverImuCaption", statusLabel);
   text("roverImuHeading", Number.isFinite(yaw) ? `${fmtNumber(yaw, 1)}°` : "--°");
@@ -1945,143 +1871,6 @@ function drawImuAttitude(canvas, roll, pitch, yaw) {
   ctx.fillText(`R ${fmtNumber(roll, 1)}°  P ${fmtNumber(pitch, 1)}°  Y ${fmtNumber(yaw, 1)}°`, width / 2, 18);
 }
 
-function renderLiveCameraOverlays() {
-  drawCameraOverlayOnCanvas($("cameraLiveOverlayCanvas"), state.cameraLive.lastOverlay, {
-    frameSize: state.cameraLive.lastFrameSize,
-  });
-  drawCameraOverlayOnCanvas($("roverCameraOverlayCanvas"), state.cameraLive.lastOverlay, {
-    frameSize: state.cameraLive.lastFrameSize,
-  });
-}
-
-function renderArchiveCameraOverlay(cameraFrame) {
-  drawCameraOverlayOnCanvas($("roverArchiveCameraOverlayCanvas"), cameraFrame?.overlay || null, {
-    frameSize: { width: cameraFrame?.width || cameraFrame?.source_width, height: cameraFrame?.height || cameraFrame?.source_height },
-    overlayVisible: state.archivePlayback.overlayVisible,
-  });
-}
-
-function shouldShowCameraOverlay() {
-  return ["camera", "fusion"].includes(state.perceptionOverlayMode) && state.cameraOverlayMode !== "raw";
-}
-
-function cameraOverlayErrorText(overlay) {
-  if (!overlay || overlay.ok !== false) return "";
-  if (cameraOverlayNoticeText(overlay)) return "";
-  return overlay.error || overlay.method || "local vision AI worker unavailable";
-}
-
-function cameraOverlayNoticeText(overlay) {
-  if (!overlay || overlay.ok !== false) return "";
-  const method = String(overlay.method || "");
-  if (method === "source_native_provenance_required" || method === "shared_vision_sync_unavailable") {
-    return "No verified AI result for this camera frame";
-  }
-  return "";
-}
-
-function drawCameraOverlayOnCanvas(canvas, overlay, options = {}) {
-  if (!canvas) return;
-  const frame = canvas.closest(".camera-frame, .rover-camera-frame, .archive-camera-frame");
-  const requestedMode = options.overlayVisible === false || !shouldShowCameraOverlay() ? "raw" : state.cameraOverlayMode;
-  const overlayNotice = cameraOverlayNoticeText(overlay);
-  const mode = overlayNotice && requestedMode === "overlay" ? "both" : requestedMode;
-  frame?.classList.toggle("overlay-only", mode === "overlay");
-  const prepared = prepareCanvas(canvas);
-  if (!prepared) return;
-  const { ctx, w, h } = prepared;
-  ctx.clearRect(0, 0, w, h);
-  if (mode === "raw") return;
-  const overlayError = cameraOverlayErrorText(overlay);
-  if (overlayError) {
-    drawCameraOverlayError(ctx, w, h, overlayError, mode);
-    return;
-  }
-  if (overlayNotice) {
-    drawCameraOverlayNotice(ctx, w, h, overlayNotice);
-    return;
-  }
-
-  const detections = (overlay?.detections || [])
-    .filter((item) => Number(item?.confidence) >= 0.12 && Array.isArray(item?.bbox))
-    .slice(0, 16);
-  const imageInfo = overlay?.image || options.frameSize || {};
-  const imageW = Number(imageInfo.width || options.frameSize?.width || 0);
-  const imageH = Number(imageInfo.height || options.frameSize?.height || 0);
-  if (!imageW || !imageH) return;
-  const scale = Math.min(w / imageW, h / imageH);
-  const drawW = imageW * scale;
-  const drawH = imageH * scale;
-  const offsetX = (w - drawW) / 2;
-  const offsetY = (h - drawH) / 2;
-  const labelBoxes = [];
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(offsetX, offsetY, drawW, drawH);
-  ctx.clip();
-  if (mode === "overlay") {
-    ctx.fillStyle = "rgba(2, 6, 23, 0.7)";
-    ctx.fillRect(offsetX, offsetY, drawW, drawH);
-  }
-  for (const detection of detections) {
-    const [bx, by, bw, bh] = detection.bbox.map((value) => Number(value) || 0);
-    const x = offsetX + bx * scale;
-    const y = offsetY + by * scale;
-    const boxW = bw * scale;
-    const boxH = bh * scale;
-    const confidence = Math.max(0, Math.min(1, Number(detection.confidence) || 0));
-    const color = cameraConfidenceColor(confidence);
-    ctx.globalAlpha = 0.96;
-    ctx.strokeStyle = color.stroke;
-    ctx.fillStyle = color.fill;
-    ctx.lineWidth = Math.max(2, Math.min(4, 2 + confidence * 2));
-    drawCameraDetectionShape(ctx, detection, { offsetX, offsetY, scale, color, x, y, boxW, boxH, confidence });
-    drawCameraConfidenceLabel(ctx, `${Math.round(confidence * 100)}%`, x, y, boxW, color, labelBoxes);
-  }
-  ctx.restore();
-}
-
-function drawCameraOverlayNotice(ctx, w, h, message) {
-  ctx.save();
-  const maxW = Math.min(w - 24, 360);
-  const x = Math.max(12, (w - maxW) / 2);
-  const y = Math.max(12, h - 92);
-  ctx.fillStyle = "rgba(15, 23, 42, 0.78)";
-  ctx.strokeStyle = cssVar("--chart-amber", "#f6bd4a");
-  ctx.lineWidth = 1.5;
-  roundRectPath(ctx, x, y, maxW, 34, 7);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#fff7d6";
-  ctx.font = "700 11px Inter, Arial, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(String(message), w / 2, y + 22);
-  ctx.restore();
-}
-
-function drawCameraOverlayError(ctx, w, h, message, mode) {
-  ctx.save();
-  if (mode === "overlay") {
-    ctx.fillStyle = "rgba(2, 6, 23, 0.78)";
-    ctx.fillRect(0, 0, w, h);
-  }
-  const maxW = Math.min(w - 32, 560);
-  const x = Math.max(16, (w - maxW) / 2);
-  const y = Math.max(18, h * 0.08);
-  ctx.fillStyle = "rgba(127, 29, 29, 0.82)";
-  ctx.strokeStyle = cssVar("--chart-rose", "#ff5d7e");
-  ctx.lineWidth = 2;
-  roundRectPath(ctx, x, y, maxW, 72, 8);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#fff7f8";
-  ctx.font = "900 14px Inter, Arial, sans-serif";
-  ctx.fillText("Camera AI unavailable", x + 16, y + 27);
-  ctx.font = "700 12px Inter, Arial, sans-serif";
-  wrapCanvasText(ctx, String(message), x + 16, y + 50, maxW - 32, 16, 2);
-  ctx.restore();
-}
 
 function roundRectPath(ctx, x, y, w, h, r) {
   const radius = Math.min(r, w / 2, h / 2);
@@ -2112,111 +1901,6 @@ function wrapCanvasText(ctx, textValue, x, y, maxWidth, lineHeight, maxLines) {
   if (line && lines < maxLines) ctx.fillText(line, x, y + lines * lineHeight);
 }
 
-function drawCameraDetectionShape(ctx, detection, viewport) {
-  if (Array.isArray(detection.contour) && detection.contour.length >= 3) {
-    drawCameraContour(ctx, detection.contour, viewport);
-    return;
-  }
-  if (Array.isArray(detection.line) && detection.line.length >= 4) {
-    drawCameraLine(ctx, detection, viewport);
-    return;
-  }
-  ctx.beginPath();
-  ctx.rect(viewport.x, viewport.y, viewport.boxW, viewport.boxH);
-  ctx.fill();
-  ctx.stroke();
-}
-
-function cameraOverlayPoint(point, viewport) {
-  return {
-    x: viewport.offsetX + (Number(point?.[0]) || 0) * viewport.scale,
-    y: viewport.offsetY + (Number(point?.[1]) || 0) * viewport.scale,
-  };
-}
-
-function drawCameraContour(ctx, contour, viewport) {
-  ctx.save();
-  ctx.globalAlpha = 0.18 + viewport.confidence * 0.16;
-  ctx.fillStyle = viewport.color.fill;
-  ctx.beginPath();
-  contour.forEach((point, index) => {
-    const p = cameraOverlayPoint(point, viewport);
-    if (index === 0) ctx.moveTo(p.x, p.y);
-    else ctx.lineTo(p.x, p.y);
-  });
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 0.95;
-  ctx.strokeStyle = viewport.color.stroke;
-  ctx.lineWidth = Math.max(2.4, Math.min(5, 2.4 + viewport.confidence * 2.3));
-  ctx.lineJoin = "round";
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawCameraLine(ctx, detection, viewport) {
-  const [x1, y1, x2, y2] = detection.line.map((value) => Number(value) || 0);
-  const a = cameraOverlayPoint([x1, y1], viewport);
-  const b = cameraOverlayPoint([x2, y2], viewport);
-  const lineWidth = Math.max(4, Math.min(12, (Number(detection.line_width_px) || 7) * viewport.scale));
-  ctx.save();
-  ctx.lineCap = "round";
-  ctx.strokeStyle = viewport.color.fill;
-  ctx.globalAlpha = 0.42;
-  ctx.lineWidth = lineWidth + 5;
-  ctx.beginPath();
-  ctx.moveTo(a.x, a.y);
-  ctx.lineTo(b.x, b.y);
-  ctx.stroke();
-  ctx.strokeStyle = viewport.color.stroke;
-  ctx.globalAlpha = 0.96;
-  ctx.lineWidth = lineWidth;
-  ctx.beginPath();
-  ctx.moveTo(a.x, a.y);
-  ctx.lineTo(b.x, b.y);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function cameraConfidenceColor(confidence) {
-  if (confidence >= 0.78) return { stroke: cssVar("--chart-blue", "#2f76ff"), fill: "rgba(47,118,255,0.17)" };
-  if (confidence >= 0.58) return { stroke: cssVar("--chart-good", "#55e2b2"), fill: "rgba(85,226,178,0.14)" };
-  return { stroke: cssVar("--chart-amber", "#f4bd4f"), fill: "rgba(244,189,79,0.12)" };
-}
-
-function drawCameraConfidenceLabel(ctx, label, x, y, boxW, color, placed) {
-  ctx.save();
-  ctx.font = "900 11px Inter, Arial, sans-serif";
-  const labelW = Math.ceil(ctx.measureText(label).width) + 10;
-  const labelH = 18;
-  let lx = Math.max(4, x + 4);
-  let ly = Math.max(4, y + 4);
-  if (lx + labelW > x + boxW - 2) lx = Math.max(4, x + boxW - labelW - 4);
-  const rect = { x: lx, y: ly, w: labelW, h: labelH };
-  const overlaps = placed.some((item) => rectsOverlap(rect, item));
-  if (overlaps) {
-    ctx.fillStyle = color.stroke;
-    ctx.beginPath();
-    ctx.arc(x + Math.min(Math.max(8, boxW - 8), 16), y + 10, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
-  placed.push(rect);
-  ctx.fillStyle = "rgba(2, 6, 23, 0.82)";
-  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-  ctx.strokeStyle = color.stroke;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
-  ctx.fillStyle = "#ffffff";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, rect.x + 5, rect.y + rect.h / 2 + 0.5);
-  ctx.restore();
-}
-
-function rectsOverlap(a, b) {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
 
 function setCameraResult(kind, message) {
   const target = $("cameraLiveResult");
@@ -2279,8 +1963,6 @@ function handleLidarLiveMessage(raw) {
 	      debugLog("ws", "scan", {
 	        source: payload.source,
 	        points: result.points.length,
-	        walls: result.analysis?.walls?.length || 0,
-	        objects: result.analysis?.objects?.length || 0,
 	      });
 	    }
     renderLidarScan(result, "live_websocket");
@@ -2320,7 +2002,6 @@ function lidarScanFromLive(payload) {
     stamp: payload.stamp,
     tested_at: Math.floor(Date.now() / 1000),
 	    points,
-	    analysis: normalizeLidarOverlay(payload.overlay || payload.analysis),
 	    metrics,
 	    source: "live_websocket",
 	  };
@@ -2540,10 +2221,10 @@ function normalizeLidarExportPoint(point) {
   const xM = Number(point.x_m);
   const yM = Number(point.y_m);
   if (!Number.isFinite(distanceM) || !Number.isFinite(xM) || !Number.isFinite(yM)) return null;
-  const rotatedAngle = Number.isFinite(angleDeg) ? (angleDeg + 180) % 360 : null;
-  const displayAngle = rotatedAngle === null ? null : (360 - rotatedAngle) % 360;
-  const displayX = xM;
-  const displayY = -yM;
+  // ROS FLU: angle zero is forward; positive angle is left. Canvas right is +x.
+  const displayAngle = Number.isFinite(angleDeg) ? (360 - angleDeg) % 360 : null;
+  const displayX = -xM;
+  const displayY = yM;
   return {
     angle_deg: displayAngle === null ? null : Number(displayAngle.toFixed(3)),
     distance_m: Number(distanceM.toFixed(3)),
@@ -2553,73 +2234,24 @@ function normalizeLidarExportPoint(point) {
   };
 }
 
-function normalizeLidarOverlay(analysis) {
-  if (!analysis) return null;
-  const overlayPoint = (point) => {
-    if (!point) return {};
-    const xM = Number(point.x_m);
-    const yM = Number(point.y_m);
-    return {
-      ...point,
-      x_m: Number.isFinite(xM) ? Number(xM.toFixed(3)) : point.x_m,
-      y_m: Number.isFinite(yM) ? Number((-yM).toFixed(3)) : point.y_m,
-    };
-  };
-  return {
-    ...analysis,
-    walls: (analysis.walls || []).map((wall) => ({
-      ...wall,
-      start: overlayPoint(wall.start || wall.a),
-      end: overlayPoint(wall.end || wall.b),
-    })),
-    objects: (analysis.objects || []).map((item) => ({
-      ...item,
-      center: overlayPoint(item.center || item.centroid),
-      track: (item.track || item.history || []).map(overlayPoint),
-    })),
-    orchard: analysis.orchard ? {
-      ...analysis.orchard,
-      trees: (analysis.orchard.trees || []).map((tree) => ({
-        ...tree,
-        center: overlayPoint(tree.center || tree),
-      })),
-      confirmed_trees: (analysis.orchard.confirmed_trees || []).map((tree) => ({
-        ...tree,
-        center: overlayPoint(tree.center || tree),
-      })),
-      pending_trees: (analysis.orchard.pending_trees || []).map((tree) => ({
-        ...tree,
-        center: overlayPoint(tree.center || tree),
-      })),
-    } : analysis.orchard,
-    trees: (analysis.trees || []).map((tree) => ({
-      ...tree,
-      center: tree.center ? overlayPoint(tree.center) : undefined,
-      x_m: Number.isFinite(Number(tree.x_m)) ? Number(Number(tree.x_m).toFixed(3)) : tree.x_m,
-      y_m: Number.isFinite(Number(tree.y_m)) ? Number((-Number(tree.y_m)).toFixed(3)) : tree.y_m,
-    })),
-  };
-}
 
 function normalizeLidarResult(result, analysis = result?.analysis) {
   if (!result) return null;
   return {
     ...result,
     points: (result.points || []).map(normalizeLidarExportPoint).filter(Boolean),
-    analysis: normalizeLidarOverlay(analysis),
   };
 }
 
 function normalizeArchiveLidarResult(result, analysis = result?.analysis, frame = result) {
   if (!result) return null;
-  const coordinateFrame = frame?.coordinate_frame || result.coordinate_frame || analysis?.coordinate_frame || state.recordings.timeline?.coordinate_frame || "";
+  const coordinateFrame = frame?.coordinate_frame || result.coordinate_frame || state.recordings.timeline?.coordinate_frame || "";
   const legacyRecorderFrame = coordinateFrame !== LIDAR_COORDINATE_FRAME;
   const points = (result.points || []).map((point) => legacyRecorderFrame ? archiveLegacyPointToBridgeFrame(point) : point);
   return {
     ...result,
     coordinate_frame: coordinateFrame || "legacy_archive_recorder_xy_v0",
     points: points.map(normalizeLidarExportPoint).filter(Boolean),
-    analysis: normalizeLidarOverlay(legacyRecorderFrame ? transformArchiveLegacyOverlay(analysis) : analysis),
   };
 }
 
@@ -2635,45 +2267,6 @@ function archiveLegacyPointToBridgeFrame(point) {
   };
 }
 
-function transformArchiveLegacyOverlay(analysis) {
-  if (!analysis) return analysis;
-  const overlayPoint = (point) => archiveLegacyPointToBridgeFrame(point || {});
-  return {
-    ...analysis,
-    coordinate_frame: LIDAR_COORDINATE_FRAME,
-    walls: (analysis.walls || []).map((wall) => ({
-      ...wall,
-      start: overlayPoint(wall.start || wall.a),
-      end: overlayPoint(wall.end || wall.b),
-    })),
-    objects: (analysis.objects || []).map((item) => ({
-      ...item,
-      center: overlayPoint(item.center || item.centroid),
-      track: (item.track || item.history || []).map(overlayPoint),
-    })),
-    orchard: analysis.orchard ? {
-      ...analysis.orchard,
-      trees: (analysis.orchard.trees || []).map((tree) => ({
-        ...tree,
-        center: overlayPoint(tree.center || tree),
-      })),
-      confirmed_trees: (analysis.orchard.confirmed_trees || []).map((tree) => ({
-        ...tree,
-        center: overlayPoint(tree.center || tree),
-      })),
-      pending_trees: (analysis.orchard.pending_trees || []).map((tree) => ({
-        ...tree,
-        center: overlayPoint(tree.center || tree),
-      })),
-    } : analysis.orchard,
-    trees: (analysis.trees || []).map((tree) => ({
-      ...tree,
-      center: tree.center ? overlayPoint(tree.center) : undefined,
-      x_m: Number.isFinite(Number(tree.x_m)) ? overlayPoint(tree).x_m : tree.x_m,
-      y_m: Number.isFinite(Number(tree.y_m)) ? overlayPoint(tree).y_m : tree.y_m,
-    })),
-  };
-}
 
 function angleCoverage(points) {
   const bins = new Set();
@@ -2777,7 +2370,6 @@ function renderLidarScan(result, source = result?.source || "ros2_scan") {
 	  renderReadout("lidarScanStats", [
 	    { label: "Rendered", value: String(renderedPoints), sub: `limit ${requestedPoints} · source ${sourcePoints}`, color: colors.cyan },
 	    { label: "Coverage", value: `${fmtNumber(metrics.coverage_deg, 0)}°`, sub: "1° bins", color: colors.good },
-	    { label: "Overlay", value: `${analysis.walls?.length || 0}/${analysis.objects?.length || 0}`, sub: "walls / objects", color: colors.amber },
 	    { label: "Range", value: `${fmtNumber(metrics.min_distance_m, 2)}-${fmtNumber(metrics.max_distance_m, 2)} m`, sub: "valid points", color: colors.blue },
 	  ]);
   updateLidarExport(result, source);
@@ -3831,6 +3423,8 @@ function serviceLabel(key) {
 }
 
 function renderRoverControl(data) {
+  text("roverModeLabel", SIMULATION ? "SIMULATED ROVER" : "LIVE ROVER");
+  text("roverControllerLabel", SIMULATION ? "Gazebo" : "ESP8266");
   const rover = data.rover || data.connection?.rover || {};
   const services = data.services || data.connection?.services || {};
   const roverBridge = services.rover_bridge || {};
@@ -3851,22 +3445,22 @@ function renderRoverControl(data) {
   text("roverControlBase", roverBridge.serial_port || "--");
   text("roverProxyState", rover.mode || roverBridge.mode || "esp_manual");
   text("roverRosState", roverBridge.ok ? "ready" : roverBridge.state || "대기");
-  text("roverRecorderState", recorder.active ? "recording" : recorder.ok ? "ready" : recorder.state || "대기");
+  text("roverRecorderState", recorder.active ? "recording" : recorder.state || "대기");
   text("roverRecorderKind", recorder.active ? recordingKindLabel(recorder.kind) : recorder.archive_count !== undefined ? `${recorder.archive_count} archives` : "대기");
   renderStatusRows("roverControlDetails", [
     {
-      title: "ESP8266 Bridge",
-      sub: "수동 조종 · 단일 USB 소유자",
+      title: SIMULATION ? "Simulation Controller" : "ESP8266 Bridge",
+      sub: SIMULATION ? "가상 로버 수동 조종" : "수동 조종 · 단일 USB 소유자",
       ok: Boolean(roverBridge.ok),
       level: roverBridge.ok ? "ok" : "warn",
       value: roverBridge.state || "대기",
     },
     {
-      title: "ESP USB",
-      sub: roverBridge.serial_port || "/dev/ubts-motor",
-      ok: Boolean(roverBridge.serial_open),
-      level: roverBridge.serial_open ? "ok" : "warn",
-      value: roverBridge.serial_open ? "열림" : "포트 대기",
+      title: SIMULATION ? "가상 구동 연결" : "ESP USB",
+      sub: SIMULATION ? "Gazebo 좌우 휠" : roverBridge.serial_port || "/dev/ubts-motor",
+      ok: Boolean(roverBridge.ok),
+      level: roverBridge.ok ? "ok" : "warn",
+      value: roverBridge.ok ? "연결됨" : "대기",
     },
     {
       title: "ROS 관측",
@@ -3877,7 +3471,7 @@ function renderRoverControl(data) {
     },
     {
       title: "조종 상태",
-      sub: "입력 만료와 MCU 정지 감시",
+      sub: SIMULATION ? "입력 만료와 가상 휠 정지 감시" : "입력 만료와 MCU 정지 감시",
       ok: true,
       level: "ok",
       value: roverBridge.armed ? "조종 활성화" : "조종 해제",
@@ -3918,12 +3512,8 @@ function initRoverControl() {
     const recordImu = localStorage.getItem(IMU_RECORD_ENABLED_KEY);
     const panelCollapsed = localStorage.getItem(ROVER_PANEL_COLLAPSED_KEY);
     const archiveRange = Number(localStorage.getItem(ARCHIVE_RANGE_KEY));
-    const archiveOverlayVisible = localStorage.getItem(ARCHIVE_OVERLAY_VISIBLE_KEY);
-    const perceptionOverlay = localStorage.getItem(PERCEPTION_OVERLAY_KEY);
     state.roverControl.panelCollapsed = panelCollapsed === "1";
     if (Number.isFinite(archiveRange)) state.archivePlayback.range = clampLidarRange(archiveRange);
-    state.archivePlayback.overlayVisible = archiveOverlayVisible === null ? true : archiveOverlayVisible === "1";
-    if (["lidar", "camera", "fusion"].includes(perceptionOverlay)) state.perceptionOverlayMode = perceptionOverlay;
     if (["lidar", "camera", "both"].includes(recordKind)) state.recordings.kind = recordKind;
     state.recordings.includeImu = recordImu === null ? true : recordImu === "1";
   } catch (_) {
@@ -3952,22 +3542,10 @@ function initRoverControl() {
     state.archivePlayback.lastCameraRenderKey = "";
     renderArchiveFrame();
   });
-  $("roverArchiveOverlayToggle")?.addEventListener("change", (event) => setArchiveOverlayVisible(event.target.checked, true));
+
   $("roverArchiveRangeSlider")?.addEventListener("input", (event) => setArchiveRange(Number(event.target.value), true));
-  $("roverOrchardMapZoomIn")?.addEventListener("click", () => zoomOrchardMap(1.18));
-  $("roverOrchardMapZoomOut")?.addEventListener("click", () => zoomOrchardMap(1 / 1.18));
-  $("roverOrchardMapReset")?.addEventListener("click", () => {
-    resetOrchardMapView();
-    drawOrchardMap();
-  });
-  $("roverOrchardMapDownload")?.addEventListener("click", downloadOrchardMapPng);
-  initOrchardMapCanvas();
-  document.querySelectorAll("[data-archive-overlay-mode]").forEach((button) => {
-    button.addEventListener("click", () => setArchiveOverlayMode(button.dataset.archiveOverlayMode, true));
-  });
-  document.querySelectorAll("[data-perception-overlay]").forEach((button) => {
-    button.addEventListener("click", () => setPerceptionOverlayMode(button.dataset.perceptionOverlay, true));
-  });
+
+
   document.querySelectorAll("[data-rover-drive]").forEach((button) => {
     button.addEventListener("pointerdown", (event) => {
       event.preventDefault();
@@ -3987,10 +3565,9 @@ function initRoverControl() {
   setRoverDrivePanelCollapsed(state.roverControl.panelCollapsed, false);
   setRecordingKind(state.recordings.kind, false);
   setRecordingImuEnabled(state.recordings.includeImu, false);
-  setArchiveOverlayVisible(state.archivePlayback.overlayVisible, false);
+
   setArchiveRange(state.archivePlayback.range, false);
-  initArchiveOverlayMode();
-  setPerceptionOverlayMode(state.perceptionOverlayMode, false);
+
   renderRoverButtons();
   renderRecordingStatus();
   renderRecordings();
@@ -4057,66 +3634,6 @@ function setRecordingImuEnabled(enabled, persist) {
   renderRecordingStatus();
 }
 
-function initArchiveOverlayMode() {
-  try {
-    state.archivePlayback.overlayMode = localStorage.getItem(ARCHIVE_OVERLAY_MODE_KEY) || state.archivePlayback.overlayMode;
-  } catch (_) {
-    // Archive overlay mode remains session-local without storage.
-  }
-  setArchiveOverlayMode(state.archivePlayback.overlayMode, false);
-}
-
-function setArchiveOverlayMode(mode, persist) {
-  state.archivePlayback.overlayMode = ["raw", "both", "overlay"].includes(mode) ? mode : "both";
-  if (persist) {
-    try {
-      localStorage.setItem(ARCHIVE_OVERLAY_MODE_KEY, state.archivePlayback.overlayMode);
-    } catch (_) {
-      // Ignore storage failures.
-    }
-  }
-  document.querySelectorAll("[data-archive-overlay-mode]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.archiveOverlayMode === state.archivePlayback.overlayMode);
-  });
-  state.archivePlayback.lastLidarRenderKey = "";
-  renderArchiveFrame();
-}
-
-function setPerceptionOverlayMode(mode, persist) {
-  state.perceptionOverlayMode = ["lidar", "camera", "fusion"].includes(mode) ? mode : "fusion";
-  if (persist) {
-    try {
-      localStorage.setItem(PERCEPTION_OVERLAY_KEY, state.perceptionOverlayMode);
-    } catch (_) {
-      // Ignore storage failures.
-    }
-  }
-  document.querySelectorAll("[data-perception-overlay]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.perceptionOverlay === state.perceptionOverlayMode);
-  });
-  state.archivePlayback.lastLidarRenderKey = "";
-  state.archivePlayback.lastCameraOverlayRenderKey = "";
-  renderActiveLidarMap();
-  renderLiveCameraOverlays();
-  renderArchiveFrame();
-  drawOrchardMap();
-}
-
-function setArchiveOverlayVisible(visible, persist) {
-  state.archivePlayback.overlayVisible = Boolean(visible);
-  const toggle = $("roverArchiveOverlayToggle");
-  if (toggle) toggle.checked = state.archivePlayback.overlayVisible;
-  if (persist) {
-    try {
-      localStorage.setItem(ARCHIVE_OVERLAY_VISIBLE_KEY, state.archivePlayback.overlayVisible ? "1" : "0");
-    } catch (_) {
-      // Ignore storage failures.
-    }
-  }
-  state.archivePlayback.lastLidarRenderKey = "";
-  state.archivePlayback.lastCameraOverlayRenderKey = "";
-  renderArchiveFrame();
-}
 
 function setArchiveRange(value, persist) {
   state.archivePlayback.range = clampLidarRange(value);
@@ -4134,9 +3651,6 @@ function setArchiveRange(value, persist) {
   renderArchiveFrame();
 }
 
-function archiveOverlayRenderMode() {
-  return state.archivePlayback.overlayVisible ? state.archivePlayback.overlayMode : "raw";
-}
 
 function roverKeyFromEvent(event) {
   const physical = /^Key[WASDQE]$/.test(event.code || "") ? event.code.slice(3) : event.key;
@@ -4291,7 +3805,7 @@ async function stopRoverNow(reason = "operator_stop") {
   } catch (_) { setRoverCommandStatus("bad", "응답 없음 · 입력 만료 정지 대기 · 연결 복구 후 상태를 확인하세요."); }
   finally { if (epoch === c.epoch) c.disarming = false; renderRoverButtons(); }
 }
-function roverCommandMessage(payload) { return payload.ok ? "ESP 요청 접수" : payload.error || "제어 실패"; }
+function roverCommandMessage(payload) { return payload.ok ? (SIMULATION ? "가상 로버 요청 접수" : "ESP 요청 접수") : payload.error || "제어 실패"; }
 
 function setRoverCommandStatus(kind, message) {
   const target = $("roverCommandStatus");
@@ -4323,8 +3837,8 @@ function renderRoverMotionReadout() {
   const c = state.roverControl;
   const colors = chartColors();
   renderReadout("roverMotionReadout", [
-    {label: "왼쪽 요청 PWM", value: `${c.left || 0}%`, sub: "실제 속도 측정값 아님", color: colors.cyan},
-    {label: "오른쪽 요청 PWM", value: `${c.right || 0}%`, sub: "MCU 가감속 적용", color: colors.blue},
+    {label: SIMULATION ? "왼쪽 속도 요청" : "왼쪽 요청 PWM", value: `${c.left || 0}%`, sub: SIMULATION ? "최대 가상 휠 속도 0.50 m/s의 비율" : "실제 속도 측정값 아님", color: colors.cyan},
+    {label: SIMULATION ? "오른쪽 속도 요청" : "오른쪽 요청 PWM", value: `${c.right || 0}%`, sub: SIMULATION ? "가상 휠 가감속 적용" : "MCU 가감속 적용", color: colors.blue},
     {label: "조종", value: c.lease ? "활성" : "해제", sub: "입력 만료 0.75초 · Esc 즉시 정지", color: colors.good},
   ]);
 }
@@ -4433,8 +3947,8 @@ function renderRecordingStatus(override) {
   });
   const start = $("roverRecordStartButton");
   if (start) {
-    start.disabled = state.recordings.actionInFlight || active;
-    start.textContent = active ? "기록 중" : `${recordingKindLabel(state.recordings.kind)} 기록 시작`;
+    start.disabled = state.recordings.actionInFlight || active || status.state === "disabled";
+    start.textContent = status.state === "disabled" ? "녹화는 후속 단계에서 활성화" : active ? "기록 중" : `${recordingKindLabel(state.recordings.kind)} 기록 시작`;
   }
   const stop = $("roverRecordStopButton");
   if (stop) stop.disabled = state.recordings.actionInFlight || !active;
@@ -4478,9 +3992,8 @@ async function selectRecording(id) {
   state.recordings.selectedId = id;
   stopArchivePlayback(true);
   state.recordings.timeline = null;
-  state.recordings.orchardMap = null;
   clearArchiveFrameCache();
-  drawOrchardMap();
+
   renderRecordings();
   try {
     const detail = await getJson(`/api/recordings/${encodeURIComponent(id)}`);
@@ -4490,7 +4003,7 @@ async function selectRecording(id) {
     if (state.recordings.timeline) {
       await scheduleArchiveSegmentsForTime(0, { force: true, reschedule: true }).catch((err) => debugLog("archive", "first segment load failed", err));
       renderArchiveFrame();
-      loadRecordingOrchardMap(id).catch((err) => debugLog("archive", "orchard map load failed", err));
+
     }
   } catch (err) {
     renderStatusRows("roverArchiveDetails", [
@@ -4499,15 +4012,6 @@ async function selectRecording(id) {
   }
 }
 
-async function loadRecordingOrchardMap(id) {
-  const payload = await getJson(`/api/recordings/${encodeURIComponent(id)}/orchard-map`);
-  if (id !== state.recordings.selectedId) return;
-  state.recordings.orchardMap = payload?.map || null;
-  resetOrchardMapView();
-  state.archivePlayback.lastLidarRenderKey = "";
-  drawOrchardMap();
-  renderArchiveFrame();
-}
 
 function timelineShellFromRecording(payload) {
   const summary = payload?.timeline_summary || {};
@@ -4569,7 +4073,6 @@ function clearArchiveFrameCache() {
   state.archivePlayback.lastPlaybackRenderAt = 0;
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
-  state.archivePlayback.lastCameraOverlayRenderKey = "";
 }
 
 function prepareArchiveTimelineCache(timeline) {
@@ -4668,7 +4171,6 @@ function mergeArchiveTimelineSegment(timeline) {
   cache.gpsFrames.sort((a, b) => a.t_s-b.t_s);
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
-  state.archivePlayback.lastCameraOverlayRenderKey = "";
 }
 
 function archiveFrameKey(frame, kind) {
@@ -4876,10 +4378,7 @@ function renderRecordingDetail(detail) {
   const preview = payload?.preview_scan;
   const hasLidar = Boolean(preview?.points?.length);
   const normalizedPreview = hasLidar ? normalizeArchiveLidarResult(preview, analysis) : null;
-  drawLidarMapOnCanvas($("roverArchiveLidarCanvas"), normalizedPreview, normalizedPreview?.analysis, {
-    mode: archiveOverlayRenderMode(),
-    range: state.archivePlayback.range,
-  });
+
   const id = payload ? payload.id || metadata.id || state.recordings.selectedId || "" : "";
   if (!id) state.recordings.timeline = null;
   setupArchivePlayback(payload, normalizedPreview);
@@ -4887,7 +4386,6 @@ function renderRecordingDetail(detail) {
     { title: "ID", sub: recordingSensorLabel(payload), ok: true, level: "ok", value: id },
     { title: "Duration", sub: formatShortDate(metadata.started_at), ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
     { title: "Timeline", sub: `${payload?.timeline_summary?.lidar_frames || state.recordings.timeline?.lidar?.frames?.length || 0} lidar · ${payload?.timeline_summary?.camera_frames || state.recordings.timeline?.camera?.frames?.length || 0} camera · ${payload?.timeline_summary?.imu_frames || state.recordings.timeline?.imu?.frames?.length || 0} imu`, ok: Boolean(state.recordings.timeline), level: state.recordings.timeline ? "ok" : "warn", value: state.recordings.timeline ? "playable" : "preview only" },
-    { title: "LiDAR Analysis", sub: `${analysis.walls?.length || 0} walls · ${analysis.objects?.length || 0} objects`, ok: hasLidar, level: hasLidar ? "ok" : "warn", value: hasLidar ? `${preview.points.length} pts` : "no scan" },
   ] : [
     { title: "Archive", sub: "기록을 선택하세요", ok: false, level: "warn", value: "--" },
   ];
@@ -5065,22 +4563,10 @@ function renderArchiveFrame() {
     ? nearestImuFrame
     : null;
   const lidarResult = lidarFrame?.result || state.archivePlayback.fallbackPreview;
-  const overlayMode = archiveOverlayRenderMode();
-  const fusedTrees = archiveFusedTreesForTime(timeS, state.archivePlayback.range, lidarResult);
-  const lidarRenderKey = [
-    lidarFrame ? `frame:${lidarFrame.cacheIndex}` : "fallback",
-    overlayMode,
-    state.perceptionOverlayMode,
-    fusedTrees ? `fused:${fusedTrees.length}:${state.recordings.orchardMap?.algorithm || ""}` : "frame-fusion",
-    `confirmed:${lidarResult?.analysis?.orchard?.confirmed_trees?.length ?? lidarResult?.analysis?.orchard?.trees?.length ?? 0}`,
-    state.archivePlayback.overlayVisible ? "overlay-on" : "overlay-off",
-    fmtNumber(state.archivePlayback.range, 2),
-  ].join(":");
+  const lidarRenderKey = `${lidarFrame?.cacheIndex}:${state.archivePlayback.range}`;
   if (lidarRenderKey !== state.archivePlayback.lastLidarRenderKey) {
     drawLidarMapOnCanvas($("roverArchiveLidarCanvas"), lidarResult, lidarResult?.analysis, {
-      mode: overlayMode,
       range: state.archivePlayback.range,
-      fusedTrees,
     });
     state.archivePlayback.lastLidarRenderKey = lidarRenderKey;
   }
@@ -5098,21 +4584,6 @@ function renderArchiveFrame() {
   } else if (!nativeVideo && image && !cameraFrame) {
     image.removeAttribute("src");
     state.archivePlayback.lastCameraRenderKey = "";
-  }
-  const cameraOverlayKey = [
-    cameraFrame ? `frame:${cameraFrame.cacheIndex}` : "none",
-    state.cameraOverlayMode,
-    state.perceptionOverlayMode,
-    state.archivePlayback.overlayVisible ? "overlay-on" : "overlay-off",
-    cameraFrame?.overlay?.algorithm || "no-overlay",
-    cameraFrame?.overlay?.ok === false ? "error" : "ok",
-    cameraFrame?.overlay?.method || "no-method",
-    cameraFrame?.overlay?.error || "no-error",
-    cameraFrame?.overlay?.detections?.length || 0,
-  ].join(":");
-  if (cameraOverlayKey !== state.archivePlayback.lastCameraOverlayRenderKey) {
-    renderArchiveCameraOverlay(cameraFrame);
-    state.archivePlayback.lastCameraOverlayRenderKey = cameraOverlayKey;
   }
   const sourceVideo = state.recordings.selected?.recording?.source_video || state.recordings.selected?.source_video || {};
   const cameraCaption = state.archivePlayback.nativeVideoError
@@ -5159,119 +4630,9 @@ function renderArchiveFrame() {
   if (mapScrubber && document.activeElement !== mapScrubber) mapScrubber.value = String(timeS);
   const play = $("roverArchivePlayButton");
   if (play) play.textContent = state.archivePlayback.playing ? "일시정지" : "재생";
-  drawOrchardMap();
+
 }
 
-function archiveFusedTreesForTime(timeS, range, lidarResult = null) {
-  const maxRange = Number(range) || state.archivePlayback.range || 25;
-  const localTrees = archiveLocalOrchardTreesForFrame(lidarResult, maxRange);
-  const projectedTrees = archiveProjectedMapTreesForTime(timeS, maxRange);
-  if (localTrees.length) return archiveFrameAnchoredFusionTrees(localTrees, projectedTrees, maxRange);
-  return projectedTrees;
-}
-
-function archiveLocalOrchardTreesForFrame(lidarResult, range) {
-  const orchard = lidarResult?.analysis?.orchard;
-  const trees = Array.isArray(orchard?.confirmed_trees)
-    ? orchard.confirmed_trees
-    : (orchard?.trees || lidarResult?.analysis?.trees || []);
-  return (trees || [])
-    .map((tree) => {
-      const center = tree.center || tree;
-      const x = Number(center.x_m);
-      const y = Number(center.y_m);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-      const distance = Math.hypot(x, y);
-      return {
-        ...tree,
-        center: { x_m: x, y_m: y },
-        distance_m: distance,
-        source: "archive_frame_lidar_orchard",
-      };
-    })
-    .filter((tree) => tree && tree.distance_m <= range + 1.5)
-    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0));
-}
-
-function archiveProjectedMapTreesForTime(timeS, range) {
-  const map = state.recordings.orchardMap;
-  if (!map?.ok || !Array.isArray(map.trees) || !map.trees.length) return null;
-  const pose = nearestMapPathPose(map.path || [], timeS);
-  if (!pose) return null;
-  const heading = Number.isFinite(Number(pose.theta_rad))
-    ? Number(pose.theta_rad)
-    : (Number(pose.heading_deg) || 0) * Math.PI / 180;
-  const cosH = Math.cos(heading);
-  const sinH = Math.sin(heading);
-  const px = Number(pose.x_m) || 0;
-  const py = Number(pose.y_m) || 0;
-  return map.trees
-    .map((tree) => {
-      const dx = (Number(tree.x_m) || 0) - px;
-      const dy = (Number(tree.y_m) || 0) - py;
-      const localX = cosH * dx + sinH * dy;
-      const localY = -sinH * dx + cosH * dy;
-      const distance = Math.hypot(localX, localY);
-      return {
-        ...tree,
-        center: { x_m: localX, y_m: -localY },
-        distance_m: distance,
-        source: "orchard_map_fused",
-      };
-    })
-    .filter((tree) => tree.distance_m <= range + 1.5)
-    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))
-    .slice(0, 48);
-}
-
-function archiveFrameAnchoredFusionTrees(localTrees, projectedTrees, range) {
-  const projected = Array.isArray(projectedTrees) ? projectedTrees : [];
-  const used = new Set();
-  const rows = [];
-  for (const local of localTrees) {
-    const localCenter = local.center || {};
-    let bestIndex = -1;
-    let bestDistance = Infinity;
-    projected.forEach((tree, index) => {
-      if (used.has(index)) return;
-      const center = tree.center || {};
-      const distance = Math.hypot(Number(localCenter.x_m) - Number(center.x_m), Number(localCenter.y_m) - Number(center.y_m));
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestIndex = index;
-      }
-    });
-    const gate = Math.max(0.55, Math.min(1.3, 0.32 + 0.045 * Math.max(0, Number(local.distance_m) || 0)));
-    const matched = bestIndex >= 0 && bestDistance <= gate ? projected[bestIndex] : null;
-    if (matched) used.add(bestIndex);
-    const confidence = Math.max(
-      Number(local.confidence) || 0,
-      matched ? Number(matched.confidence) || 0 : 0,
-    );
-    if (!matched && confidence < 0.7 && local.kind !== "trunk_like") continue;
-    rows.push({
-      ...(matched || {}),
-      ...local,
-      center: local.center,
-      radius_m: Number(local.radius_m || matched?.radius_m || 0.22),
-      confidence: Math.min(0.98, confidence),
-      map_confidence: matched?.confidence,
-      frame_confidence: local.confidence,
-      source: matched ? "archive_frame_anchored_fusion" : "archive_frame_lidar_orchard",
-      match_error_m: matched ? Number(bestDistance.toFixed(3)) : null,
-    });
-  }
-  if (!rows.length && projected.length) return projected.slice(0, 16);
-  return rows
-    .filter((tree) => Number(tree.distance_m || 0) <= range + 1.5)
-    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))
-    .slice(0, 18);
-}
-
-function nearestMapPathPose(path, timeS) {
-  if (!Array.isArray(path) || !path.length) return null;
-  return nearestTimelineFrame(path, timeS);
-}
 
 function nearestTimelineFrame(frames, timeS) {
   if (!Array.isArray(frames) || !frames.length) return null;
@@ -5290,384 +4651,6 @@ function nearestTimelineFrame(frames, timeS) {
   return Math.abs((Number(after.t_s) || 0) - timeS) < Math.abs(timeS - (Number(before.t_s) || 0)) ? after : before;
 }
 
-function initOrchardMapCanvas() {
-  document.querySelectorAll("[data-orchard-map-layer]").forEach((canvas) => {
-    canvas.addEventListener("pointerdown", (event) => {
-      state.orchardMapView.dragging = true;
-      state.orchardMapView.dragMoved = false;
-      state.orchardMapView.lastX = event.clientX;
-      state.orchardMapView.lastY = event.clientY;
-      canvas.classList.add("dragging");
-      canvas.setPointerCapture?.(event.pointerId);
-    });
-    canvas.addEventListener("pointermove", (event) => {
-      if (!state.orchardMapView.dragging) return;
-      const dx = event.clientX - state.orchardMapView.lastX;
-      const dy = event.clientY - state.orchardMapView.lastY;
-      if (Math.hypot(dx, dy) > 2) state.orchardMapView.dragMoved = true;
-      state.orchardMapView.offsetX += dx;
-      state.orchardMapView.offsetY += dy;
-      state.orchardMapView.lastX = event.clientX;
-      state.orchardMapView.lastY = event.clientY;
-      drawOrchardMap();
-    });
-    const endDrag = (event) => {
-      const shouldSeek = state.orchardMapView.dragging && !state.orchardMapView.dragMoved && event?.type === "pointerup";
-      state.orchardMapView.dragging = false;
-      document.querySelectorAll("[data-orchard-map-layer]").forEach((item) => item.classList.remove("dragging"));
-      if (event?.pointerId !== undefined) canvas.releasePointerCapture?.(event.pointerId);
-      if (shouldSeek) seekArchiveFromOrchardMapPointer(event, canvas);
-    };
-    canvas.addEventListener("pointerup", endDrag);
-    canvas.addEventListener("pointercancel", endDrag);
-    canvas.addEventListener("wheel", (event) => {
-      event.preventDefault();
-      zoomOrchardMap(event.deltaY < 0 ? 1.1 : 1 / 1.1);
-    }, { passive: false });
-  });
-}
-
-function seekArchiveFromOrchardMapPointer(event, canvas) {
-  const map = state.recordings.orchardMap;
-  const path = map?.path || [];
-  if (!canvas || !map?.ok || path.length < 2) return;
-  const projection = orchardMapProjection(canvas, map);
-  if (!projection) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  let best = null;
-  for (const pose of path) {
-    const p = projection.project(Number(pose.x_m) || 0, Number(pose.y_m) || 0);
-    const distance = Math.hypot(p.x - x, p.y - y);
-    if (!best || distance < best.distance) best = { pose, distance };
-  }
-  if (!best) return;
-  setArchiveTime(Number(best.pose.t_s) || 0, { pause: true });
-}
-
-function resetOrchardMapView() {
-  state.orchardMapView.scale = 1;
-  state.orchardMapView.offsetX = 0;
-  state.orchardMapView.offsetY = 0;
-}
-
-function zoomOrchardMap(factor) {
-  state.orchardMapView.scale = Math.max(0.35, Math.min(8, state.orchardMapView.scale * factor));
-  drawOrchardMap();
-}
-
-function drawOrchardMap() {
-  const canvases = ORCHARD_MAP_LAYERS.map((layer) => ({ ...layer, canvas: $(layer.canvasId) })).filter((layer) => layer.canvas);
-  if (!canvases.length) return;
-  const map = state.recordings.orchardMap;
-  if (!map?.ok) {
-    for (const layer of canvases) {
-      const prepared = prepareCanvas(layer.canvas);
-      if (!prepared) continue;
-      const { ctx, w, h } = prepared;
-      ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = cssVar("--chart-bg-bottom", "#0f172a");
-      ctx.fillRect(0, 0, w, h);
-      drawLidarEmpty(ctx, w, h, "과수 지도 생성 대기");
-      text(layer.statsId, "--");
-    }
-    text("roverOrchardMapStats", "archive를 선택하면 3-layer 지도 생성");
-    return;
-  }
-  for (const layer of canvases) {
-    drawOrchardMapLayer(layer, map);
-  }
-  const layers = orchardMapLayers(map);
-  const summary = ORCHARD_MAP_LAYERS.map((spec) => {
-    const layer = layers[spec.id];
-    const centerline = layer?.centerline || {};
-    return `${spec.label} ${layer?.tree_count || 0}T/${centerline.ok ? `${centerline.length_m || 0}m` : "no path"}`;
-  }).join(" · ");
-  text("roverOrchardMapStats", `${summary} · t ${fmtClock(state.archivePlayback.timeS)} · zoom ${fmtNumber(state.orchardMapView.scale, 2)}x`);
-}
-
-function drawOrchardMapLayer(spec, rootMap) {
-  const canvas = spec.canvas;
-  const prepared = prepareCanvas(canvas);
-  if (!prepared) return;
-  const { ctx, w, h } = prepared;
-  const layers = orchardMapLayers(rootMap);
-  const map = layers[spec.id] || rootMap;
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = cssVar("--chart-bg-bottom", "#0f172a");
-  ctx.fillRect(0, 0, w, h);
-  const projection = orchardMapProjection(canvas, rootMap, w, h);
-  if (!projection) return;
-  const { bounds, project, projectDisplay, scale } = projection;
-
-  drawOrchardMapGrid(ctx, w, h, projectDisplay, bounds);
-  const path = map.path || [];
-  if (path.length > 1) {
-    ctx.strokeStyle = cssVar("--chart-good", "#55e2b2");
-    ctx.lineWidth = 3;
-    ctx.globalAlpha = 0.88;
-    ctx.beginPath();
-    path.forEach((pose, index) => {
-      const p = project(Number(pose.x_m) || 0, Number(pose.y_m) || 0);
-      if (index === 0) ctx.moveTo(p.x, p.y);
-      else ctx.lineTo(p.x, p.y);
-    });
-    ctx.stroke();
-  }
-  drawOrchardCenterline(ctx, project, map.centerline);
-  drawMapMarker(ctx, project, map.start, cssVar("--chart-good", "#55e2b2"), "S");
-  drawMapMarker(ctx, project, map.end, cssVar("--chart-rose", "#f21b58"), "E");
-  for (const tree of map.trees || []) {
-    const p = project(Number(tree.x_m) || 0, Number(tree.y_m) || 0);
-    const r = Math.max(6, Math.min(24, (Number(tree.radius_m) || 0.3) * scale));
-    const confidence = Math.max(0.25, Math.min(1, Number(tree.confidence) || 0.5));
-    ctx.globalAlpha = 0.55 + confidence * 0.35;
-    ctx.fillStyle = colorWithAlpha(spec.color, 0.2);
-    ctx.strokeStyle = spec.color;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-  const currentPose = nearestMapPathPose(path, state.archivePlayback.timeS);
-  drawRoverPoseMarker(ctx, projection, currentPose);
-  const centerline = map.centerline || {};
-  text(spec.statsId, `${map.tree_count || 0} trees · center ${centerline.ok ? `${fmtNumber(centerline.length_m || 0, 1)}m` : centerline.state || "--"} · gap ${centerline.row_gap_m ? `${fmtNumber(centerline.row_gap_m, 1)}m` : "--"}`);
-}
-
-function orchardMapLayers(map) {
-  const fallback = map?.ok ? {
-    id: "fusion",
-    label: "Weighted Fusion",
-    method: map.fusion?.method || "legacy fusion map",
-    tree_count: map.tree_count || 0,
-    trees: map.trees || [],
-    path: map.path || [],
-    start: map.start,
-    end: map.end,
-    bounds: map.bounds,
-    centerline: map.centerline || {},
-  } : null;
-  return {
-    lidar: map?.maps?.lidar || fallback,
-    camera: map?.maps?.camera || fallback,
-    fusion: map?.maps?.fusion || fallback,
-  };
-}
-
-function drawOrchardCenterline(ctx, project, centerline) {
-  const points = centerline?.points || [];
-  if (!points.length) return;
-  ctx.save();
-  ctx.strokeStyle = cssVar("--chart-yellow", "#f4bd4f");
-  ctx.lineWidth = 3.5;
-  ctx.globalAlpha = centerline.ok ? 0.95 : 0.55;
-  ctx.beginPath();
-  points.forEach((point, index) => {
-    const p = project(Number(point.x_m) || 0, Number(point.y_m) || 0);
-    if (index === 0) ctx.moveTo(p.x, p.y);
-    else ctx.lineTo(p.x, p.y);
-  });
-  ctx.stroke();
-  for (const point of points) {
-    const p = project(Number(point.x_m) || 0, Number(point.y_m) || 0);
-    ctx.fillStyle = "rgba(244, 189, 79, 0.92)";
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-function colorWithAlpha(hex, alpha) {
-  const value = String(hex || "#2f76ff").replace("#", "");
-  if (value.length !== 6) return `rgba(47, 118, 255, ${alpha})`;
-  const r = parseInt(value.slice(0, 2), 16);
-  const g = parseInt(value.slice(2, 4), 16);
-  const b = parseInt(value.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function orchardMapProjection(canvas, map, width, height) {
-  const rect = canvas.getBoundingClientRect();
-  const w = width || rect.width;
-  const h = height || rect.height;
-  if (!w || !h) return null;
-  const displayFrame = orchardMapDisplayFrame(map);
-  const bounds = displayFrame.bounds;
-  const spanX = Math.max(1, Number(bounds.max_x) - Number(bounds.min_x));
-  const spanY = Math.max(1, Number(bounds.max_y) - Number(bounds.min_y));
-  const baseScale = Math.min((w - 52) / spanX, (h - 52) / spanY);
-  const scale = baseScale * state.orchardMapView.scale;
-  const cx = w / 2 + state.orchardMapView.offsetX;
-  const cy = h / 2 + state.orchardMapView.offsetY;
-  const midX = (Number(bounds.min_x) + Number(bounds.max_x)) / 2;
-  const midY = (Number(bounds.min_y) + Number(bounds.max_y)) / 2;
-  const projectDisplay = (x, y) => ({ x: cx + (x - midX) * scale, y: cy - (y - midY) * scale });
-  return {
-    bounds,
-    scale,
-    orientationRad: displayFrame.orientationRad,
-    origin: displayFrame.origin,
-    worldToDisplay: displayFrame.worldToDisplay,
-    projectDisplay,
-    project: (x, y) => {
-      const point = displayFrame.worldToDisplay(x, y);
-      return projectDisplay(point.x, point.y);
-    },
-    projectHeading: (heading) => displayFrame.orientationRad - Number(heading || 0),
-  };
-}
-
-function orchardMapDisplayFrame(map) {
-  const path = Array.isArray(map?.path) ? map.path : [];
-  const start = path[0] || map?.start || { x_m: 0, y_m: 0, heading_deg: 0 };
-  const origin = { x: Number(start.x_m) || 0, y: Number(start.y_m) || 0 };
-  let target = path[path.length - 1] || map?.end || start;
-  let dx = (Number(target?.x_m) || 0) - origin.x;
-  let dy = (Number(target?.y_m) || 0) - origin.y;
-  if (Math.hypot(dx, dy) < 0.5 && path.length > 1) {
-    target = path.reduce((best, pose) => {
-      const distance = Math.hypot((Number(pose.x_m) || 0) - origin.x, (Number(pose.y_m) || 0) - origin.y);
-      return distance > best.distance ? { pose, distance } : best;
-    }, { pose: start, distance: 0 }).pose;
-    dx = (Number(target?.x_m) || 0) - origin.x;
-    dy = (Number(target?.y_m) || 0) - origin.y;
-  }
-  const fallbackHeading = Number(start.heading_deg || 0) * Math.PI / 180;
-  const orientationRad = Math.hypot(dx, dy) >= 0.2 ? Math.atan2(dy, dx) : fallbackHeading;
-  const sinH = Math.sin(orientationRad);
-  const cosH = Math.cos(orientationRad);
-  const worldToDisplay = (x, y) => {
-    const worldX = Number(x) - origin.x;
-    const worldY = Number(y) - origin.y;
-    return {
-      x: sinH * worldX - cosH * worldY,
-      y: cosH * worldX + sinH * worldY,
-    };
-  };
-  const displayPoints = orchardMapWorldPoints(map).map((point) => worldToDisplay(point.x_m, point.y_m));
-  displayPoints.push({ x: 0, y: 0 });
-  const xs = displayPoints.map((point) => point.x).filter(Number.isFinite);
-  const ys = displayPoints.map((point) => point.y).filter(Number.isFinite);
-  const pad = 2;
-  const bounds = xs.length && ys.length
-    ? {
-      min_x: Math.min(...xs) - pad,
-      max_x: Math.max(...xs) + pad,
-      min_y: Math.min(...ys) - pad,
-      max_y: Math.max(...ys) + pad,
-    }
-    : { min_x: -5, max_x: 5, min_y: -2, max_y: 8 };
-  return { origin, orientationRad, worldToDisplay, bounds };
-}
-
-function orchardMapWorldPoints(map) {
-  const rows = [];
-  const append = (items) => {
-    for (const item of items || []) {
-      const x = Number(item?.x_m);
-      const y = Number(item?.y_m);
-      if (Number.isFinite(x) && Number.isFinite(y)) rows.push({ x_m: x, y_m: y });
-    }
-  };
-  append(map?.path);
-  append(map?.trees);
-  append(map?.centerline?.points);
-  for (const layer of Object.values(map?.maps || {})) {
-    append(layer?.trees);
-    append(layer?.centerline?.points);
-  }
-  return rows;
-}
-
-function drawOrchardMapGrid(ctx, w, h, project, bounds) {
-  ctx.save();
-  ctx.strokeStyle = "rgba(148, 163, 184, 0.18)";
-  ctx.lineWidth = 1;
-  const minX = Math.floor(Number(bounds.min_x) / 2) * 2;
-  const maxX = Math.ceil(Number(bounds.max_x) / 2) * 2;
-  const minY = Math.floor(Number(bounds.min_y) / 2) * 2;
-  const maxY = Math.ceil(Number(bounds.max_y) / 2) * 2;
-  for (let x = minX; x <= maxX; x += 2) {
-    const a = project(x, minY);
-    const b = project(x, maxY);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-  for (let y = minY; y <= maxY; y += 2) {
-    const a = project(minX, y);
-    const b = project(maxX, y);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-  ctx.fillStyle = cssVar("--muted", "#a8b3cf");
-  ctx.font = "800 12px Inter, Arial, sans-serif";
-  ctx.fillText("2m grid", 14, h - 16);
-  ctx.restore();
-}
-
-function drawMapMarker(ctx, project, pose, color, label) {
-  if (!pose) return;
-  const p = project(Number(pose.x_m) || 0, Number(pose.y_m) || 0);
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#fff";
-  ctx.font = "900 10px Inter, Arial, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, p.x, p.y + 0.5);
-  ctx.restore();
-}
-
-function drawRoverPoseMarker(ctx, projection, pose) {
-  if (!pose) return;
-  const p = projection.project(Number(pose.x_m) || 0, Number(pose.y_m) || 0);
-  const worldHeading = Number.isFinite(Number(pose.theta_rad))
-    ? Number(pose.theta_rad)
-    : (Number(pose.heading_deg) || 0) * Math.PI / 180;
-  const heading = projection.projectHeading(worldHeading);
-  const size = 15;
-  const nose = { x: p.x + Math.sin(heading) * size, y: p.y - Math.cos(heading) * size };
-  const left = { x: p.x + Math.sin(heading + 2.45) * size * 0.72, y: p.y - Math.cos(heading + 2.45) * size * 0.72 };
-  const right = { x: p.x + Math.sin(heading - 2.45) * size * 0.72, y: p.y - Math.cos(heading - 2.45) * size * 0.72 };
-  ctx.save();
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = cssVar("--chart-cyan", "#38d8ff");
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(nose.x, nose.y);
-  ctx.lineTo(left.x, left.y);
-  ctx.lineTo(right.x, right.y);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "rgba(56, 216, 255, 0.18)";
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, size * 1.15, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function downloadOrchardMapPng() {
-  const canvas = $("roverOrchardMapFusionCanvas") || $("roverOrchardMapLidarCanvas") || $("roverOrchardMapCameraCanvas");
-  if (!canvas || !state.recordings.orchardMap?.ok) return;
-  const link = document.createElement("a");
-  link.download = `${state.recordings.selectedId || "orchard-map"}_fusion_centerline.png`;
-  link.href = canvas.toDataURL("image/png");
-  link.click();
-}
 
 function requestChartAnimation() {
   if (state.animationFrame) return;
@@ -5891,8 +4874,8 @@ function strokeSegment(ctx, points) {
 }
 
 function drawLidarMap(result) {
-  drawLidarMapOnCanvas($("lidarScanCanvas"), result, result?.analysis, { mode: state.lidarOverlayMode });
-  drawLidarMapOnCanvas($("roverLidarCanvas"), result, result?.analysis, { mode: state.lidarOverlayMode });
+  drawLidarMapOnCanvas($("lidarScanCanvas"), result, null, {});
+  drawLidarMapOnCanvas($("roverLidarCanvas"), result, null, {});
 }
 
 function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
@@ -5902,9 +4885,7 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
   const { ctx, w, h } = prepared;
   const colors = chartColors();
   const points = result?.ok ? result.points || [] : [];
-  const mode = ["raw", "both", "overlay"].includes(options.mode) ? options.mode : "both";
-  const showPoints = mode !== "overlay";
-  const showOverlay = mode !== "raw";
+  const showPoints = true;
   const radius = Math.max(80, Math.min(w, h) * 0.39);
   const cx = w / 2;
   const cy = h / 2;
@@ -5920,7 +4901,7 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
   ctx.fillRect(0, 0, w, h);
   drawLidarGrid(ctx, cx, cy, radius, range, gridStep);
 
-  if (!points.length && !showOverlay) {
+  if (!points.length) {
     drawLidarEmpty(ctx, w, h, result?.message || "스캔 대기");
     return;
   }
@@ -5940,7 +4921,6 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
     ctx.restore();
   }
 
-  if (showOverlay) drawLidarOverlays(ctx, overlays, { cx, cy, radius, range, colors, perceptionMode: state.perceptionOverlayMode, fusedTrees: options.fusedTrees });
 
   ctx.save();
   ctx.fillStyle = cssVar("--text", "#f7f9ff");
@@ -5959,128 +4939,6 @@ function lidarCanvasPoint(point, viewport) {
   };
 }
 
-function drawLidarOverlays(ctx, overlays, viewport) {
-  const walls = overlays?.walls || [];
-  const objects = overlays?.objects || [];
-  const trees = Array.isArray(viewport.fusedTrees)
-    ? viewport.fusedTrees
-    : (Array.isArray(overlays?.orchard?.confirmed_trees) ? overlays.orchard.confirmed_trees : (overlays?.orchard?.trees || overlays?.trees || []));
-  const mode = viewport.perceptionMode || "fusion";
-  if (mode === "camera") return;
-  if (!walls.length && !objects.length && !trees.length) return;
-  ctx.save();
-  if (mode === "lidar") for (const wall of walls) {
-    const a = lidarCanvasPoint(wall.start || wall.a || {}, viewport);
-    const b = lidarCanvasPoint(wall.end || wall.b || {}, viewport);
-    ctx.strokeStyle = cssVar("--chart-amber", "#f4bd4f");
-    ctx.lineWidth = 3;
-    ctx.globalAlpha = 0.9;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-  if (mode === "lidar") for (const item of objects) {
-    const center = lidarCanvasPoint(item.center || item.centroid || {}, viewport);
-    const radiusM = Math.max(0.08, Number(item.radius_m) || 0.18);
-    const r = Math.max(5, (radiusM / viewport.range) * viewport.radius);
-    drawObjectTrack(ctx, item, viewport);
-    ctx.globalAlpha = 0.95;
-    ctx.strokeStyle = cssVar("--chart-rose", "#f21b58");
-    ctx.fillStyle = "rgba(242,27,88,0.13)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-  }
-  if (mode === "fusion") drawOrchardTreeOverlay(ctx, trees, viewport);
-  ctx.restore();
-}
-
-function drawObjectTrack(ctx, item, viewport) {
-  const rawTrack = Array.isArray(item.track) ? item.track : [];
-  if (rawTrack.length < 2 || item.track_drawable !== true) return;
-  const track = rawTrack.filter((point) => Number.isFinite(Number(point.x_m)) && Number.isFinite(Number(point.y_m))).slice(-7);
-  if (track.length < 2) return;
-  const maxJumpM = Math.max(0.45, viewport.range * 0.055);
-  for (let index = 1; index < track.length; index += 1) {
-    const jump = Math.hypot(Number(track[index].x_m) - Number(track[index - 1].x_m), Number(track[index].y_m) - Number(track[index - 1].y_m));
-    if (jump > maxJumpM) return;
-  }
-  ctx.save();
-  ctx.strokeStyle = cssVar("--chart-good", "#55e2b2");
-  ctx.lineWidth = 2.4;
-  ctx.globalAlpha = Math.max(0.35, Math.min(0.82, Number(item.track_confidence) || 0.55));
-  ctx.beginPath();
-  track.forEach((point, index) => {
-    const p = lidarCanvasPoint(point, viewport);
-    if (index === 0) ctx.moveTo(p.x, p.y);
-    else ctx.lineTo(p.x, p.y);
-  });
-  ctx.stroke();
-  const tail = lidarCanvasPoint(track[track.length - 1], viewport);
-  ctx.fillStyle = cssVar("--chart-good", "#55e2b2");
-  ctx.beginPath();
-  ctx.arc(tail.x, tail.y, 3.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawOrchardTreeOverlay(ctx, trees, viewport) {
-  const labelBoxes = [];
-  for (const tree of trees || []) {
-    const center = lidarCanvasPoint(tree.center || tree, viewport);
-    const radiusM = Math.max(0.16, Number(tree.radius_m) || 0.28);
-    const r = Math.max(7, Math.min(20, (radiusM / viewport.range) * viewport.radius));
-    const confidence = Math.max(0.2, Math.min(1, Number(tree.confidence) || 0.5));
-    const color = treeConfidenceColor(confidence);
-    ctx.globalAlpha = 0.74 + confidence * 0.22;
-    ctx.strokeStyle = color.stroke;
-    ctx.fillStyle = color.fill;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    drawLidarConfidenceMark(ctx, center.x, center.y, r, confidence, color, labelBoxes);
-  }
-}
-
-function treeConfidenceColor(confidence) {
-  if (confidence >= 0.82) return { stroke: cssVar("--chart-blue", "#2f76ff"), fill: "rgba(47,118,255,0.2)" };
-  if (confidence >= 0.66) return { stroke: cssVar("--chart-good", "#55e2b2"), fill: "rgba(85,226,178,0.16)" };
-  return { stroke: cssVar("--chart-amber", "#f4bd4f"), fill: "rgba(244,189,79,0.13)" };
-}
-
-function drawLidarConfidenceMark(ctx, x, y, r, confidence, color, placed) {
-  const label = `${Math.round(confidence * 100)}%`;
-  ctx.save();
-  ctx.font = "900 10px Inter, Arial, sans-serif";
-  const w = Math.ceil(ctx.measureText(label).width) + 8;
-  const h = 16;
-  const rect = { x: x + r + 4, y: y - h / 2, w, h };
-  const overlaps = placed.some((item) => rectsOverlap(rect, item));
-  if (overlaps) {
-    ctx.fillStyle = color.stroke;
-    ctx.globalAlpha = 0.95;
-    ctx.beginPath();
-    ctx.arc(x, y - r - 4, 3.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
-  placed.push(rect);
-  ctx.fillStyle = "rgba(2, 6, 23, 0.82)";
-  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-  ctx.strokeStyle = color.stroke;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
-  ctx.fillStyle = "#fff";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, rect.x + 4, rect.y + rect.h / 2 + 0.5);
-  ctx.restore();
-}
 
 function lidarRangeFor(result) {
   return clampLidarRange(state.lidarMap.range);
@@ -6121,9 +4979,9 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.textBaseline = "middle";
   const labelOffset = 20;
   ctx.fillText("0°", cx, cy - radius - labelOffset);
-  ctx.fillText("90°", cx + radius + labelOffset, cy);
+  ctx.fillText("270°", cx + radius + labelOffset, cy);
   ctx.fillText("180°", cx, cy + radius + labelOffset);
-  ctx.fillText("270°", cx - radius - labelOffset, cy);
+  ctx.fillText("90°", cx - radius - labelOffset, cy);
   ctx.fillStyle = cssVar("--text", "#f7f9ff");
   ctx.beginPath();
   ctx.arc(cx, cy, 5, 0, Math.PI * 2);
@@ -6152,15 +5010,7 @@ function escapeHtml(value) {
 }
 
 window.addEventListener("popstate", renderRoute);
-window.addEventListener("resize", () => {
-  requestChartAnimation();
-  renderLiveCameraOverlays();
-  if (currentRoute() === "/rover-control") {
-    state.archivePlayback.lastLidarRenderKey = "";
-    state.archivePlayback.lastCameraOverlayRenderKey = "";
-    renderArchiveFrame();
-  }
-});
+
 window.addEventListener("pagehide", () => {
   if (state.roverControl.lease || hasActiveRoverInput() || state.roverControl.stoppingWithFade || Math.abs(state.roverControl.currentLinear) > 0.001 || Math.abs(state.roverControl.currentAngular) > 0.001) {
     try {

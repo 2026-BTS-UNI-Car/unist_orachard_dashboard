@@ -16,6 +16,7 @@ done
 
 rsync -az --delete \
   --exclude ".git/" \
+  --exclude ".env" \
   --exclude "__pycache__/" \
   --exclude ".pytest_cache/" \
   --exclude "runtime/" \
