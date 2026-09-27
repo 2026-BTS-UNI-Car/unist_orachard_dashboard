@@ -71,7 +71,13 @@ def prepare(release):
         data=inspect(name)
         baseline['targets'][name]={'id':data['Id'],'image':data['Image'],'restart':data['HostConfig']['RestartPolicy']['Name'],'running':data['State']['Running']}
         tag=f'ubts-rollback/{name}:{revision[:12]}'
-        run('docker','tag',data['Image'],tag)
+        if subprocess.run(['docker','image','inspect',data['Image']],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:
+            run('docker','tag',data['Image'],tag)
+        else:
+            # Some deployed containers outlive their deleted image metadata.
+            # Snapshot their existing filesystem without pausing sensor services.
+            run('docker','commit','--pause=false',name,tag)
+        baseline['targets'][name]['backup_image']=json.loads(subprocess.check_output(['docker','image','inspect',tag]))[0]['Id']
         baseline['targets'][name]['tag']=tag
     for name in subprocess.check_output(['docker','ps','--format','{{.Names}}'],text=True).splitlines():
         if name not in baseline['targets']:baseline['untouched'][name]=inspect(name)['Id']
