@@ -1,0 +1,297 @@
+{
+  "code_revision": "6e2a5ad56d67347adfc94f1aa1059ffc303f7bd7",
+  "checks": {
+    "dashboard_live": true,
+    "recorder_idle": true,
+    "archives_preserved": true,
+    "camera_bridge_status.json": true,
+    "lidar_bridge_status.json": true,
+    "imu_bridge_status.json": true,
+    "gps_bridge_status.json": true,
+    "bridge_status_readable": true,
+    "ai_stopped": true,
+    "untouched_containers": true,
+    "settings_preserved": true,
+    "motor_disarmed": true,
+    "new_images": true
+  },
+  "application_services": [
+    "dashboard",
+    "ros2-camera-bridge",
+    "ros2-lidar-bridge",
+    "ros2-imu-bridge",
+    "ros2-gps-bridge",
+    "ros2-data-recorder"
+  ],
+  "untouched_running_container_count": 7,
+  "preserved_settings_file_count": 2,
+  "preserved_archive_count": 32,
+  "private_backup_checkpoint": "/home/unist/workspace/ubts-dashboard-backups/20260928-165048-6e2a5ad56d67",
+  "live_apply_returncode": 0,
+  "ci_run": "https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/actions/runs/36393840321",
+  "regression": {
+    "tests": 120,
+    "passed": 119,
+    "opt_in_skipped": 1,
+    "local_seconds": 21.502,
+    "jetson_arm_seconds": 19.336
+  },
+  "upstream_socket_probe": {
+    "camera": {
+      "websocket_upgrade": true,
+      "tcp_nodelay": 1
+    },
+    "lidar": {
+      "websocket_upgrade": true,
+      "tcp_nodelay": 1
+    },
+    "imu": {
+      "websocket_upgrade": true,
+      "tcp_nodelay": 1
+    },
+    "gps": {
+      "websocket_upgrade": true,
+      "tcp_nodelay": 1
+    }
+  },
+  "socket_probe_scope": "New read-only upstream connections using deployed DashboardHandler._connect_ws_upstream; no control or recording commands",
+  "browser_passive": {
+    "code_revision": "6e2a5ad56d67347adfc94f1aa1059ffc303f7bd7",
+    "transport": "private SSH forward to real Jetson; browser Auto profile",
+    "wall_duration_s": 78.86,
+    "samples": [
+      {
+        "mode": "live",
+        "profile": "auto",
+        "camera": {
+          "alive": true,
+          "sourceFps": 14.8,
+          "displayFps": 1.5503875968992247,
+          "width": 160
+        },
+        "lidar": {
+          "alive": true,
+          "points": 60,
+          "sourcePoints": 3157
+        },
+        "imuAlive": true,
+        "newCaption": true,
+        "archiveCount": 32,
+        "wall_elapsed_s": 17.6,
+        "window_received_frames": 28,
+        "window_received_fps": 1.867,
+        "last_frame": {
+          "t": 17.430038999998942,
+          "width": 160,
+          "height": 90,
+          "bytes": 1226,
+          "count": 853
+        },
+        "last_status": {
+          "t": 17.21999079998932,
+          "requested_fps": 2,
+          "source_fps": 14.8,
+          "budget_bytes_s": 3000,
+          "profile": "auto",
+          "effective_profile": "tiny",
+          "ack_latency_ms": 192.38,
+          "frame_topic_alive": true
+        }
+      },
+      {
+        "mode": "live",
+        "profile": "auto",
+        "camera": {
+          "alive": true,
+          "sourceFps": 15,
+          "displayFps": 3.5810205908683974,
+          "width": 320
+        },
+        "lidar": {
+          "alive": true,
+          "points": 180,
+          "sourcePoints": 3147
+        },
+        "imuAlive": true,
+        "newCaption": true,
+        "archiveCount": 32,
+        "wall_elapsed_s": 32.64,
+        "window_received_frames": 33,
+        "window_received_fps": 2.2,
+        "last_frame": {
+          "t": 32.51020749998861,
+          "width": 320,
+          "height": 180,
+          "bytes": 1975,
+          "count": 1079
+        },
+        "last_status": {
+          "t": 32.12547309999354,
+          "requested_fps": 4,
+          "source_fps": 15.3,
+          "budget_bytes_s": 30000,
+          "profile": "auto",
+          "effective_profile": "slow",
+          "ack_latency_ms": 129.97,
+          "frame_topic_alive": true
+        }
+      },
+      {
+        "mode": "live",
+        "profile": "auto",
+        "camera": {
+          "alive": true,
+          "sourceFps": 15.1,
+          "displayFps": 3.805899143672693,
+          "width": 320
+        },
+        "lidar": {
+          "alive": true,
+          "points": 450,
+          "sourcePoints": 3147
+        },
+        "imuAlive": true,
+        "newCaption": true,
+        "archiveCount": 32,
+        "wall_elapsed_s": 47.67,
+        "window_received_frames": 58,
+        "window_received_fps": 3.867,
+        "last_frame": {
+          "t": 47.465531900001224,
+          "width": 320,
+          "height": 180,
+          "bytes": 1972,
+          "count": 1304
+        },
+        "last_status": {
+          "t": 47.42754920000152,
+          "requested_fps": 4,
+          "source_fps": 15.1,
+          "budget_bytes_s": 30000,
+          "profile": "auto",
+          "effective_profile": "slow",
+          "ack_latency_ms": 187.75,
+          "frame_topic_alive": true
+        }
+      },
+      {
+        "mode": "live",
+        "profile": "auto",
+        "camera": {
+          "alive": true,
+          "sourceFps": 15,
+          "displayFps": 5.611672278338945,
+          "width": 640
+        },
+        "lidar": {
+          "alive": true,
+          "points": 450,
+          "sourcePoints": 3145
+        },
+        "imuAlive": true,
+        "newCaption": true,
+        "archiveCount": 32,
+        "wall_elapsed_s": 62.7,
+        "window_received_frames": 78,
+        "window_received_fps": 5.2,
+        "last_frame": {
+          "t": 62.64222899999004,
+          "width": 640,
+          "height": 360,
+          "bytes": 4797,
+          "count": 1533
+        },
+        "last_status": {
+          "t": 62.164565300001414,
+          "requested_fps": 10,
+          "source_fps": 15.3,
+          "budget_bytes_s": 120000,
+          "profile": "auto",
+          "effective_profile": "balanced",
+          "ack_latency_ms": 246.34,
+          "frame_topic_alive": true
+        }
+      },
+      {
+        "mode": "live",
+        "profile": "auto",
+        "camera": {
+          "alive": true,
+          "sourceFps": 15.3,
+          "displayFps": 4.756242568370987,
+          "width": 640
+        },
+        "lidar": {
+          "alive": true,
+          "points": 450,
+          "sourcePoints": 3146
+        },
+        "imuAlive": true,
+        "newCaption": true,
+        "archiveCount": 32,
+        "wall_elapsed_s": 77.78,
+        "window_received_frames": 84,
+        "window_received_fps": 5.6,
+        "last_frame": {
+          "t": 77.61886589998903,
+          "width": 640,
+          "height": 360,
+          "bytes": 4784,
+          "count": 1755
+        },
+        "last_status": {
+          "t": 77.58943290000025,
+          "requested_fps": 10,
+          "source_fps": 15.3,
+          "budget_bytes_s": 120000,
+          "profile": "auto",
+          "effective_profile": "balanced",
+          "ack_latency_ms": 163.04,
+          "frame_topic_alive": true
+        }
+      }
+    ],
+    "decoded_image": {
+      "width": 640,
+      "height": 360
+    },
+    "errors": [],
+    "write_requests": [],
+    "camera_frames_received": 287
+  },
+  "browser_five_routes": {
+    "title": "UBTS Dashboard",
+    "mode": "live",
+    "camera": {
+      "width": 160,
+      "source": 1280,
+      "alive": true,
+      "sourceFps": 15.2,
+      "displayFps": 2.4096385542168677
+    },
+    "lidar": {
+      "points": 60,
+      "source": 3148,
+      "alive": true
+    },
+    "imu": {
+      "alive": true,
+      "frame": "imu_link"
+    },
+    "simulationBannerVisible": false,
+    "archiveCount": 32,
+    "aiPanels": 0,
+    "errors": [],
+    "write_requests": []
+  },
+  "rover_after_browser": {
+    "ok": true,
+    "armed": false,
+    "moving": false,
+    "requested": {
+      "left": 0,
+      "right": 0
+    }
+  },
+  "interpretation": "Socket behavior and healthy passive operation verified; no additional real-camera FPS gain is claimed from variable WAN observations."
+}
