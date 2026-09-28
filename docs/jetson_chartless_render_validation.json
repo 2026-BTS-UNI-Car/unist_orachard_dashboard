@@ -60,7 +60,20 @@
     ]
   },
   "browser_validation": {
-    "jetson_visual_check": "pending_root_read_only_inspection",
+    "jetson_visual_check": "passed_limited_read_only_reload",
+    "jetson_ui_observation": {
+      "executed_drawCharts_early_exit_present": true,
+      "mode": "live",
+      "archive_count": 32,
+      "control_disarmed": true,
+      "requested_left_pwm_percent": 0,
+      "requested_right_pwm_percent": 0,
+      "short_control_guide_rendered": true,
+      "lidar_initial_counter_display": "60/3192",
+      "sensor_connection_state_at_instant_load": "ROS/camera/IMU still connecting",
+      "camera_fps_or_nonblack_scene_verified": false,
+      "interaction_scope": "existing browser reload/read only; no actuator or configuration requests"
+    },
     "jetson_fps_improvement": "not_measured",
     "local_sim_browser_gate": {
       "new_served_javascript_exact_hash": true,

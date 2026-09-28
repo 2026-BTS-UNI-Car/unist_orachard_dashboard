@@ -23,8 +23,11 @@ theme and the 3200-point scan-before-ACK contract passed regression checks.
 The local SIM browser gate observed zero history-only CSS/normalization calls
 over 50.1416 seconds, then verified five nonuniform system chart canvases and a
 return to the rover page. These checks establish the removed work and preserved
-UI behavior; they do not establish a camera FPS improvement. The exact new bytes
-are served by the Jetson; its post-deployment visual check is pending separately.
+UI behavior; they do not establish a camera FPS improvement. A read-only Jetson
+browser reload confirmed the executed early exit, live mode, 32 archives, short
+guide, disarmed controls, both requested PWM values at 0%, and the initial LiDAR
+counter. ROS/camera/IMU still showed connecting at the instant of inspection;
+this limited check does not verify camera FPS or a nonblack scene.
 See the [sanitized chartless-page deployment report](docs/jetson_chartless_render_validation.json).
 
 Rollback remains web-only: restore this checkpoint's exact `host-app.js` while
