@@ -113,6 +113,58 @@ async function run() {
   const system = fixture(true, '/system');
   system.context.requestChartAnimation({redrawLidar: false}); system.frame(1);
   assert.ok(system.chartDraws.length > 0); assert.equal(system.draws.length, 0);
-  console.log('PASS: history-only RAF skips unchanged live/SIM LiDAR; scan3200/ACK, final zoom, resize/theme and system charts preserved');
+
+  // A page without history charts must not even read CSS or touch/filter/map
+  // the history arrays. Exercise real RAF scheduling in both runtime modes;
+  // explicit scan/zoom invalidation remains independent of history preparation.
+  for (const simulation of [false, true]) for (const route of ['/rover-control', '/connection', '/research', '/docs', '/unknown']) {
+    const empty = fixture(simulation, route);
+    const forbidden = new Proxy({}, {get(_target, key) {assert.fail(`history read on ${route}: ${String(key)}`);}});
+    empty.state.history = forbidden; empty.state.visualHistory = forbidden;
+    empty.context.chartColors = () => assert.fail(`CSS read on ${route}`);
+    empty.context.normalizeBps = () => assert.fail(`series allocation on ${route}`);
+    empty.context.requestChartAnimation({redrawLidar: false}); empty.frame(1); empty.frame(2);
+    assert.equal(empty.chartDraws.length, 0); assert.equal(empty.draws.length, 0);
+    empty.context.requestChartAnimation(); empty.frame(3);
+    const lidar = ['/rover-control', '/connection'].includes(route);
+    assert.equal(empty.draws.length, lidar ? 1 : 0);
+    empty.state.lidarMap.range = 12; empty.frame(4);
+    assert.equal(empty.draws.length, lidar ? 2 : 0);
+  }
+
+  // All real chart routes retain their series, normalization and core-chart
+  // mode. Changing route during an already queued RAF uses the new route.
+  const plots = fixture(); let route = '/', coreDraws = 0;
+  plots.context.currentRoute = () => route;
+  plots.context.routeSupportsLidarLive = () => ['/rover-control', '/connection'].includes(route);
+  plots.context.drawCoreCharts = () => {coreDraws += 1;};
+  plots.context.chartColors = () => ({good:'green', cyan:'cyan', blue:'blue', rose:'rose', amber:'amber'});
+  plots.state.history = {power:[null, 15], fanTemp:[null, 95], rx:[0, 20], tx:[0, 40]};
+  plots.state.visualHistory = Object.fromEntries(['cpu','memory','swap','power','rx','tx','dockerCpu','dockerMemory','fanTemp'].map(key => [key, [null, 10]]));
+  vm.runInContext(between('function normalizeBps(', 'function normalizeSeries('), plots.context);
+  const expected = {
+    '/':['chartOverviewSystem','chartOverviewNetwork'],
+    '/system':['chartCpu','chartMemory','chartSwap','chartSystemNetwork','chartPower'],
+    '/network':['chartNetwork'], '/docker':['chartDockerCpu','chartDockerMem'], '/fan':['chartFanTemp'],
+  };
+  for (const [next, ids] of Object.entries(expected)) {
+    route = next; plots.chartDraws.length = 0; plots.context.drawCharts({redrawLidar:false});
+    assert.deepEqual(plots.chartDraws.map(draw => draw.id), ids);
+  }
+  route = '/network'; plots.chartDraws.length = 0; plots.context.drawCharts();
+  assert.deepEqual(Array.from(plots.chartDraws[0].series[0].values), [null, 50]);
+  assert.deepEqual(Array.from(plots.chartDraws[0].series[1].values), [null, 25]);
+  route = '/system'; plots.state.cpuMode = 'separate'; plots.chartDraws.length = 0;
+  plots.context.drawCharts(); assert.equal(coreDraws, 1);
+  assert.deepEqual(plots.chartDraws.map(draw => draw.id), expected['/system'].slice(1));
+  assert.equal(plots.chartDraws.at(-1).series[0].max, 15);
+  route = '/fan'; plots.chartDraws.length = 0; plots.context.drawCharts();
+  assert.equal(plots.chartDraws[0].series[0].max, 95);
+  route = '/rover-control'; plots.context.requestChartAnimation({redrawLidar:false});
+  route = '/network'; plots.chartDraws.length = 0; plots.frame(1);
+  assert.deepEqual(plots.chartDraws.map(draw => draw.id), ['chartNetwork']);
+  route = '/connection'; plots.context.requestChartAnimation(); plots.chartDraws.length = 0; plots.frame(2);
+  assert.equal(plots.chartDraws.length, 0); assert.equal(plots.draws.length, 1);
+  console.log('PASS: chartless routes skip CSS/history work; all plots/core mode, route changes, scan3200/ACK, final zoom and resize/theme preserved');
 }
 run().catch(error => {console.error(error); process.exitCode = 1;});

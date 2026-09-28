@@ -4701,6 +4701,13 @@ function stepLidarMapRange() {
 }
 
 function drawCharts({ redrawLidar = true } = {}) {
+  const route = currentRoute();
+  // Live sensor/docs pages have no history plots. Avoid constructing every
+  // route's series and reading CSS on each history-animation frame there.
+  if (route !== "/" && route !== "/system" && route !== "/network" && route !== "/docker" && route !== "/fan") {
+    if (redrawLidar && routeSupportsLidarLive()) renderActiveLidarMap();
+    return;
+  }
   const colors = chartColors();
   const powerMax = Math.max(10, ...state.history.power.filter((v) => v !== null));
   const groups = {
@@ -4741,8 +4748,8 @@ function drawCharts({ redrawLidar = true } = {}) {
     "/research": [],
     "/rover-control": [],
   };
-  for (const [id, series] of groups[currentRoute()] || []) drawMultiLine(id, series);
-  if (currentRoute() === "/system" && state.cpuMode === "separate") drawCoreCharts();
+  for (const [id, series] of groups[route] || []) drawMultiLine(id, series);
+  if (route === "/system" && state.cpuMode === "separate") drawCoreCharts();
   if (redrawLidar && routeSupportsLidarLive()) renderActiveLidarMap();
 }
 
