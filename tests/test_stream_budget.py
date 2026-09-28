@@ -3,6 +3,7 @@ import json
 import threading
 import time
 import unittest
+from unittest.mock import patch
 import cv2
 import numpy as np
 from scripts.stream_policy import StreamBudget, fit_size
@@ -23,6 +24,35 @@ class StreamBudgetTest(unittest.TestCase):
     def test_preserves_aspect_and_never_upscales(self):
         self.assertEqual(fit_size(640, 480, 320, 180), (240, 180))
         self.assertEqual(fit_size(100, 50, 320, 180), (100, 50))
+
+    def test_wan_ack_latency_uses_frame_period_headroom(self):
+        budget = StreamBudget()
+        for _ in range(30): budget.acknowledge(.15)
+        self.assertEqual(budget.effective_profile, 'balanced')
+        self.assertEqual(budget.ack_latency_ms, 150)
+        for _ in range(30): budget.acknowledge(.15)
+        self.assertEqual(budget.effective_profile, 'balanced')
+
+    def test_congestion_downgrade_has_hysteresis_and_recovery_cooldown(self):
+        budget = StreamBudget();budget.level = 2
+        with patch('scripts.stream_policy.time.monotonic', return_value=10):
+            budget.acknowledge(.3)
+            self.assertEqual(budget.effective_profile, 'balanced')
+            budget.acknowledge(.3);budget.acknowledge(.3)
+            self.assertEqual(budget.effective_profile, 'slow')
+            for _ in range(30):budget.acknowledge(.03)
+            self.assertEqual(budget.effective_profile, 'slow')
+        with patch('scripts.stream_policy.time.monotonic', return_value=16):
+            for _ in range(15):budget.acknowledge(.03)
+        self.assertEqual(budget.effective_profile, 'balanced')
+
+    def test_explicit_low_bandwidth_profiles_never_auto_upgrade(self):
+        for profile in ['tiny','slow']:
+            budget=StreamBudget(profile)
+            before=budget.values
+            for _ in range(100):budget.acknowledge(.001)
+            self.assertEqual(budget.values,before)
+            self.assertEqual(budget.effective_profile,profile)
 
     def test_compressed_preview_is_resized_without_changing_source(self):
         frame = np.random.default_rng(2).integers(0, 256, (720, 1280, 3), dtype=np.uint8)

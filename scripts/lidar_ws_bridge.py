@@ -323,6 +323,9 @@ async def serve_websocket(
                                     "source": snap["source"],
                                     "error": snap["error"],
                                     "latest_only": True,
+                                    "profile": budget.profile,
+                                    "effective_profile": budget.effective_profile,
+                                    "ack_latency_ms": budget.ack_latency_ms,
                                 },
                                 separators=(",", ":"),
                             )

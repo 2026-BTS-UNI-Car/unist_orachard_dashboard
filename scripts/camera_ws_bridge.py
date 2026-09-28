@@ -744,6 +744,8 @@ async def serve_websocket(
                                         settings["fps"], budget.values[2]
                                     ),
                                     "profile": budget.profile,
+                                    "effective_profile": budget.effective_profile,
+                                    "ack_latency_ms": budget.ack_latency_ms,
                                     "budget_bytes_s": budget.values[4],
                                     "latest_only": True,
                                     "max_inflight_frames": 1,

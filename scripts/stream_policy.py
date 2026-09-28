@@ -48,10 +48,17 @@ class StreamBudget:
         self.level = 0
         self.fast_count = 0
         self.local_camera_30fps = local_camera_30fps
+        self.slow_count = 0
+        self.cooldown_until = 0.0
+        self.ack_latency_ms = None
+
+    @property
+    def effective_profile(self):
+        return ("tiny", "slow", "balanced", "detail")[self.level] if self.profile == "auto" else self.profile
 
     @property
     def values(self):
-        name = ("tiny", "slow", "balanced", "detail")[self.level] if self.profile == "auto" else self.profile
+        name = self.effective_profile
         if name == "detail" and self.local_camera_30fps:
             # Explicit local simulation policy only. Internet/Jetson defaults
             # retain their original rate, quality and bandwidth limits.
@@ -59,12 +66,23 @@ class StreamBudget:
         return PROFILES[name]
 
     def acknowledge(self, elapsed):
+        self.ack_latency_ms = round(elapsed * 1000, 2) if math.isfinite(elapsed) else None
         if self.profile != "auto":
             return
-        if not math.isfinite(elapsed) or elapsed > 0.4:
+        period = 1.0 / self.values[2]
+        now = time.monotonic()
+        severe = not math.isfinite(elapsed) or elapsed > max(.4, 1.6 * period)
+        moderate = math.isfinite(elapsed) and elapsed > max(.25, 1.6 * period)
+        self.slow_count = self.slow_count + 1 if moderate else 0
+        if severe or self.slow_count >= 3:
             self.level = max(0, self.level - 1)
             self.fast_count = 0
-        elif elapsed < 0.12:
+            self.slow_count = 0
+            self.cooldown_until = now + 5.0
+        elif elapsed < .8 * period and now >= self.cooldown_until:
+            # A 150 ms WAN can sustain more than the tiny profile's 2 fps.
+            # Compare ACK time with the current period, not a fixed LAN-only
+            # threshold. One in-flight frame still bounds queues and latency.
             self.fast_count += 1
             if self.fast_count >= 15:
                 self.level = min(3, self.level + 1)
