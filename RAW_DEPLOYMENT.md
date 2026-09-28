@@ -1,5 +1,50 @@
 # Raw dashboard deployment checkpoint
 
+2026-09-29 KST: common LiDAR redraw optimization deployed to the real Jetson.
+
+- Frontend revision: `f163ac12e182c1af32c68e7c5dac1ed893072516`.
+- Replaced **only `dashboard`**. The image inherits the existing web runtime and
+  copies only `static/app.js`; sensor bridges, drivers, recorder and ESP owner
+  kept their container IDs, image IDs, start times and restart policies.
+- Image: `sha256:3bca7845a7792c3dabff52febaaa18bfc2329b39da2bb516e35277cf00d05f5a`.
+- Private rollback checkpoint:
+  `/home/unist/workspace/ubts-dashboard-backups/20260929-034114-static-f163ac12e182`.
+- All 16 deployment checks passed. Host/container/HTTP JavaScript hashes match,
+  settings and Compose inputs are unchanged, 32 archives remain, and the rover
+  and recorder remain disarmed/idle. No motion or recording command was sent.
+
+System-history animation no longer redraws an unchanged live LiDAR scan on every
+browser frame. New scans still render all 3200 requested points before ACK;
+resize, theme, route and range changes retain explicit redraws. Both live LiDAR
+routes use this behavior. Recorded playback, camera frame flow and control code
+are unchanged. The same fix is present in the isolated simulation worktree.
+
+The first attempt safely restored the old web image/file when an overly strict
+comparison rejected reordered environment and bind lists. Read-only comparison
+then confirmed identical unique environment assignments and identical unique,
+nonoverlapping mount destinations. The successful retry canonicalized only those
+order-insensitive lists; their values and all other runtime settings still match.
+The initial attempt and rollback evidence remain in the private checkpoint.
+
+Actual browser reload confirmed the new redraw state field, ROS-ready state,
+32 archives, short control guide, live LiDAR updates, no AI labels, and zero
+requested PWM/disarmed controls. The camera image remained black; the WAN Auto
+profile showed 160x90 at about 2 browser FPS versus 15 source FPS. This verifies the
+UI update, not a bright camera scene or a camera-rate improvement.
+
+In a separate parked local simulation observation, canvas clears fell from 1516
+over 20.0075 s to 121 over 20.0015 s. Camera DOM loads were 600 before and 544 after;
+no camera FPS gain is claimed. See the [sanitized deployment and validation](docs/jetson_lidar_redraw_validation.json).
+
+Rollback for this static-only checkpoint must also target only `dashboard`:
+restore the checkpoint's `host-app.js` to the existing host `static/app.js`
+while preserving its ownership/mode, then use the saved `rollback-image.json`
+as the final Compose override with `up --no-deps --no-build --force-recreate -d dashboard`.
+The checkpoint contains the exact old image ID, source and resolved Compose
+configuration. Do not use the six-service helper below for this narrow rollback.
+
+## Previous full application checkpoint
+
 2026-09-28 KST: sensor execution, preview pacing and receive-FPS labels applied
 and verified on the real Jetson.
 

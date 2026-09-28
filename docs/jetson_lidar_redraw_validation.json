@@ -1,0 +1,91 @@
+{
+  "schema": "jetson-static-deployment-v1",
+  "code_revision": "f163ac12e182c1af32c68e7c5dac1ed893072516",
+  "application_services_replaced": [
+    "dashboard"
+  ],
+  "image_id": "sha256:3bca7845a7792c3dabff52febaaa18bfc2329b39da2bb516e35277cf00d05f5a",
+  "app_js_sha256": "57fc1d217db832a3597d3fce644624bf0b4388a3a5a0c86ef17807517c842e11",
+  "private_rollback_checkpoint": "/home/unist/workspace/ubts-dashboard-backups/20260929-034114-static-f163ac12e182",
+  "checks": {
+    "healthy_live": true,
+    "motor_disarmed_recorder_idle": true,
+    "archive_count_preserved": true,
+    "archive_names_preserved": true,
+    "host_file": true,
+    "container_file": true,
+    "served_file": true,
+    "exact_image": true,
+    "dashboard_config_preserved": true,
+    "other_containers_preserved": true,
+    "settings_preserved": true,
+    "compose_inputs_preserved": true,
+    "camera_bridge_status.json": true,
+    "lidar_bridge_status.json": true,
+    "imu_bridge_status.json": true,
+    "gps_bridge_heartbeat_no_fix_required": true
+  },
+  "preserved_archive_count": 32,
+  "unchanged_other_container_count": 15,
+  "unchanged_other_running_container_count": 12,
+  "preserved_settings_file_count": 2,
+  "no_motor_or_recording_commands": true,
+  "no_driver_bridge_or_recorder_restarts": true,
+  "no_simulation_backend_deployment": true,
+  "configuration_comparison": {
+    "exact_environment_assignments": true,
+    "environment_keys_unique": true,
+    "exact_bind_entries": true,
+    "mount_destinations_unique": true,
+    "mount_destinations_nonoverlapping": true,
+    "ignored_order_only": [
+      "Config.Env",
+      "HostConfig.Binds"
+    ]
+  },
+  "initial_strict_order_attempt": {
+    "checkpoint_suffix": "20260929-033725-static-f163ac12e182",
+    "apply_verification_passed": false,
+    "failed_check": "dashboard_config_preserved",
+    "cause": "Compose reordered identical environment assignments and nonoverlapping bind entries",
+    "old_image_and_js_restored": true,
+    "original_strict_rollback_comparator_passed": false,
+    "rollback_semantic_contract_verified_before_retry": true,
+    "other_functional_and_preservation_checks_passed": true
+  },
+  "local_regression": {
+    "node_lidar_redraw_both_worktrees": "passed",
+    "node_rover_input_both_worktrees": "passed",
+    "javascript_syntax": "passed",
+    "isolated_candidate_image_file_hash": "passed"
+  },
+  "browser_validation": {
+    "jetson_visual_check": "passed_read_only_existing_browser_reload",
+    "jetson_ui_observation": {
+      "optimized_redraw_state_field_present": true,
+      "ros_ready": true,
+      "archive_count": 32,
+      "short_control_guide_rendered": true,
+      "fusion_or_yolo_labels_present": false,
+      "control_disarmed": true,
+      "requested_left_pwm": 0,
+      "requested_right_pwm": 0,
+      "live_lidar_message_counter_observed": 77,
+      "camera_image_observed": "black; scene brightness or source validity not established",
+      "camera_profile_observed": "WAN Auto 160x90",
+      "browser_camera_fps_approx": 2,
+      "ros_camera_fps_displayed": 15,
+      "interaction_scope": "reload only; no actuation or configuration changes"
+    },
+    "jetson_fps_improvement": "not_measured",
+    "local_sim_parked_observation": {
+      "before_duration_s": 20.0075,
+      "before_canvas_clears": 1516,
+      "after_duration_s": 20.0015,
+      "after_canvas_clears": 121,
+      "camera_dom_loads_before": 600,
+      "camera_dom_loads_after": 544,
+      "conclusion": "redundant_canvas_drawing_reduced; no camera_fps_gain_claim"
+    }
+  }
+}
