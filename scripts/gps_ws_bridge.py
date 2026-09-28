@@ -49,9 +49,12 @@ class GpsBridgeState:
 
 
 async def stream(websocket, state):
-    if urlparse(websocket.path).path != '/ws/gps':
+    from scripts.stream_policy import wait_for_ack
+    actual_path = (getattr(getattr(websocket, 'request', None), 'path', None)
+                   or getattr(websocket, 'path', '/ws/gps'))
+    if urlparse(actual_path).path != '/ws/gps':
         await websocket.close(code=1008, reason='Unknown stream'); return
-    profile = parse_qs(urlparse(websocket.path).query).get('profile', ['slow'])[0]
+    profile = parse_qs(urlparse(actual_path).query).get('profile', ['slow'])[0]
     rate = {'tiny': 1, 'slow': 2, 'balanced': 5, 'detail': 5}.get(profile, 2)
     sequence = 0
     try:
@@ -61,11 +64,7 @@ async def stream(websocket, state):
             payload = state.snapshot()
             payload['stream_seq'] = sequence
             await asyncio.wait_for(websocket.send(json.dumps(payload, allow_nan=False, separators=(',', ':'))), 2)
-            async def ack():
-                while True:
-                    message = json.loads(await websocket.recv())
-                    if isinstance(message, dict) and message.get('ack') == sequence: return
-            await asyncio.wait_for(ack(), 2)
+            await wait_for_ack(websocket, lambda message: message.get('ack') == sequence)
             await asyncio.sleep(max(0, 1/rate-(time.monotonic()-start)))
     except Exception:
         await websocket.close()
@@ -74,7 +73,7 @@ async def stream(websocket, state):
 def main():
     import rclpy
     from rclpy.node import Node
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
     from std_msgs.msg import String
     import websockets
     parser = argparse.ArgumentParser()
@@ -84,7 +83,9 @@ def main():
     args = parser.parse_args()
     state = GpsBridgeState()
     rclpy.init(); node = Node('ubts_gps_websocket_bridge')
-    node.create_subscription(String, '/gps/data', state.update, qos_profile_sensor_data)
+    preview_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT,
+                             durability=DurabilityPolicy.VOLATILE)
+    node.create_subscription(String, '/gps/data', state.update, preview_qos)
     node.create_subscription(String, '/gps/driver_status', lambda msg: state.update(msg, True), 10)
     def write_status():
         path = Path(args.status_file)
@@ -96,7 +97,7 @@ def main():
     node.create_timer(1., write_status)
     thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True); thread.start()
     async def run():
-        async with websockets.serve(lambda ws: stream(ws, state), args.host, args.port, max_size=2048, max_queue=1, compression=None, close_timeout=1):
+        async with websockets.serve(lambda ws: stream(ws, state), args.host, args.port, max_size=2048, max_queue=1, write_limit=8192, compression=None, close_timeout=1):
             await asyncio.Future()
     try: asyncio.run(run())
     finally: rclpy.shutdown(); thread.join(timeout=2); node.destroy_node()

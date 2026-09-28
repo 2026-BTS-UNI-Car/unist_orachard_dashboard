@@ -36,3 +36,29 @@ Rollback itself was not exercised on the live services after successful deployme
 
 The rover repository imported this deployed SHA via Git subtree and keeps its
 simulation provider/Compose resources separate from this live application.
+
+## Stream responsiveness update — prepared, deployment pending
+
+The next reviewed deployment covers **six application services**: dashboard,
+camera/LiDAR/IMU/GPS display bridges, and recorder. Serial/I2C/UVC/GNSS drivers,
+the ESP motor owner, occupancy renderer and tunnel remain outside this scope.
+GPS validation requires a fresh bridge heartbeat, not a receiver fix; the real
+receiver is still physically unconnected.
+
+Local ROS Jazzy verification before deployment: 115 tests, 114 passed and the
+explicit isolated-ROS recording integration test skipped. This includes seven
+deployment-helper tests, covering legacy four-service rollback scope,
+immutable image IDs, removal of only newly introduced release files, and failed
+verification when sensor status files cannot be read. No real service has been
+changed by this preparation step.
+
+The deployment helper now saves the exact service set in each checkpoint. Older
+four-service backups retain that scope when using the newer helper. Backup image
+tags include the unique checkpoint name; rollback overrides use immutable image
+IDs and restore the original revision marker. Runtime data, `.env`, camera
+settings and files unrelated to the staged release remain preserved.
+
+See [stream behavior and measured limits](docs/stream_latency.md). After applying,
+the operator must record the new revision, private backup path and actual live
+verification here. The earlier deployment paragraph remains the last confirmed
+live state until then.

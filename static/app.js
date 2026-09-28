@@ -1533,6 +1533,10 @@ function handleCameraLivePayload(payload, binary = null) {
       if (image && src) image.src = src;
       if (roverImage && src) roverImage.src = src;
     }
+    // Keep video delivery independent of readout DOM work (up to 30+ frames/s).
+    const now = performance.now();
+    if (now - (state.cameraLive.lastReadoutAt || 0) < 250) return;
+    state.cameraLive.lastReadoutAt = now;
     const source = payload.source_width && payload.source_height ? `${payload.source_width}x${payload.source_height}` : "--";
     const output = payload.width && payload.height ? `${payload.width}x${payload.height}` : state.cameraLive.resolution;
     const rate = state.cameraLive.sourceFps || state.cameraLive.displayFps || state.cameraLive.fps;
@@ -1553,7 +1557,8 @@ function handleCameraLivePayload(payload, binary = null) {
 }
 
 function displayBinaryCameraFrame(blob, payload, socket) {
-  const targets = [$("cameraLiveImage"), $("roverCameraImage")].filter(Boolean);
+  // Decode only the visible route; the hidden second image used to double decode work.
+  const targets = [$(currentRoute() === "/rover-control" ? "roverCameraImage" : "cameraLiveImage")].filter(Boolean);
   const url = URL.createObjectURL(blob);
   const previousUrl = state.cameraLive.objectUrl;
   state.cameraLive.objectUrl = url;

@@ -173,7 +173,7 @@ def ros_thread(
         import rclpy
         from rclpy.node import Node
         from rclpy.parameter import Parameter
-        from rclpy.qos import qos_profile_sensor_data
+        from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
         from sensor_msgs.msg import LaserScan
     except ImportError as exc:
         state.set_error(f"ROS2 Python packages are required on Jetson: {exc}")
@@ -184,7 +184,9 @@ def ros_thread(
     class BridgeNode(Node):
         def __init__(self):
             super().__init__("ubts_lidar_ws_bridge", parameter_overrides=[Parameter("use_sim_time", value=os.environ.get("DASHBOARD_MODE") == "simulation")])
-            self.create_subscription(LaserScan, topic, self.on_scan, qos_profile_sensor_data)
+            preview_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT,
+                                     durability=DurabilityPolicy.VOLATILE)
+            self.create_subscription(LaserScan, topic, self.on_scan, preview_qos)
             self.scan_count = 0
             self.last_log_at = 0.0
             bridge_log("ros_subscribed", topic=topic, max_points=max_points)
@@ -257,7 +259,7 @@ async def serve_websocket(
     source_max_points: int,
 ):
     import websockets
-    from scripts.stream_policy import StreamBudget
+    from scripts.stream_policy import StreamBudget, wait_for_ack
 
     async def handler(websocket, legacy_path=None):
         actual_path = (
@@ -339,20 +341,8 @@ async def serve_websocket(
                 await asyncio.wait_for(websocket.send(message), timeout=2)
                 last_stamp = snap["stamp"]
                 if ack_flow:
-                    deadline = time.monotonic() + 2
-                    while True:
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0:
-                            raise asyncio.TimeoutError()
-                        raw = await asyncio.wait_for(
-                            websocket.recv(), timeout=remaining
-                        )
-                        reply = json.loads(raw)
-                        if (
-                            reply.get("type") == "scan_ack"
-                            and reply.get("sequence") == sequence
-                        ):
-                            break
+                    await wait_for_ack(websocket, lambda reply:
+                                       reply.get("type") == "scan_ack" and reply.get("sequence") == sequence)
                     budget.acknowledge(time.monotonic() - started)
                 hz = min(
                     max_hz,

@@ -139,6 +139,7 @@ class CameraState:
     client_count: int = 0
     error: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
+    frame_notify: Any | None = None
 
     def update_frame(
         self,
@@ -176,6 +177,8 @@ class CameraState:
                 self.fps_window_started_at = now
                 self.fps_window_count = 0
             self.error = None
+        if self.frame_notify is not None:
+            self.frame_notify()
 
     def update_camera_info(self, payload: dict[str, Any]) -> None:
         with self.lock:
@@ -238,6 +241,9 @@ class CameraState:
                 )
                 self.preview_fps_window_started_at = now
                 self.preview_fps_window_count = 0
+
+        if self.frame_notify is not None:
+            self.frame_notify()
 
     def preview_snapshot(self, include_jpeg: bool = True) -> dict[str, Any]:
         with self.lock:
@@ -569,7 +575,7 @@ def encode_camera_preview(
     frame: Any, width: int, height: int, quality: int
 ) -> tuple[bytes | None, float]:
     started = time.perf_counter()
-    out = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+    out = frame if frame.shape[:2] == (height, width) else cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
     ok, encoded = cv2.imencode(".jpg", out, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     return (encoded.tobytes() if ok else None, elapsed_ms)
@@ -631,13 +637,60 @@ def network_preview(frame_snap, settings, budget, compressed):
     return (jpeg, elapsed, width, height, source_width, source_height)
 
 
+def camera_stream_budget(profile):
+    from scripts.stream_policy import StreamBudget
+    local = (os.environ.get("DASHBOARD_MODE") == "simulation"
+             and os.environ.get("CAMERA_PREVIEW_LOCAL_FPS") == "30")
+    return StreamBudget(profile, local_camera_30fps=local)
+
+
+class CameraPreviewCache:
+    """Serialize JPEG work and coalesce viewers, selecting latest after waiting.
+
+    There is no FIFO of images to encode. Waiting clients re-read the latest
+    source under the encoder lock; identical profiles share one encoded JPEG.
+    """
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.frames = {}
+        self.encodes = 0
+
+    @staticmethod
+    def key(frame, settings, budget, compressed):
+        return (compressed, frame["frame_count"], settings["width"], settings["height"],
+                settings["quality"], budget.values)
+
+    async def latest(self, state, settings, budget, compressed):
+        async with self.lock:
+            frame = state.preview_snapshot(include_jpeg=False) if compressed else state.snapshot(include_frame=False)
+            key = self.key(frame, settings, budget, compressed)
+            if key in self.frames:
+                return frame, self.frames[key]
+            frame = state.preview_snapshot() if compressed else state.snapshot()
+            key = self.key(frame, settings, budget, compressed)
+            encoded = await asyncio.to_thread(network_preview, frame, settings, budget, compressed)
+            if len(self.frames) >= 8:
+                self.frames.pop(next(iter(self.frames)))
+            self.frames[key] = encoded
+            self.encodes += 1
+            frame.pop("frame_bgr", None)
+            frame.pop("jpeg", None)
+            return frame, encoded
+
+
 async def serve_websocket(
     state: CameraState, host: str, port: int, path: str, stop: threading.Event
 ) -> None:
     import websockets
-    from scripts.stream_policy import StreamBudget
-
-    preview_cache = {}
+    preview_cache = CameraPreviewCache()
+    frame_ready = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    def notify_frame():
+        try:
+            loop.call_soon_threadsafe(frame_ready.set)
+        except RuntimeError:
+            pass  # The server is already shutting down.
+    state.frame_notify = notify_frame
 
     async def handler(websocket, legacy_path=None):
         request = getattr(websocket, "request", None)
@@ -650,7 +703,7 @@ async def serve_websocket(
             await websocket.close(code=1008, reason="unsupported path")
             return
         settings = client_settings(actual_path)
-        budget = StreamBudget(settings["profile"])
+        budget = camera_stream_budget(settings["profile"])
         binary = settings["transport"] == "binary-v1"
         ack_flow = binary and settings["flow"] != "none"
         last_count = -1
@@ -670,6 +723,7 @@ async def serve_websocket(
             )
             while not stop.is_set():
                 started = time.monotonic()
+                frame_ready.clear()
                 preview = state.preview_snapshot(include_jpeg=False)
                 compressed = preview_topic_alive(preview)
                 snap = preview if compressed else state.snapshot(include_frame=False)
@@ -704,31 +758,15 @@ async def serve_websocket(
                     last_status = started
                 count = int(snap["frame_count"] or 0)
                 if not alive or count == last_count:
-                    await asyncio.sleep(0.03)
+                    try:
+                        await asyncio.wait_for(frame_ready.wait(), timeout=.5)
+                    except asyncio.TimeoutError:
+                        pass
                     continue
-                frame = (
-                    state.preview_snapshot(include_jpeg=True)
-                    if compressed
-                    else state.snapshot()
-                )
+                frame, encoded = await preview_cache.latest(state, settings, budget, compressed)
                 count = int(frame["frame_count"] or 0)
-                key = (
-                    compressed,
-                    count,
-                    settings["width"],
-                    settings["height"],
-                    settings["quality"],
-                    budget.values,
-                )
-                if key not in preview_cache:
-                    encoded = await asyncio.to_thread(
-                        network_preview, frame, settings, budget, compressed
-                    )
-                    if len(preview_cache) >= 8:
-                        preview_cache.pop(next(iter(preview_cache)))
-                    preview_cache[key] = encoded
                 jpeg, elapsed, width, height, source_width, source_height = (
-                    preview_cache[key]
+                    encoded
                 )
                 if jpeg is None:
                     await asyncio.sleep(0.1)
@@ -795,6 +833,7 @@ async def serve_websocket(
     ):
         while not stop.is_set():
             await asyncio.sleep(0.2)
+    state.frame_notify = None
 
 
 def main():

@@ -3,7 +3,7 @@
 
 Run from a staged git archive under ~/workspace/ubts-dashboard-releases/<sha>.
 prepare backs up code/config/images and builds using the current dependency
-images; apply replaces exactly four application services; rollback restores them.
+images; apply replaces exactly six application services; rollback restores them.
 No drive/arm/recording commands are sent. Checkpoints are private on the Jetson.
 """
 import argparse
@@ -22,6 +22,8 @@ WORK=APP.parent
 TARGETS={'dashboard':'unist-orachard-dashboard',
          'ros2-camera-bridge':'unist-orachard-ros2-camera-bridge',
          'ros2-lidar-bridge':'unist-orachard-ros2-lidar-bridge',
+         'ros2-imu-bridge':'unist-orachard-ros2-imu-bridge',
+         'ros2-gps-bridge':'unist-orachard-ros2-gps-bridge',
          'ros2-data-recorder':'unist-orachard-ros2-data-recorder'}
 AI='unist-orachard-vision-ai'
 PRESERVE={'runtime','data','.env','.git'}
@@ -60,6 +62,33 @@ def code_members(path):
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def target_services(baseline):
+    """Honor the checkpoint's scope, including older four-service backups."""
+    services=baseline.get('services')
+    if services is None:
+        services={service:name for service,name in TARGETS.items() if name in baseline.get('targets',{})}
+    assert services and all(TARGETS.get(service)==name for service,name in services.items()), 'invalid checkpoint service scope'
+    return services
+
+
+def rollback_image(target):
+    # A mutable tag may have been reused by a later prepare; image IDs are exact.
+    return target.get('backup_image') or target['tag']
+
+
+def bridge_checks(services):
+    checks={}
+    for fname,key in [('camera_bridge_status.json','frame_topic_alive'),('lidar_bridge_status.json','scan_topic_alive'),('imu_bridge_status.json','imu_topic_alive')]:
+        d=json.loads((APP/'runtime'/fname).read_text())
+        checks[fname]=bool(d.get(key)) and 0<=time.time()-d.get('updated_at',0)<5
+    if 'ros2-gps-bridge' in services:
+        d=json.loads((APP/'runtime/gps_bridge_status.json').read_text())
+        # The real GNSS receiver is not connected yet. A fresh bridge heartbeat
+        # is required; a fabricated position/fix must never be a deployment gate.
+        checks['gps_bridge_status.json']=d.get('schema')=='orchard.gps.v1' and 0<=time.time()-d.get('updated_at',0)<5
+    return checks
+
+
 def snapshot_image(name,data,tag,backup):
     if subprocess.run(['docker','image','inspect',data['Image']],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:
         run('docker','tag',data['Image'],tag)
@@ -90,13 +119,16 @@ def prepare(release):
     assert len(revision)==40 and all(c in '0123456789abcdef' for c in revision)
     backup=WORK/'ubts-dashboard-backups'/f'{time.strftime("%Y%m%d-%H%M%S")}-{revision[:12]}'
     backup.mkdir(parents=True,mode=0o700);os.chmod(backup,0o700)
-    baseline={'revision':revision,'release':str(release),'archive_count':count,'targets':{},'untouched':{},'settings':{}}
+    baseline={'revision':revision,'release':str(release),'archive_count':count,'services':dict(TARGETS),
+              'source_files':[str(p.relative_to(APP)) for p in code_members(APP)],
+              'new_source_files':[str(p.relative_to(release)) for p in code_members(release)],
+              'targets':{},'untouched':{},'settings':{}}
     for name in [*TARGETS.values(),AI]:
         data=inspect(name)
         baseline['targets'][name]={'id':data['Id'],'image':data['Image'],'restart':data['HostConfig']['RestartPolicy']['Name'],'running':data['State']['Running']}
         # AI is stopped but its existing container is preserved for rollback.
         if name==AI:continue
-        tag=f'ubts-rollback/{name}:{revision[:12]}'
+        tag=f'ubts-rollback/{name}:{backup.name}'
         snapshot_image(name,data,tag,backup)
         baseline['targets'][name]['backup_image']=json.loads(subprocess.check_output(['docker','image','inspect',tag]))[0]['Id']
         baseline['targets'][name]['tag']=tag
@@ -111,7 +143,7 @@ def prepare(release):
     # Keep resolved configuration private, including device-specific settings.
     resolved=subprocess.check_output(['docker','compose','-f',str(APP/'docker-compose.yml'),'config','--format','json'],cwd=APP)
     (backup/'compose-before.json').write_bytes(resolved)
-    old_images={'services':{s:{'image':baseline['targets'][n]['tag']} for s,n in TARGETS.items()}}
+    old_images={'services':{s:{'image':rollback_image(baseline['targets'][n])} for s,n in TARGETS.items()}}
     (backup/'rollback-images.json').write_text(json.dumps(old_images))
     image_files={
       'ros2':('ros2-data-recorder','RUN rm -rf /app/scripts /app/dashboard_server\nCOPY scripts /app/scripts\nCOPY dashboard_server /app/dashboard_server\n'),
@@ -135,6 +167,7 @@ def prepare(release):
 
 def verify(backup):
     baseline=json.loads((backup/'baseline.json').read_text())
+    services=target_services(baseline)
     checks={}
     for attempt in range(45):
         try:
@@ -142,16 +175,16 @@ def verify(backup):
             checks={'dashboard_live':health.get('ok') and health.get('mode')=='live',
                     'recorder_idle':rec.get('ok') and not rec.get('active'),
                     'archives_preserved':rec.get('archive_count')==baseline['archive_count']}
-            for fname,key in [('camera_bridge_status.json','frame_topic_alive'),('lidar_bridge_status.json','scan_topic_alive'),('imu_bridge_status.json','imu_topic_alive')]:
-                d=json.loads((APP/'runtime'/fname).read_text());checks[fname]=bool(d.get(key)) and time.time()-d.get('updated_at',0)<5
+            checks.update(bridge_checks(services))
+            checks['bridge_status_readable']=True
             if all(checks.values()):break
-        except (OSError,ValueError):pass
+        except (OSError,ValueError):checks['bridge_status_readable']=False
         time.sleep(2)
     checks['ai_stopped']=not inspect(AI)['State']['Running'] and inspect(AI)['HostConfig']['RestartPolicy']['Name']=='no'
     checks['untouched_containers']=all(inspect(n)['Id']==i and inspect(n)['State']['Running'] for n,i in baseline['untouched'].items())
     checks['settings_preserved']=all(digest(APP/rel)==h for rel,h in baseline['settings'].items())
     rover=read_url(8080,'/api/rover/status');checks['motor_disarmed']=not rover.get('armed') and not rover.get('moving')
-    checks['new_images']=all(inspect(n)['Config'].get('Labels',{}).get('org.opencontainers.image.revision')==baseline['revision'] for n in TARGETS.values())
+    checks['new_images']=all(inspect(n)['State']['Running'] and inspect(n)['Config'].get('Labels',{}).get('org.opencontainers.image.revision')==baseline['revision'] for n in services.values())
     (backup/'verification.json').write_text(json.dumps(checks,indent=2))
     print(json.dumps(checks,indent=2),flush=True)
     assert checks and all(checks.values()),'deployment verification failed; use rollback'
@@ -160,6 +193,7 @@ def verify(backup):
 def apply(backup):
     assert (backup/'prepared').exists(),'prepare must succeed first'
     baseline=json.loads((backup/'baseline.json').read_text());release=Path(baseline['release'])
+    services=target_services(baseline)
     guard()
     members=code_members(release)
     # Replace reviewed tracked source only; remove retired code from an explicit manifest.
@@ -170,7 +204,7 @@ def apply(backup):
         dst=APP/src.relative_to(release);dst.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dst)
     compose('config','--quiet')
     run('docker','update','--restart=no',AI);run('docker','stop',AI)
-    compose('up','--no-deps','--no-build','--force-recreate','-d',*TARGETS,override=backup/'new-images.json')
+    compose('up','--no-deps','--no-build','--force-recreate','-d',*services,override=backup/'new-images.json')
     verify(backup)
     # Default compose up must use the deployed images too.
     overrides=json.loads((backup/'new-images.json').read_text())['services']
@@ -182,15 +216,28 @@ def apply(backup):
 
 def rollback(backup):
     baseline=json.loads((backup/'baseline.json').read_text())
+    services=target_services(baseline)
     with tarfile.open(backup/'code.tar.gz') as archive:
+        old_names={member.name for member in archive.getmembers() if member.isfile()}
         for member in archive.getmembers():
             target=(APP/member.name).resolve();assert target.is_relative_to(APP) and target.relative_to(APP).parts[0] not in PRESERVE
+            assert member.isfile() or member.isdir(), 'backup may not restore symlinks or device nodes'
+        # Remove only newly introduced reviewed release files, never runtime or
+        # unrelated files that appeared while the application was running.
+        for relative in baseline.get('new_source_files',[]):
+            if relative in old_names:continue
+            target=(APP/relative).resolve();assert target.is_relative_to(APP) and target.relative_to(APP).parts[0] not in PRESERVE
+            target.unlink(missing_ok=True)
         archive.extractall(APP)
-    compose('up','--no-deps','--no-build','--force-recreate','-d',*TARGETS,override=backup/'rollback-images.json')
+    if 'RAW_DEPLOYMENT.json' not in old_names:(APP/'RAW_DEPLOYMENT.json').unlink(missing_ok=True)
+    # Rebuild from immutable IDs even for checkpoints made by an older helper.
+    pinned={'services':{s:{'image':rollback_image(baseline['targets'][n])} for s,n in services.items()}}
+    pinned_path=backup/'rollback-images-pinned.json';pinned_path.write_text(json.dumps(pinned))
+    compose('up','--no-deps','--no-build','--force-recreate','-d',*services,override=pinned_path)
     old=baseline['targets'][AI];run('docker','update','--restart='+old['restart'],AI)
     if old['running']:run('docker','start',AI)
     original=json.loads((backup/'compose-before.json').read_text())['services']
-    for service,name in TARGETS.items():run('docker','tag',baseline['targets'][name]['tag'],original[service]['image'])
+    for service,name in services.items():run('docker','tag',rollback_image(baseline['targets'][name]),original[service]['image'])
     print('ROLLED_BACK',backup,flush=True)
 
 

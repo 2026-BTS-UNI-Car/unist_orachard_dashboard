@@ -140,7 +140,7 @@ def ros_thread(state: ImuBridgeState, args: argparse.Namespace, ready: threading
     try:
         import rclpy
         from rclpy.node import Node
-        from rclpy.qos import qos_profile_sensor_data
+        from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
         from sensor_msgs.msg import Imu, MagneticField
         from std_msgs.msg import String
     except ImportError as exc:
@@ -151,9 +151,11 @@ def ros_thread(state: ImuBridgeState, args: argparse.Namespace, ready: threading
     class BridgeNode(Node):
         def __init__(self):
             super().__init__("ubts_imu_ws_bridge")
-            self.create_subscription(Imu, args.raw_topic, lambda msg: state.update_imu(msg, corrected=False), qos_profile_sensor_data)
-            self.create_subscription(Imu, args.corrected_topic, lambda msg: state.update_imu(msg, corrected=True), qos_profile_sensor_data)
-            self.create_subscription(MagneticField, args.mag_topic, state.update_magnetic, qos_profile_sensor_data)
+            preview_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT,
+                                     durability=DurabilityPolicy.VOLATILE)
+            self.create_subscription(Imu, args.raw_topic, lambda msg: state.update_imu(msg, corrected=False), preview_qos)
+            self.create_subscription(Imu, args.corrected_topic, lambda msg: state.update_imu(msg, corrected=True), preview_qos)
+            self.create_subscription(MagneticField, args.mag_topic, state.update_magnetic, preview_qos)
             self.create_subscription(String, args.calibration_topic, state.update_calibration, 10)
 
     rclpy.init()
@@ -174,6 +176,7 @@ def status_thread(state: ImuBridgeState, path: Path, interval_s: float, stop: th
 
 
 async def serve(state: ImuBridgeState, args: argparse.Namespace, stop: threading.Event) -> None:
+    from scripts.stream_policy import wait_for_ack, pace_stream
     try:
         import websockets
     except ImportError as exc:
@@ -193,13 +196,15 @@ async def serve(state: ImuBridgeState, args: argparse.Namespace, stop: threading
         await websocket.send(json.dumps({"type": "socket", "ok": True, "schema": BRIDGE_SCHEMA}, separators=(",", ":")))
         try:
             while True:
+                started = time.monotonic()
                 sequence += 1
                 await asyncio.wait_for(websocket.send(json.dumps({"type": "imu", **state.snapshot(), "sequence": sequence}, separators=(",", ":"))), timeout=2)
                 if ack:
-                    reply = json.loads(await asyncio.wait_for(websocket.recv(), timeout=2))
-                    if not isinstance(reply, dict) or reply.get("type") != "imu_ack" or reply.get("sequence") != sequence:
-                        break
-                await asyncio.sleep(interval)
+                    await wait_for_ack(websocket, lambda reply:
+                                       reply.get("type") == "imu_ack" and reply.get("sequence") == sequence)
+                # Send/ACK time already consumes this interval. Adding another
+                # full interval made a 200 ms link needlessly 200 ms slower.
+                await pace_stream(interval, started)
         except Exception as exc:
             connection_closed = getattr(getattr(websockets, "exceptions", None), "ConnectionClosed", None)
             if connection_closed is None or not isinstance(exc, connection_closed):

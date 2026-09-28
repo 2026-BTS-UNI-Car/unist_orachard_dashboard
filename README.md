@@ -58,7 +58,7 @@ curl http://127.0.0.1:8080/api/health
 
 LiDAR driver는 RPLIDAR serial device를 단독 소유하고 `/scan`을 publish합니다. LiDAR bridge는 ROS2 Iron 컨테이너에서 `/scan`만 구독하며, Dashboard는 WebSocket으로 변환된 `/scan` point data와 `runtime/lidar_bridge_status.json` 상태만 표시합니다.
 
-Camera driver는 UVC `/dev/video*` 장치를 단독 소유하고 고속 표시용 `/camera/image_jpeg`, source-native AI/기록용 `/camera/image_raw`, `/camera/camera_info`를 publish합니다. Camera bridge는 압축 ROS2 프레임을 재인코딩하지 않고 binary WebSocket으로 전달하며, Dashboard는 `/connection` 페이지에 있을 때만 `/ws/camera`를 열어 표시합니다.
+Camera driver는 UVC `/dev/video*` 장치를 단독 소유하고 `/camera/image_jpeg`, 원본 기록용 `/camera/image_raw`, `/camera/camera_info`를 publish합니다. Camera bridge는 선택한 네트워크 품질에 맞춰 표시용 JPEG를 줄여 binary WebSocket으로 전달합니다. 같은 프레임·품질을 보는 여러 화면은 JPEG 인코딩 결과를 공유합니다. 원본 ROS 데이터와 기록 해상도는 바꾸지 않습니다. 자세한 제한과 측정 결과는 [실시간 센서 전송](docs/stream_latency.md)을 참고하세요.
 
 IMU driver는 BNO085 I2C 장치를 단독 소유하고 sensor-native `/imu/data_raw`, `/imu/mag`를 publish합니다. Recorder는 녹화 시작 후 정지 구간에서 자세 기준과 gyro bias를 추정하고 Jetson 장착 yaw를 적용해 REP-103 `base_link` 기준 `/imu/data`를 추가로 publish하며, IMU bridge가 이 ROS2 토픽들을 `/ws/imu`로 변환합니다. Dashboard가 I2C 장치에 직접 접근하는 경로는 없습니다. 자세한 계약과 한계는 [docs/imu_ros2_recording.md](docs/imu_ros2_recording.md)를 참고하세요.
 
