@@ -22,6 +22,8 @@ jobs:
         run: docker compose config --quiet
       - name: Browser control state machine
         run: node tests/test_rover_browser.js
+      - name: LiDAR redraw regression
+        run: node tests/test_lidar_redraw.js
       - name: GPS map follow and replay
         run: node tests/test_gps_map.mjs
       - name: Build dashboard image

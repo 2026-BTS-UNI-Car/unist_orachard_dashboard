@@ -207,6 +207,7 @@ const state = {
   chartShiftStartedAt: 0,
   chartShiftDurationMs: POLL_INTERVAL_MS,
   animationFrame: null,
+  chartLidarRedrawRequested: false,
   apiLogCounter: 0,
   tickInFlight: false,
   telemetryFailures: 0,
@@ -409,6 +410,7 @@ function initMobileNav() {
   });
   window.addEventListener("resize", () => {
     if (window.innerWidth > 1180) setMobileNav(false);
+    if (routeSupportsLidarLive()) requestChartAnimation();
   });
 }
 
@@ -862,7 +864,7 @@ async function tick() {
     renderTelemetry(state.telemetry);
     state.telemetryFailures = 0;
     setConnection("ok", "online");
-    requestChartAnimation();
+    requestChartAnimation({ redrawLidar: false });
   } catch (err) {
     state.telemetryFailures += 1;
     if (state.telemetryFailures >= 3) setConnection("bad", "offline");
@@ -4657,7 +4659,10 @@ function nearestTimelineFrame(frames, timeS) {
 }
 
 
-function requestChartAnimation() {
+function requestChartAnimation({ redrawLidar = true } = {}) {
+  // Preserve explicit theme/resize/range requests even when a history RAF is
+  // already queued. Telemetry history alone does not invalidate the scan.
+  state.chartLidarRedrawRequested ||= redrawLidar;
   if (state.animationFrame) return;
   state.animationFrame = requestAnimationFrame(animateCharts);
 }
@@ -4665,8 +4670,11 @@ function requestChartAnimation() {
 function animateCharts(timestamp) {
   state.animationFrame = null;
   const historyActive = stepVisualHistory(timestamp);
+  const previousRange = state.lidarMap.displayRange;
   const lidarActive = stepLidarMapRange();
-  drawCharts();
+  const redrawLidar = state.chartLidarRedrawRequested || previousRange !== state.lidarMap.displayRange;
+  state.chartLidarRedrawRequested = false;
+  drawCharts({ redrawLidar });
   if (historyActive || lidarActive) state.animationFrame = requestAnimationFrame(animateCharts);
 }
 
@@ -4692,7 +4700,7 @@ function stepLidarMapRange() {
   return true;
 }
 
-function drawCharts() {
+function drawCharts({ redrawLidar = true } = {}) {
   const colors = chartColors();
   const powerMax = Math.max(10, ...state.history.power.filter((v) => v !== null));
   const groups = {
@@ -4735,7 +4743,7 @@ function drawCharts() {
   };
   for (const [id, series] of groups[currentRoute()] || []) drawMultiLine(id, series);
   if (currentRoute() === "/system" && state.cpuMode === "separate") drawCoreCharts();
-  if (routeSupportsLidarLive()) renderActiveLidarMap();
+  if (redrawLidar && routeSupportsLidarLive()) renderActiveLidarMap();
 }
 
 function renderActiveLidarMap() {
