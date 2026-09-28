@@ -215,8 +215,10 @@ def ros_thread(
     node = BridgeNode()
     ready.set()
     try:
-        while rclpy.ok() and (not stop.is_set()):
-            rclpy.spin_once(node, timeout_sec=0.1)
+        from scripts.ros_executor import persistent_executor
+        with persistent_executor(node) as executor:
+            while rclpy.ok() and (not stop.is_set()):
+                executor.spin_once(timeout_sec=0.1)
     finally:
         node.destroy_node()
         rclpy.shutdown()

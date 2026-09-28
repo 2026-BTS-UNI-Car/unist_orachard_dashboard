@@ -503,8 +503,10 @@ def ros_thread(
     node = BridgeNode()
     ready.set()
     try:
-        while rclpy.ok() and (not stop.is_set()):
-            rclpy.spin_once(node, timeout_sec=0.1)
+        from scripts.ros_executor import persistent_executor
+        with persistent_executor(node) as executor:
+            while rclpy.ok() and (not stop.is_set()):
+                executor.spin_once(timeout_sec=0.1)
     finally:
         node.destroy_node()
         rclpy.shutdown()
@@ -657,8 +659,15 @@ class CameraPreviewCache:
 
     @staticmethod
     def key(frame, settings, budget, compressed):
-        return (compressed, frame["frame_count"], settings["width"], settings["height"],
-                settings["quality"], budget.values)
+        from scripts.stream_policy import fit_size
+        max_width, max_height, _, max_quality, _ = budget.values
+        width, height = min(settings["width"], max_width), min(settings["height"], max_height)
+        if frame.get("source_width") and frame.get("source_height"):
+            width, height = fit_size(frame["source_width"], frame["source_height"], width, height)
+        # Frame size/quality determine the JPEG. Requested FPS, byte budgets,
+        # and a larger requested viewport do not change the encoded pixels.
+        return (compressed, frame["frame_count"], width, height,
+                min(settings["quality"], max_quality))
 
     async def latest(self, state, settings, budget, compressed):
         async with self.lock:
@@ -682,6 +691,7 @@ async def serve_websocket(
     state: CameraState, host: str, port: int, path: str, stop: threading.Event
 ) -> None:
     import websockets
+    from scripts.stream_policy import FramePacer
     preview_cache = CameraPreviewCache()
     frame_ready = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -708,6 +718,7 @@ async def serve_websocket(
         ack_flow = binary and settings["flow"] != "none"
         last_count = -1
         last_status = 0.0
+        pacer = FramePacer()
         state.adjust_clients(1)
         try:
             await websocket.send(
@@ -722,6 +733,7 @@ async def serve_websocket(
                 )
             )
             while not stop.is_set():
+                await pacer.wait(min(settings["fps"], budget.values[2]), budget.values[4])
                 started = time.monotonic()
                 frame_ready.clear()
                 preview = state.preview_snapshot(include_jpeg=False)
@@ -801,6 +813,7 @@ async def serve_websocket(
                 sent = time.monotonic()
                 await asyncio.wait_for(websocket.send(message), timeout=2)
                 last_count = count
+                pacer.sent(sent, len(message))
                 if ack_flow:
                     acknowledged = await wait_for_camera_decode_ack(
                         websocket, count, timeout_s=2
@@ -811,11 +824,6 @@ async def serve_websocket(
                         )
                         return
                     budget.acknowledge(time.monotonic() - sent)
-                delay = budget.delay(
-                    len(message), min(settings["fps"], budget.values[2])
-                ) - (time.monotonic() - started)
-                if delay > 0:
-                    await asyncio.sleep(delay)
         except Exception as exc:
             bridge_log("preview_closed", reason=type(exc).__name__)
         finally:

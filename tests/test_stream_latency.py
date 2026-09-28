@@ -66,6 +66,25 @@ class StreamLatencyTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(camera_stream_budget('detail').values[2], 30)
             self.assertEqual(camera_stream_budget('slow').values[2], 4)
 
+    async def test_equivalent_viewports_share_jpeg_but_actual_size_and_quality_do_not(self):
+        state = CameraState()
+        state.update_frame('camera', 1, 0, np.zeros((360, 640, 3), np.uint8), 'bgr8')
+        cache, budget = CameraPreviewCache(), StreamBudget('detail')
+        large = client_settings('/ws/camera?profile=detail&resolution=1280x720&quality=90')
+        native = client_settings('/ws/camera?profile=detail&resolution=640x360&quality=70')
+        small = client_settings('/ws/camera?profile=detail&resolution=320x180&quality=70')
+        low_quality = client_settings('/ws/camera?profile=detail&resolution=640x360&quality=40')
+        results = await asyncio.gather(cache.latest(state, large, budget, False),
+                                       cache.latest(state, native, budget, False))
+        self.assertEqual(cache.encodes, 1)
+        self.assertIs(results[0][1], results[1][1])
+        self.assertEqual(results[0][1][2:4], (640, 360))
+        _, smaller = await cache.latest(state, small, budget, False)
+        _, lower_quality = await cache.latest(state, low_quality, budget, False)
+        self.assertEqual(cache.encodes, 3)
+        self.assertEqual(smaller[2:4], (320, 180))
+        self.assertNotEqual(lower_quality[0], results[0][1][0])
+
     async def test_imu_waits_for_ack_then_sends_latest_without_extra_interval(self):
         import websockets
         asyncio.get_running_loop().set_debug(False)

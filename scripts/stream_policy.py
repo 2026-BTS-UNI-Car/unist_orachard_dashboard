@@ -42,6 +42,43 @@ async def pace_stream(interval, started):
     return delay
 
 
+class FramePacer:
+    """Absolute frame cadence with strict spacing for the preceding packet.
+
+    Timer overshoot does not accumulate every frame. A whole missed period is
+    discarded, never repaid with an immediate catch-up burst. Byte-rate limits
+    use actual send time rather than the ideal FPS deadline.
+    """
+    def __init__(self, *, clock=None, sleep=None):
+        self.clock = clock or time.monotonic
+        self.sleep = sleep or asyncio.sleep
+        self.next_frame_at = 0.0
+        self.last_sent_at = None
+        self.last_bytes = 0
+        self.fps = None
+
+    async def wait(self, fps, bytes_per_second):
+        fps = max(1, fps)
+        if self.last_sent_at is None:
+            self.fps = fps
+            return 0.0
+        if fps != self.fps:
+            self.next_frame_at = self.last_sent_at + 1.0 / fps
+            self.fps = fps
+        byte_deadline = self.last_sent_at + self.last_bytes / max(1, bytes_per_second)
+        delay = max(0.0, max(self.next_frame_at, byte_deadline) - self.clock())
+        if delay > 0:
+            await self.sleep(delay)
+        return delay
+
+    def sent(self, when, size):
+        period = 1.0 / max(1, self.fps or 1)
+        deadline = self.next_frame_at + period
+        self.next_frame_at = deadline if deadline > when else when + period
+        self.last_sent_at = when
+        self.last_bytes = size
+
+
 class StreamBudget:
     def __init__(self, profile="auto", local_camera_30fps=False):
         self.profile = profile if profile in {*PROFILES, "auto"} else "auto"

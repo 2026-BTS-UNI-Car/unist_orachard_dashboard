@@ -1539,7 +1539,7 @@ function handleCameraLivePayload(payload, binary = null) {
     state.cameraLive.lastReadoutAt = now;
     const source = payload.source_width && payload.source_height ? `${payload.source_width}x${payload.source_height}` : "--";
     const output = payload.width && payload.height ? `${payload.width}x${payload.height}` : state.cameraLive.resolution;
-    const rate = state.cameraLive.sourceFps || state.cameraLive.displayFps || state.cameraLive.fps;
+    const rate = state.cameraLive.displayFps;
     const modeText = source === output ? source : `source ${source} · output ${output}`;
       setCameraResult("ok", `실시간 수신 중 · ${modeText} · ${cameraFpsLabel(rate)}`);
     renderCameraLiveState();
@@ -1621,14 +1621,14 @@ function renderCameraLiveState(overrideLabel) {
     ? "--"
     : `${fmtNumber(state.cameraLive.lastFrameAgeSec, 1)}s ago`;
   const captureTarget = `${state.cameraLive.resolution} · ${state.cameraLive.fps} fps target`;
-  const observedFps = state.cameraLive.sourceFps || state.cameraLive.displayFps;
+  const observedFps = state.cameraLive.displayFps;
   const observedDetail = `ROS ${cameraFpsLabel(state.cameraLive.sourceFps)} · WS ${cameraFpsLabel(state.cameraLive.displayFps)}`;
   const colors = chartColors();
   renderReadout("cameraLiveStats", [
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
-    { label: "Observed FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
+    { label: "수신 FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
   text("roverCameraCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · source ${source} · capture ${captureTarget}` : socketText);
   const roverButton = $("roverCameraToggle");
@@ -1642,7 +1642,7 @@ function renderCameraLiveState(overrideLabel) {
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
-    { label: "Observed FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
+    { label: "수신 FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
 }
 
