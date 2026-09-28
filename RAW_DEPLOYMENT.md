@@ -1,5 +1,40 @@
 # Raw dashboard deployment checkpoint
 
+2026-09-29 KST: chart preparation is skipped on pages without history plots.
+
+- Frontend revision: `8f37f43664c2a6450ca76d1f552d5bddfba222ed`.
+- Replaced **only `dashboard`**, using the existing web image with one changed
+  `static/app.js`. No sensor protocol, recorder, controller or driver changed.
+- Image: `sha256:8e5a2ca68f75e83d6381e6dea43da921c6c9c91e0b67c20bff811dfb42468bc7`.
+- Host/container/HTTP JavaScript SHA256:
+  `81107e57c0c7e046a3f26e50d85dfda2d78975506711081b768dd0f3a9c1a180`.
+- Private rollback checkpoint:
+  `/home/unist/workspace/ubts-dashboard-backups/20260929-042306-static-8f37f43664c2`.
+- All **16 checks passed** on the first attempt; no rollback was needed.
+  All 15 other containers (12 running) and 32 archive names/counts are unchanged.
+  Settings and Compose inputs are preserved; the rover remains disarmed and the
+  recorder idle. No motion or recording command was sent.
+
+The live sensor, research and documentation pages return before preparing chart
+colors and history arrays on every animation frame. Explicit LiDAR redraws still
+work. Existing history plots, separate CPU charts, route changes, zoom, resize,
+theme and the 3200-point scan-before-ACK contract passed regression checks.
+
+The local SIM browser gate observed zero history-only CSS/normalization calls
+over 50.1416 seconds, then verified five nonuniform system chart canvases and a
+return to the rover page. These checks establish the removed work and preserved
+UI behavior; they do not establish a camera FPS improvement. The exact new bytes
+are served by the Jetson; its post-deployment visual check is pending separately.
+See the [sanitized chartless-page deployment report](docs/jetson_chartless_render_validation.json).
+
+Rollback remains web-only: restore this checkpoint's exact `host-app.js` while
+preserving ownership/mode, then apply its `rollback-image.json` as the final
+Compose override with `up --no-deps --no-build --force-recreate -d dashboard`.
+This restores the preceding `3bca7845…` web image without restarting bridges,
+drivers or the recorder. Raw inspect/Compose evidence stays in the private backup.
+
+## Previous LiDAR redraw checkpoint
+
 2026-09-29 KST: common LiDAR redraw optimization deployed to the real Jetson.
 
 - Frontend revision: `f163ac12e182c1af32c68e7c5dac1ed893072516`.

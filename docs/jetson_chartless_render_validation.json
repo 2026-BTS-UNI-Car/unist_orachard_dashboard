@@ -1,0 +1,75 @@
+{
+  "schema": "jetson-static-deployment-v1",
+  "change": "skip_history_chart_preparation_on_chartless_pages",
+  "code_revision": "8f37f43664c2a6450ca76d1f552d5bddfba222ed",
+  "application_services_replaced": [
+    "dashboard"
+  ],
+  "image_id": "sha256:8e5a2ca68f75e83d6381e6dea43da921c6c9c91e0b67c20bff811dfb42468bc7",
+  "app_js_sha256": "81107e57c0c7e046a3f26e50d85dfda2d78975506711081b768dd0f3a9c1a180",
+  "previous_image_id": "sha256:3bca7845a7792c3dabff52febaaa18bfc2329b39da2bb516e35277cf00d05f5a",
+  "previous_app_js_sha256": "57fc1d217db832a3597d3fce644624bf0b4388a3a5a0c86ef17807517c842e11",
+  "private_rollback_checkpoint": "/home/unist/workspace/ubts-dashboard-backups/20260929-042306-static-8f37f43664c2",
+  "checks": {
+    "healthy_live": true,
+    "motor_disarmed_recorder_idle": true,
+    "archive_count_preserved": true,
+    "archive_names_preserved": true,
+    "host_file": true,
+    "container_file": true,
+    "served_file": true,
+    "exact_image": true,
+    "dashboard_config_preserved": true,
+    "other_containers_preserved": true,
+    "settings_preserved": true,
+    "compose_inputs_preserved": true,
+    "camera_bridge_status.json": true,
+    "lidar_bridge_status.json": true,
+    "imu_bridge_status.json": true,
+    "gps_bridge_heartbeat_no_fix_required": true
+  },
+  "preserved_archive_count": 32,
+  "unchanged_other_container_count": 15,
+  "unchanged_other_running_container_count": 12,
+  "preserved_settings_file_count": 2,
+  "rollback_performed": false,
+  "deployment_attempts": 1,
+  "no_motor_or_recording_commands": true,
+  "no_driver_bridge_or_recorder_restarts": true,
+  "no_simulation_backend_deployment": true,
+  "configuration_comparison": {
+    "exact_environment_assignments": true,
+    "environment_keys_unique": true,
+    "exact_bind_entries": true,
+    "mount_destinations_unique": true,
+    "mount_destinations_nonoverlapping": true,
+    "ignored_order_only": [
+      "Config.Env",
+      "HostConfig.Binds"
+    ]
+  },
+  "local_regression": {
+    "node_lidar_redraw_both_worktrees": "passed",
+    "javascript_syntax_both_worktrees": "passed",
+    "isolated_candidate_image_file_hash": "passed",
+    "assertions": [
+      "no CSS/history access on chartless pages",
+      "all five chart routes and separate CPU cores retained",
+      "route changes, explicit LiDAR redraw, zoom and theme retained",
+      "3200-point scan draw precedes exactly one ACK"
+    ]
+  },
+  "browser_validation": {
+    "jetson_visual_check": "pending_root_read_only_inspection",
+    "jetson_fps_improvement": "not_measured",
+    "local_sim_browser_gate": {
+      "new_served_javascript_exact_hash": true,
+      "observation_s": 50.1416,
+      "history_only_css_calls_on_live_route": 0,
+      "history_only_normalization_calls_on_live_route": 0,
+      "system_charts_nonuniform_canvas_count": 5,
+      "rover_route_return_verified": true,
+      "conclusion": "unnecessary chart preparation removed; no camera FPS gain claim"
+    }
+  }
+}
