@@ -786,6 +786,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             dashboard_log(f"ws.{label}.rejected", reason="missing_session", remote=self.client_address[0])
             self.send_error(403, f"{label} WebSocket session required")
             return
+        # Avoid Nagle/delayed-ACK stalls on JPEG tails and small telemetry ACKs.
+        # Limit this to authenticated upgraded connections.
+        self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         now = time.time()
         with _SESSION_LOCK:
             session = _SESSIONS.get(session_token)
@@ -852,6 +855,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if parsed.query:
             path = f"{path}?{parsed.query}"
         sock = socket.create_connection((host, port), timeout=3)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
         host_header = f"{host}:{port}"
         request = (
