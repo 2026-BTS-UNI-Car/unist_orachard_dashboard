@@ -1383,6 +1383,24 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   }
 }
 
+.archive-motor-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+}
+
+.archive-motor-panel[hidden] { display: none; }
+.archive-motor-status, .archive-motor-caption { margin: 0; font-size: 12px; line-height: 1.55; }
+.archive-motor-caption { color: var(--muted); }
+.archive-motor-table-wrap { overflow-x: auto; }
+.archive-motor-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+.archive-motor-table th, .archive-motor-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.archive-motor-table thead th { color: var(--muted); font-weight: 600; }
+
 .archive-download-actions {
   display: grid;
   justify-items: stretch;

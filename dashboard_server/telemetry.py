@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 import urllib.request
 from collections import OrderedDict
+from dashboard_server.motor_pwm import with_recorded_motor
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
@@ -1116,6 +1117,9 @@ class TelemetryProvider:
             "gps_frames": metadata_summary.get("gps_frames", 0),
             "gps_valid_frames": metadata_summary.get("gps_valid_frames", 0),
             "gps_enabled": metadata.get("include_gps", False),
+            "motor_frames": metadata_summary.get("motor_frames", 0),
+            "motor_enabled": metadata_summary.get("motor_enabled", False),
+            "motor_error": metadata_summary.get("motor_error"),
             "imu_calibration_valid": metadata_summary.get("imu_calibration_valid"),
             "imu_timeline_hz": metadata_summary.get("imu_timeline_hz"),
             "sample_hz": metadata_summary.get("sample_hz"),
@@ -1152,6 +1156,9 @@ class TelemetryProvider:
                 "gps_frames": (timeline.get("gps") or {}).get(
                     "frame_count", len((timeline.get("gps") or {}).get("frames", []))
                 ),
+                "motor_frames": (timeline.get("motor") or {}).get("frame_count", 0),
+                "motor_enabled": bool((timeline.get("motor") or {}).get("enabled")),
+                "motor_error": (timeline.get("motor") or {}).get("error"),
                 "imu_calibration_valid": bool(
                     (timeline.get("imu") or {}).get("calibration", {}).get("valid")
                     or (timeline.get("imu") or {})
@@ -1236,6 +1243,7 @@ class TelemetryProvider:
 
         def response(timeline):
             timeline = self._with_recorded_gps(path, timeline, start_s, duration_s)
+            timeline = with_recorded_motor(path, timeline, start_s, duration_s)
             return {
                 "ok": True,
                 "timeline": self._playback_response_profile(timeline, profile),
@@ -1664,12 +1672,34 @@ class TelemetryProvider:
                 (timeline.get("gps") or {}).get("frames", []), start, end
             ),
         }
+        if isinstance(timeline.get("motor"), dict):
+            motor = timeline["motor"]
+            rows, previous = [], None
+            for frame in motor.get("frames", []):
+                try:
+                    stamp = float(frame["t_s"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if not math.isfinite(stamp):
+                    continue
+                if stamp < start:
+                    previous = frame
+                    continue
+                if stamp > end:
+                    break
+                if not rows and previous is not None:
+                    rows.append(previous)
+                rows.append(frame)
+            if not rows and previous is not None:
+                rows.append(previous)
+            payload["motor"] = {**motor, "frames": rows}
         payload["sync"] = {
             **(timeline.get("sync") or {}),
             "segment_lidar_frames": len(payload["lidar"]["frames"]),
             "segment_camera_frames": len(payload["camera"]["frames"]),
             "segment_imu_frames": len(payload["imu"]["frames"]),
             "segment_gps_frames": len(payload["gps"]["frames"]),
+            "segment_motor_frames": len((payload.get("motor") or {}).get("frames", [])),
         }
         return payload
 

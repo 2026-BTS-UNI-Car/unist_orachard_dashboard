@@ -7,17 +7,19 @@ See [raw sensor deployment](docs/raw_sensor_dashboard.md). Existing runtime/data
 
 GPS UART driver, offline Korea maps and synchronized GPS recording: [GPS setup and operation](docs/gps_offline_map.md)
 
+녹화별 모터 핀 신호 저장·재생: [PWM 기록 형식과 한계](docs/motor_pwm_recording.md)
+
 Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대시보드입니다. 현재 서버는 Jetson의 실제 시스템, 네트워크, Docker 상태를 읽고, ROS2/로버 데이터는 추후 bridge가 제공하는 JSON 텔레메트리 파일을 통해 연결합니다.
 
-대시보드는 수행계획서의 연구 방향인 Vision-LiDAR 신뢰도 동적 조절, 행간 중심선 추정, 경로추종 안정화, 과수원 주행 성능 검증을 기준으로 구성했습니다.
+실차 센서는 RPLIDAR S2 2D LiDAR, BNO085 IMU, UVC USB 카메라입니다. ZED-F9P GPS는 연결 예정이며, 휠 엔코더는 없습니다. 카메라와 LiDAR는 원시 센서 화면으로 표시합니다. 시뮬레이션 지도·자율주행 개발은 별도 orchard-rover-clone 저장소에서 진행합니다.
 
 ## 주요 화면
 
 - Jetson Orin Nano Super 상태: CPU, 메모리, 디스크, 온도, 호스트 정보
 - Connection: LiDAR USB-serial 인식 상태, ROS2 `/scan` WebSocket 기반 2D LiDAR 지도, ROS2 카메라 실시간 화면
-- 로버 상태: 주행 모드, 위치, 속도, 배터리, E-stop, 모터 상태
-- 센서 상태: LiDAR, Camera, IMU, Encoder, MAVLink 준비 상태
-- Vision-LiDAR 융합: 센서별 신뢰도, 동적 가중치, 중심선 오차, 경로추종 오차
+- 로버 상태: 조종 권한, 연결, 요청 출력과 MCU 보고 출력; 출력값은 실측 바퀴 속도가 아닙니다.
+- 센서 상태: LiDAR, Camera, IMU, GPS 수신 상태
+- 녹화 재생: 센서 데이터와 핀별 요청 PWM·MCU 보고 PWM 확인
 - 네트워크 상태: interface, IP, link speed, RX/TX 처리량 그래프
 - Docker 상태: engine 정보, 컨테이너 목록, 컨테이너 CPU/메모리 그래프
 - 실험 통계: 주행 시간, 누적 거리, 완료 행간, 지도 커버리지

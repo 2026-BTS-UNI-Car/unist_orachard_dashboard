@@ -184,7 +184,7 @@ const state = {
 	    sync: true,
 	    range: 25,
 	    fallbackPreview: null,
-	    cache: { lidarFrames: [], cameraFrames: [], imuFrames: [], gpsFrames: [], gpsKeys: new Set(), lidarKeys: new Set(), cameraKeys: new Set(), imuKeys: new Set(), objectUrls: new Map(), imageElements: new Map() },
+	    cache: { lidarFrames: [], cameraFrames: [], imuFrames: [], gpsFrames: [], motorFrames: [], motorKeys: new Set(), gpsKeys: new Set(), lidarKeys: new Set(), cameraKeys: new Set(), imuKeys: new Set(), objectUrls: new Map(), imageElements: new Map() },
 	    segmentDurationS: ARCHIVE_SEGMENT_SECONDS,
 	    segmentCache: new Map(),
 	    loadingSegments: new Map(),
@@ -4000,10 +4000,12 @@ async function selectRecording(id) {
   stopArchivePlayback(true);
   state.recordings.timeline = null;
   clearArchiveFrameCache();
+  renderArchiveMotor(null, [], 0);
 
   renderRecordings();
   try {
     const detail = await getJson(`/api/recordings/${encodeURIComponent(id)}`);
+    if (id !== state.recordings.selectedId) return;
     state.recordings.selected = detail;
     state.recordings.timeline = timelineShellFromRecording(detail?.recording || detail);
     renderRecordingDetail(detail);
@@ -4013,6 +4015,7 @@ async function selectRecording(id) {
 
     }
   } catch (err) {
+    if (id !== state.recordings.selectedId) return;
     renderStatusRows("roverArchiveDetails", [
       { title: "Archive", sub: id, ok: false, level: "bad", value: err.message },
     ]);
@@ -4028,7 +4031,8 @@ function timelineShellFromRecording(payload) {
   const cameraFrames = Number(summary.camera_frames || 0);
   const imuFrames = Number(summary.imu_frames || 0);
   const gpsFrames = Number(summary.gps_frames || 0);
-  if (!summary.ok && !lidarFrames && !cameraFrames && !imuFrames && !gpsFrames) return null;
+  const motorFrames = Number(summary.motor_frames || 0);
+  if (!summary.ok && !lidarFrames && !cameraFrames && !imuFrames && !gpsFrames && !motorFrames) return null;
   return {
     ok: true,
     id: payload?.id || metadata.id || state.recordings.selectedId,
@@ -4040,12 +4044,14 @@ function timelineShellFromRecording(payload) {
     camera: { frames: [] },
     imu: { frames: [], calibration: metadata.timeline?.imu_calibration || {} },
     gps: {frames: [], enabled: metadata.include_gps === true || gpsFrames > 0},
+    motor: {frames: [], enabled: motorFrames > 0, frame_count: motorFrames},
     sync: {
       time_base: "seconds_since_recording_start",
       lidar_frames: lidarFrames,
       camera_frames: cameraFrames,
       imu_frames: imuFrames,
       gps_frames: gpsFrames,
+      motor_frames: motorFrames,
     },
     streaming: true,
   };
@@ -4067,6 +4073,8 @@ function clearArchiveFrameCache() {
     cameraFrames: [],
     imuFrames: [],
     gpsFrames: [],
+    motorFrames: [],
+    motorKeys: new Set(),
     lidarKeys: new Set(),
     cameraKeys: new Set(),
     imuKeys: new Set(),
@@ -4176,6 +4184,7 @@ function mergeArchiveTimelineSegment(timeline) {
     if (!cache.gpsKeys.has(key)) { cache.gpsKeys.add(key); cache.gpsFrames.push({...frame, t_s:Number(frame.t_s)}); }
   }
   cache.gpsFrames.sort((a, b) => a.t_s-b.t_s);
+  mergeArchiveMotorSegment(timeline.motor);
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
 }
@@ -4562,6 +4571,7 @@ function renderArchiveFrame() {
   const timeS = Math.max(0, Number(state.archivePlayback.timeS) || 0);
   const cache = state.archivePlayback.cache || {};
   window.RoverGps?.archive(cache.gpsFrames || [], timeS, state.recordings.selectedId, timeline?.gps?.enabled === true);
+  renderArchiveMotor(timeline?.motor, cache.motorFrames || [], timeS);
   const lidarFrame = timeline ? nearestTimelineFrame(cache.lidarFrames || [], timeS) : null;
   const cameraFrame = timeline && state.archivePlayback.sync ? nearestTimelineFrame(cache.cameraFrames || [], timeS) : null;
   const nearestImuFrame = timeline ? nearestTimelineFrame(cache.imuFrames || [], timeS) : null;
@@ -4638,6 +4648,99 @@ function renderArchiveFrame() {
   const play = $("roverArchivePlayButton");
   if (play) play.textContent = state.archivePlayback.playing ? "일시정지" : "재생";
 
+}
+
+
+function mergeArchiveMotorSegment(motor) {
+  if (!motor) return;
+  if (state.recordings.timeline) {
+    state.recordings.timeline.motor = {
+      ...(state.recordings.timeline.motor || {}),
+      ...Object.fromEntries(Object.entries(motor).filter(([key]) => key !== "frames")),
+      frames: [],
+    };
+  }
+  const cache = state.archivePlayback.cache;
+  cache.motorFrames ||= [];
+  cache.motorKeys ||= new Set();
+  for (const frame of Array.isArray(motor.frames) ? motor.frames : []) {
+    // Malformed timestamps must not become a fabricated sample at zero.
+    if (!Number.isFinite(frame?.t_s) || frame.t_s < 0) continue;
+    const key = String(frame.t_s);
+    if (cache.motorKeys.has(key)) continue;
+    cache.motorKeys.add(key);
+    cache.motorFrames.push(frame);
+  }
+  cache.motorFrames.sort((a, b) => a.t_s - b.t_s);
+}
+
+function archiveMotorFrameAtOrBefore(frames, timeS) {
+  if (!Array.isArray(frames) || !frames.length || !Number.isFinite(timeS)) return null;
+  let low = 0;
+  let high = frames.length;
+  // Right insertion point: unlike sensor previews, never use a future command.
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (frames[mid].t_s <= timeS) low = mid + 1;
+    else high = mid;
+  }
+  return low > 0 ? frames[low - 1] : null;
+}
+
+function archiveMotorPwmLabel(value) {
+  if (!Number.isInteger(value) || value < 0 || value > 255) return "미기록";
+  return `${value} / 255 · ${(value / 255 * 100).toFixed(1)}%`;
+}
+
+function renderArchiveMotor(motor, frames, timeS) {
+  const panel = $("roverArchiveMotorPanel");
+  if (!panel) return;
+  panel.hidden = !state.recordings.selectedId;
+  const frame = archiveMotorFrameAtOrBefore(frames, timeS);
+  const simulated = frame?.status?.simulated === true || (!frame && motor?.source_kind === "simulation");
+  text("roverArchiveMotorOutputLabel", simulated ? "시뮬레이션 출력 PWM" : "MCU 보고 PWM");
+  const hasArchive = motor?.enabled === true || Number(motor?.frame_count) > 0 || frames.length > 0;
+  text("roverArchiveMotorTime", frame ? `스냅샷 ${frame.t_s.toFixed(3)}s` : "스냅샷 없음");
+  let status;
+  if (!hasArchive) {
+    status = "이 녹화에는 모터 핀 신호 기록이 없습니다.";
+  } else if (!frame) {
+    status = "현재 재생 시각 이전의 모터 스냅샷이 없습니다. 이후 신호는 표시하지 않습니다.";
+  } else {
+    const limit = Number.isFinite(motor?.stale_after_s) && motor.stale_after_s > 0 ? motor.stale_after_s : 1.5;
+    const gap = Math.max(0, timeS - frame.t_s);
+    const stale = gap > limit || frame.source_stale !== false;
+    const connected = frame.status?.connected;
+    const connection = simulated
+      ? connected === true ? "가상 구동 준비됨" : connected === false ? "가상 구동 준비 안 됨" : "가상 구동 상태 미기록"
+      : connected === true ? "MCU 연결됨" : connected === false ? "MCU 연결 끊김" : "MCU 연결 여부 미기록";
+    status = `${stale ? "오래되거나 시각을 확인할 수 없는 스냅샷" : "기록된 상태 스냅샷"} · ${connection} · 재생 시각과 차이 ${gap.toFixed(2)}s`;
+    if (Number.isFinite(frame.source_age_s) && frame.source_age_s >= 0) {
+      status += ` · 수집 당시 상태 파일 경과 ${frame.source_age_s.toFixed(2)}s`;
+    }
+  }
+  if (motor?.error || motor?.sidecar_read_error || Number(motor?.sidecar_malformed_rows) > 0 || Number(motor?.dropped_time_frames) > 0) {
+    // Controlled label only; archive errors may contain untrusted free text.
+    status = `일부 모터 기록 누락 또는 읽기 오류 · ${status}`;
+  }
+  text("roverArchiveMotorStatus", status);
+  const hz = Number.isFinite(motor?.sample_hz) && motor.sample_hz > 0 ? `${motor.sample_hz} Hz ` : "";
+  text("roverArchiveMotorCaption", hasArchive
+    ? simulated
+      ? `${hz}시뮬레이션 상태 스냅샷입니다. 요청값과 가감속된 가상 속도 명령을 최대 설정 속도 기준 0–255로 환산했습니다. 실제 GPIO 신호·MCU 보고값·전압·측정 바퀴 속도가 아닙니다.`
+      : `${hz}상태 스냅샷입니다. 요청 PWM은 주행 요청에서 계산한 값이며, MCU 보고 PWM은 마지막 수신 캐시입니다. 핀별 보고 시각·모든 직렬 명령·전압·실제 바퀴 속도는 기록하지 않습니다.`
+    : "이 기능 적용 후 시작한 녹화에서 핀별 요청값과 MCU 보고값을 확인할 수 있습니다.");
+  const body = $("roverArchiveMotorRows");
+  if (!body) return;
+  const roles = {left_forward: "왼쪽 정방향", left_reverse: "왼쪽 역방향", right_forward: "오른쪽 정방향", right_reverse: "오른쪽 역방향", driver_enable: "드라이버 활성화"};
+  const pins = Array.isArray(motor?.pins) ? motor.pins : [];
+  const html = pins.length ? pins.map((pin) => {
+    const values = frame?.pins?.[pin.pin];
+    const gpio = Number.isInteger(pin.gpio) && pin.gpio >= 0 ? `GPIO ${pin.gpio}` : "GPIO 미기록";
+    const role = roles[pin.role] || pin.role || "역할 미기록";
+    return `<tr><th scope="row">${escapeHtml(pin.pin || "핀 미기록")}</th><td>${escapeHtml(gpio)}</td><td>${escapeHtml(role)}</td><td>${escapeHtml(archiveMotorPwmLabel(values?.requested_pwm_derived))}</td><td>${escapeHtml(archiveMotorPwmLabel(simulated ? values?.simulated_output_pwm : values?.reported_pwm))}</td></tr>`;
+  }).join("") : '<tr><td colspan="5">핀 매핑 기록 없음</td></tr>';
+  if (body.innerHTML !== html) body.innerHTML = html;
 }
 
 

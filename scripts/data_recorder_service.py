@@ -34,6 +34,12 @@ from dashboard_server.imu_processing import (
     quaternion_to_euler_deg,
 )
 from dashboard_server.gps import GPS_SCHEMA, GPS_TIMELINE_SCHEMA, valid_position, finite
+from dashboard_server.motor_pwm import (
+    MOTOR_APPLIED_TOPIC,
+    MOTOR_REQUESTED_TOPIC,
+    MOTOR_TIMELINE_SCHEMA,
+    MotorTimeline,
+)
 
 
 def iso_now() -> str:
@@ -120,6 +126,7 @@ class RecordingState:
         self.gps_write_error = None
         self.next_gps_sample_at = 0.0
         self.gps_log = None
+        self.motor_timeline = MotorTimeline(args.rover_status_topic)
         self.write_status("start")
 
     def status(self) -> dict[str, Any]:
@@ -154,7 +161,9 @@ class RecordingState:
                     "camera_frames": len(self.camera_frames),
                     "imu_frames": len(self.imu_frames),
                     "gps_frames": self.gps_frame_count,
+                    "motor_frames": self.motor_timeline.frame_count,
                 },
+                "motor_pipeline": self.motor_timeline.status(time.monotonic()),
                 "gps_pipeline": {
                     "schema": GPS_TIMELINE_SCHEMA,
                     "data_topic": "/gps/data",
@@ -277,6 +286,8 @@ class RecordingState:
             "camera_frames": len(timeline.get("camera", {}).get("frames", [])),
             "imu_frames": len(timeline.get("imu", {}).get("frames", [])),
             "gps_frames": (timeline.get("gps") or {}).get("frame_count", 0),
+            "motor_frames": (timeline.get("motor") or {}).get("frame_count", 0),
+            "motor_enabled": bool((timeline.get("motor") or {}).get("enabled")),
             "imu_calibration_valid": bool(
                 timeline.get("imu", {}).get("calibration", {}).get("valid")
                 or timeline.get("imu", {})
@@ -320,6 +331,7 @@ class RecordingState:
                 "kind": kind,
                 "include_imu": include_imu,
                 "include_gps": include_gps,
+                "include_motor": True,
                 "state": "recording",
                 "started_at": iso_now(),
                 "topics": topics,
@@ -338,6 +350,9 @@ class RecordingState:
                     "imu_mount_transform": self.imu_calibrator.mount_provenance(),
                     "imu_timeline_hz": self.args.imu_timeline_hz,
                     "imu_max_frames": self.args.imu_timeline_max_frames,
+                    "motor_enabled": True,
+                    "motor_schema": MOTOR_TIMELINE_SCHEMA,
+                    "motor_frames_file": "motor.jsonl",
                 },
             }
             write_json_atomic(root / "metadata.json", metadata)
@@ -369,7 +384,9 @@ class RecordingState:
             self.imu_timeline_count = 0
             self.imu_calibration_events = []
             self.next_imu_sample_at = 0.0
+            started_epoch = time.time()
             started_steady = time.monotonic()
+            self.motor_timeline.start(root, started_steady, started_epoch)
             if include_imu:
                 self.imu_calibrator.begin(recording_id, now_monotonic=started_steady)
                 self.imu_calibration_events.append(
@@ -385,7 +402,7 @@ class RecordingState:
             self.active = {
                 **metadata,
                 "path": str(root),
-                "started_monotonic": time.time(),
+                "started_monotonic": started_epoch,
                 "started_steady": started_steady,
             }
             self.process = self.start_rosbag(root / "rosbag2", topics)
@@ -415,6 +432,7 @@ class RecordingState:
         with self.lock:
             self.active = None
             self.process = None
+            self.motor_timeline.close()
             if self.gps_log is not None:
                 self.gps_log.close()
                 self.gps_log = None
@@ -447,6 +465,11 @@ class RecordingState:
                     "gps_valid_frames": self.gps_valid_count,
                     "gps_enabled": bool(active.get("include_gps", True)),
                     "gps_error": self.gps_write_error,
+                    "motor_enabled": True,
+                    "motor_schema": MOTOR_TIMELINE_SCHEMA,
+                    "motor_frames": self.motor_timeline.frame_count,
+                    "motor_frames_file": "motor.jsonl",
+                    "motor_error": self.motor_timeline.error,
                     "sample_hz": self.args.timeline_hz,
                     "camera_preview_width": self.args.camera_preview_width,
                     "camera_preview_decoupled": True,
@@ -527,7 +550,9 @@ class RecordingState:
                 "camera_frames": len(self.camera_frames),
                 "imu_frames": len(self.imu_frames),
                 "gps_frames": self.gps_frame_count,
+                "motor_frames": self.motor_timeline.frame_count,
             },
+            "motor": self.motor_timeline.descriptor(),
             "gps": {
                 "schema": GPS_TIMELINE_SCHEMA,
                 "enabled": bool(active.get("include_gps", True)),
@@ -568,6 +593,8 @@ class RecordingState:
         topics = [
             self.args.cmd_topic,
             self.args.rover_status_topic,
+            MOTOR_REQUESTED_TOPIC,
+            MOTOR_APPLIED_TOPIC,
             self.args.odom_topic,
             self.args.tf_topic,
             self.args.tf_static_topic,
@@ -598,6 +625,15 @@ class RecordingState:
         return list(
             dict.fromkeys((topic for topic in topics if str(topic or "").strip()))
         )
+
+    def observe_motor(self, msg: String) -> None:
+        received_at, received_steady = time.time(), time.monotonic()
+        with self.lock:
+            if self.active and self.active.get("stopping"):
+                return
+            self.motor_timeline.observe(
+                msg.data, received_at=received_at, received_steady=received_steady
+            )
 
     def observe_gps(self, msg, *, status=False):
         try:
@@ -1169,6 +1205,9 @@ class RecorderNode(Node):
         )
         self.create_subscription(
             String, "/gps/data", self.state.observe_gps, camera_qos
+        )
+        self.create_subscription(
+            String, args.rover_status_topic, self.state.observe_motor, 10
         )
         self.create_subscription(
             String,

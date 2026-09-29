@@ -839,6 +839,15 @@
 </div>
 </section>
 
+<section class="archive-motor-panel" hidden="" id="roverArchiveMotorPanel">
+<div class="panel-head mini"><div><p class="eyebrow">Recorded motor signals</p><h3>기록된 모터 핀 신호</h3></div><span class="tag" id="roverArchiveMotorTime">스냅샷 없음</span></div>
+<p class="archive-motor-status" id="roverArchiveMotorStatus">기록 선택 대기</p>
+<div class="archive-motor-table-wrap" tabindex="0" role="region" aria-label="핀별 요청 및 MCU 보고 PWM 표">
+<table class="archive-motor-table"><thead><tr><th scope="col">NodeMCU 핀</th><th scope="col">ESP GPIO</th><th scope="col">역할</th><th scope="col">요청 PWM (계산값)</th><th scope="col" id="roverArchiveMotorOutputLabel">MCU 보고 PWM</th></tr></thead><tbody id="roverArchiveMotorRows"><tr><td colspan="5">핀 매핑 기록 없음</td></tr></tbody></table>
+</div>
+<p class="archive-motor-caption" id="roverArchiveMotorCaption">상태 스냅샷 기준 · PWM 범위 0–255</p>
+</section>
+
 <div class="archive-download-actions">
 <a class="archive-download-button" download="" hidden="" href="#" id="roverArchiveDownloadButton">
 <span>기록 데이터 다운로드</span>

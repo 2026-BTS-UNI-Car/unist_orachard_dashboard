@@ -26,6 +26,8 @@ jobs:
         run: node tests/test_lidar_redraw.js
       - name: GPS map follow and replay
         run: node tests/test_gps_map.mjs
+      - name: Recorded motor PWM replay
+        run: node tests/test_motor_archive_ui.js
       - name: Build dashboard image
         run: docker build --file Dockerfile --tag unist-orchard-dashboard:smoke .
       - name: Build ROS2 runtime image
@@ -37,10 +39,10 @@ jobs:
             --workdir /workspace \
             unist-orchard-dashboard-ros2:smoke \
             /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -m unittest discover -s tests -p "test_camera_ws_bridge.py" && python3 -m unittest discover -s tests -p "test_data_recorder_service.py" && python3 -m unittest discover -s tests -p "test_gps*.py"'
-      - name: Isolated four-sensor ROS recording
+      - name: Isolated sensor and motor ROS recording
         run: |
           mkdir -p runtime data
-          docker run --rm --network none -e ROS_DOMAIN_ID=173 -e UBTS_GPS_INTEGRATION_TEST=1 \
+          docker run --rm --network none --ipc private -e ROS_DOMAIN_ID=173 -e UBTS_GPS_INTEGRATION_TEST=1 -e UBTS_MOTOR_INTEGRATION_TEST=1 \
             --volume "$PWD:/workspace:ro" --tmpfs /workspace/runtime:rw --tmpfs /workspace/data:rw \
             --workdir /workspace unist-orchard-dashboard-ros2:smoke \
-            /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -B -m unittest discover -s tests -p "test_gps_integration.py"'
+            /bin/bash -lc 'source /opt/ros/iron/setup.bash && python3 -B -m unittest discover -s tests -p "test_gps_integration.py" && python3 -B -m unittest discover -s tests -p "test_motor*.py"'
