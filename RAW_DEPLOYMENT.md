@@ -1,5 +1,84 @@
 # Raw dashboard deployment checkpoint
 
+2026-09-29 KST: motor pin/PWM recording deployed to the real Jetson.
+
+- Application revision: `8fe7cd6ef37aa1d5fef8bc4b4f582d7e21b80c33`.
+- Recreated exactly **`dashboard` and `ros2-data-recorder`**, copying six changed
+  runtime files onto their respective previous immutable images.
+- Web image: `sha256:2cd094c2450f355315fef0a697bbe2bf66c7b51d185af28abcddf7ec69fd7b64`.
+- Recorder image: `sha256:6f73aba3b303ee68f3532d4a2a20a366518ce415770237b4f1f8b2225f51f345`.
+- Private checkpoint:
+  `/home/unist/workspace/ubts-dashboard-backups/20260929-210544-motor-8fe7cd6ef37a`.
+- All **36 deployment checks passed**. The other 14 containers retained their
+  IDs, images, start times, running state and restart policies. All 32 archive
+  names/counts, settings and existing Compose inputs are preserved.
+- The recorder passively receives fresh motor status with the new schema,
+  zero recorded frames and no pipeline error. The rover is disarmed and the
+  recorder idle. No actual new recording, arm or motion request was sent.
+- Only the default **web** image tag was updated after verification. The
+  recorder/shared ROS base tags used by bridges and drivers were not retagged.
+
+New recordings include motor status and requested/applied topics, a full
+`motor.jsonl` sidecar and a pin table aligned with archive playback. MCU-reported
+PWM is distinguished from requested PWM and simulated output; it is not wheel
+speed feedback. The actual vehicle has no wheel encoders. See
+[recorded motor values and limitations](docs/motor_pwm_recording.md) and the
+[sanitized deployment evidence](docs/jetson_motor_recording_validation.json).
+
+The immutable ARM ROS Iron recorder candidate passed **24 tests in 9.243 s**,
+including synthetic ROS subscription/rosbag/sidecar integration in a private,
+network-isolated domain. The local isolated Iron full suite passed **144 tests
+in 36.028 s**, with no skips. Node archive replay checks and
+[GitHub CI 36564999759](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/actions/runs/36564999759)
+passed. Host, container and served static hashes match. The current browser
+visit failed with `ERR_PROXY_CONNECTION_FAILED`; a successful live visual
+inspection of this release is **not** claimed. No hardware recording or drive
+test is covered by these results.
+
+Two preparation attempts stopped before application: the legacy Docker builder
+rejected `COPY --chmod`, then the capability-dropped test container could not
+traverse the private release directory. The successful preparation used
+`COPY --chown` plus explicit `RUN chmod`, and ran only the isolated candidate
+tests as the release owner with writable tmpfs. Production users/configuration
+were unchanged. No rollback was needed for the successful application.
+
+### Recovery for the motor-recording release
+
+Keep this checkpoint and its resolved configuration private. First confirm the
+rover is disarmed and the recorder idle. Restore every manifest entry from
+`host-source/` using the owner/mode in `baseline.json`; for entries whose
+`old_sha256` is null, remove only that newly added file. The private release
+helper's `replace_source()` and application failure branch implement this
+procedure:
+`/home/unist/workspace/ubts-dashboard-releases/8fe7cd6ef37aa1d5fef8bc4b4f582d7e21b80c33/deploy_motor_template.py`.
+It has no standalone `rollback` subcommand. After restoring host sources, use
+the saved **complete Compose chain** plus the rollback override:
+
+```bash
+python3 - <<'PY'
+import json, subprocess
+from pathlib import Path
+app = Path('/home/unist/workspace/unist_orachard_dashboard')
+backup = Path('/home/unist/workspace/ubts-dashboard-backups/20260929-210544-motor-8fe7cd6ef37a')
+baseline = json.loads((backup / 'baseline.json').read_text())
+command = ['docker', 'compose', '-p', 'unist_orachard_dashboard', '--project-directory', str(app)]
+for path in baseline['config_files']:
+    command.extend(['-f', path])
+command.extend(['-f', str(backup / 'rollback-images.json'), 'up', '--no-deps', '--no-build',
+                '--force-recreate', '-d', 'dashboard', 'ros2-data-recorder'])
+subprocess.run(command, check=True)
+subprocess.run(['docker', 'tag', baseline['default_web_image'], 'unist-orachard-dashboard:latest'], check=True)
+PY
+```
+
+Then run the helper's rollback verification contract against the saved baseline:
+old source/container/HTTP hashes, both old images, unchanged configuration,
+all 14 other containers, settings, 32 archives and disarmed/idle state. Do not
+retag a shared ROS image or use the older six-service rollback below. This
+manual post-success recovery procedure has not been exercised.
+
+## Previous chartless-page checkpoint
+
 2026-09-29 KST: chart preparation is skipped on pages without history plots.
 
 - Frontend revision: `8f37f43664c2a6450ca76d1f552d5bddfba222ed`.
