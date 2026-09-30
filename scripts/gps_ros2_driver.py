@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import argparse
 import array
+import errno
 import fcntl
 import glob
 import json
 import math
 import os
 from pathlib import Path
+import select
 import stat
 import sys
 import termios
@@ -21,6 +23,9 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
 from dashboard_server.gps import GnssDecoder, fresh_snapshot, ubx_packet, valid_position
+
+
+SERIAL_ERRORS = (OSError, termios.error)
 
 
 def serial_device_name(port, sysfs_root=Path('/sys')):
@@ -80,8 +85,12 @@ class GpsSerial:
         self.counter_baseline = None
         self.opened_at = None
         self.baud_attempts = []
+        self.next_open = 0
+        self.cleanup_errors = []
 
     def open(self):
+        if self.fd is not None or self.lock_fd is not None:
+            raise RuntimeError('GPS serial is already open')
         self.device_name = serial_device_name(self.port)
         consoles = {item.split('=', 1)[1].split(',', 1)[0]
                     for item in Path('/proc/cmdline').read_text().split() if item.startswith('console=')}
@@ -100,6 +109,11 @@ class GpsSerial:
             self.opened_at = time.monotonic()
             self.baud_attempts = []
             self.set_baud(self.baud)
+            # A reopened USB path may refer to a new receiver. Never carry its
+            # predecessor's partial packet, identity, fix or NMEA aiding state.
+            self.decoder = GnssDecoder()
+            self.bytes_received = 0
+            self.cleanup_errors = []
         except Exception:
             self.close(); raise
 
@@ -119,6 +133,13 @@ class GpsSerial:
         self.next_poll = 0
 
     def read(self):
+        # With VMIN=0 an empty read alone is not a reliable disconnect signal.
+        # POLLHUP also detects removal in passive mode, without a poll write.
+        readiness = select.poll()
+        readiness.register(self.fd, select.POLLIN | select.POLLERR | select.POLLHUP)
+        if any(flags & (select.POLLERR | select.POLLHUP | select.POLLNVAL)
+               for _, flags in readiness.poll(0)):
+            raise OSError(errno.EIO, 'GPS serial device disconnected')
         frames = []
         before = self.decoder.packets
         for _ in range(8):
@@ -144,8 +165,20 @@ class GpsSerial:
             try: os.write(self.fd, polls)
             except BlockingIOError: pass
             self.next_poll = now + 1.0
-        self.error = None
+        if self.decoder.packets > before: self.error = None
         return frames
+
+    def poll(self):
+        """One retryable serial step; publishing/programming errors stay visible."""
+        if self.fd is None and time.monotonic() < self.next_open: return []
+        try:
+            if self.fd is None: self.open()
+            return self.read()
+        except SERIAL_ERRORS as error:
+            self.error = str(error)
+            self.close()
+            self.next_open = time.monotonic() + 5
+            return []
 
     def snapshot(self):
         counts = serial_counters(self.fd) if self.fd is not None else None
@@ -156,22 +189,40 @@ class GpsSerial:
                       auto_baud=not self.fixed_baud, bytes_received=self.bytes_received,
                       valid_packets=self.decoder.packets, rejected_packets=self.decoder.rejected,
                       receiver=self.decoder.identity, error=self.error, configuration_writes=False,
+                      cleanup_errors=list(self.cleanup_errors),
                       serial_device=self.device_name, baud_attempts=list(self.baud_attempts),
                       serial_open_s=round(time.monotonic()-self.opened_at, 1) if self.opened_at is not None else None,
                       uart_counters=counts, uart_counters_scope='since_uart_open' if counts is not None else None)
-        return fresh_snapshot(self.decoder.sample, self.decoder.last_sample_at, driver=driver)
+        # A recently valid fix must become invalid immediately on disconnect.
+        received_at = self.decoder.last_sample_at if self.fd is not None else None
+        return fresh_snapshot(self.decoder.sample, received_at, driver=driver)
 
     def close(self):
-        if self.fd is not None:
-            try:
-                if self.original is not None: termios.tcsetattr(self.fd, termios.TCSANOW, self.original)
-                fcntl.ioctl(self.fd, termios.TIOCNXCL)
-            except OSError: pass
-            os.close(self.fd); self.fd = None
+        fd, lock_fd, original = self.fd, self.lock_fd, self.original
+        # Detach first: repeated close must never act on a recycled descriptor.
+        self.fd = self.lock_fd = self.original = None
         self.opened_at = None
         self.counter_baseline = None
-        if self.lock_fd is not None:
-            os.close(self.lock_fd); self.lock_fd = None
+        if fd is None and lock_fd is None: return
+        self.cleanup_errors = []
+
+        def cleanup(label, action):
+            try: action()
+            except SERIAL_ERRORS as error:
+                self.cleanup_errors.append(f'{label}: {error}')
+
+        try:
+            if fd is not None:
+                try:
+                    if original is not None:
+                        cleanup('restore termios', lambda: termios.tcsetattr(fd, termios.TCSANOW, original))
+                finally:
+                    cleanup('release serial exclusive mode', lambda: fcntl.ioctl(fd, termios.TIOCNXCL))
+        finally:
+            try:
+                if fd is not None: cleanup('close serial descriptor', lambda: os.close(fd))
+            finally:
+                if lock_fd is not None: cleanup('close lock descriptor', lambda: os.close(lock_fd))
 
 
 def make_navsat(sample, message_class):
@@ -195,6 +246,7 @@ def make_navsat(sample, message_class):
 
 def main():
     import rclpy
+    from rclpy.executors import ExternalShutdownException
     from rclpy.node import Node
     from rclpy.qos import qos_profile_sensor_data
     from sensor_msgs.msg import NavSatFix
@@ -212,24 +264,13 @@ def main():
     fix_pub = node.create_publisher(NavSatFix, '/gps/fix', qos_profile_sensor_data)
     data_pub = node.create_publisher(String, '/gps/data', qos_profile_sensor_data)
     status_pub = node.create_publisher(String, '/gps/driver_status', 10)
-    next_open = 0
-
     def poll():
-        nonlocal next_open
-        try:
-            if serial.fd is None:
-                if time.monotonic() < next_open: return
-                serial.open()
-            for frame in serial.read():
-                stamp = node.get_clock().now().to_msg()
-                frame['stamp'] = dict(sec=stamp.sec, nanosec=stamp.nanosec)
-                serial.decoder.sample['stamp'] = frame['stamp']
-                fix_pub.publish(make_navsat(frame, NavSatFix))
-                data_pub.publish(String(data=json.dumps(frame, allow_nan=False, separators=(',', ':'))))
-        except (OSError, ValueError) as error:
-            serial.error = str(error)
-            serial.close()
-            next_open = time.monotonic() + 5
+        for frame in serial.poll():
+            stamp = node.get_clock().now().to_msg()
+            frame['stamp'] = dict(sec=stamp.sec, nanosec=stamp.nanosec)
+            serial.decoder.sample['stamp'] = frame['stamp']
+            fix_pub.publish(make_navsat(frame, NavSatFix))
+            data_pub.publish(String(data=json.dumps(frame, allow_nan=False, separators=(',', ':'))))
 
     def status():
         payload = serial.snapshot()
@@ -243,8 +284,12 @@ def main():
     node.create_timer(.02, poll)
     node.create_timer(1., status)
     try: rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException): pass
     finally:
-        serial.close(); node.destroy_node(); rclpy.shutdown()
+        try: serial.close()
+        finally:
+            try: node.destroy_node()
+            finally: rclpy.try_shutdown()
     return 0
 
 
