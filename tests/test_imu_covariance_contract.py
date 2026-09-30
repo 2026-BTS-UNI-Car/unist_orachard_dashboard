@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from dashboard_server.imu_processing import ImuCalibrationConfig, StartReferenceCalibrator
+from dashboard_server.imu_processing import raw_imu_payload
 from scripts import imu_ros2_driver as driver
 
 try:
@@ -21,23 +21,6 @@ except ModuleNotFoundError as exc:
     if exc.name not in {'rclpy', 'sensor_msgs', 'builtin_interfaces'}:
         raise
     Imu = None
-
-
-class CorrectedTimelineCovarianceTest(unittest.TestCase):
-    def test_available_corrected_orientation_reports_unknown_not_unavailable_covariance(self):
-        calibrator = StartReferenceCalibrator(ImuCalibrationConfig(stationary_window_s=.2, min_samples=3))
-        sample = {'stamp': {'sec': 12, 'nanosec': 34},
-                  'orientation': {'x': 0., 'y': 0., 'z': 0., 'w': 1.},
-                  'angular_velocity': {'x': .01, 'y': -.02, 'z': .03},
-                  'linear_acceleration': {'x': 0., 'y': 0., 'z': 9.80665}}
-        calibrator.begin('contract', now_monotonic=0.)
-        for instant in (0., .1, .2):
-            calibrator.observe(sample, now_monotonic=instant)
-        corrected = calibrator.correct(sample)
-        self.assertIsNotNone(corrected)
-        self.assertEqual(corrected['covariance']['orientation_diagonal'], {'x': 0., 'y': 0., 'z': 0.})
-        self.assertEqual(corrected['orientation'], {'x': 0., 'y': 0., 'z': 0., 'w': 1.})
-        self.assertFalse(calibrator.calibration['mapping_ready'])
 
 
 @unittest.skipUnless(Imu is not None, 'ROS2 message/runtime packages required')
@@ -115,68 +98,49 @@ class RosImuCovarianceContractTest(unittest.TestCase):
         messages = self.run_driver_once(acceleration=(float('nan'), 0., 9.))
         self.assertEqual(messages['/test/raw'], [])
 
-    def test_corrected_publisher_preserves_variances_and_unknown_orientation_on_wire(self):
-        corrected = {'stamp': {'sec': 5, 'nanosec': 7}, 'frame_id': 'base_link',
-                     'orientation': {'x': 0., 'y': 0., 'z': .5, 'w': math.sqrt(3.) / 2.},
-                     'angular_velocity': {'x': .1, 'y': -.2, 'z': .3},
-                     'linear_acceleration': {'x': 0., 'y': 0., 'z': 9.80665},
-                     'covariance': {'angular_velocity_diagonal': {'x': .01, 'y': .02, 'z': .03},
-                                    'linear_acceleration_diagonal': {'x': .1, 'y': .2, 'z': .3}}}
-        published = []
-        node = SimpleNamespace(state=SimpleNamespace(observe_imu=lambda message: corrected),
-                               corrected_imu_publisher=SimpleNamespace(publish=published.append),
-                               last_calibration_publish_at=time.monotonic())
-        RecorderNode.observe_imu(node, Imu())
-        self.assertEqual(len(published), 1)
-        message = deserialize_message(serialize_message(published[0]), Imu)
-        self.assertEqual(message.header.frame_id, 'base_link')
-        self.assertEqual((message.header.stamp.sec, message.header.stamp.nanosec), (5, 7))
-        self.assertEqual(message.orientation.z, .5)
-        self.assertEqual(list(message.orientation_covariance), [0.] * 9)
-        self.assertEqual(list(message.angular_velocity_covariance), [.01, 0., 0., 0., .02, 0., 0., 0., .03])
-        self.assertEqual(list(message.linear_acceleration_covariance), [.1, 0., 0., 0., .2, 0., 0., 0., .3])
+    def relay(self, msg):
+        published=[]
+        def observe(message):
+            try:return raw_imu_payload(message)
+            except (TypeError,ValueError,AttributeError,OverflowError):return None
+        node=SimpleNamespace(state=SimpleNamespace(observe_imu=observe),
+                             imu_relay_publisher=SimpleNamespace(publish=published.append))
+        RecorderNode.observe_imu(node,msg)
+        return published
 
-    def test_corrected_180_degree_rotations_preserve_zero_scalar_on_wire(self):
-        for axis in ('x', 'y', 'z'):
-            with self.subTest(axis=axis):
-                orientation = dict.fromkeys(('x', 'y', 'z', 'w'), 0.)
-                orientation[axis] = 1.
-                published = []
-                node = SimpleNamespace(state=SimpleNamespace(observe_imu=lambda message: {'orientation': orientation}),
-                                       corrected_imu_publisher=SimpleNamespace(publish=published.append),
-                                       last_calibration_publish_at=time.monotonic())
-                RecorderNode.observe_imu(node, Imu())
-                self.assertEqual(len(published), 1)
-                message = deserialize_message(serialize_message(published[0]), Imu)
-                actual = tuple(getattr(message.orientation, key) for key in ('x', 'y', 'z', 'w'))
-                self.assertEqual(actual, tuple(orientation.values()))
-                self.assertEqual(message.orientation.w, 0.)
-                self.assertAlmostEqual(math.hypot(*actual), 1.)
-                self.assertEqual(list(message.orientation_covariance), [0.] * 9)
+    def test_raw_relay_is_wire_identical_including_header_vectors_and_full_covariance(self):
+        msg=Imu();msg.header.frame_id='sensor_frame'
+        msg.header.stamp.sec=123;msg.header.stamp.nanosec=987654321
+        msg.orientation.z=.5;msg.orientation.w=math.sqrt(3)/2
+        msg.angular_velocity.x=.17;msg.angular_velocity.y=-.28;msg.angular_velocity.z=.39
+        msg.linear_acceleration.x=1.;msg.linear_acceleration.y=-2.;msg.linear_acceleration.z=9.5
+        msg.orientation_covariance=[0.]*9
+        msg.angular_velocity_covariance=[.1,.02,0.,.02,.2,0.,0.,0.,.3]
+        msg.linear_acceleration_covariance=[.4,0.,.03,0.,.5,0.,.03,0.,.6]
+        original=serialize_message(msg)
+        output=self.relay(msg)
+        self.assertEqual(len(output),1)
+        self.assertEqual(serialize_message(output[0]),original)
+        self.assertEqual(serialize_message(msg),original)
 
-    def test_malformed_corrected_orientation_is_not_published_as_available(self):
-        invalid = [None, {}, {'x': 0., 'y': 0., 'z': 0.},
-                   {'x': 0., 'y': 0., 'z': 0., 'w': None},
-                   {'x': 0., 'y': 0., 'z': 0., 'w': 0.},
-                   {'x': 0., 'y': 0., 'z': 1., 'w': 1.},
-                   {'x': 0., 'y': 0., 'z': 0., 'w': math.nan},
-                   {'x': math.inf, 'y': 0., 'z': 0., 'w': 1.}]
-        for orientation in invalid:
-            with self.subTest(orientation=orientation):
-                published = []
-                node = SimpleNamespace(state=SimpleNamespace(observe_imu=lambda message: {'orientation': orientation}),
-                                       corrected_imu_publisher=SimpleNamespace(publish=published.append),
-                                       last_calibration_publish_at=time.monotonic())
-                RecorderNode.observe_imu(node, Imu())
-                self.assertEqual(published, [])
+    def test_raw_relay_preserves_unavailable_groups_and_half_turns(self):
+        for unavailable in (False,True):
+            for axis in ('x','y','z'):
+                msg=Imu();msg.header.frame_id='imu_link';msg.orientation.w=0.;setattr(msg.orientation,axis,1.)
+                for name in ('orientation_covariance','angular_velocity_covariance','linear_acceleration_covariance'):
+                    setattr(msg,name,[-1.]+[0.]*8 if unavailable else [0.]*9)
+                original=serialize_message(msg)
+                with self.subTest(unavailable=unavailable,axis=axis):
+                    output=self.relay(msg)
+                    self.assertEqual(len(output),1)
+                    self.assertEqual(serialize_message(output[0]),original)
+                    self.assertEqual(output[0].orientation.w,0.)
 
-    def test_no_corrected_estimate_produces_no_message(self):
-        published = []
-        node = SimpleNamespace(state=SimpleNamespace(observe_imu=lambda message: None),
-                               corrected_imu_publisher=SimpleNamespace(publish=published.append),
-                               last_calibration_publish_at=time.monotonic())
-        RecorderNode.observe_imu(node, Imu())
-        self.assertEqual(published, [])
+    def test_invalid_available_orientation_does_not_become_relay_measurement(self):
+        for values in ((0.,0.,0.,0.),(0.,0.,1.,1.),(math.nan,0.,0.,1.)):
+            msg=Imu();msg.header.frame_id='imu_link'
+            for axis,value in zip(('x','y','z','w'),values):setattr(msg.orientation,axis,value)
+            with self.subTest(values=values):self.assertEqual(self.relay(msg),[])
 
 
 if __name__ == '__main__':

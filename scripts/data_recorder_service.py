@@ -26,12 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from dashboard_server.imu_processing import (
-    IMU_CALIBRATION_REVISION,
-    IMU_CALIBRATION_SCHEMA,
     IMU_TIMELINE_SCHEMA,
-    ImuCalibrationConfig,
-    StartReferenceCalibrator,
-    quaternion_to_euler_deg,
+    imu_processing_status,
+    imu_zero_removed,
+    raw_imu_payload,
 )
 from dashboard_server.gps import GPS_SCHEMA, GPS_TIMELINE_SCHEMA, valid_position, finite
 from dashboard_server.motor_pwm import (
@@ -96,27 +94,12 @@ class RecordingState:
         self.camera_archive_count = 0
         self.camera_last_archive_duration_ms: float | None = None
         self.imu_frames: list[dict[str, Any]] = []
-        self.imu_calibrator = StartReferenceCalibrator(
-            ImuCalibrationConfig(
-                stationary_window_s=float(args.imu_calibration_window_s),
-                min_samples=int(args.imu_calibration_min_samples),
-                max_gyro_norm_rad_s=float(args.imu_stationary_max_gyro_rad_s),
-                gravity_tolerance_m_s2=float(
-                    args.imu_stationary_gravity_tolerance_m_s2
-                ),
-                max_accel_norm_std_m_s2=float(args.imu_stationary_max_accel_std_m_s2),
-                body_yaw_offset_deg=float(args.imu_body_yaw_offset_deg),
-            )
-        )
         self.imu_latest_raw: dict[str, Any] = {}
-        self.imu_latest_corrected: dict[str, Any] = {}
         self.imu_latest_magnetic: dict[str, Any] = {}
         self.imu_last_received_monotonic: float | None = None
         self.imu_raw_received_count = 0
         self.imu_recording_raw_count = 0
-        self.imu_corrected_published_count = 0
         self.imu_timeline_count = 0
-        self.imu_calibration_events: list[dict[str, Any]] = []
         self.next_imu_sample_at = 0.0
         self.gps_frames = []
         self.gps_frame_count = 0
@@ -180,9 +163,9 @@ class RecordingState:
                 "imu_pipeline": {
                     "schema": IMU_TIMELINE_SCHEMA,
                     "raw_topic": self.args.imu_raw_topic,
-                    "corrected_topic": self.args.imu_corrected_topic,
+                    "relay_topic": self.args.imu_relay_topic,
+                    "processing": imu_processing_status(),
                     "mag_topic": self.args.imu_mag_topic,
-                    "calibration_topic": self.args.imu_calibration_topic,
                     "default_recording_enabled": True,
                     "recording_enabled": bool(active.get("include_imu", True))
                     if active
@@ -196,16 +179,10 @@ class RecordingState:
                     else None,
                     "raw_received_count": self.imu_raw_received_count,
                     "recording_raw_count": self.imu_recording_raw_count,
-                    "corrected_published_count": self.imu_corrected_published_count,
                     "timeline_frame_count": self.imu_timeline_count,
                     "timeline_hz": float(self.args.imu_timeline_hz),
-                    "corrected_frame_id": "base_link",
-                    "mount_transform": self.imu_calibrator.mount_provenance(),
                     "latest_raw": dict(self.imu_latest_raw),
-                    "latest_corrected": dict(self.imu_latest_corrected),
                     "latest_magnetic": dict(self.imu_latest_magnetic),
-                    "calibration": self.imu_calibrator.status(),
-                    "calibration_events": copy.deepcopy(self.imu_calibration_events),
                 },
                 "camera_pipeline": {
                     "preview_width": int(self.args.camera_preview_width),
@@ -344,10 +321,7 @@ class RecordingState:
                     "max_frames": self.args.timeline_max_frames,
                     "imu_enabled": include_imu,
                     "imu_schema": IMU_TIMELINE_SCHEMA,
-                    "imu_calibration_schema": IMU_CALIBRATION_SCHEMA,
-                    "imu_calibration_revision": IMU_CALIBRATION_REVISION,
-                    "imu_corrected_frame_id": "base_link",
-                    "imu_mount_transform": self.imu_calibrator.mount_provenance(),
+                    "imu_processing": imu_processing_status(),
                     "imu_timeline_hz": self.args.imu_timeline_hz,
                     "imu_max_frames": self.args.imu_timeline_max_frames,
                     "motor_enabled": True,
@@ -378,27 +352,12 @@ class RecordingState:
                 if include_gps
                 else None
             )
-            self.imu_latest_corrected = {}
             self.imu_recording_raw_count = 0
-            self.imu_corrected_published_count = 0
             self.imu_timeline_count = 0
-            self.imu_calibration_events = []
             self.next_imu_sample_at = 0.0
             started_epoch = time.time()
             started_steady = time.monotonic()
             self.motor_timeline.start(root, started_steady, started_epoch)
-            if include_imu:
-                self.imu_calibrator.begin(recording_id, now_monotonic=started_steady)
-                self.imu_calibration_events.append(
-                    {
-                        "event": "recording_start_stationary_calibration_requested",
-                        "recording_id": recording_id,
-                        "t_s": 0.0,
-                        "at": iso_now(),
-                    }
-                )
-            else:
-                self.imu_calibrator.reset()
             self.active = {
                 **metadata,
                 "path": str(root),
@@ -476,10 +435,7 @@ class RecordingState:
                     "camera_latest_only": True,
                     "imu_enabled": bool(active.get("include_imu", True)),
                     "imu_schema": IMU_TIMELINE_SCHEMA,
-                    "imu_calibration_revision": IMU_CALIBRATION_REVISION,
-                    "imu_calibration_valid": bool(self.imu_calibrator.ready),
-                    "imu_corrected_frame_id": "base_link",
-                    "imu_mount_transform": self.imu_calibrator.mount_provenance(),
+                    "imu_processing": imu_processing_status(),
                     "imu_timeline_hz": self.args.imu_timeline_hz,
                 },
             }
@@ -490,7 +446,6 @@ class RecordingState:
             self.preview_scan
             or {"ok": False, "points": [], "message": "no lidar scan captured"},
         )
-        write_json_atomic(root / "imu_calibration.json", self.imu_calibrator.status())
         write_json_atomic(
             root / "timeline.json", self.timeline_payload(active, metadata, duration_s)
         )
@@ -532,17 +487,12 @@ class RecordingState:
                 "schema": IMU_TIMELINE_SCHEMA,
                 "enabled": bool(active.get("include_imu", True)),
                 "raw_topic": self.args.imu_raw_topic,
-                "corrected_topic": self.args.imu_corrected_topic,
+                "relay_topic": self.args.imu_relay_topic,
+                "processing": imu_processing_status(),
                 "mag_topic": self.args.imu_mag_topic,
-                "calibration_topic": self.args.imu_calibration_topic,
                 "sample_hz": float(self.args.imu_timeline_hz),
-                "corrected_frame_id": "base_link",
-                "mount_transform": self.imu_calibrator.mount_provenance(),
                 "frames": list(self.imu_frames),
-                "calibration": self.imu_calibrator.status(),
-                "calibration_events": copy.deepcopy(self.imu_calibration_events),
                 "raw_received_count": self.imu_recording_raw_count,
-                "corrected_published_count": self.imu_corrected_published_count,
             },
             "sync": {
                 "time_base": "seconds_since_recording_start",
@@ -603,10 +553,9 @@ class RecordingState:
             topics.extend(
                 [
                     self.args.imu_raw_topic,
-                    self.args.imu_corrected_topic,
+                    self.args.imu_relay_topic,
                     self.args.imu_mag_topic,
                     self.args.imu_driver_status_topic,
-                    self.args.imu_calibration_topic,
                 ]
             )
         if include_gps:
@@ -761,70 +710,12 @@ class RecordingState:
                 self.append_limited(self.lidar_frames, frame)
 
     def observe_imu(self, msg: Imu) -> dict[str, Any] | None:
-        """Consume only the ROS 2 raw IMU topic and return a corrected sample.
-
-        The Dashboard never opens I2C. A corrected sample is returned whenever
-        an operator/manual or recording-start reference is valid. Timeline
-        sampling remains limited to an active IMU-enabled recording.
-        """
+        """Observe sensor-native data without modifying orientation, axes or bias."""
         now_epoch = time.time()
         now_steady = time.monotonic()
         try:
-            orientation_values = (
-                float(msg.orientation.x),
-                float(msg.orientation.y),
-                float(msg.orientation.z),
-                float(msg.orientation.w),
-            )
-            raw = {
-                "frame_id": str(msg.header.frame_id or "imu_link"),
-                "stamp": {
-                    "sec": int(msg.header.stamp.sec),
-                    "nanosec": int(msg.header.stamp.nanosec),
-                },
-                "orientation": {
-                    "x": orientation_values[0],
-                    "y": orientation_values[1],
-                    "z": orientation_values[2],
-                    "w": orientation_values[3],
-                },
-                "euler_deg": quaternion_to_euler_deg(orientation_values),
-                "angular_velocity": {
-                    "x": float(msg.angular_velocity.x),
-                    "y": float(msg.angular_velocity.y),
-                    "z": float(msg.angular_velocity.z),
-                },
-                "linear_acceleration": {
-                    "x": float(msg.linear_acceleration.x),
-                    "y": float(msg.linear_acceleration.y),
-                    "z": float(msg.linear_acceleration.z),
-                },
-                "covariance": {
-                    "orientation": [
-                        float(value) for value in msg.orientation_covariance
-                    ],
-                    "angular_velocity": [
-                        float(value) for value in msg.angular_velocity_covariance
-                    ],
-                    "linear_acceleration": [
-                        float(value) for value in msg.linear_acceleration_covariance
-                    ],
-                },
-                "source": "ros2_sensor_msgs_imu_raw",
-            }
-            if not all(
-                (
-                    math.isfinite(value)
-                    for group in (
-                        raw["orientation"],
-                        raw["angular_velocity"],
-                        raw["linear_acceleration"],
-                    )
-                    for value in group.values()
-                )
-            ):
-                raise ValueError("non-finite IMU message")
-        except (TypeError, ValueError, AttributeError) as exc:
+            raw = raw_imu_payload(msg)
+        except (TypeError, ValueError, AttributeError, OverflowError) as exc:
             log("imu_message_rejected", error=str(exc))
             return None
         with self.lock:
@@ -839,28 +730,6 @@ class RecordingState:
             )
             if recording_imu_active:
                 self.imu_recording_raw_count += 1
-                was_ready = self.imu_calibrator.ready
-                self.imu_calibrator.observe(raw, now_monotonic=now_steady)
-                if not was_ready and self.imu_calibrator.ready:
-                    self.imu_calibration_events.append(
-                        {
-                            "event": "recording_start_stationary_calibration_completed",
-                            "recording_id": active.get("id"),
-                            "t_s": round(
-                                now_epoch
-                                - float(active.get("started_monotonic", now_epoch)),
-                                6,
-                            ),
-                            "at": iso_now(),
-                            "calibration": copy.deepcopy(
-                                self.imu_calibrator.calibration
-                            ),
-                        }
-                    )
-            corrected = self.imu_calibrator.correct(raw)
-            if corrected:
-                self.imu_latest_corrected = corrected
-                self.imu_corrected_published_count += 1
             if recording_imu_active and now_steady >= self.next_imu_sample_at:
                 self.next_imu_sample_at = now_steady + 1.0 / max(
                     0.1, float(self.args.imu_timeline_hz)
@@ -872,104 +741,30 @@ class RecordingState:
                         0.0, now_steady - float(magnetic["received_monotonic"])
                     )
                 magnetic.pop("received_monotonic", None)
-                corrected_magnetic = None
-                if magnetic:
-                    corrected_magnetic = self.imu_calibrator.correct_magnetic(
-                        magnetic.get("magnetic_field_t") or {}
-                    )
                 frame = {
                     "t_s": round(
                         now_epoch - float(active.get("started_monotonic", now_epoch)), 6
                     ),
                     "stamp": dict(raw["stamp"]),
                     "raw": copy.deepcopy(raw),
-                    "corrected": copy.deepcopy(corrected),
+                    "corrected": None,
                     "magnetic": magnetic
                     if magnetic
-                    and magnetic_age_s is not None
-                    and (magnetic_age_s <= 0.25)
-                    else {},
-                    "corrected_magnetic_field_t": corrected_magnetic
-                    if corrected_magnetic is not None
                     and magnetic_age_s is not None
                     and (magnetic_age_s <= 0.25)
                     else {},
                     "magnetic_age_s": round(magnetic_age_s, 6)
                     if magnetic_age_s is not None
                     else None,
-                    "calibration_state": self.imu_calibrator.status(now_steady)[
-                        "state"
-                    ],
-                    "calibration_reference_id": corrected.get(
-                        "calibration_reference_id"
-                    )
-                    if corrected
-                    else None,
-                    "calibration_source": corrected.get("calibration_source")
-                    if corrected
-                    else None,
+                    "processing": imu_processing_status(),
                 }
                 self.append_imu_limited(frame)
                 self.imu_timeline_count += 1
-            return copy.deepcopy(corrected)
+            return copy.deepcopy(raw)
 
     def zero_imu(self) -> dict[str, Any]:
-        now_epoch = time.time()
-        now_steady = time.monotonic()
-        with self.lock:
-            raw = copy.deepcopy(self.imu_latest_raw)
-            sample_age_s = (
-                None
-                if self.imu_last_received_monotonic is None
-                else max(0.0, now_steady - self.imu_last_received_monotonic)
-            )
-            if not raw or sample_age_s is None or sample_age_s > 1.0:
-                return {
-                    "ok": False,
-                    "state": "imu_unavailable",
-                    "error": "A fresh ROS2 /imu/data_raw sample is required.",
-                    "sample_age_s": sample_age_s,
-                }
-            active = dict(self.active or {})
-            reference_id = str(active.get("id") or f"manual-{int(now_epoch * 1000)}")
-            calibration = self.imu_calibrator.zero_from_sample(
-                raw, reference_id=reference_id, now_monotonic=now_steady
-            )
-            if calibration is None:
-                return {
-                    "ok": False,
-                    "state": "invalid_imu_sample",
-                    "error": self.imu_calibrator.last_rejection_reason,
-                }
-            event = {
-                "event": "dashboard_manual_zero",
-                "recording_id": active.get("id"),
-                "t_s": round(
-                    now_epoch - float(active.get("started_monotonic", now_epoch)), 6
-                )
-                if active
-                else None,
-                "at": iso_now(),
-                "reference_id": reference_id,
-                "reference_euler_deg": copy.deepcopy(
-                    calibration.get("reference_euler_deg") or {}
-                ),
-            }
-            self.imu_calibration_events.append(event)
-            corrected = self.imu_calibrator.correct(raw)
-            if corrected:
-                self.imu_latest_corrected = corrected
-        self.write_status("dashboard_manual_imu_zero")
-        return {
-            "ok": True,
-            "state": "zeroed",
-            "message": "Current ROS2 IMU pose is now the zero reference.",
-            "sample_age_s": round(sample_age_s, 4),
-            "reference_id": reference_id,
-            "reference_euler_deg": calibration.get("reference_euler_deg"),
-            "corrected": corrected,
-            "recording_active": bool(active),
-        }
+        # Retired endpoint: no I/O, state mutation or reference creation.
+        return imu_zero_removed()
 
     def observe_magnetic(self, msg: MagneticField) -> None:
         try:
@@ -1180,7 +975,6 @@ class RecorderNode(Node):
         super().__init__("ubts_data_recorder")
         self.state = state
         self.args = args
-        self.last_calibration_publish_at = 0.0
         self.create_subscription(
             LaserScan, args.scan_topic, self.state.observe_scan, 10
         )
@@ -1193,11 +987,8 @@ class RecorderNode(Node):
         self.create_subscription(
             Image, args.camera_topic, self.state.observe_camera, camera_qos
         )
-        self.corrected_imu_publisher = self.create_publisher(
-            Imu, args.imu_corrected_topic, camera_qos
-        )
-        self.calibration_publisher = self.create_publisher(
-            String, args.imu_calibration_topic, 10
+        self.imu_relay_publisher = self.create_publisher(
+            Imu, args.imu_relay_topic, camera_qos
         )
         self.create_subscription(Imu, args.imu_raw_topic, self.observe_imu, camera_qos)
         self.create_subscription(
@@ -1217,63 +1008,10 @@ class RecorderNode(Node):
         )
 
     def observe_imu(self, msg: Imu) -> None:
-        corrected = self.state.observe_imu(msg)
-        if corrected:
-            try:
-                orientation = corrected["orientation"]
-                quaternion = tuple(float(orientation[axis]) for axis in ("x", "y", "z", "w"))
-                if (not all(math.isfinite(value) for value in quaternion)
-                        or not math.isclose(math.hypot(*quaternion), 1.0, rel_tol=1e-6, abs_tol=1e-6)):
-                    raise ValueError("invalid corrected quaternion")
-            except (KeyError, TypeError, ValueError, OverflowError):
-                # An available orientation must not be invented from missing
-                # fields or a malformed estimate, even with unknown covariance.
-                log("corrected_imu_rejected", error="invalid corrected quaternion")
-                corrected = None
-        if corrected:
-            output = Imu()
-            output.header.stamp.sec = int(
-                (corrected.get("stamp") or {}).get("sec") or 0
-            )
-            output.header.stamp.nanosec = int(
-                (corrected.get("stamp") or {}).get("nanosec") or 0
-            )
-            output.header.frame_id = str(
-                corrected.get("frame_id") or "imu_link_recording_start"
-            )
-            # Zero scalar part is valid for a 180-degree rotation.
-            output.orientation.x, output.orientation.y, output.orientation.z, output.orientation.w = quaternion
-            angular = corrected.get("angular_velocity") or {}
-            output.angular_velocity.x = float(angular.get("x") or 0.0)
-            output.angular_velocity.y = float(angular.get("y") or 0.0)
-            output.angular_velocity.z = float(angular.get("z") or 0.0)
-            acceleration = corrected.get("linear_acceleration") or {}
-            output.linear_acceleration.x = float(acceleration.get("x") or 0.0)
-            output.linear_acceleration.y = float(acceleration.get("y") or 0.0)
-            output.linear_acceleration.z = float(acceleration.get("z") or 0.0)
-            covariance = corrected.get("covariance") or {}
-            # Orientation is populated; its uncertainty is not estimated by
-            # the stationary reference. Zero means unknown, not perfect.
-            output.orientation_covariance = [0.0] * 9
-            for offset, axis in zip((0, 4, 8), ("x", "y", "z")):
-                output.angular_velocity_covariance[offset] = float(
-                    (covariance.get("angular_velocity_diagonal") or {}).get(axis) or 0.0
-                )
-                output.linear_acceleration_covariance[offset] = float(
-                    (covariance.get("linear_acceleration_diagonal") or {}).get(axis)
-                    or 0.0
-                )
-            self.corrected_imu_publisher.publish(output)
-        now = time.monotonic()
-        if now - self.last_calibration_publish_at >= 0.5:
-            calibration = String()
-            calibration.data = json.dumps(
-                self.state.imu_calibrator.status(now),
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-            self.calibration_publisher.publish(calibration)
-            self.last_calibration_publish_at = now
+        if self.state.observe_imu(msg) is not None:
+            # Compatibility topic only: relay the complete message unchanged,
+            # including frame, native clock, quaternion and all covariance terms.
+            self.imu_relay_publisher.publish(msg)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1321,7 +1059,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/stop":
             self.send_json(self.state.stop())
         elif self.path == "/imu/zero":
-            self.send_json(self.state.zero_imu())
+            self.send_json(self.state.zero_imu(), status=410)
         else:
             self.send_error(404, "Not found")
 
@@ -1334,9 +1072,9 @@ class Handler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError):
             return {}
 
-    def send_json(self, payload: dict[str, Any]) -> None:
+    def send_json(self, payload: dict[str, Any], status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "close")
@@ -1407,11 +1145,11 @@ def main() -> int:
         "--imu-raw-topic", default=os.environ.get("IMU_RAW_TOPIC", "/imu/data_raw")
     )
     parser.add_argument(
-        "--imu-corrected-topic",
+        "--imu-relay-topic",
         "--imu-topic",
-        dest="imu_corrected_topic",
+        dest="imu_relay_topic",
         default=os.environ.get(
-            "IMU_CORRECTED_TOPIC", os.environ.get("IMU_TOPIC", "/imu/data")
+            "IMU_RELAY_TOPIC", os.environ.get("IMU_TOPIC", "/imu/data")
         ),
     )
     parser.add_argument(
@@ -1420,10 +1158,6 @@ def main() -> int:
     parser.add_argument(
         "--imu-driver-status-topic",
         default=os.environ.get("IMU_DRIVER_STATUS_TOPIC", "/orchard/imu/driver_status"),
-    )
-    parser.add_argument(
-        "--imu-calibration-topic",
-        default=os.environ.get("IMU_CALIBRATION_TOPIC", "/orchard/imu/calibration"),
     )
     parser.add_argument("--tf-topic", default=os.environ.get("TF_TOPIC", "/tf"))
     parser.add_argument(
@@ -1458,40 +1192,6 @@ def main() -> int:
         default=int(os.environ.get("RECORDER_IMU_TIMELINE_MAX_FRAMES", "18000")),
     )
     parser.add_argument(
-        "--imu-calibration-window-s",
-        type=float,
-        default=float(os.environ.get("RECORDER_IMU_CALIBRATION_WINDOW_S", "1.5")),
-    )
-    parser.add_argument(
-        "--imu-calibration-min-samples",
-        type=int,
-        default=int(os.environ.get("RECORDER_IMU_CALIBRATION_MIN_SAMPLES", "20")),
-    )
-    parser.add_argument(
-        "--imu-stationary-max-gyro-rad-s",
-        type=float,
-        default=float(os.environ.get("RECORDER_IMU_STATIONARY_MAX_GYRO_RAD_S", "0.08")),
-    )
-    parser.add_argument(
-        "--imu-stationary-gravity-tolerance-m-s2",
-        type=float,
-        default=float(
-            os.environ.get("RECORDER_IMU_STATIONARY_GRAVITY_TOLERANCE_M_S2", "2.0")
-        ),
-    )
-    parser.add_argument(
-        "--imu-stationary-max-accel-std-m-s2",
-        type=float,
-        default=float(
-            os.environ.get("RECORDER_IMU_STATIONARY_MAX_ACCEL_STD_M_S2", "0.35")
-        ),
-    )
-    parser.add_argument(
-        "--imu-body-yaw-offset-deg",
-        type=float,
-        default=float(os.environ.get("RECORDER_IMU_BODY_YAW_OFFSET_DEG", "90.0")),
-    )
-    parser.add_argument(
         "--camera-preview-width",
         type=int,
         default=int(os.environ.get("RECORDER_CAMERA_PREVIEW_WIDTH", "640")),
@@ -1524,19 +1224,13 @@ def main() -> int:
     args.imu_timeline_max_frames = max(
         100, min(360000, int(args.imu_timeline_max_frames))
     )
-    args.imu_calibration_window_s = max(
-        0.5, min(10.0, float(args.imu_calibration_window_s))
-    )
-    args.imu_calibration_min_samples = max(
-        5, min(1000, int(args.imu_calibration_min_samples))
-    )
-    if not math.isfinite(args.imu_body_yaw_offset_deg):
-        parser.error("--imu-body-yaw-offset-deg must be finite")
     args.camera_archive_flush_timeout_s = max(
         0.1, min(3.0, args.camera_archive_flush_timeout_s)
     )
     args.camera_preview_width = max(160, min(3840, args.camera_preview_width))
     args.camera_jpeg_quality = max(40, min(95, args.camera_jpeg_quality))
+    if args.imu_raw_topic == args.imu_relay_topic:
+        parser.error("IMU raw and relay topics must differ")
     state = RecordingState(args)
     Handler.state = state
     server = Server((args.host, args.port), Handler)

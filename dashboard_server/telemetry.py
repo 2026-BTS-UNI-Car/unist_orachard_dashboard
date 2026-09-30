@@ -1015,14 +1015,8 @@ class TelemetryProvider:
         }
 
     def zero_imu(self) -> dict[str, Any]:
-        result = self._recorder_post("/imu/zero", {})
-        if result.get("ok"):
-            return result
-        return {
-            "ok": False,
-            "state": result.get("state", "recorder_unavailable"),
-            "error": result.get("error", "IMU zero request failed"),
-        }
+        from dashboard_server.imu_processing import imu_zero_removed
+        return imu_zero_removed()
 
     def stop_recording(self) -> dict[str, Any]:
         result = self._recorder_post("/stop", {})
@@ -2870,7 +2864,7 @@ class TelemetryProvider:
             "imu": {
                 "ok": False,
                 "state": "not_connected",
-                "topic": "/imu/data",
+                "topic": "/imu/data_raw",
                 "raw_topic": "/imu/data_raw",
                 "mag_topic": "/imu/mag",
                 "frame_id": "imu_link",
@@ -2997,7 +2991,8 @@ class TelemetryProvider:
                 "sensor": driver_imu.get("sensor", "BNO085"),
                 "transport": driver_imu.get("transport", "i2c"),
                 "raw_topic": driver_imu.get("raw_topic", "/imu/data_raw"),
-                "corrected_topic": "/imu/data",
+                "relay_topic": "/imu/data",
+                "processing_mode": "sensor_native_raw",
                 "mag_topic": driver_imu.get("mag_topic", "/imu/mag"),
                 "frame_id": driver_imu.get("frame_id")
                 or (bridge_imu.get("raw") or {}).get("frame_id")
@@ -3008,14 +3003,8 @@ class TelemetryProvider:
                 "rep145_ready": driver_imu.get("rep145_ready", False),
                 "rep145_blocker": driver_imu.get("rep145_blocker"),
                 "raw": bridge_imu.get("raw") or recorder_imu.get("latest_raw") or {},
-                "corrected": bridge_imu.get("corrected")
-                or recorder_imu.get("latest_corrected")
-                or {},
                 "magnetic": bridge_imu.get("magnetic")
                 or recorder_imu.get("latest_magnetic")
-                or {},
-                "calibration": bridge_imu.get("calibration")
-                or recorder_imu.get("calibration")
                 or {},
                 "last_imu_age_s": bridge_imu.get(
                     "last_imu_age_s", recorder_imu.get("last_raw_age_s")
@@ -3123,10 +3112,10 @@ class TelemetryProvider:
             if imu.get("updated_at")
             else "not_connected",
             "topic": "/imu/data_raw",
-            "corrected_topic": "/imu/data",
+            "relay_topic": "/imu/data",
+            "processing_mode": "sensor_native_raw",
             "raw_count": imu.get("raw_count", 0),
             "last_imu_age_s": imu.get("last_imu_age_s"),
-            "calibration_state": (imu.get("calibration") or {}).get("state", "idle"),
         }
         rover = self.rover_status()
         rover_bridge = rover_bridge or self._rover_bridge_status()

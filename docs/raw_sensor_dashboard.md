@@ -6,7 +6,10 @@
 fusion map API·UI 및 과거 archive의 AI 재계산 경로를 제거했다.
 
 유지되는 기능: 실제 센서 드라이버, ESP USB 단일 소유 제어, arm/lease/ticket/TTL/STOP,
-GPS 오프라인 지도, IMU 보정, 원본 archive 조회/재생/다운로드, recorder.
+GPS 오프라인 지도, 센서 원본 IMU 표시, 원본 archive 조회/재생/다운로드, recorder.
+IMU 소프트웨어 회전·녹화 시작 영점·gyro bias 보정과 수동 영점은 제거했다.
+`/imu/data`는 `/imu/data_raw` 메시지를 수정 없이 전달하는 호환 토픽이다.
+과거 archive의 보정 데이터는 기록 당시 값과 설명으로 계속 재생한다.
 기존 archive의 overlay 필드는 응답에서 제외하며 원본 파일을 수정하거나 삭제하지 않는다.
 오프라인 지도 및 기존 녹화는 runtime/data 디렉터리에 그대로 보존한다.
 

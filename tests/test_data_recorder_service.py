@@ -19,7 +19,7 @@ except ModuleNotFoundError as exc:
 class DataRecorderCameraPipelineTests(unittest.TestCase):
 
     def make_state(self, tmp: str, *, wait_s: float=0.2) -> RecordingState:
-        args = SimpleNamespace(archive_dir=str(Path(tmp) / 'recordings'), status_file=str(Path(tmp) / 'status.json'), camera_preview_width=160, camera_jpeg_quality=68, preview_max_points=720, lidar_frame_id='laser', camera_vision_sync_max_delta_s=0.12, camera_vision_wait_timeout_s=wait_s, camera_archive_flush_timeout_s=0.5, timeline_hz=2.0, timeline_max_frames=10, imu_raw_topic='/imu/data_raw', imu_corrected_topic='/imu/data', imu_mag_topic='/imu/mag', imu_driver_status_topic='/orchard/imu/driver_status', imu_calibration_topic='/orchard/imu/calibration', imu_timeline_hz=10.0, imu_timeline_max_frames=100, imu_calibration_window_s=0.4, imu_calibration_min_samples=5, imu_stationary_max_gyro_rad_s=0.08, imu_stationary_gravity_tolerance_m_s2=2.0, imu_stationary_max_accel_std_m_s2=0.35, imu_body_yaw_offset_deg=90.0, cmd_topic='/cmd_vel', rover_status_topic='/rover/status', odom_topic='/odom', tf_topic='/tf', tf_static_topic='/tf_static', vision_topic='/orchard/vision/tree_bearings', scan_topic='/scan', camera_topic='/camera/image_raw', camera_compressed_topic='/camera/image_jpeg', camera_info_topic='/camera/camera_info', camera_preview_info_topic='/camera/preview/camera_info')
+        args = SimpleNamespace(archive_dir=str(Path(tmp) / 'recordings'), status_file=str(Path(tmp) / 'status.json'), camera_preview_width=160, camera_jpeg_quality=68, preview_max_points=720, lidar_frame_id='laser', camera_vision_sync_max_delta_s=0.12, camera_vision_wait_timeout_s=wait_s, camera_archive_flush_timeout_s=0.5, timeline_hz=2.0, timeline_max_frames=10, imu_raw_topic='/imu/data_raw', imu_relay_topic='/imu/data', imu_mag_topic='/imu/mag', imu_driver_status_topic='/orchard/imu/driver_status', imu_timeline_hz=10.0, imu_timeline_max_frames=100, cmd_topic='/cmd_vel', rover_status_topic='/rover/status', odom_topic='/odom', tf_topic='/tf', tf_static_topic='/tf_static', vision_topic='/orchard/vision/tree_bearings', scan_topic='/scan', camera_topic='/camera/image_raw', camera_compressed_topic='/camera/image_jpeg', camera_info_topic='/camera/camera_info', camera_preview_info_topic='/camera/preview/camera_info')
         state = RecordingState(args)
         with state.lock:
             state.active = {'kind': 'camera', 'started_monotonic': time.time() - 1.0, 'id': 'test_camera'}
@@ -70,30 +70,32 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
             self.assertEqual(int(state.camera_pending_sample['data'][0]), 22)
             self.assertEqual(len(state.camera_frames), 0)
 
-    def test_imu_is_included_by_default_and_start_reference_is_published(self) -> None:
+    def test_imu_native_recording_never_creates_a_reference_or_corrected_frame(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             state = self.make_state(tmp)
-            with state.lock:
-                state.active.update({'kind': 'both', 'include_imu': True, 'started_monotonic': time.time() - 1.0, 'started_steady': 10.0, 'stopping': False})
-                state.imu_calibrator.begin('test_camera', now_monotonic=10.0)
-            corrected = None
-            with patch('scripts.data_recorder_service.time.monotonic', side_effect=[10.0, 10.1, 10.2, 10.3, 10.4, 10.5]):
-                for _ in range(6):
-                    corrected = state.observe_imu(self.imu_message())
-            self.assertIsNotNone(corrected)
-            self.assertTrue(state.imu_calibrator.ready)
-            self.assertGreater(len(state.imu_frames), 0)
-            self.assertEqual(corrected['frame_id'], 'base_link')
-            self.assertEqual(corrected['mount_transform']['body_yaw_offset_deg'], 90.0)
-            self.assertAlmostEqual(corrected['angular_velocity']['x'], 0.0, places=6)
-            topics = state.topics_for('both')
-            self.assertIn('/imu/data_raw', topics)
-            self.assertIn('/imu/data', topics)
-            self.assertIn('/imu/mag', topics)
-            self.assertIn('/camera/image_raw', topics)
-            self.assertIn('/camera/image_jpeg', topics)
-            self.assertIn('/camera/camera_info', topics)
-            self.assertIn('/camera/preview/camera_info', topics)
+            state.active.update({'kind':'both','include_imu':True,'stopping':False})
+            msg = self.imu_message()
+            msg.orientation.z, msg.orientation.w = .5, float(np.sqrt(3)/2)
+            msg.orientation_covariance = [0.]*9
+            for _ in range(25):
+                raw = state.observe_imu(msg)
+            self.assertEqual(raw['orientation'],vars(msg.orientation))
+            self.assertEqual(raw['angular_velocity'],vars(msg.angular_velocity))
+            self.assertEqual(raw['frame_id'],'imu_link')
+            self.assertFalse(hasattr(state,'imu_calibrator'))
+            self.assertGreater(len(state.imu_frames),0)
+            for frame in state.imu_frames:
+                self.assertIsNone(frame['corrected'])
+                self.assertEqual(frame['raw']['orientation'],vars(msg.orientation))
+                self.assertEqual(frame['raw']['stamp'],{'sec':123,'nanosec':456})
+                self.assertFalse(frame['processing']['start_reference'])
+            self.assertIn('/imu/data_raw',state.topics_for('both'))
+            self.assertIn('/imu/data',state.topics_for('both'))
+            self.assertNotIn('/orchard/imu/calibration',state.topics_for('both'))
+            timeline = state.timeline_payload(state.active,{},1.)
+            self.assertEqual(timeline['imu']['processing']['mode'],'sensor_native_raw')
+            self.assertNotIn('calibration',timeline['imu'])
+            self.assertNotIn('mount_transform',timeline['imu'])
 
     def test_imu_can_be_explicitly_disabled_but_default_contract_is_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -101,26 +103,44 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
             self.assertNotIn('/imu/data_raw', state.topics_for('both', include_imu=False))
             self.assertIn('/imu/data_raw', state.topics_for('camera'))
 
-    def test_dashboard_manual_imu_zero_works_without_active_recording(self) -> None:
+    def test_retired_manual_zero_does_not_modify_state_or_require_fresh_data(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            state = self.make_state(tmp)
-            with state.lock:
-                state.active = None
-            state.observe_imu(self.imu_message())
-            result = state.zero_imu()
-            self.assertTrue(result['ok'])
-            self.assertEqual(result['state'], 'zeroed')
-            self.assertFalse(result['recording_active'])
-            corrected = state.observe_imu(self.imu_message())
-            self.assertIsNotNone(corrected)
-            self.assertAlmostEqual(corrected['euler_deg']['roll'], 0.0, places=6)
-            self.assertEqual(corrected['calibration_source'], 'dashboard_manual_zero')
+            state=self.make_state(tmp)
+            for have_sample in (False,True):
+                if have_sample:state.observe_imu(self.imu_message())
+                raw_before=json.dumps(state.imu_latest_raw,sort_keys=True)
+                with patch.object(state,'write_status',side_effect=AssertionError('no writes')):
+                    result=state.zero_imu()
+                self.assertFalse(result['ok'])
+                self.assertEqual(result['state'],'removed')
+                self.assertEqual(json.dumps(state.imu_latest_raw,sort_keys=True),raw_before)
+                self.assertFalse(hasattr(state,'imu_calibrator'))
 
-    def test_dashboard_manual_imu_zero_fails_closed_without_fresh_sample(self) -> None:
+    def test_new_archive_is_raw_only_and_historical_calibration_files_are_immutable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            state = self.make_state(tmp)
-            result = state.zero_imu()
-            self.assertFalse(result['ok'])
-            self.assertEqual(result['state'], 'imu_unavailable')
+            state=self.make_state(tmp)
+            state.active=None
+            old=state.archive_dir/'historical'
+            old.mkdir(parents=True)
+            legacy={"imu":{"frames":[{"raw":{"stamp":{"sec":1,"nanosec":2}},
+                                        "corrected":{"frame_id":"base_link","euler_deg":{"yaw":17.}}}],
+                            "calibration":{"valid":True,"reference_id":"historical"}}}
+            (old/'timeline.json').write_text(json.dumps(legacy))
+            (old/'imu_calibration.json').write_text('{"valid":true,"legacy":true}')
+            old_bytes={path.name:path.read_bytes() for path in old.iterdir()}
+            with patch.object(state,'start_rosbag',return_value=None):
+                self.assertTrue(state.start('lidar',include_imu=True,include_gps=False)['ok'])
+            current=Path(state.active['path'])
+            state.observe_imu(self.imu_message())
+            self.assertTrue(state.stop()['ok'])
+            metadata=json.loads((current/'metadata.json').read_text())
+            timeline=json.loads((current/'timeline.json').read_text())
+            self.assertEqual(metadata['timeline']['imu_processing']['mode'],'sensor_native_raw')
+            self.assertNotIn('imu_corrected_frame_id',metadata['timeline'])
+            self.assertFalse((current/'imu_calibration.json').exists())
+            self.assertEqual(len(timeline['imu']['frames']),1)
+            self.assertIsNone(timeline['imu']['frames'][0]['corrected'])
+            self.assertEqual({path.name:path.read_bytes() for path in old.iterdir()},old_bytes)
+
 if __name__ == '__main__':
     unittest.main()

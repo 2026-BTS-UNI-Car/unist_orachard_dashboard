@@ -20,11 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from dashboard_server.imu_processing import quaternion_to_euler_deg
+from dashboard_server.imu_processing import raw_imu_payload, imu_processing_status
 
 
 BRIDGE_SCHEMA = "orchard.imu_websocket.v1"
-BRIDGE_REVISION = "ros2_raw_corrected_bridge_v1"
+BRIDGE_REVISION = "ros2_sensor_native_raw_bridge_v2"
 
 
 def vector_payload(vector: Any) -> dict[str, float]:
@@ -48,35 +48,21 @@ class ImuBridgeState:
     def __init__(self):
         self.lock = threading.Lock()
         self.raw: dict[str, Any] = {}
-        self.corrected: dict[str, Any] = {}
         self.magnetic: dict[str, Any] = {}
-        self.calibration: dict[str, Any] = {}
         self.raw_count = 0
-        self.corrected_count = 0
         self.last_raw_at: float | None = None
-        self.last_corrected_at: float | None = None
         self.last_error: str | None = None
 
-    def update_imu(self, msg: Any, *, corrected: bool) -> None:
-        orientation = quaternion_payload(msg.orientation)
-        row = {
-            "frame_id": str(msg.header.frame_id or "imu_link"),
-            "stamp": stamp_payload(msg.header),
-            "orientation": orientation,
-            "euler_deg": quaternion_to_euler_deg(orientation.values()),
-            "angular_velocity": vector_payload(msg.angular_velocity),
-            "linear_acceleration": vector_payload(msg.linear_acceleration),
-        }
-        now = time.time()
+    def update_imu(self, msg: Any) -> None:
+        try:
+            row = raw_imu_payload(msg)
+        except (AttributeError, TypeError, ValueError, OverflowError) as exc:
+            self.set_error(str(exc))
+            return
         with self.lock:
-            if corrected:
-                self.corrected = row
-                self.corrected_count += 1
-                self.last_corrected_at = now
-            else:
-                self.raw = row
-                self.raw_count += 1
-                self.last_raw_at = now
+            self.raw = row
+            self.raw_count += 1
+            self.last_raw_at = time.time()
             self.last_error = None
 
     def update_magnetic(self, msg: Any) -> None:
@@ -90,15 +76,6 @@ class ImuBridgeState:
                 },
             }
 
-    def update_calibration(self, msg: Any) -> None:
-        try:
-            payload = json.loads(str(msg.data or ""))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            return
-        if isinstance(payload, dict):
-            with self.lock:
-                self.calibration = payload
-
     def set_error(self, error: str) -> None:
         with self.lock:
             self.last_error = error
@@ -107,21 +84,16 @@ class ImuBridgeState:
         now = time.time()
         with self.lock:
             raw_age = None if self.last_raw_at is None else max(0.0, now - self.last_raw_at)
-            corrected_age = None if self.last_corrected_at is None else max(0.0, now - self.last_corrected_at)
             return {
                 "schema": BRIDGE_SCHEMA,
+                "processing": imu_processing_status(),
                 "revision": BRIDGE_REVISION,
                 "updated_at": now,
                 "imu_topic_alive": raw_age is not None and raw_age < 1.0,
-                "corrected_topic_alive": corrected_age is not None and corrected_age < 1.0,
                 "last_imu_age_s": None if raw_age is None else round(raw_age, 4),
-                "last_corrected_age_s": None if corrected_age is None else round(corrected_age, 4),
                 "raw_count": self.raw_count,
-                "corrected_count": self.corrected_count,
                 "raw": dict(self.raw),
-                "corrected": dict(self.corrected),
                 "magnetic": dict(self.magnetic),
-                "calibration": dict(self.calibration),
                 "error": self.last_error,
             }
 
@@ -142,7 +114,6 @@ def ros_thread(state: ImuBridgeState, args: argparse.Namespace, ready: threading
         from rclpy.node import Node
         from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
         from sensor_msgs.msg import Imu, MagneticField
-        from std_msgs.msg import String
     except ImportError as exc:
         state.set_error(f"ROS 2 Python packages are required: {exc}")
         ready.set()
@@ -153,10 +124,8 @@ def ros_thread(state: ImuBridgeState, args: argparse.Namespace, ready: threading
             super().__init__("ubts_imu_ws_bridge")
             preview_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT,
                                      durability=DurabilityPolicy.VOLATILE)
-            self.create_subscription(Imu, args.raw_topic, lambda msg: state.update_imu(msg, corrected=False), preview_qos)
-            self.create_subscription(Imu, args.corrected_topic, lambda msg: state.update_imu(msg, corrected=True), preview_qos)
+            self.create_subscription(Imu, args.raw_topic, state.update_imu, preview_qos)
             self.create_subscription(MagneticField, args.mag_topic, state.update_magnetic, preview_qos)
-            self.create_subscription(String, args.calibration_topic, state.update_calibration, 10)
 
     rclpy.init()
     node = BridgeNode()
@@ -225,9 +194,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8775)
     parser.add_argument("--path", default="/ws/imu")
     parser.add_argument("--raw-topic", default=os.environ.get("IMU_RAW_TOPIC", "/imu/data_raw"))
-    parser.add_argument("--corrected-topic", default=os.environ.get("IMU_CORRECTED_TOPIC", "/imu/data"))
     parser.add_argument("--mag-topic", default=os.environ.get("IMU_MAG_TOPIC", "/imu/mag"))
-    parser.add_argument("--calibration-topic", default=os.environ.get("IMU_CALIBRATION_TOPIC", "/orchard/imu/calibration"))
     parser.add_argument("--max-hz", type=float, default=float(os.environ.get("IMU_BRIDGE_MAX_HZ", "20")))
     parser.add_argument("--status-file", default=os.environ.get("IMU_BRIDGE_STATUS_FILE", "/app/runtime/imu_bridge_status.json"))
     parser.add_argument("--status-interval-s", type=float, default=float(os.environ.get("IMU_BRIDGE_STATUS_INTERVAL_S", "0.5")))

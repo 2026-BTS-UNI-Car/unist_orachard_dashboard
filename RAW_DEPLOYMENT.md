@@ -269,3 +269,9 @@ python3 /home/unist/workspace/ubts-dashboard-releases/f4e052dd5a50ca31e9ce4f6f6f
 검사 도구는 최대8초 탐색 후 한 번의3초 측정 구간을 사용하도록 보강했고 Windows/Linux37개씩 통과했다. 센서 지연·자세·공분산 기준은 유지한다. 재시도는 SSH `websocket: bad handshake`로 원격 실행 전에 실패했으므로 새 도구 staging과 준비/배포가 남았다. 원격 연결이 끊긴 뒤의 현재 장치 상태를 재확인한 것은 아니다. [세부 체크포인트](docs/imu_prepare_hold.json)
 
 재개 시 원래 SSH 경로로 접속하여 최신 상태/원본 hash를 다시 검사하고 새 체크포인트에서 준비한다. 실제 적용은 IMU driver와 recorder만 대상으로 하며 recorder의 메모리상 보정 기준이 초기화될 수 있다. 모터·조종·실차 기록·강제 보정은 수행하지 않는다.
+
+## 2026-09-30 IMU 규약 수정 적용 확인
+
+위 준비 중단은 과거 이력이다. `a615eb2387f866e806ba508695da03bc6b88daa8`의 세 파일을 실제 IMU driver/recorder에 적용했고, 재시작 없이 수행한 최종 검증의25개 항목을 모두 통과했다. ARM 후보 driver7개·recorder20개, 검증 도구 Windows/Linux43개씩 통과했다. 기존32개 기록·설정·Compose·다른14개 컨테이너를 보존했다. 초기 적용 검사와 rollback guard는 Docker의 설정 직렬화 차이 때문에 거절됐으며, 실제 mount/환경/장치/이미지는 확인한 뒤 좁은 비교 수정으로 재검증했다. 최초 실패 자료는 지우지 않았다. [검증 결과](docs/jetson_imu_contract_deployment.json)
+
+새 측정의 covariance0은 불확실도 미확정이며 센서 장착/좌표계 보정을 입증하지 않는다. 기존90도 소프트웨어 yaw 회전·시작 자세/gyro 보정은 이번 규약 수정과 별개다. 사용자가 이후 제거를 요청해 원본 relay 방식으로 전환 작업 중이다. USB GPS 연결도 별도 작업이다. GitHub Actions 한도 소진에 따라 이후 로컬/ARM 검사 근거를 사용한다.

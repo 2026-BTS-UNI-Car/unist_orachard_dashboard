@@ -5,7 +5,7 @@ Camera, LaserScan, IMU and GPS display with manual ESP control. AI workers, tree
 See [raw sensor deployment](docs/raw_sensor_dashboard.md). Existing runtime/data and recorded originals are preserved.
 
 
-GPS UART driver, offline Korea maps and synchronized GPS recording: [GPS setup and operation](docs/gps_offline_map.md)
+GPS USB/UART driver, offline Korea maps and synchronized GPS recording: [GPS setup and operation](docs/gps_offline_map.md)
 
 녹화별 모터 핀 신호 저장·재생: [PWM 기록 형식과 한계](docs/motor_pwm_recording.md)
 
@@ -62,7 +62,7 @@ LiDAR driver는 RPLIDAR serial device를 단독 소유하고 `/scan`을 publish�
 
 Camera driver는 UVC `/dev/video*` 장치를 단독 소유하고 `/camera/image_jpeg`, 원본 기록용 `/camera/image_raw`, `/camera/camera_info`를 publish합니다. Camera bridge는 선택한 네트워크 품질에 맞춰 표시용 JPEG를 줄여 binary WebSocket으로 전달합니다. 같은 프레임·품질을 보는 여러 화면은 JPEG 인코딩 결과를 공유합니다. 원본 ROS 데이터와 기록 해상도는 바꾸지 않습니다. 자세한 제한과 측정 결과는 [실시간 센서 전송](docs/stream_latency.md)을 참고하세요.
 
-IMU driver는 BNO085 I2C 장치를 단독 소유하고 sensor-native `/imu/data_raw`, `/imu/mag`를 publish합니다. Recorder는 녹화 시작 후 정지 구간에서 자세 기준과 gyro bias를 추정하고 Jetson 장착 yaw를 적용해 REP-103 `base_link` 기준 `/imu/data`를 추가로 publish하며, IMU bridge가 이 ROS2 토픽들을 `/ws/imu`로 변환합니다. Dashboard가 I2C 장치에 직접 접근하는 경로는 없습니다. 자세한 계약과 한계는 [docs/imu_ros2_recording.md](docs/imu_ros2_recording.md)를 참고하세요.
+IMU driver는 BNO085 I2C 장치를 단독 소유하고 sensor-native `/imu/data_raw`, `/imu/mag`를 publish합니다. Recorder는 `/imu/data_raw`의 시각·좌표계·측정값·공분산을 그대로 `/imu/data`에 전달합니다. 기본90도 회전, 시작 자세 재설정과 gyro bias 차감은 적용하지 않습니다. IMU bridge와 대시보드는 원본 센서값을 표시하며 I2C 장치에 직접 접근하지 않습니다. 실제 센서 장착 좌표계 검증은 별도이며 자세한 계약은 [docs/imu_ros2_recording.md](docs/imu_ros2_recording.md)를 참고하세요.
 
 
 ## 텔레메트리 연결 방식
@@ -90,7 +90,7 @@ python3 -m unittest discover -s tests
 - [docs/cloudflared.md](docs/cloudflared.md): Cloudflare Tunnel 설정
 - [docs/lidar_connection.md](docs/lidar_connection.md): LiDAR 인식과 테스트 정책
 - [docs/usb_camera_connection.md](docs/usb_camera_connection.md): USB 카메라 ROS2 연결
-- [docs/imu_ros2_recording.md](docs/imu_ros2_recording.md): BNO085 ROS2 연결, 실시간 표시, 기록 시작 자세 보정
+- [docs/imu_ros2_recording.md](docs/imu_ros2_recording.md): BNO085 ROS2 연결, 원본 표시·기록과 호환 relay
 - [docs/jetson_offline_access_20260827.md](docs/jetson_offline_access_20260827.md): 별도 USB Wi-Fi AP, 로컬 DNS, 실제 보드 안전 판정과 GPS 확인
 - [docs/research_metrics.md](docs/research_metrics.md): 연구 성과 지표
 - [docs/telemetry_schema.md](docs/telemetry_schema.md): JSON 텔레메트리 스키마

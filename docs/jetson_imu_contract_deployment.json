@@ -1,0 +1,67 @@
+{
+  "schema": "ubts.imu.deployment.v1",
+  "date": "2026-09-30",
+  "applied": true,
+  "scope": [
+    "ros2-imu-driver",
+    "ros2-data-recorder"
+  ],
+  "source_revision": "a615eb2387f866e806ba508695da03bc6b88daa8",
+  "checks": {
+    "archives_unchanged": true,
+    "settings_unchanged": true,
+    "compose_files_unchanged": true,
+    "other_containers_unchanged": true,
+    "/imu/data_raw:publisher": true,
+    "/imu/data_raw:subscribers": true,
+    "/imu/data:publisher": true,
+    "/imu/data:subscribers": true,
+    "raw_samples": true,
+    "raw_time_progresses": true,
+    "discovery_ready": true,
+    "sample_window_complete": true,
+    "sample_graph_stayed_valid": true,
+    "dashboard_healthy_untouched": true,
+    "driver_revision_and_fresh": true,
+    "driver:image": true,
+    "driver:contract": true,
+    "recorder:image": true,
+    "recorder:contract": true,
+    "host:scripts/imu_ros2_driver.py": true,
+    "image:scripts/imu_ros2_driver.py": true,
+    "host:scripts/data_recorder_service.py": true,
+    "image:scripts/data_recorder_service.py": true,
+    "host:dashboard_server/imu_processing.py": true,
+    "image:dashboard_server/imu_processing.py": true
+  },
+  "images": {
+    "driver": "sha256:aaa97eb8f8d62acaaa5c0f61edd6d0291dd374f57514e8b2bcf2e0c3f350d7d4",
+    "recorder": "sha256:7b2f047844baf406d321fbbd626b6e32f9db7dd9059ef357cfe277338a412f9b"
+  },
+  "helper_sha256": "fe0039c142a643aebc62e4ee725e276fe4a4e78824a43ead71b2f1eec93e5912",
+  "verification_evidence_sha256": "4202c48f3e7b34ec01937698275114585d880f691f50f4650b22810b233aed3c",
+  "arm_tests": {
+    "driver": 7,
+    "recorder": 20,
+    "skipped": 0
+  },
+  "helper_tests": {
+    "windows": 43,
+    "linux": 43
+  },
+  "archive_count": 32,
+  "other_container_count": 14,
+  "history": [
+    "Preparation discovery failure and SSH transfer failures retained privately",
+    "Apply ran both candidates; initial verification and rollback guard rejected Docker configuration serialization difference",
+    "Reviewed normalization changes only AttachStdout/AttachStderr, empty optional lists, and declared volume metadata when actual mount exists",
+    "Unchanged running candidates passed all gates without another restart; original failure records retained"
+  ],
+  "limits": [
+    "Covariance0 means supplied measurement with unknown uncertainty, not calibrated accuracy",
+    "IMU-to-base mount remains unverified; old archives unchanged",
+    "This deploy fixes covariance/quaternion handling only; user-requested removal of software yaw/start calibration is a separate next change",
+    "No actual arming, motor command, new hardware recording or forced calibration"
+  ],
+  "ci": "Not used for subsequent validation; user reports Actions quota exhausted"
+}

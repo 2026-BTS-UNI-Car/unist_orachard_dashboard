@@ -1,9 +1,20 @@
 # GPS와 대한민국 오프라인 지도
 
+## 2026-09-30 USB 연결 적용
+
+GPS 드라이버 한 서비스의 장치 매핑을 기존 UART에서 확인된 USB로 바꾸고
+기존 ROS → WebSocket → 대시보드/기록 경로에 연결했습니다. 12개 적용 검증이
+통과했으며 다른 컨테이너·설정·32개 기록은 보존했습니다. 8초 사전 수신에서
+정상 패킷131개/거절0개·위치 메시지16개를 받았습니다. 현재 상태는
+**장치 연결됨, 위성0개, no_fix**입니다. USB 통신 성공과 위치 확정을 구분합니다.
+[적용 근거](jetson_usb_gps_deployment.json)
+
+아래 9월26일 UART 진단은 연결 변경 전의 이력입니다.
+
 ## 구성
 
 ```text
-ZED-F9P UART → ros2-gps-driver → /gps/fix (sensor_msgs/NavSatFix)
+ZED-F9P USB CDC ACM → ros2-gps-driver → /gps/fix (sensor_msgs/NavSatFix)
                               → /gps/data (std_msgs/String)
                               → /gps/driver_status (std_msgs/String)
                                     ├─ ros2-gps-bridge → localhost:8778 → dashboard /ws/gps
@@ -16,10 +27,12 @@ GPS UART는 GPS 드라이버만 엽니다. 웹 브리지와 기록기는 ROS 토
 프로세스 점유 검사, 파일 잠금, `TIOCEXCL`을 사용합니다. UART 소유자가 있으면
 수신을 시작하지 않고 상태에 오류를 남깁니다.
 
-기본 장치는 Jetson Orin Nano 40핀 헤더 UART인 `/dev/ttyTHS1`입니다.
-실제 연결 위치는 아직 확인되지 않았습니다. 다른 UART나 USB 장치를 추측해서
-자동으로 여는 동작은 없습니다. 장치가 확인되면 `.env`에
-`GPS_SERIAL_DEVICE=/dev/serial/by-id/...`를 지정할 수 있습니다.
+2026-09-30 실제 USB 연결을 확인했습니다. 기본 장치는 u-blox의 고정 경로
+`/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00`이며
+현재 커널 장치는 `/dev/ttyACM0`, USB VID:PID는 `1546:01a9`입니다.
+GPS 드라이버만 해당 장치를 `/dev/ubts-gps`로 사용합니다. 다른 장치를 추측해서
+자동으로 여는 동작은 없습니다. `.env`의 `GPS_SERIAL_DEVICE`로 명시적으로
+다른 연결을 선택할 수 있습니다. 기존 `ttyTHS1` UART 연결은 사용하지 않습니다.
 `GPS_BAUD=0`은 38400/9600/115200/57600/19200/230400/460800/921600 순으로 자동 탐색합니다.
 고정 속도가 확인되면 예를 들어 `GPS_BAUD=38400`으로 지정합니다.
 
@@ -94,8 +107,9 @@ GPS가 없던 기존 기록도 계속 열 수 있습니다.
 
 ## 정확도와 RTK
 
-제품 페이지는 **ZED-F9P 04B, UB-ZED03**입니다. 실제 수신기 식별은 MON-VER 응답을
-받아야 확인할 수 있습니다. 센티미터급 사양은 RTK 보정 및 적절한 위성/안테나
+제품 페이지는 **ZED-F9P 04B, UB-ZED03**입니다. 실제 USB MON-VER 응답은
+`MOD=ZED-F9P`, `FWVER=HPG 1.51`, `PROTVER=27.50`으로 확인됐습니다.
+이 응답만으로 제품 보드의 세부 리비전까지 확정하지 않습니다. 센티미터급 사양은 RTK 보정 및 적절한 위성/안테나
 조건을 전제로 합니다. 현재 구현은 인터넷 없이도 일반 GNSS 위치를 수신하지만
 RTCM/NTRIP/기준국을 자동으로 설정하거나 RTK FIX를 보장하지 않습니다.
 

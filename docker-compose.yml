@@ -271,9 +271,7 @@ services:
     environment:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       IMU_RAW_TOPIC: "${IMU_RAW_TOPIC:-/imu/data_raw}"
-      IMU_CORRECTED_TOPIC: "${IMU_CORRECTED_TOPIC:-/imu/data}"
       IMU_MAG_TOPIC: "${IMU_MAG_TOPIC:-/imu/mag}"
-      IMU_CALIBRATION_TOPIC: "${IMU_CALIBRATION_TOPIC:-/orchard/imu/calibration}"
       IMU_BRIDGE_MAX_HZ: "${IMU_BRIDGE_MAX_HZ:-20}"
       IMU_BRIDGE_STATUS_FILE: "/app/runtime/imu_bridge_status.json"
     volumes:
@@ -287,9 +285,7 @@ services:
           --host 0.0.0.0 \
           --port 8775 \
           --raw-topic "$${IMU_RAW_TOPIC}" \
-          --corrected-topic "$${IMU_CORRECTED_TOPIC}" \
           --mag-topic "$${IMU_MAG_TOPIC}" \
-          --calibration-topic "$${IMU_CALIBRATION_TOPIC}" \
           --max-hz "$${IMU_BRIDGE_MAX_HZ}" \
           --status-file "$${IMU_BRIDGE_STATUS_FILE}"
 
@@ -337,7 +333,7 @@ services:
       GPS_BAUD: "${GPS_BAUD:-0}"
       GPS_DRIVER_STATUS_FILE: "/app/runtime/gps_driver_status.json"
     devices:
-      - "${GPS_SERIAL_DEVICE:-/dev/ttyTHS1}:/dev/ubts-gps"
+      - "${GPS_SERIAL_DEVICE:-/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00}:/dev/ubts-gps"
     volumes:
       - ./runtime:/app/runtime
       - /run/ubts-gps:/run/ubts-gps
@@ -393,10 +389,9 @@ services:
       ROVER_STATUS_TOPIC: "${ROVER_STATUS_TOPIC:-/rover/status}"
       ODOM_TOPIC: "${ODOM_TOPIC:-/odom}"
       IMU_RAW_TOPIC: "${IMU_RAW_TOPIC:-/imu/data_raw}"
-      IMU_CORRECTED_TOPIC: "${IMU_CORRECTED_TOPIC:-/imu/data}"
+      IMU_RELAY_TOPIC: "${IMU_RELAY_TOPIC:-/imu/data}"
       IMU_MAG_TOPIC: "${IMU_MAG_TOPIC:-/imu/mag}"
       IMU_DRIVER_STATUS_TOPIC: "${IMU_DRIVER_STATUS_TOPIC:-/orchard/imu/driver_status}"
-      IMU_CALIBRATION_TOPIC: "${IMU_CALIBRATION_TOPIC:-/orchard/imu/calibration}"
       TF_TOPIC: "${TF_TOPIC:-/tf}"
       TF_STATIC_TOPIC: "${TF_STATIC_TOPIC:-/tf_static}"
       RECORDER_PREVIEW_MAX_POINTS: "${RECORDER_PREVIEW_MAX_POINTS:-1200}"
@@ -404,12 +399,6 @@ services:
       RECORDER_TIMELINE_MAX_FRAMES: "${RECORDER_TIMELINE_MAX_FRAMES:-1800}"
       RECORDER_IMU_TIMELINE_HZ: "${RECORDER_IMU_TIMELINE_HZ:-10.0}"
       RECORDER_IMU_TIMELINE_MAX_FRAMES: "${RECORDER_IMU_TIMELINE_MAX_FRAMES:-18000}"
-      RECORDER_IMU_CALIBRATION_WINDOW_S: "${RECORDER_IMU_CALIBRATION_WINDOW_S:-1.5}"
-      RECORDER_IMU_CALIBRATION_MIN_SAMPLES: "${RECORDER_IMU_CALIBRATION_MIN_SAMPLES:-20}"
-      RECORDER_IMU_STATIONARY_MAX_GYRO_RAD_S: "${RECORDER_IMU_STATIONARY_MAX_GYRO_RAD_S:-0.08}"
-      RECORDER_IMU_STATIONARY_GRAVITY_TOLERANCE_M_S2: "${RECORDER_IMU_STATIONARY_GRAVITY_TOLERANCE_M_S2:-2.0}"
-      RECORDER_IMU_STATIONARY_MAX_ACCEL_STD_M_S2: "${RECORDER_IMU_STATIONARY_MAX_ACCEL_STD_M_S2:-0.35}"
-      RECORDER_IMU_BODY_YAW_OFFSET_DEG: "${RECORDER_IMU_BODY_YAW_OFFSET_DEG:-90.0}"
       RECORDER_CAMERA_PREVIEW_WIDTH: "${RECORDER_CAMERA_PREVIEW_WIDTH:-640}"
       RECORDER_CAMERA_JPEG_QUALITY: "${RECORDER_CAMERA_JPEG_QUALITY:-68}"
       RECORDER_CAMERA_ARCHIVE_FLUSH_TIMEOUT_S: "${RECORDER_CAMERA_ARCHIVE_FLUSH_TIMEOUT_S:-0.75}"
@@ -434,20 +423,13 @@ services:
           --rover-status-topic "$${ROVER_STATUS_TOPIC}" \
           --odom-topic "$${ODOM_TOPIC}" \
           --imu-raw-topic "$${IMU_RAW_TOPIC}" \
-          --imu-corrected-topic "$${IMU_CORRECTED_TOPIC}" \
+          --imu-relay-topic "$${IMU_RELAY_TOPIC}" \
           --imu-mag-topic "$${IMU_MAG_TOPIC}" \
           --imu-driver-status-topic "$${IMU_DRIVER_STATUS_TOPIC}" \
-          --imu-calibration-topic "$${IMU_CALIBRATION_TOPIC}" \
           --tf-topic "$${TF_TOPIC}" \
           --tf-static-topic "$${TF_STATIC_TOPIC}" \
           --imu-timeline-hz "$${RECORDER_IMU_TIMELINE_HZ}" \
           --imu-timeline-max-frames "$${RECORDER_IMU_TIMELINE_MAX_FRAMES}" \
-          --imu-calibration-window-s "$${RECORDER_IMU_CALIBRATION_WINDOW_S}" \
-          --imu-calibration-min-samples "$${RECORDER_IMU_CALIBRATION_MIN_SAMPLES}" \
-          --imu-stationary-max-gyro-rad-s "$${RECORDER_IMU_STATIONARY_MAX_GYRO_RAD_S}" \
-          --imu-stationary-gravity-tolerance-m-s2 "$${RECORDER_IMU_STATIONARY_GRAVITY_TOLERANCE_M_S2}" \
-          --imu-stationary-max-accel-std-m-s2 "$${RECORDER_IMU_STATIONARY_MAX_ACCEL_STD_M_S2}" \
-          --imu-body-yaw-offset-deg "$${RECORDER_IMU_BODY_YAW_OFFSET_DEG}" \
           --camera-preview-width "$${RECORDER_CAMERA_PREVIEW_WIDTH}" \
           --camera-jpeg-quality "$${RECORDER_CAMERA_JPEG_QUALITY}" \
           --camera-archive-flush-timeout-s "$${RECORDER_CAMERA_ARCHIVE_FLUSH_TIMEOUT_S}"

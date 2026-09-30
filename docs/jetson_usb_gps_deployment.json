@@ -1,0 +1,71 @@
+{
+  "applied": true,
+  "scope": [
+    "ros2-gps-driver"
+  ],
+  "checks": {
+    "archives_unchanged": true,
+    "other_containers_unchanged": true,
+    "compose_unchanged": true,
+    "environment_expected": true,
+    "camera_settings_unchanged": true,
+    "image_unchanged": true,
+    "running": true,
+    "exact_device": true,
+    "runtime_contract_unchanged": true,
+    "gps_usb_receiving": true,
+    "receiver_identified": true,
+    "no_receiver_configuration_writes": true
+  },
+  "gps_state": "no_fix",
+  "valid_fix": false,
+  "satellites": 0,
+  "receiver": {
+    "software": "EXT CORE 1.00 (9e1716)",
+    "hardware": "00190000",
+    "extensions": [
+      "ROM BASE 0x118B2060",
+      "FWVER=HPG 1.51",
+      "PROTVER=27.50",
+      "MOD=ZED-F9P",
+      "GPS;GLO;GAL;BDS",
+      "SBAS;QZSS"
+    ]
+  },
+  "device": "ttyACM0",
+  "image": "sha256:38e9d1f10dee5db89c03fe625a942c33c9f91a6d0004cbf59727a8b0ecb26ef0",
+  "at": 1790758378.2652607,
+  "schema": "ubts.gps.usb_deployment.v1",
+  "date": "2026-09-30",
+  "evidence_sha256": "5c73ac9840697ef09b1675388d1e528ff03b49a8903f620509e11e7a6bbd4684",
+  "probe": {
+    "duration_s": 8,
+    "navigation_frames": 16,
+    "valid_packets": 131,
+    "rejected_packets": 0,
+    "bytes_received": 4942
+  },
+  "limits": [
+    "USB receiver and bridge communication verified; no satellite fix at observation",
+    "No RTK correction configuration, surveyed antenna extrinsic or autonomous fusion integration",
+    "No real motor command, arming, new recording or receiver CFG/flash writes"
+  ],
+  "ci": "Local and Jetson direct validation; Actions quota exhausted per user",
+  "pipeline_readonly": {
+    "checks": {
+      "all_ros_topics_received": true,
+      "driver_owns_all_publishers": true,
+      "no_fix_nan": true,
+      "http_connected": true,
+      "http_recent": true,
+      "http_usb": true
+    },
+    "counts": {
+      "data": 12,
+      "fix": 12,
+      "status": 6
+    },
+    "evidence_sha256": "75887b41599867355a4e72f09b4380751e1a786eb85fb9df03ebe7eaccd3f5e4",
+    "recorder_subscribed_to_data_and_driver_status": true
+  }
+}

@@ -124,19 +124,13 @@ const state = {
     socket: null,
     connected: false,
     topicAlive: false,
-    correctedTopicAlive: false,
     raw: {},
-    corrected: {},
     magnetic: {},
-    calibration: { state: "idle", valid: false },
     lastMessageAt: null,
     lastImuAgeSec: null,
     error: "",
     userStopped: false,
     reconnectTimer: null,
-    zeroInFlight: false,
-    zeroState: "idle",
-    zeroMessage: "ROS2 IMU 연결 후 현재 자세를 0점으로 설정할 수 있습니다.",
   },
   cameraModes: DEFAULT_CAMERA_MODES,
   cameraModesSignature: JSON.stringify(DEFAULT_CAMERA_MODES),
@@ -1656,27 +1650,6 @@ function toggleImuLive() {
   startImuLive();
 }
 
-async function zeroImuReference() {
-  if (state.imuLive.zeroInFlight || !state.imuLive.topicAlive) return;
-  state.imuLive.zeroInFlight = true;
-  state.imuLive.zeroState = "testing";
-  state.imuLive.zeroMessage = "현재 ROS2 IMU 자세를 영점으로 적용하는 중입니다.";
-  renderImuLiveState();
-  try {
-    const result = await postJson("/api/imu/zero", {});
-    state.imuLive.zeroState = result.ok ? "ok" : "bad";
-    state.imuLive.zeroMessage = result.ok
-      ? "현재 자세가 새 IMU 영점으로 적용되었습니다."
-      : result.error || "IMU 영점 적용에 실패했습니다.";
-  } catch (err) {
-    state.imuLive.zeroState = "bad";
-    state.imuLive.zeroMessage = err.message || "IMU 영점 적용에 실패했습니다.";
-  } finally {
-    state.imuLive.zeroInFlight = false;
-    renderImuLiveState();
-  }
-}
-
 function imuWebSocketUrl() {
   const params = new URLSearchParams({profile: liveNetworkProfile(), flow: "ack"});
   if (window.UBTS_IMU_WS_URL) return `${window.UBTS_IMU_WS_URL}${String(window.UBTS_IMU_WS_URL).includes("?") ? "&" : "?"}${params}`;
@@ -1760,11 +1733,8 @@ function handleImuLiveMessage(raw) {
   if (payload.type !== "imu") return;
   if (payload.sequence && state.imuLive.socket?.readyState === WebSocket.OPEN) state.imuLive.socket.send(JSON.stringify({type: "imu_ack", sequence: payload.sequence}));
   state.imuLive.topicAlive = Boolean(payload.imu_topic_alive);
-  state.imuLive.correctedTopicAlive = Boolean(payload.corrected_topic_alive);
   state.imuLive.raw = payload.raw || {};
-  state.imuLive.corrected = payload.corrected || {};
   state.imuLive.magnetic = payload.magnetic || {};
-  state.imuLive.calibration = payload.calibration || { state: "idle", valid: false };
   state.imuLive.lastImuAgeSec = payload.last_imu_age_s;
   state.imuLive.lastMessageAt = Date.now();
   state.imuLive.error = payload.error || (payload.imu_topic_alive ? "" : "ROS 2 /imu/data_raw 대기 중");
@@ -1772,9 +1742,8 @@ function handleImuLiveMessage(raw) {
 }
 
 function imuDisplaySample() {
-  return state.imuLive.correctedTopicAlive && state.imuLive.corrected?.orientation
-    ? state.imuLive.corrected
-    : state.imuLive.raw || {};
+  // Never select a historical/old-process corrected stream for live display.
+  return state.imuLive.raw || {};
 }
 
 function vectorNorm(vector) {
@@ -1790,37 +1759,25 @@ function renderImuLiveState(overrideLabel) {
   const roll = Number(euler.roll);
   const pitch = Number(euler.pitch);
   const yaw = Number(euler.yaw);
-  const calibration = state.imuLive.calibration || {};
-  const calibrationState = calibration.state || (calibration.valid ? "ready" : "idle");
-  const sourceLabel = state.imuLive.correctedTopicAlive ? "base_link-corrected /imu/data" : SIMULATION ? "Gazebo FLU /imu/data_raw" : "sensor-native raw /imu/data_raw";
+  const sourceLabel = SIMULATION ? "Gazebo FLU /imu/data_raw" : "sensor-native raw /imu/data_raw";
   const statusLabel = overrideLabel || (state.imuLive.topicAlive ? sourceLabel : state.imuLive.error || "IMU 대기");
   const button = $("roverImuToggle");
   if (button) {
     button.textContent = state.imuLive.connected ? "IMU 중지" : "IMU 시작";
     button.classList.toggle("active", state.imuLive.connected && state.imuLive.topicAlive);
   }
-  const zeroButton = $("roverImuZeroButton");
-  if (zeroButton) {
-    zeroButton.disabled = SIMULATION || state.imuLive.zeroInFlight || !state.imuLive.topicAlive;
-    zeroButton.textContent = SIMULATION ? "시뮬 기준 자세" : state.imuLive.zeroInFlight ? "영점 적용 중" : "현재 자세 영점";
-  }
-  const zeroResult = $("roverImuZeroResult");
-  if (zeroResult) {
-    zeroResult.className = `test-result ${state.imuLive.zeroState === "idle" ? "" : state.imuLive.zeroState}`.trim();
-    zeroResult.textContent = SIMULATION ? "Gazebo 월드 기준 자세 · 중력 포함 · 자력계 미제공 · 실제 BNO085 보정값 아님" : state.imuLive.zeroMessage;
-  }
   text("roverImuCaption", statusLabel);
   text("roverImuHeading", Number.isFinite(yaw) ? `${fmtNumber(yaw, 1)}°` : "--°");
-  text("roverImuCalibrationState", calibrationState);
-  const acceleration = sample.linear_acceleration || {};
-  const gyro = sample.angular_velocity || {};
+  text("roverImuProcessingState", "raw · unmodified");
+  const acceleration = sample.availability?.linear_acceleration?.available === false ? {} : sample.linear_acceleration || {};
+  const gyro = sample.availability?.angular_velocity?.available === false ? {} : sample.angular_velocity || {};
   const magnetic = state.imuLive.magnetic?.magnetic_field_uT || {};
   const colors = chartColors();
   renderReadout("roverImuStats", [
     { label: "Roll / Pitch", value: Number.isFinite(roll) && Number.isFinite(pitch) ? `${fmtNumber(roll, 1)}° / ${fmtNumber(pitch, 1)}°` : "--", sub: sourceLabel, color: colors.cyan },
     { label: "Acceleration", value: vectorNorm(acceleration) === null ? "--" : `${fmtNumber(vectorNorm(acceleration), 3)} m/s²`, sub: `x ${fmtNumber(acceleration.x, 2)} · y ${fmtNumber(acceleration.y, 2)} · z ${fmtNumber(acceleration.z, 2)}`, color: colors.good },
     { label: "Angular velocity", value: vectorNorm(gyro) === null ? "--" : `${fmtNumber(vectorNorm(gyro), 4)} rad/s`, sub: `x ${fmtNumber(gyro.x, 3)} · y ${fmtNumber(gyro.y, 3)} · z ${fmtNumber(gyro.z, 3)}`, color: colors.amber },
-    { label: "Magnetic field", value: vectorNorm(magnetic) === null ? "--" : `${fmtNumber(vectorNorm(magnetic), 2)} µT`, sub: `calibration ${calibrationState}`, color: colors.blue },
+    { label: "Magnetic field", value: vectorNorm(magnetic) === null ? "--" : `${fmtNumber(vectorNorm(magnetic), 2)} µT`, sub: "sensor-native", color: colors.blue },
   ]);
   drawImuAttitude($("roverImuCanvas"), roll, pitch, yaw);
 }
@@ -3442,9 +3399,7 @@ function renderRoverControl(data) {
   const imuSensor = data.sensors?.imu || data.connection?.sensors?.imu || {};
   if (!state.imuLive.topicAlive && imuSensor.raw) {
     state.imuLive.raw = imuSensor.raw || {};
-    state.imuLive.corrected = imuSensor.corrected || {};
     state.imuLive.magnetic = imuSensor.magnetic || {};
-    state.imuLive.calibration = imuSensor.calibration || state.imuLive.calibration;
     state.imuLive.topicAlive = Boolean(imuSensor.ok);
     state.imuLive.lastImuAgeSec = imuSensor.last_imu_age_s;
   }
@@ -3485,7 +3440,7 @@ function renderRoverControl(data) {
     },
     {
       title: "ROS2 IMU",
-      sub: "/imu/data_raw → /imu/data",
+      sub: "/imu/data_raw · sensor-native (raw relay /imu/data)",
       ok: Boolean(imuSensor.ok || services.imu_bridge?.ok),
       level: imuSensor.ok || services.imu_bridge?.ok ? "ok" : "warn",
       value: imuSensor.state || services.imu_bridge?.state || "대기",
@@ -3532,7 +3487,6 @@ function initRoverControl() {
   $("roverCameraToggle")?.addEventListener("click", toggleCameraLive);
   $("roverLidarToggle")?.addEventListener("click", toggleLidarLive);
   $("roverImuToggle")?.addEventListener("click", toggleImuLive);
-  $("roverImuZeroButton")?.addEventListener("click", zeroImuReference);
   $("roverRecordImuToggle")?.addEventListener("change", (event) => setRecordingImuEnabled(event.target.checked, true));
   $("roverRecordGpsToggle")?.addEventListener("change", (event) => { state.recordings.includeGps = event.target.checked; renderRecordingStatus(); });
   $("roverRecordStartButton")?.addEventListener("click", () => startRecording(state.recordings.kind));
@@ -3939,9 +3893,8 @@ function renderRecordingStatus(override) {
   const includeGps = active ? status.include_gps !== false : state.recordings.includeGps;
   const sensorLabel = `${kind}${includeImu ? "+IMU" : ""}${includeGps ? "+GPS" : ""}`;
   const duration = recordingDurationSeconds(status);
-  const calibrationState = status.imu_pipeline?.calibration?.state;
   const message = override || (active
-    ? `${sensorLabel} 기록 중 · ${calibrationState === "collecting" ? "IMU 정지 자세 보정 중 · " : ""}${status.recording_id || ""}`
+    ? `${sensorLabel} 기록 중 · ${status.recording_id || ""}`
     : status.error || status.state || `${sensorLabel} 기록 대기`);
   const target = $("roverRecordingStatus");
   if (target) {

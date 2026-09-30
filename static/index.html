@@ -688,7 +688,6 @@
 <h2>IMU</h2>
 </div>
 <div class="panel-actions">
-<button class="action-button secondary" disabled="" id="roverImuZeroButton" type="button">현재 자세 영점</button>
 <button class="action-button secondary" id="roverImuToggle" type="button">IMU 시작</button>
 </div>
 </div>
@@ -699,10 +698,10 @@
 <div class="imu-heading-row">
 <span>Heading</span>
 <strong id="roverImuHeading">--°</strong>
-<span class="tag" id="roverImuCalibrationState">idle</span>
+<span class="tag" id="roverImuProcessingState">raw · unmodified</span>
 </div>
 <div class="chart-readout" id="roverImuStats"></div>
-<div class="test-result" id="roverImuZeroResult">ROS2 IMU 연결 후 현재 자세를 0점으로 설정할 수 있습니다.</div>
+<p class="help-text">센서 원본 자세 · 소프트웨어 회전·영점 보정 없음</p>
 </article>
 <article class="panel rover-drive-panel">
 <div class="panel-head">
