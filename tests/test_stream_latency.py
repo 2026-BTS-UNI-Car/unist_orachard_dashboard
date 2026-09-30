@@ -59,9 +59,11 @@ class StreamLatencyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(newest['frame_count'], 29)
         self.assertEqual(cache.encodes, 2)
 
-    async def test_local_30fps_policy_cannot_change_real_board_limits(self):
+    async def test_camera_30fps_ceiling_does_not_change_other_sensor_profiles(self):
         with patch.dict(os.environ, {'DASHBOARD_MODE': 'live', 'CAMERA_PREVIEW_LOCAL_FPS': '30'}):
-            self.assertEqual(camera_stream_budget('detail').values[2], 15)
+            self.assertEqual(camera_stream_budget('detail').values[2], 30)
+            self.assertEqual(camera_stream_budget('detail').values[4], 4_000_000)
+            self.assertEqual(StreamBudget('detail').values[2], 15)
         with patch.dict(os.environ, {'DASHBOARD_MODE': 'simulation', 'CAMERA_PREVIEW_LOCAL_FPS': '30'}):
             self.assertEqual(camera_stream_budget('detail').values[2], 30)
             self.assertEqual(camera_stream_budget('slow').values[2], 4)

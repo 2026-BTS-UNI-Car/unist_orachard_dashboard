@@ -19,6 +19,10 @@ from urllib.parse import parse_qs, urlparse
 import cv2
 import numpy as np
 
+# One camera packet's send and feedback share this absolute deadline. Other
+# sensor ACK limits and vehicle control/freshness limits are independent.
+CAMERA_ACK_TIMEOUT_S = 8.0
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -585,9 +589,9 @@ def encode_camera_preview(
 
 async def wait_for_camera_decode_ack(
     websocket: Any, frame_count: int, timeout_s: float = 1.0
-) -> int | None:
-    """Return the newest acknowledgement that covers ``frame_count``."""
-    deadline = time.monotonic() + max(0.1, float(timeout_s))
+) -> dict[str, Any] | None:
+    """Match one frame and preserve decoded/error/timeout feedback separately."""
+    deadline = time.monotonic() + max(0.0, float(timeout_s))
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0.0:
@@ -604,12 +608,14 @@ async def wait_for_camera_decode_ack(
             continue
         if not isinstance(payload, dict) or payload.get("type") != "frame_ack":
             continue
-        try:
-            acknowledged = int(payload.get("frame_count"))
-        except (TypeError, ValueError):
+        acknowledged = payload.get("frame_count")
+        if type(acknowledged) is not int:
             continue
         if acknowledged == int(frame_count):
-            return acknowledged
+            status = payload.get("decode_status", "unknown")
+            if not isinstance(status, str) or status not in {"decoded", "error", "timeout", "not_visible", "unknown"}:
+                status = "unknown"
+            return {"frame_count": acknowledged, "decode_status": status}
 
 
 def network_preview(frame_snap, settings, budget, compressed):
@@ -633,17 +639,16 @@ def network_preview(frame_snap, settings, budget, compressed):
         min(settings["width"], limit_width),
         min(settings["height"], limit_height),
     )
-    jpeg, elapsed = encode_camera_preview(
-        frame, width, height, min(settings["quality"], quality)
-    )
+    requested_quality = max(70, settings["quality"]) if budget.profile == "auto" else settings["quality"]
+    jpeg, elapsed = encode_camera_preview(frame, width, height, min(requested_quality, quality))
     return (jpeg, elapsed, width, height, source_width, source_height)
 
 
 def camera_stream_budget(profile):
-    from scripts.stream_policy import StreamBudget
+    from scripts.camera_stream_policy import CameraStreamBudget
     local = (os.environ.get("DASHBOARD_MODE") == "simulation"
              and os.environ.get("CAMERA_PREVIEW_LOCAL_FPS") == "30")
-    return StreamBudget(profile, local_camera_30fps=local)
+    return CameraStreamBudget(profile, local_camera_30fps=local)
 
 
 class CameraPreviewCache:
@@ -667,7 +672,7 @@ class CameraPreviewCache:
         # Frame size/quality determine the JPEG. Requested FPS, byte budgets,
         # and a larger requested viewport do not change the encoded pixels.
         return (compressed, frame["frame_count"], width, height,
-                min(settings["quality"], max_quality))
+                min(max(70, settings["quality"]) if budget.profile == "auto" else settings["quality"], max_quality))
 
     async def latest(self, state, settings, budget, compressed):
         async with self.lock:
@@ -713,6 +718,9 @@ async def serve_websocket(
             await websocket.close(code=1008, reason="unsupported path")
             return
         settings = client_settings(actual_path)
+        if state.snapshot(include_frame=False)["client_count"] >= 4:
+            await websocket.close(code=1013, reason="camera viewer limit")
+            return
         budget = camera_stream_budget(settings["profile"])
         binary = settings["transport"] == "binary-v1"
         ack_flow = binary and settings["flow"] != "none"
@@ -760,9 +768,11 @@ async def serve_websocket(
                                     "ack_latency_ms": budget.ack_latency_ms,
                                     "budget_bytes_s": budget.values[4],
                                     "latest_only": True,
-                                    "max_inflight_frames": 1,
+                                    "max_inflight_frames": 1 if ack_flow else None,
                                     "flow": "decode-ack" if ack_flow else "none",
                                     "preview_decoupled": True,
+                                    "ack_deadline_s": CAMERA_ACK_TIMEOUT_S,
+                                    **budget.status(),
                                 },
                                 separators=(",", ":"),
                             )
@@ -804,6 +814,8 @@ async def serve_websocket(
                     if compressed
                     else "ros2-raw-bgr",
                     "preview_decoupled": True,
+                    "ack_deadline_s": CAMERA_ACK_TIMEOUT_S,
+                    **budget.status(),
                 }
                 if binary:
                     message = encode_binary_camera_frame(metadata, jpeg)
@@ -811,19 +823,25 @@ async def serve_websocket(
                     metadata["data"] = base64.b64encode(jpeg).decode("ascii")
                     message = json.dumps(metadata, separators=(",", ":"))
                 sent = time.monotonic()
-                await asyncio.wait_for(websocket.send(message), timeout=2)
+                deadline = sent + CAMERA_ACK_TIMEOUT_S
+                try:
+                    await asyncio.wait_for(websocket.send(message), timeout=CAMERA_ACK_TIMEOUT_S)
+                except asyncio.TimeoutError:
+                    await websocket.close(code=1013, reason="preview acknowledgement timeout")
+                    return
                 last_count = count
                 pacer.sent(sent, len(message))
                 if ack_flow:
                     acknowledged = await wait_for_camera_decode_ack(
-                        websocket, count, timeout_s=2
+                        websocket, count, timeout_s=max(0.0, deadline-time.monotonic())
                     )
                     if acknowledged is None:
                         await websocket.close(
                             code=1013, reason="preview acknowledgement timeout"
                         )
                         return
-                    budget.acknowledge(time.monotonic() - sent)
+                    budget.acknowledge(time.monotonic() - sent, len(message),
+                                       decode_status=acknowledged["decode_status"])
         except Exception as exc:
             bridge_log("preview_closed", reason=type(exc).__name__)
         finally:

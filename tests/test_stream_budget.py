@@ -111,8 +111,9 @@ class CameraFlowTest(unittest.IsolatedAsyncioTestCase):
                 latest = await asyncio.wait_for(receive_frame(), 1)
                 self.assertEqual(latest['frame_count'], 10)
                 self.assertEqual((latest['width'], latest['height']), (320, 180))
-                # Outstanding frame times out and closes; it is never replaced by a queue of old frames.
-                with self.assertRaises(websockets.ConnectionClosed): await asyncio.wait_for(receive_frame(), 3)
+                # Camera has a bounded 8-second network deadline; it is never
+                # replaced by a queue of old frames while waiting.
+                with self.assertRaises(websockets.ConnectionClosed): await asyncio.wait_for(receive_frame(), 9)
         finally:
             stop.set()
             await asyncio.wait_for(server, 3)

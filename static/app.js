@@ -118,6 +118,12 @@ const state = {
     objectUrl: "",
     encodedBytes: 0,
     encodeMs: null,
+    deliveryState: "starting",
+    decodeStatus: "pending",
+    effectiveProfile: "",
+    previewQuality: null,
+    ackLatencyMs: null,
+    lastDecodedAt: null,
   },
   imuLive: {
     enabled: false,
@@ -1341,6 +1347,13 @@ function startCameraLive() {
     });
     socket.addEventListener("close", (event) => {
       if (socket !== state.cameraLive.socket) return;
+      const exhausted = event.code === 1013 && event.reason === "preview acknowledgement timeout";
+      if (exhausted) {
+        state.cameraLive.enabled = false;
+        state.cameraLive.userStopped = true;
+        state.cameraLive.deliveryState = "bandwidth_limited";
+        state.cameraLive.error = "영상 응답 지연으로 일시 정지했습니다. 회선 상태나 전송 품질을 확인한 뒤 다시 시작하세요.";
+      }
       const shouldReconnect = state.cameraLive.enabled && !state.cameraLive.userStopped && routeSupportsCameraLive();
       state.cameraLive.socket = null;
       state.cameraLive.connected = false;
@@ -1485,6 +1498,12 @@ async function handleCameraLiveBinaryMessage(raw, socket) {
 }
 
 function handleCameraLivePayload(payload, binary = null) {
+  if (payload.type === "status" || payload.type === "frame") {
+    state.cameraLive.deliveryState = payload.delivery_state || state.cameraLive.deliveryState;
+    state.cameraLive.effectiveProfile = payload.effective_profile || state.cameraLive.effectiveProfile;
+    state.cameraLive.previewQuality = payload.preview_quality ?? state.cameraLive.previewQuality;
+    state.cameraLive.ackLatencyMs = payload.ack_latency_ms ?? state.cameraLive.ackLatencyMs;
+  }
   if (payload.type === "status") {
     state.cameraLive.frameTopicAlive = Boolean(payload.frame_topic_alive);
     state.cameraLive.lastFrameAgeSec = payload.last_frame_age_sec;
@@ -1558,43 +1577,52 @@ function displayBinaryCameraFrame(blob, payload, socket) {
   const url = URL.createObjectURL(blob);
   const previousUrl = state.cameraLive.objectUrl;
   state.cameraLive.objectUrl = url;
-  if (payload.flow === "latest-ack") {
-    if (previousUrl) URL.revokeObjectURL(previousUrl);
-    for (const image of targets) image.src = url;
-    acknowledgeCameraFrame(socket, payload.frame_count);
-    return;
-  }
   if (!targets.length) {
-    if (previousUrl) URL.revokeObjectURL(previousUrl);
-    acknowledgeCameraFrame(socket, payload.frame_count);
+    URL.revokeObjectURL(url);
+    state.cameraLive.objectUrl = previousUrl;
+    acknowledgeCameraFrame(socket, payload.frame_count, "not_visible");
     return;
   }
-  let remaining = targets.length;
   let settled = false;
-  const finish = () => {
-    remaining -= 1;
-    if (remaining > 0 || settled) return;
-    settled = true;
-    if (previousUrl) URL.revokeObjectURL(previousUrl);
-    acknowledgeCameraFrame(socket, payload.frame_count);
-  };
-  for (const image of targets) {
-    image.onload = finish;
-    image.onerror = finish;
-    image.src = url;
-  }
-  window.setTimeout(() => {
+  let timer = null;
+  const finish = (status) => {
     if (settled) return;
     settled = true;
-    if (previousUrl) URL.revokeObjectURL(previousUrl);
-    acknowledgeCameraFrame(socket, payload.frame_count);
-  }, 500);
+    if (timer !== null) window.clearTimeout(timer);
+    if (socket !== state.cameraLive.socket || state.cameraLive.objectUrl !== url) {
+      URL.revokeObjectURL(url);
+      return;
+    }
+    for (const image of targets) { image.onload = null; image.onerror = null; }
+    const statusChanged = state.cameraLive.decodeStatus !== status;
+    state.cameraLive.decodeStatus = status;
+    if (status === "decoded") {
+      state.cameraLive.lastDecodedAt = performance.now();
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
+    } else {
+      // Keep the last usable image; an error/timeout is not a rendered frame.
+      for (const image of targets) image.src = previousUrl || "";
+      state.cameraLive.objectUrl = previousUrl;
+      URL.revokeObjectURL(url);
+    }
+    acknowledgeCameraFrame(socket, payload.frame_count, status);
+    if (statusChanged) renderCameraLiveState();
+  };
+  for (const image of targets) {
+    image.onload = () => {
+      if (image.currentSrc && image.currentSrc !== url) return;
+      finish("decoded");
+    };
+    image.onerror = () => finish("error");
+    image.src = url;
+  }
+  timer = window.setTimeout(() => finish("timeout"), 500);
 }
 
-function acknowledgeCameraFrame(socket, frameCount) {
+function acknowledgeCameraFrame(socket, frameCount, decodeStatus = "unknown") {
   if (socket !== state.cameraLive.socket || socket?.readyState !== WebSocket.OPEN) return;
   try {
-    socket.send(JSON.stringify({ type: "frame_ack", frame_count: Number(frameCount) || 0 }));
+    socket.send(JSON.stringify({ type: "frame_ack", frame_count: Number(frameCount) || 0, decode_status: decodeStatus }));
   } catch (err) {
     debugLog("camera", "frame ack failed", err);
   }
@@ -1613,12 +1641,16 @@ function renderCameraLiveState(overrideLabel) {
     : "--";
   const socketText = overrideLabel || (state.cameraLive.connected ? "connected" : state.cameraLive.error || "disconnected");
   text("cameraFrameCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · source ${source}` : socketText);
-  const frameAge = state.cameraLive.lastFrameAgeSec === null || state.cameraLive.lastFrameAgeSec === undefined
-    ? "--"
-    : `${fmtNumber(state.cameraLive.lastFrameAgeSec, 1)}s ago`;
+  const displayedAge = state.cameraLive.lastDecodedAt === null ? null : Math.max(0, (performance.now()-state.cameraLive.lastDecodedAt)/1000);
+  const frameAge = displayedAge === null ? "첫 영상 대기" : `화면 갱신 ${fmtNumber(displayedAge, 1)}초 전`;
   const captureTarget = `${state.cameraLive.resolution} · ${state.cameraLive.fps} fps target`;
   const observedFps = state.cameraLive.displayFps;
-  const observedDetail = `ROS ${cameraFpsLabel(state.cameraLive.sourceFps)} · WS ${cameraFpsLabel(state.cameraLive.displayFps)}`;
+  const cameraDelivery = state.cameraLive.deliveryState === "bandwidth_limited" ? "회선 제한 · 화질 유지, FPS 조절"
+    : state.cameraLive.decodeStatus === "timeout" ? "영상 해독 지연"
+    : state.cameraLive.decodeStatus === "error" ? "영상 해독 실패 · 이전 화면 유지"
+    : `${state.cameraLive.effectiveProfile || "auto"} · Q${state.cameraLive.previewQuality ?? "--"}`;
+  const ackLabel = Number.isFinite(state.cameraLive.ackLatencyMs) ? ` · ACK ${Math.round(state.cameraLive.ackLatencyMs)}ms` : "";
+  const observedDetail = `ROS ${cameraFpsLabel(state.cameraLive.sourceFps)} · WS ${cameraFpsLabel(state.cameraLive.displayFps)} · ${cameraDelivery}${ackLabel}`;
   const colors = chartColors();
   renderReadout("cameraLiveStats", [
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
@@ -1626,7 +1658,7 @@ function renderCameraLiveState(overrideLabel) {
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
     { label: "수신 FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
   ]);
-  text("roverCameraCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · source ${source} · capture ${captureTarget}` : socketText);
+  text("roverCameraCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · ${frameAge} · ${cameraDelivery}${ackLabel}` : socketText);
   const roverButton = $("roverCameraToggle");
   if (roverButton) {
     roverButton.textContent = state.cameraLive.socket && !state.cameraLive.connected
@@ -5139,3 +5171,6 @@ loadPlan().catch(console.error);
 loadDocs().catch(console.error);
 tick();
 setInterval(tick, POLL_INTERVAL_MS);
+setInterval(() => {
+  if (routeSupportsCameraLive() && (state.cameraLive.enabled || state.cameraLive.lastDecodedAt !== null)) renderCameraLiveState();
+}, 1000);
