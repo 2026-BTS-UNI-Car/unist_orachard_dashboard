@@ -15,6 +15,7 @@ image is `96142732`, camera bridge `e0d95231`, IMU bridge `e5b89181`, recorder
 - [Initial GPS RF/satellite diagnosis](docs/jetson_gps_reception_diagnosis.json)
 - [GPS antenna-supervisor follow-up](docs/jetson_gps_antenna_diagnosis.json)
 - [Subsequent Windows USB reception](docs/windows_gps_reception_diagnosis.json)
+- [Later Windows indoor placement comparison](docs/windows_gps_placement_comparison.json)
 
 GPS USB reception worked on Jetson; diagnosis002 received 7,059 bytes without rejected UBX
 frames. Its four satellite lists were empty; one signal list contained a BeiDou
@@ -37,6 +38,15 @@ a window and changing C-to-A to C-to-C;
 host, placement, cable and elapsed acquisition time are confounded. Both reads
 closed the port and made no receiver configuration writes. A placement-controlled
 host/cable comparison, outdoor position fix and RTK validation remain pending.
+The latest observation moved both the board and antenna back indoors, with the
+same PC and C-to-C cable. It received 922 valid packets and zero rejected over
+60.048s, but all 14 signal reports had zero locked signals. Only GPS14 appeared
+with positive C/N0 (12 then 7dBHz), quality3/detected but unusable. All 15 NAV-PVT
+samples had no fix and zero used satellites. This supports a placement-related
+reception difference, not sole causation or a Jetson/cable defect. Different
+satellites' C/N0 values are not a same-satellite attenuation measurement. The
+port was closed; no receiver settings or firmware changed.
+
 These are observation checkpoints, not a new Jetson deployment. Camera source
 cadence was about15Hz despite30FPS capture settings; sustained30FPS/WAN performance
 is not established. Actual motion, new recordings and physical calibration were

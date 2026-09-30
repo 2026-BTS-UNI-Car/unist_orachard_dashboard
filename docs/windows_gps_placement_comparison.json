@@ -1,0 +1,240 @@
+{
+  "schema": "ubts.windows.gps_placement_comparison.v1",
+  "date": "2026-09-30",
+  "previous_checkpoint": "windows_gps_reception_diagnosis.json",
+  "result": "TRACKING_PRESENT_AT_WINDOW_ABSENT_IN_LATER_INDOOR_OBSERVATION_NO_POSITION_FIX",
+  "user_confirmed_conditions": {
+    "same_pc": true,
+    "same_c_to_c_usb_cable": true,
+    "same_external_antenna": true,
+    "change": "GPS board and external antenna both moved from the window back indoors.",
+    "uninterrupted_receiver_power": "Not independently established; no software reset was sent."
+  },
+  "software_controls": {
+    "same_probe_and_parser_hashes": true,
+    "receiver_configuration_writes": false,
+    "reset_or_firmware_change": false,
+    "motor_commands_or_sensor_recordings_started": false,
+    "port_closed_after_observation": true,
+    "source_sha256": {
+      "gps_windows_probe.py": "476f32306cc7f79098d7886f2510152b3ef4f6abe82deeae05726ec47765b227",
+      "gps_rf_probe_002.py": "a05fad64c44c2a44fd7c09419f6c28cee3ebbf4f60236324251bf10b0be67a42",
+      "gps.py": "a66c75f344066794f88741ee62b548737088876c19584c557fee9886fec20b33"
+    }
+  },
+  "window_reference": {
+    "started_at_utc": "2026-09-30T13:29:48.849215+00:00",
+    "duration_s": 120.01645329996245,
+    "last_signal_report": {
+      "message": "NAV-SIG",
+      "i_tow_ms": 307926000,
+      "signals": [
+        {
+          "gnss_id": 0,
+          "sv_id": 8,
+          "sig_id": 0,
+          "cno_dbhz": 30,
+          "quality": 7,
+          "flags": 1
+        },
+        {
+          "gnss_id": 0,
+          "sv_id": 27,
+          "sig_id": 0,
+          "cno_dbhz": 29,
+          "quality": 7,
+          "flags": 1
+        },
+        {
+          "gnss_id": 3,
+          "sv_id": 43,
+          "sig_id": 2,
+          "cno_dbhz": 0,
+          "quality": 1,
+          "flags": 0
+        },
+        {
+          "gnss_id": 6,
+          "sv_id": 18,
+          "sig_id": 0,
+          "cno_dbhz": 27,
+          "quality": 7,
+          "flags": 1
+        }
+      ],
+      "count": 4,
+      "positive_cno": 3,
+      "max_cno_dbhz": 30,
+      "receipt_elapsed_s": 119.038
+    },
+    "interpretation": "Three distinct satellites GPS8, GPS27, GLONASS18 had quality7 at the end (30/29/27 dBHz). Position was still no-fix."
+  },
+  "indoor_observation": {
+    "started_at_utc": "2026-09-30T13:35:18.233939+00:00",
+    "duration_s": 60.04783359996509,
+    "bytes_received": 35209,
+    "valid_packets": 922,
+    "rejected_packets": 0,
+    "signal_report_count": 14,
+    "positive_cno_counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1
+    ],
+    "locked_signal_counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "max_cno_per_report_dbhz": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      12,
+      7
+    ],
+    "positive_signals": [
+      {
+        "gnss_id": 0,
+        "sv_id": 14,
+        "sig_id": 0,
+        "cno_dbhz": 12,
+        "quality": 3,
+        "flags": 1,
+        "receipt_elapsed_s": 53.625
+      },
+      {
+        "gnss_id": 0,
+        "sv_id": 14,
+        "sig_id": 0,
+        "cno_dbhz": 7,
+        "quality": 3,
+        "flags": 1,
+        "receipt_elapsed_s": 57.627
+      }
+    ],
+    "pvt_count": 15,
+    "pvt_states": [
+      {
+        "fix_type": 0,
+        "fix_ok": false,
+        "used_satellites": 0
+      }
+    ],
+    "antenna_configuration": {
+      "layer": "RAM",
+      "keys": {
+        "voltage_control_enabled": {
+          "key_hex": "0x10a3002e",
+          "meaning": "CFG-HW-ANT_CFG_VOLTCTRL: active antenna voltage control enable",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        },
+        "short_detection_enabled": {
+          "key_hex": "0x10a3002f",
+          "meaning": "CFG-HW-ANT_CFG_SHORTDET: short circuit detection enable",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        },
+        "open_detection_enabled": {
+          "key_hex": "0x10a30031",
+          "meaning": "CFG-HW-ANT_CFG_OPENDET: open circuit detection enable",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        },
+        "powerdown_on_short_enabled": {
+          "key_hex": "0x10a30033",
+          "meaning": "CFG-HW-ANT_CFG_PWRDOWN: power down antenna supply on short circuit; depends on voltage control and short detection",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        },
+        "automatic_short_recovery_enabled": {
+          "key_hex": "0x10a30035",
+          "meaning": "CFG-HW-ANT_CFG_RECOVER: automatic recovery from short circuit; depends on short detection and power down",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        }
+      },
+      "complete": true,
+      "valget_ack_count_unattributed": 5,
+      "valget_nak_count_unattributed": 0,
+      "limitations": [
+        "ACK/NAK identifies class 06/id 8B, not a key; no per-key unsupported conclusion is made.",
+        "Missing response is UNKNOWN, not disabled or proof of unsupported firmware.",
+        "These are supervisor/control settings, not measurements of antenna bias voltage or current.",
+        "MON-RF DONTKNOW does not establish antenna power OFF, open circuit, or hardware failure.",
+        "Physical effect depends on board wiring; receiver Boolean settings cannot verify that wiring."
+      ],
+      "sources": [
+        "https://content.u-blox.com/sites/default/files/documents/u-blox-F9-HPG-1.51_InterfaceDescription_UBXDOC-963802114-13124.pdf",
+        "https://content.u-blox.com/sites/default/files/ZED-F9P_IntegrationManual_UBX-18010802.pdf"
+      ]
+    },
+    "receiver": {
+      "software": "EXT CORE 1.00 (9e1716)",
+      "hardware": "00190000",
+      "extensions": [
+        "ROM BASE 0x118B2060",
+        "FWVER=HPG 1.51",
+        "PROTVER=27.50",
+        "MOD=ZED-F9P",
+        "GPS;GLO;GAL;BDS",
+        "SBAS;QZSS"
+      ]
+    }
+  },
+  "interpretation": [
+    "Placement-dependent reception is supported: tracking seen at the window was absent in all 14 subsequent indoor signal reports, while the same PC/cable received valid packets.",
+    "The two positive indoor observations were GPS14 at 12 and 7 dBHz, quality3 (detected but unusable), not tracking or a position fix.",
+    "Neither location produced a position fix. Dashboard used-satellite count zero must not be interpreted as zero detected or tracked signal entries.",
+    "This does not prove indoor attenuation is the only issue or identify any Jetson power/cable defect.",
+    "Observed C/N0 ranges concern different reported satellites; they are not a measured same-satellite attenuation ratio.",
+    "Antenna model, bias supply and connector path remain unverified; disabled supervisor settings do not measure antenna power."
+  ],
+  "evidence_sha256": {
+    "gps-windows-observation-002.json": "646759844a3d5e9a68702d848e7d8eee2cef27ecf20d1b83a1628710207f6969",
+    "gps-windows-observation-003.json": "1925a964c5a91a0d8f00e1f9c7bc3e7616fd32cb3099be28b14576e14b9b2ba2"
+  },
+  "next_steps": [
+    "Verify a position fix with antenna sky visibility; current indoor/window observations are incomplete for navigation.",
+    "Identify antenna model, supported GNSS bands and bias voltage before changing hardware/configuration.",
+    "For host/cable comparison, keep antenna placement and orientation fixed and record acquisition history."
+  ],
+  "reference": "https://content.u-blox.com/sites/default/files/documents/u-blox-F9-HPG-1.51_InterfaceDescription_UBXDOC-963802114-13124.pdf"
+}
