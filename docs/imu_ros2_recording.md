@@ -151,9 +151,11 @@ IMU 기록 옵션은 UI와 recorder API 모두 기본 `true`이다. 명시적으
 
 ### LiDAR source timing 보존
 
-회전 중 2D LiDAR 한 sweep을 순간 촬영으로 취급하면 첫 ray와 마지막 ray가 서로 다른 body yaw에서 관측되어 벽이 두꺼워질 수 있다. recorder는 각 LiDAR timeline frame에 ROS header stamp와 함께 `scan_time_s`, `time_increment_s`, `angle_min_rad`, `angle_increment_rad`, `point_time_direction`을 저장한다. 현재 Jetson의 SLAMTEC full-scan 설정은 publish 배열이 물리 획득 순서와 반대이므로 `point_time_direction=-1.0`을 명시한다.
+회전 중 2D LiDAR 한 sweep을 순간 촬영으로 취급하면 관측이 왜곡된다. recorder는 ROS header와 `scan_time_s`, `time_increment_s`, `angle_min_rad`, `angle_increment_rad`, 기존 `point_time_direction=-1.0`을 보존한다. 마지막 값은 발행 배열 방향에 관한 과거 가정이며 광선별 실제 획득 시각의 검증값이 아니다.
 
-Occupancy renderer는 이 정보와 IMU source stamp를 사용해 ray를 scan 중앙 시각으로 회전 deskew한다. 기존 archive에는 scan duration이 없어 실제 Jetson에서 측정한 약 0.0977초를 fallback으로 사용한다. 이 처리는 yaw 회전 왜곡만 줄이며 scan 중 translation이나 LiDAR·IMU hardware clock offset을 해결하지는 않는다.
+2026-09-30 읽기 전용 확인에서 실제 `sllidar_node`는 `angle_compensate=true`, `inverted=false`, `DenseBoost`다. 컨테이너 소스 `34300099fadfc772965962dec837bf436706188f`는 거리값을 각도 칸에 재배치/복제하고, `grabScanDataHq` 호출 전후의 호스트 시각으로 header와 duration을 만든다. 따라서 보관 배열의3,240칸은 서로 독립적인 원시 광선3,240개의 정확한 시간열을 뜻하지 않는다. 해당 소스와 실행 바이너리의 빌드 동일성은 별도 검증 대상이다.
+
+현재 대시보드의 카메라는 표시·기록 전용이며 실제 대시보드에는 SIM occupancy 처리를 배포하지 않았다. 과거 renderer의 고정 duration fallback이나 yaw-only deskew는 encoderless 주행의 검증 근거가 아니다. 새 입력 검사에서는 원본 시각을 보존하되 rolling scan을 순간 스캔으로 수용하지 않는다. 드라이버의 획득 순서·시각 지연, IMU 장착, 회전·이동 보정을 검증하기 전에는 자동으로 deskew를 켜지 않는다.
 
 ## Dashboard 표시
 
@@ -171,10 +173,10 @@ WebSocket은 Dashboard 세션 cookie가 없으면 거부된다. bridge가 꺼졌
 현재 산출물은 재처리 입력으로 사용할 수 있지만 `mapping_ready=false`이다. 지도 융합 전에 다음을 완료해야 한다.
 
 1. IMU 축 방향과 `base_link` 사이의 고정 extrinsic을 독립적으로 측정하고 TF로 고정한다.
-2. wheel odometry, LiDAR, camera, IMU의 timestamp offset과 drift를 측정한다.
+2. LiDAR·IMU의 timestamp offset과 drift 및 광선별 획득 시간을 측정한다. 실제 차량에는 wheel encoder가 없다.
 3. 자기장 hard/soft-iron 보정과 과수원 환경의 자기 간섭을 평가한다.
 4. bias random walk와 noise density를 Allan variance 등으로 추정해 필터 공분산을 설정한다.
-5. `robot_localization` 또는 동등한 상태 추정기에서 IMU+wheel odometry를 융합하고, bag replay와 ground truth로 yaw drift를 검증한다.
+5. wheel/요청PWM를 측정값으로 쓰지 않는 LiDAR+IMU 위치 추정을 구현하고, bag replay와 독립 ground truth로 이동·yaw drift를 검증한다. IMU 공분산 표기 수정만으로 주행 준비가 완료되지는 않는다.
 6. 추정 pose로 LaserScan을 시간 보상한 뒤 log-odds Occupancy Grid를 갱신한다.
 
 검증되지 않은 BNO085 sensor-native 축이나 시작 보정만으로 지도를 회전시키지 않는다. raw와 calibration provenance를 보존한 이유는 외부보정이 확정된 뒤 같은 archive를 재처리할 수 있게 하기 위해서다.
