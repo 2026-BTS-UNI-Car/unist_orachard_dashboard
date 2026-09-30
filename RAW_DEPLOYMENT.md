@@ -1,5 +1,14 @@
 # Raw dashboard deployment checkpoint
 
+2026-09-30 KST source checkpoint: the IMU availability/covariance and quaternion
+corrections are validated but **not yet deployed**. All 154 unique local Iron
+tests passed (152 in the main run, two opt-in integrations separately), with
+63 focused actual/SIM Jazzy checks. [Validation details](docs/imu_contract_validation.json).
+The real driver still publishes leading `-1` covariance, confirmed read-only.
+Its subscribers are the preview bridge and recorder; no motion consumer was
+observed. A scoped driver/recorder release, backup and ARM validation are being
+prepared. The deployed application remains the motor-recording revision below.
+
 2026-09-29 KST: motor pin/PWM recording deployed to the real Jetson.
 
 - Application revision: `8fe7cd6ef37aa1d5fef8bc4b4f582d7e21b80c33`.

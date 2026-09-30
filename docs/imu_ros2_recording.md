@@ -46,7 +46,7 @@ flowchart LR
 
 BNO085가 report enable 직후 내보내는 일시적인 zero quaternion은 warm-up 표본으로 폐기하되 I2C 세션은 유지한다. 이 표본 때문에 장치를 재연결하면 매 연결의 첫 zero quaternion에서 다시 끊기는 루프가 생길 수 있기 때문이다.
 
-센서가 제공하지 않는 공분산은 만들어내지 않는다. 원본 `Imu`의 각 covariance 첫 원소는 `-1`, `MagneticField`는 0 행렬로 두어 각각 메시지 규약의 unknown 표현을 따른다. 시작 보정 스트림의 gyro·acceleration 분산은 정지 창에서 측정한 뒤 보정 출력과 동일한 `imu_link_recording_start` 차체 좌표계로 회전한다. 절대 자세 불확실성은 검증 전이므로 orientation covariance는 unknown이다.
+센서가 제공하지 않는 공분산은 만들어내지 않는다. 값이 존재하지만 공분산을 모르는 `Imu` 측정은 covariance를 0 행렬로 둔다. 첫 원소 `-1`은 unknown이 아니라 해당 측정값이 없으므로 소비자가 무시해야 한다는 뜻이다. 이전 발행 코드의 잘못된 `-1` 표기를 수정했지만 기존 기록을 소급 변경하지 않는다. `MagneticField`의 공분산도 0 행렬이다. 시작 보정 스트림의 gyro·acceleration 분산은 정지 창에서 측정한 뒤 보정 출력과 동일한 `imu_link_recording_start` 차체 좌표계로 회전한다. 절대 자세 불확실성은 검증 전이므로 orientation covariance는 0 행렬이며, 필터에 넣으려면 별도로 검증한 잡음 모델이 필요하다. 정상적인 180도 자세의 quaternion `w=0`은 보존하고, 누락·비유한·단위 길이가 아닌 보정 quaternion은 발행하지 않는다.
 
 ## 녹화 시작 보정
 

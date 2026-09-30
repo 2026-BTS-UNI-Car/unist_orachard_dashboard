@@ -20,7 +20,7 @@ from typing import Any, Iterable
 
 
 DRIVER_SCHEMA = "orchard.imu_driver_status.v1"
-DRIVER_REVISION = "bno085_i2c_ros2_raw_warmup_safe_v2"
+DRIVER_REVISION = "bno085_i2c_ros2_raw_covariance_unknown_v3"
 
 
 class TransientSensorSample(ValueError):
@@ -39,6 +39,8 @@ def normalized_quaternion(values: Iterable[Any]) -> tuple[float, float, float, f
     if len(result) != 4 or not all(math.isfinite(value) for value in result):
         raise TransientSensorSample("BNO085 returned an invalid quaternion")
     norm = math.sqrt(sum(value * value for value in result))
+    if not math.isfinite(norm):
+        raise TransientSensorSample("BNO085 quaternion norm overflowed")
     if norm < 1e-9:
         raise TransientSensorSample("BNO085 rotation vector is warming up (zero quaternion)")
     normalized = tuple(value / norm for value in result)
@@ -168,11 +170,12 @@ def main() -> int:
                 imu.linear_acceleration.x = acceleration["x"]
                 imu.linear_acceleration.y = acceleration["y"]
                 imu.linear_acceleration.z = acceleration["z"]
-                # Datasheet/library covariance is not provided.  ROS uses a
-                # leading -1 to mean unknown; inventing certainty is unsafe.
-                imu.orientation_covariance[0] = -1.0
-                imu.angular_velocity_covariance[0] = -1.0
-                imu.linear_acceleration_covariance[0] = -1.0
+                # All three estimates above were read and validated. ROS Imu
+                # uses an all-zero matrix for unknown covariance; leading -1
+                # would tell consumers to discard the associated estimate.
+                imu.orientation_covariance = [0.0] * 9
+                imu.angular_velocity_covariance = [0.0] * 9
+                imu.linear_acceleration_covariance = [0.0] * 9
 
                 magnetic = MagneticField()
                 magnetic.header = imu.header

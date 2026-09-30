@@ -132,6 +132,21 @@ class ImuStartReferenceTests(unittest.TestCase):
         self.assertIsNone(calibrator.correct(sample((0.0, 0.0, 0.0, 0.0))))
         self.assertEqual(calibrator.status(1.0)["last_rejection_reason"], "malformed_or_non_finite")
 
+    def test_finite_quaternion_overflow_cannot_calibrate_or_correct(self):
+        calibrator = self.make_calibrator()
+        malformed = sample((1e308, 0., 0., 1e308))
+        calibrator.begin("overflow", now_monotonic=0.)
+        for index in range(8):
+            calibrator.observe(malformed, now_monotonic=index * .1)
+        self.assertFalse(calibrator.ready)
+        self.assertEqual(calibrator.status(1.)["last_rejection_reason"], "malformed_or_non_finite")
+        self.assertIsNotNone(calibrator.zero_from_sample(sample((0., 0., 0., 1.)),
+                                                        reference_id="valid", now_monotonic=1.))
+        self.assertIsNone(calibrator.correct(malformed))
+        self.assertIsNone(calibrator.zero_from_sample(malformed, reference_id="overflow",
+                                                     now_monotonic=1.1))
+        self.assertEqual(calibrator.recording_id, "valid")
+
     def test_post_start_motion_is_expressed_relative_to_start_body(self):
         calibrator = self.make_calibrator()
         reference = quaternion_from_euler(10.0, -5.0, 30.0)

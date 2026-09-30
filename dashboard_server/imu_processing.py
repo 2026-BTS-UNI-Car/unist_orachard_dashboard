@@ -36,7 +36,7 @@ def normalize_quaternion(values: Iterable[Any]) -> tuple[float, float, float, fl
     if quaternion is None:
         return None
     norm = math.sqrt(sum(value * value for value in quaternion))
-    if norm < 1e-9:
+    if not math.isfinite(norm) or norm < 1e-9:
         return None
     normalized = tuple(value / norm for value in quaternion)
     if normalized[3] < 0.0:
@@ -441,7 +441,8 @@ class StartReferenceCalibrator:
             "covariance": {
                 "angular_velocity_diagonal": dict(self.calibration["gyro_variance"]),
                 "linear_acceleration_diagonal": dict(self.calibration["accel_variance"]),
-                "orientation_diagonal": {"x": -1.0, "y": 0.0, "z": 0.0},
+                # A corrected orientation exists, but its covariance is unknown.
+                "orientation_diagonal": {"x": 0.0, "y": 0.0, "z": 0.0},
             },
             "calibration_valid": True,
             "calibration_revision": IMU_CALIBRATION_REVISION,

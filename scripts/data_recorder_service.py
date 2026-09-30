@@ -1219,6 +1219,18 @@ class RecorderNode(Node):
     def observe_imu(self, msg: Imu) -> None:
         corrected = self.state.observe_imu(msg)
         if corrected:
+            try:
+                orientation = corrected["orientation"]
+                quaternion = tuple(float(orientation[axis]) for axis in ("x", "y", "z", "w"))
+                if (not all(math.isfinite(value) for value in quaternion)
+                        or not math.isclose(math.hypot(*quaternion), 1.0, rel_tol=1e-6, abs_tol=1e-6)):
+                    raise ValueError("invalid corrected quaternion")
+            except (KeyError, TypeError, ValueError, OverflowError):
+                # An available orientation must not be invented from missing
+                # fields or a malformed estimate, even with unknown covariance.
+                log("corrected_imu_rejected", error="invalid corrected quaternion")
+                corrected = None
+        if corrected:
             output = Imu()
             output.header.stamp.sec = int(
                 (corrected.get("stamp") or {}).get("sec") or 0
@@ -1229,11 +1241,8 @@ class RecorderNode(Node):
             output.header.frame_id = str(
                 corrected.get("frame_id") or "imu_link_recording_start"
             )
-            orientation = corrected.get("orientation") or {}
-            output.orientation.x = float(orientation.get("x") or 0.0)
-            output.orientation.y = float(orientation.get("y") or 0.0)
-            output.orientation.z = float(orientation.get("z") or 0.0)
-            output.orientation.w = float(orientation.get("w") or 1.0)
+            # Zero scalar part is valid for a 180-degree rotation.
+            output.orientation.x, output.orientation.y, output.orientation.z, output.orientation.w = quaternion
             angular = corrected.get("angular_velocity") or {}
             output.angular_velocity.x = float(angular.get("x") or 0.0)
             output.angular_velocity.y = float(angular.get("y") or 0.0)
@@ -1243,7 +1252,9 @@ class RecorderNode(Node):
             output.linear_acceleration.y = float(acceleration.get("y") or 0.0)
             output.linear_acceleration.z = float(acceleration.get("z") or 0.0)
             covariance = corrected.get("covariance") or {}
-            output.orientation_covariance[0] = -1.0
+            # Orientation is populated; its uncertainty is not estimated by
+            # the stationary reference. Zero means unknown, not perfect.
+            output.orientation_covariance = [0.0] * 9
             for offset, axis in zip((0, 4, 8), ("x", "y", "z")):
                 output.angular_velocity_covariance[offset] = float(
                     (covariance.get("angular_velocity_diagonal") or {}).get(axis) or 0.0
