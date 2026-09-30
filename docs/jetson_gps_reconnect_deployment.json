@@ -51,6 +51,16 @@
   "private_evidence_sha256": {
     "gps-reconnect-prepare-inspection-003.json": "2fd2558fdf3bbe1e68ed1dd08c3d223951fc0bdb3492e2e3ea039b6a33bc81c6",
     "gps-reconnect-apply-inspection-001.json": "fd6091a601c17bb10e6c83159a9453d5f1333a6345d56d3f6a72e2f192a9a6ee",
-    "gps-reconnect-postapply-status-001.json": "3d5570305dc75d3f5dcfc202e7db440711a4d81f29ef1f4c2fe9824eb9fbfce1"
+    "gps-reconnect-postapply-status-001.json": "3d5570305dc75d3f5dcfc202e7db440711a4d81f29ef1f4c2fe9824eb9fbfce1",
+    "gps-reconnect-default-tag-001.json": "b4a7e98f7224b5c2a0b02dfd68fb2e6d053d7a5af85d541f3fe2edb20ac0bb3d"
+  },
+  "default_image_tag": {
+    "default_tag": "unist-orachard-ros2-gps-driver:latest",
+    "image": "sha256:344dcea67d941cc82262d752898b5073f611969803137d65da2332e2111d835d",
+    "backup_tag": "unist-orachard-ros2-gps-driver:pre-reconnect-3c1c102",
+    "old_image": "sha256:38e9d1f10dee5db89c03fe625a942c33c9f91a6d0004cbf59727a8b0ecb26ef0",
+    "all_containers_unchanged": true,
+    "restart_performed": false,
+    "old_explicit_override_still_selects_old_image": true
   }
 }

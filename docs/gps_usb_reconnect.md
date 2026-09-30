@@ -24,3 +24,10 @@ Jetson ARM에서도 21개 검사를 모두 통과한 뒤 GPS driver 한 서비�
 `devices` 매핑은 그대로이므로 장치가 없는 상태에서 컨테이너 최초 시작,
 다른 `ttyACM` minor 번호로 재등장하는 경우까지 해결됐다고 간주하지 않습니다.
 실제 USB를 다시 뽑아 수행하는 수정 후 현장 재연결 검증도 아직 하지 않았습니다.
+
+운영 이미지 태그도 새 GPS 이미지로 맞췄습니다. `unist-orachard-ros2-gps-driver:latest`는
+검증된 `344dcea67d94`를 가리키며, 이전 이미지는 `:pre-reconnect-3c1c102`에 보존합니다.
+이 태그 정리에서는 컨테이너를 재시작하지 않았습니다. 과거 USB 배포의 `image.json`을
+명시하면 옛 digest를 강제하므로, 운영 시 현재 Compose 파일 체인의 마지막
+`20260930-231251-gps-reconnect-3c1c102bfaef/candidate.json`까지 포함해야 합니다.
+과거 백업 파일은 수정하지 않았습니다.
