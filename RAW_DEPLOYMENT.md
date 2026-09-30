@@ -261,3 +261,11 @@ docker compose config --quiet
 python3 /home/unist/workspace/ubts-dashboard-releases/f4e052dd5a50ca31e9ce4f6f6f88db8fc2289fea/scripts/deploy_raw_dashboard.py prepare /home/unist/workspace/ubts-dashboard-releases/f4e052dd5a50ca31e9ce4f6f6f88db8fc2289fea
 python3 /home/unist/workspace/ubts-dashboard-releases/f4e052dd5a50ca31e9ce4f6f6f88db8fc2289fea/scripts/deploy_raw_dashboard.py apply /home/unist/workspace/ubts-dashboard-backups/20260928-172315-f4e052dd5a50
 ```
+
+## 2026-09-30 IMU 배포 준비 중단 체크포인트
+
+공분산·quaternion 수정 소스 `a615eb2`는 **실차에 적용하지 않았다**. ARM 후보 driver7개·recorder20개 검사는 통과했지만 적용 전3초 ROS probe에서 드라이버 이름이 아직 확인되지 않고 표본1개만 수신되어 준비가 중단됐다. 최초 원인 미기록 실패도 별도로 보존했다. 기존 소스·두 서비스·설정·32개 기록·다른14개 컨테이너는 후속 읽기 검사에서 보존을 확인했다.
+
+검사 도구는 최대8초 탐색 후 한 번의3초 측정 구간을 사용하도록 보강했고 Windows/Linux37개씩 통과했다. 센서 지연·자세·공분산 기준은 유지한다. 재시도는 SSH `websocket: bad handshake`로 원격 실행 전에 실패했으므로 새 도구 staging과 준비/배포가 남았다. 원격 연결이 끊긴 뒤의 현재 장치 상태를 재확인한 것은 아니다. [세부 체크포인트](docs/imu_prepare_hold.json)
+
+재개 시 원래 SSH 경로로 접속하여 최신 상태/원본 hash를 다시 검사하고 새 체크포인트에서 준비한다. 실제 적용은 IMU driver와 recorder만 대상으로 하며 recorder의 메모리상 보정 기준이 초기화될 수 있다. 모터·조종·실차 기록·강제 보정은 수행하지 않는다.

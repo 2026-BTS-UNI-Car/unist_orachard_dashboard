@@ -1,0 +1,87 @@
+{
+  "schema": "ubts.imu.prepare_hold.v1",
+  "date": "2026-09-30",
+  "source_revision": "a615eb2387f866e806ba508695da03bc6b88daa8",
+  "applied": false,
+  "hardware_verified": false,
+  "status": "PREPARATION_NOT_APPLIED_REMOTE_TUNNEL_UNAVAILABLE",
+  "attempts": [
+    {
+      "id": "001",
+      "stage": "final_preapply",
+      "result": "rejected",
+      "reason": "Exact original failed probe was not retained; later readonly probes passed"
+    },
+    {
+      "id": "002",
+      "stage": "final_preapply",
+      "result": "rejected",
+      "reason": "3s probe ended during ROS discovery: unknown raw publisher identity,1 valid sample"
+    },
+    {
+      "id": "003",
+      "stage": "SSH_before_remote_execution",
+      "result": "transport_failed",
+      "reason": "Cloudflare websocket bad handshake"
+    }
+  ],
+  "old_runtime_last_confirmed_preserved": {
+    "driver": true,
+    "recorder": true
+  },
+  "protected_baseline_last_checks": {
+    "archives_unchanged": true,
+    "settings_unchanged": true,
+    "compose_files_unchanged": true,
+    "other_containers_unchanged": true
+  },
+  "arm_candidate_tests": {
+    "driver_passed": 7,
+    "recorder_passed": 20,
+    "skipped": 0
+  },
+  "candidates": {
+    "driver": {
+      "id": "sha256:aaa97eb8f8d62acaaa5c0f61edd6d0291dd374f57514e8b2bcf2e0c3f350d7d4",
+      "architecture": "arm64",
+      "tags": [
+        "unist-orachard-driver-imu:20260930-160330-imu-a615eb2387f8"
+      ],
+      "revision": "a615eb2387f866e806ba508695da03bc6b88daa8"
+    },
+    "recorder": {
+      "id": "sha256:7b2f047844baf406d321fbbd626b6e32f9db7dd9059ef357cfe277338a412f9b",
+      "architecture": "arm64",
+      "tags": [
+        "unist-orachard-recorder-imu:20260930-160330-imu-a615eb2387f8"
+      ],
+      "revision": "a615eb2387f866e806ba508695da03bc6b88daa8"
+    }
+  },
+  "deployment_helper": {
+    "sha256": "1898668fdfae7574ea948fcb36fd02aab4d3c82d985c3ce3bfe5f8a14ba6d7da",
+    "windows_tests_passed": 37,
+    "linux_tests_passed": 37,
+    "changes": [
+      "Persist exclusive original probe and individual gate checks",
+      "Bound discovery at8s, then exactly one3s sample window;20s command timeout",
+      "Preserve original sample age, quaternion, graph, covariance and protected-runtime gates"
+    ],
+    "remote_v3_staged": false
+  },
+  "evidence_sha256": {
+    "imu-prepare-001.stderr": "00ad1ddf96ffef02f1305431b46fc653b952876f0e13e9a07ca75ceaf015be1b",
+    "imu-prepare-002.stderr": "d122e7abd2706266132a21d9943b355172dd32e92320e383d149d1b053d7c177",
+    "imu-prepare-003.stderr": "9efd0af4db047cf1cde596192721243bff1cbc5d059ec811d94f8da44a6f695d",
+    "imu-prepare-diagnosis-summary-001.json": "819b004feef808b00eb44180bd83a902e4ea49d1ab519eba265e66a06ef79a65",
+    "imu-discovery-helper-review-001.json": "6841384a6938e1f1be3f1b88a27d0b7630ab767cf570c3866ddd20e3d965b202"
+  },
+  "resume": [
+    "Reestablish the existing authenticated SSH route",
+    "Stage reviewed v3 helper under a new immutable filename; run prepare with new evidence paths",
+    "Review actual ARM candidate tests, preapply probe and protected baseline before explicit scoped apply",
+    "Only IMU driver and recorder are eligible for recreation; calibration reference will reset",
+    "Verify raw topic covariance0, finite normalized quaternions, exact source/image identities,32 archives and14 other containers",
+    "No motor command, arming, new hardware recording or forced calibration"
+  ]
+}
