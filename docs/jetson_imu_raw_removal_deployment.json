@@ -1,0 +1,234 @@
+{
+  "schema": "ubts.imu.raw_removal.deployment.v1",
+  "date": "2026-09-30",
+  "applied": true,
+  "captured_at_utc": "2026-09-30T12:18:53.992506+00:00",
+  "source_revision": "42f7e3d21e65ee7ac89a9a33e12cfd65844b3823",
+  "checkpoint_name": "20260930-211025-imu-raw-42f7e3d21e65",
+  "deployment_method": "Direct SSH with pinned source, scoped ARM64 candidate images and rollback checkpoint; no GitHub Actions.",
+  "scope": [
+    "dashboard",
+    "ros2-data-recorder",
+    "ros2-imu-bridge"
+  ],
+  "behavior": [
+    "Removed dashboard software yaw rotation, startup leveling/reference and gyro bias correction.",
+    "Native BNO085 IMU header, frame, quaternion, angular velocity, acceleration and covariance pass through the relay unchanged.",
+    "Manual zero controls are removed; retired zero API returns HTTP 410 without contacting the recorder.",
+    "New recording metadata identifies native processing; historical recordings are preserved."
+  ],
+  "checks": {
+    "discovery_ready": true,
+    "sample_window_complete": true,
+    "graph_stable_and_no_calibration_publisher": true,
+    "unique_matched_pairs": true,
+    "no_conflicting_duplicate_stamps": true,
+    "all_matched_imu_fields_identical": true,
+    "raw_time_progresses": true,
+    "raw_sensor_frame_preserved": true,
+    "samples_fresh": true,
+    "raw_covariance_unknown": true,
+    "raw_finite_unit_orientation": true,
+    "dashboard_healthy": true,
+    "imu_bridge_fresh": true,
+    "usb_gps_still_receiving": true,
+    "bridge_raw_processing": true,
+    "no_bridge_corrected_state": true,
+    "recorder_raw_processing": true,
+    "manual_zero_control_removed": true
+  },
+  "images_at_deployment": {
+    "web": "sha256:c5771633a19eda748bb8f6f7d5b9f5bce4bc4b9c7bb98fe28033e904630963d8",
+    "recorder": "sha256:25401caa35f1a591825e97d9a5b81fa9e7355462b0d2f01322ac3eb4f10a7102",
+    "imu_bridge": "sha256:e5b89181186144c5d67eddb4ffbd2ef18daa56ffc3caa029bec23f6375a143e7"
+  },
+  "helper_sha256": "70f84a9caf8fe712874b92b364e878a21310bb60a59734c20f1c01659ec24298",
+  "base_helper_sha256": "fe0039c142a643aebc62e4ee725e276fe4a4e78824a43ead71b2f1eec93e5912",
+  "exporter_sha256": "113eb87eed93040378d548a5e24867ce7aac3319f0f3345ea9b3e29684ae99fc",
+  "checkpoint_file_sha256": {
+    "manifest.json": "751450d9be9bdc760d66900c8ad9dfb22129bb7617a02115e191790b0a4329a1",
+    "baseline.json": "edcd3cee62b37d31fca76698fcb1942c9edecea5a1dfa75b577c9b42b6f5456a",
+    "prepared.json": "d3ee5d5bc5878afbcff9775bdec6841ce4e20f5bdd801b413bafdfb4115fa3e8",
+    "verification.json": "ade9329225949f40e1de0b89e8dd742b8fe7ae31d89e320393cd214feab37ce6",
+    "application-started.json": "3e3662df80becc72c7b37e15a2a0f15df783d8e313769cb62df4b1bb80218758"
+  },
+  "private_evidence_sha256": {
+    "imu-deployment-export-211025-001.json": "eda288762afa6d6dab8b73b183ce69b6832b5490911024fd63326c8cebc9931d",
+    "imu-raw-apply-211025-001.json": "0b08d8a68363df113a8b2e0ca3d6673834053fdb0ece9a3bb9bdcbd22cd02e5d"
+  },
+  "arm_tests": {
+    "web": {
+      "passed": 7,
+      "skipped": 0,
+      "elapsed_s": 0.003,
+      "log_sha256": "a473a721628e2592f104b97e5b634be3441384d477b6c3178ece90b569b38ef9"
+    },
+    "recorder": {
+      "passed": 25,
+      "skipped": 0,
+      "elapsed_s": 0.375,
+      "log_sha256": "ccf2744fc05cbbb45d0791094d4ef2e0a947e3641335b33a8b5826b23c11e38c"
+    },
+    "imu_bridge": {
+      "passed": 8,
+      "skipped": 0,
+      "elapsed_s": 0.002,
+      "log_sha256": "4232640e40ab5f72baa15831c362dbd342ae38ff2d3033f5526ad7bd8408e73a"
+    }
+  },
+  "candidate_probe_summaries": [
+    {
+      "evidence_sha256": "a2bb4d7916b0495c3ec97bcb91fcc4dffde5a5640b4d7770e808a56940056e7d",
+      "counts": {
+        "raw": 60,
+        "relay": 60
+      },
+      "matched_pairs": 59,
+      "max_age_s": 0.01015644,
+      "discovery_s": 0.933893198000078,
+      "sample_window_s": 3.0023012870001367,
+      "checks": {
+        "discovery_ready": true,
+        "sample_window_complete": true,
+        "graph_stable_and_no_calibration_publisher": true,
+        "unique_matched_pairs": true,
+        "no_conflicting_duplicate_stamps": true,
+        "all_matched_imu_fields_identical": true,
+        "raw_time_progresses": true,
+        "raw_sensor_frame_preserved": true,
+        "samples_fresh": true,
+        "raw_covariance_unknown": true,
+        "raw_finite_unit_orientation": true
+      }
+    }
+  ],
+  "preservation_at_export": {
+    "archive_count": 32,
+    "archive_file_count": 240,
+    "archive_metadata_sha256": "ebd5e20be0b1862638f93e7e10a17126af95118506500eb0aa4bb4920f8816f6",
+    "other_container_count": 13,
+    "other_identity_fields": [
+      "id",
+      "image",
+      "started_at",
+      "running",
+      "restart"
+    ],
+    "expected_other_count": 13,
+    "protected_relative_paths": [
+      ".env",
+      "dashboard_server/gps.py",
+      "runtime/camera_settings.json",
+      "scripts/gps_ros2_driver.py",
+      "scripts/imu_ros2_driver.py"
+    ]
+  },
+  "current_readonly_checks_at_export": {
+    "idle_disarmed_zero_requested_and_recorder_idle_32": true,
+    "archives_others_protected_env_settings_and_compose_stable": true,
+    "target_images_runtime_contract_and_host_running_source_hashes": true
+  },
+  "source_files": [
+    {
+      "path": "scripts/data_recorder_service.py",
+      "new_sha256": "51e668fdfff95021f542c06b883551d4f248de111c192506c3c8c940773f8982",
+      "image_roles": [
+        "recorder"
+      ],
+      "host_old_differs_from_image_roles": []
+    },
+    {
+      "path": "scripts/imu_ws_bridge.py",
+      "new_sha256": "1e07249a6626d056eeec65a6b86acf9fd927e917178d679a78b8220c1ca13da8",
+      "image_roles": [
+        "imu_bridge"
+      ],
+      "host_old_differs_from_image_roles": []
+    },
+    {
+      "path": "dashboard_server/imu_processing.py",
+      "new_sha256": "9f839a71fda222a0e201baa5b8ebb0d5fb95c38036099445ac987497c680b90a",
+      "image_roles": [
+        "imu_bridge",
+        "recorder",
+        "web"
+      ],
+      "host_old_differs_from_image_roles": [
+        "web",
+        "imu_bridge"
+      ]
+    },
+    {
+      "path": "dashboard_server/app.py",
+      "new_sha256": "3d939d4f39ef75a8d046c7deb89eee2c5c76ee2cd442672cf182140a9e5d3991",
+      "image_roles": [
+        "web"
+      ],
+      "host_old_differs_from_image_roles": []
+    },
+    {
+      "path": "dashboard_server/telemetry.py",
+      "new_sha256": "45f3b325c37c89d68b45abf4d4b06cf51ccdf7411619e258a27bfaa3f1c4c2bf",
+      "image_roles": [
+        "recorder",
+        "web"
+      ],
+      "host_old_differs_from_image_roles": []
+    },
+    {
+      "path": "static/app.js",
+      "new_sha256": "772cfe8b816583469db967a19370c9add2605c5d8e9b83663f2bda369a0fddc7",
+      "image_roles": [
+        "web"
+      ],
+      "host_old_differs_from_image_roles": []
+    },
+    {
+      "path": "static/index.html",
+      "new_sha256": "ef92e867f8390d38febcd41d3a58fac22fab5d5fe61ac59b48ba5ae46ad053ca",
+      "image_roles": [
+        "web"
+      ],
+      "host_old_differs_from_image_roles": []
+    },
+    {
+      "path": "docker-compose.yml",
+      "new_sha256": "e40693fc20043e98d4e7b0867092da97b5fc105531ada469626ecee362d9254f",
+      "image_roles": [],
+      "host_old_differs_from_image_roles": []
+    },
+    {
+      "path": "docs/imu_ros2_recording.md",
+      "new_sha256": "a56d0f74db53321736180f1b230c8e8e16e82b07ce7d922a89ec2715b903fe44",
+      "image_roles": [
+        "web"
+      ],
+      "host_old_differs_from_image_roles": []
+    },
+    {
+      "path": "docs/gps_offline_map.md",
+      "new_sha256": "29baf7f5782cbee34779b6a4d4025065a18201c368a99aef60dbd759812fd39d",
+      "image_roles": [
+        "web"
+      ],
+      "host_old_differs_from_image_roles": []
+    },
+    {
+      "path": "docs/raw_sensor_dashboard.md",
+      "new_sha256": "2c7aa9d45c8e3daafc4870398701f07b2b7b35e6481fe91e650bf619ccd8144b",
+      "image_roles": [
+        "web"
+      ],
+      "host_old_differs_from_image_roles": []
+    }
+  ],
+  "limits": [
+    "Native means no dashboard software correction; the BNO085 still supplies its own fused sensor orientation.",
+    "The physical IMU-to-vehicle mounting rotation, calibration accuracy and REP-145 body alignment remain unverified.",
+    "All-zero covariance means unknown uncertainty, not calibrated measurement accuracy.",
+    "Archive preservation compares 32 archive names and 240 file sizes/mtime, not a content hash of every payload byte.",
+    "Checks describe this deployment/export time; the subsequent camera rollout legitimately replaces the web image.",
+    "GPS reception continued but no usable position fix or RTK accuracy was established by this deployment.",
+    "No actual arming, motor actuation, new hardware recording or physical calibration was performed."
+  ]
+}

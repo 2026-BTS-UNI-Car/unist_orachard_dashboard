@@ -1,0 +1,38 @@
+{
+  "schema": "ubts.imu.recording_label.deployment.v1",
+  "date": "2026-09-30",
+  "applied": true,
+  "source_revision": "72c9444dfbbf0912866ab10158cd03a990a82342",
+  "checkpoint_name": "20260930-214340-imu-label-72c9444dfbbf",
+  "deployment_method": "Direct SSH, one scoped web image replacement with a rollback checkpoint; no GitHub Actions.",
+  "scope": ["dashboard"],
+  "source_file": "static/index.html",
+  "change": "Recording checkbox text now says native sensor values are stored instead of claiming startup stationary-pose correction.",
+  "source_sha256": "0f454d37d8d7d556cf56dce255ead76ff5e0b85800bfe608ae301701d351d0b0",
+  "previous_web_image": "sha256:450e4b7b0b3da3acc9dc0ff5727bb57159dea2de5ba06de1b89fea7c7c57345f",
+  "web_image_at_deployment": "sha256:9614273225a675be3fe9116c3bc58c0d3903c91b8f7b35ae749a7a476e5f6ed1",
+  "helper_sha256": "ace4de9c5186dbbefdb17a75d910c2752d207407c59f256efd40ef17c24dff26",
+  "base_helper_sha256": "fe0039c142a643aebc62e4ee725e276fe4a4e78824a43ead71b2f1eec93e5912",
+  "private_evidence_sha256": {
+    "imu-label-inspection-001.json": "7dd4e5ac63c119911ec9602463914ea90454d0622f4f428d2f2ae2a3345b44e3"
+  },
+  "checks": {
+    "served_html_exact": true,
+    "runtime_config_preserved": true,
+    "other_15_containers_preserved": true,
+    "archives_32_preserved": true,
+    "settings_env_compose_preserved": true,
+    "idle_disarmed_zero": true
+  },
+  "retained_deployments": [
+    "docs/jetson_imu_raw_removal_deployment.json",
+    "docs/jetson_camera_preview_deployment.json"
+  ],
+  "limits": [
+    "This label-only image supersedes the camera deployment's web image while retaining its camera/IMU implementation; the other 15 containers were preserved.",
+    "The candidate was built from the pinned previous web image with only this HTML file replaced; served HTML and source bytes matched exactly.",
+    "Archive preservation compares names, sizes and mtime, not every payload byte.",
+    "These checks are time-specific and do not add sensor accuracy, frame-rate or WAN performance claims.",
+    "No actual arming, motor command, new hardware recording or calibration was performed."
+  ]
+}

@@ -1,0 +1,202 @@
+{
+  "schema": "ubts.camera.preview.deployment.v1",
+  "date": "2026-09-30",
+  "applied": true,
+  "captured_at_utc": "2026-09-30T12:42:41.358881+00:00",
+  "source_revision": "47bdb5bbafd7c8535d532b34738eea20efff9202",
+  "checkpoint_name": "20260930-211617-camera-preview-47bdb5bbafd7",
+  "deployment_method": "Direct SSH with pinned source, scoped ARM64 candidate images and rollback checkpoint; no GitHub Actions.",
+  "scope": [
+    "dashboard",
+    "ros2-camera-bridge"
+  ],
+  "behavior": [
+    "Camera Auto starts with a readable 640x360 JPEG at quality 70; decoded feedback may raise resolution through 960x540 to 1280x720.",
+    "Delivery uses one in-flight latest frame, decoded acknowledgements and adaptive pacing; it does not build a stale frame backlog.",
+    "Auto preserves its quality floor while reducing delivery rate on slow connections; explicit lower-size user selections remain available.",
+    "The camera driver, capture/exposure settings, raw recording path and other sensor stream policies were preserved."
+  ],
+  "checks": {
+    "decoded_preview_frames": 2,
+    "raw_camera_progresses": true,
+    "served_js_hash_matches": true
+  },
+  "images_at_deployment": {
+    "web": "sha256:450e4b7b0b3da3acc9dc0ff5727bb57159dea2de5ba06de1b89fea7c7c57345f",
+    "camera_bridge": "sha256:e0d952317b1f64a446b2ee848b9b5920bdca1de678d7b84c9f0590ab88e3e6ad"
+  },
+  "helper_sha256": {
+    "deploy_camera_preview.py": "df4fe2a51322b7fb9b93c70c86dd748d924b961062a94021084135d516243ee9",
+    "deploy_imu_raw_removal_v4.py": "70f84a9caf8fe712874b92b364e878a21310bb60a59734c20f1c01659ec24298",
+    "deploy_imu_template_v4.py": "fe0039c142a643aebc62e4ee725e276fe4a4e78824a43ead71b2f1eec93e5912"
+  },
+  "exporter_sha256": "03903e1f369b534073b4034580e2ceba0d23b33ab62d9992a99b931cb040a3aa",
+  "release_archive_sha256": "340ea59573f50a7a1cdb199f3f518b674041d5364c534b9f3366d568b62cd556",
+  "checkpoint_file_sha256": {
+    "manifest.json": "e69dcd793e44e110fb8a24b056269f4253233f4d863620a36971640898b13324",
+    "baseline.json": "2c3c950a90d7d2c822d57cdfffb42c6c7171cbc3b0d84b9807dd2c04e548937f",
+    "prepared.json": "b3b3f1ae03ed3b86c2c15e0268adb7a556053abbf5f431e83499b7e7d713ab83",
+    "verification.json": "4c4d70b7bb548f2de93926c511b0553d50c50d31d447790075ffaacea718192d",
+    "application-started.json": "6fa2832aeba97bf35b9d6599ded2e07bee41d0e9db2ad7ca3dedc72d45e9c391"
+  },
+  "private_evidence_sha256": {
+    "camera-deployment-export-211617-001.json": "ba363aa1069e777a483f5a5cedd17889f966688e9068d400df36556bcfc6274b",
+    "release-metadata.json": "668f5a736944a2c5a7d14d66fc2e7840291cd4c38358a77cdb38e59cfd861625",
+    "post-imu-snapshot-001.json": "69901d394f58a6152f5c6169095eac3344c2e9dcdbd2b41ffefea0fe1be12440",
+    "prepare-inspection-002.json": "d3b718f7c2a2bb255279c2d87f07d16d87d15c80dfbc0a6366ea9a8b6383df72",
+    "apply-inspection-001.json": "b0990130890ae463754d0452c2c7442cf13efff8bc08f770d60bc894790a6c68"
+  },
+  "arm_tests": {
+    "web": {
+      "passed": 1,
+      "skipped": 0,
+      "elapsed_s": 0.002,
+      "log_sha256": "4cb83561928adda2e3bef8d405c2670df5af8247f3d7ab36541db5a32a9d9ca3"
+    },
+    "camera_bridge": {
+      "passed": 19,
+      "skipped": 0,
+      "elapsed_s": 13.585,
+      "log_sha256": "191badbb13a39339664538783f1cf1fda1f3cd3dbe339bbc95665d2482496871"
+    }
+  },
+  "candidate_probe_summaries": [
+    {
+      "evidence_sha256": "973ed1d3db5134e6c2d4474b90856698bfe0fff24dda009d8f4ad87285b41eb8",
+      "decoded_frame_count": 2,
+      "frames": [
+        {
+          "width": 640,
+          "height": 360,
+          "preview_quality": 70,
+          "camera_policy": "readability_first_v1",
+          "flow": "decode-ack",
+          "ack_deadline_s": 8.0,
+          "jpeg_sha256": "f99f22dbf8be627c262510afffbb170cdbc847a843b01279392a4a5b0a1cc36a"
+        },
+        {
+          "width": 640,
+          "height": 360,
+          "preview_quality": 70,
+          "camera_policy": "readability_first_v1",
+          "flow": "decode-ack",
+          "ack_deadline_s": 8.0,
+          "jpeg_sha256": "b05674681ba16ec6b1dca778d3fd36b7c6b417397040c83416d9bf2ebef3ad21"
+        }
+      ]
+    }
+  ],
+  "preservation_at_export": {
+    "archive_count": 32,
+    "archive_file_count": 240,
+    "archive_metadata_sha256": "ebd5e20be0b1862638f93e7e10a17126af95118506500eb0aa4bb4920f8816f6",
+    "other_container_count": 14,
+    "expected_other_count": 14,
+    "other_comparison": "identity and full normalized runtime configuration",
+    "protected_relative_paths": [
+      ".env",
+      "dashboard_server/rover_api.py",
+      "docker-compose.yml",
+      "scripts/camera_ros2_driver.py",
+      "scripts/data_recorder_service.py",
+      "scripts/esp_motor.py",
+      "scripts/gps_ros2_driver.py",
+      "scripts/imu_ros2_driver.py",
+      "scripts/imu_ws_bridge.py",
+      "scripts/lidar_ws_bridge.py",
+      "scripts/rover_control_bridge.py",
+      "scripts/rover_control_core.py",
+      "scripts/stream_policy.py"
+    ]
+  },
+  "current_readonly_checks_at_export": {
+    "idle_disarmed_zero_requested_and_recorder_idle_32": true,
+    "archives_others_protected_env_settings_and_compose_stable": true,
+    "target_images_runtime_contract_and_host_running_source_hashes": true,
+    "raw_camera_contract_unchanged_and_progressing_bridge_fresh": true
+  },
+  "source_files": [
+    {
+      "path": "static/app.js",
+      "new_sha256": "9347b1329de66581a967d803f7ee9b3eadbaf315a20f1dfddc5b9118b0a6318e",
+      "image_roles": [
+        "web"
+      ]
+    },
+    {
+      "path": "scripts/camera_ws_bridge.py",
+      "new_sha256": "bc84214138dec3514b6f586fb4af9ba3528445e5c385e10d6cfd7c5b9947914b",
+      "image_roles": [
+        "camera_bridge"
+      ]
+    },
+    {
+      "path": "scripts/camera_stream_policy.py",
+      "new_sha256": "ca0e0cc0bc7532e6009fc9d63f48309741565af83359c46b14e9fd9c5f3fc6a8",
+      "image_roles": [
+        "camera_bridge"
+      ]
+    },
+    {
+      "path": "docs/stream_latency.md",
+      "new_sha256": "6e8f76038bd0aa59d106e6a52a9d41e748356cf65aa3d28b4bd70ed8820c6014",
+      "image_roles": [
+        "web"
+      ]
+    }
+  ],
+  "validation_context": {
+    "pre_deployment_source_validation": "docs/camera_preview_validation.json",
+    "local_tcp_shaper_mbps": 0.125,
+    "arm_shaper_observation": {
+      "jpeg_bytes": 83548,
+      "width": 640,
+      "quality": 70,
+      "decoded_ack_ms": 5658.97,
+      "first_frame": 2,
+      "next_frame": 195,
+      "note": "Local synthetic TCP pacing during the 19 ARM candidate tests, not an Internet performance result."
+    }
+  },
+  "limits": [
+    "The deployment probe decoded two frames over authenticated localhost WebSocket; it does not establish browser/WAN latency or a 30 FPS guarantee.",
+    "Camera capture remained configured for 1920x1080 at 30 FPS; configured FPS is not observed cadence.",
+    "A separate nine-second read-only observation measured the source at approximately 15 FPS; the preview cannot exceed the source cadence.",
+    "JPEG readability, frame rate and delay still depend on available bandwidth and image detail; the eight-second acknowledgement deadline can close extremely slow viewers.",
+    "Archive preservation compares names, sizes and mtime, not a content hash of every payload byte.",
+    "Checks describe this deployment/export time; later scoped dashboard updates may replace the web image.",
+    "No actual arming, motor actuation, sensor-device reopening, new hardware recording or calibration was performed."
+  ],
+  "post_deployment_transport_observation": {
+    "evidence_sha256": "72e6c801b49e1f36b397faf0a6539abd1980e1d8330b5147102f9060b2410eb2",
+    "duration_requested_s": 9,
+    "source_camera_cadence": {
+      "samples": 136,
+      "unique": 136,
+      "duplicates": 0,
+      "regressions": 0,
+      "hz": 15.034091691143297,
+      "median_gap_s": 0.06668210029602051,
+      "max_gap_s": 0.07158899307250977
+    },
+    "camera_websocket_cadence": {
+      "samples": 136,
+      "unique": 136,
+      "duplicates": 0,
+      "regressions": 0,
+      "hz": 15.033757738400288,
+      "median_gap_s": 0.0674820140002339,
+      "max_gap_s": 0.09679435999987618
+    },
+    "camera_websocket_checks": {
+      "received_multiple": true,
+      "clean_close": true,
+      "no_errors": true,
+      "source_progress": true,
+      "fresh_at_receipt": true
+    },
+    "observation": "Authenticated localhost dashboard proxy, separate from browser/WAN validation.",
+    "overall_audit_passed": false,
+    "unresolved_audit_item": "Device ownership inventory could not establish exclusivity; transport success is not an exclusivity claim."
+  }
+}
