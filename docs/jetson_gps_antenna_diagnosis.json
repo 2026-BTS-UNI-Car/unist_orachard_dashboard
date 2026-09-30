@@ -1,0 +1,252 @@
+{
+  "schema": "ubts.gps.antenna_diagnosis.v1",
+  "date": "2026-09-30",
+  "post_restore_observed_at_utc": "2026-09-30T13:19:29.010574+00:00",
+  "checkpoint_name": "20260930-gps-rf-002",
+  "previous_observation": "jetson_gps_reception_diagnosis.json",
+  "result": "NO_USABLE_GNSS_SIGNAL_ANTENNA_SUPERVISION_DISABLED_PHYSICAL_BIAS_UNKNOWN",
+  "user_report": {
+    "antenna_indoors": true,
+    "outdoor_relocation_currently_unavailable": true,
+    "larger_antenna_attached": true,
+    "phone_maps_works_with_wifi_and_cellular_disabled": true,
+    "antenna_model_and_board_power_details": "Awaiting confirmation; USB-only sufficiency was asked, not confirmed.",
+    "interpretation": "Do not attribute receiver failure to indoor placement alone. Phone freshness and GNSS telemetry were not independently measured."
+  },
+  "receiver": {
+    "model": "ZED-F9P",
+    "firmware": "HPG 1.51",
+    "protocol_version": "27.50"
+  },
+  "scope": {
+    "receiver_configuration_writes": false,
+    "reset_or_firmware_change": false,
+    "temporary_gps_service_interruption": true,
+    "probe_duration_s": 16.011485732999972,
+    "duration_limit": "Probe duration is not the full service interruption duration.",
+    "motor_commands_sent": false,
+    "new_recording_started": false,
+    "operations": "Read-only MON-RF/NAV-SAT/NAV-SIG polls plus five individual RAM CFG-VALGET requests. Same GPS container restored."
+  },
+  "observations": {
+    "bytes_received": 7059,
+    "valid_ubx_counts": {
+      "06:8b": 5,
+      "05:01": 5,
+      "01:35": 4,
+      "01:43": 4,
+      "0a:38": 4
+    },
+    "rejected_ubx_frames": 0,
+    "satellite_counts": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "signal_entry_counts": [
+      0,
+      0,
+      1,
+      0
+    ],
+    "positive_cno_counts": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "transient_signal_entries": [
+      {
+        "gnss_id": 3,
+        "sv_id": 18,
+        "sig_id": 2,
+        "cno_dbhz": 0,
+        "quality": 1,
+        "flags": 0
+      }
+    ],
+    "transient_entry_interpretation": "One BeiDou search entry (quality=1, C/N0=0); not signal acquisition, tracking lock or a position fix.",
+    "antenna_configuration": {
+      "layer": "RAM",
+      "keys": {
+        "voltage_control_enabled": {
+          "key_hex": "0x10a3002e",
+          "meaning": "CFG-HW-ANT_CFG_VOLTCTRL: active antenna voltage control enable",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        },
+        "short_detection_enabled": {
+          "key_hex": "0x10a3002f",
+          "meaning": "CFG-HW-ANT_CFG_SHORTDET: short circuit detection enable",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        },
+        "open_detection_enabled": {
+          "key_hex": "0x10a30031",
+          "meaning": "CFG-HW-ANT_CFG_OPENDET: open circuit detection enable",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        },
+        "powerdown_on_short_enabled": {
+          "key_hex": "0x10a30033",
+          "meaning": "CFG-HW-ANT_CFG_PWRDOWN: power down antenna supply on short circuit; depends on voltage control and short detection",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        },
+        "automatic_short_recovery_enabled": {
+          "key_hex": "0x10a30035",
+          "meaning": "CFG-HW-ANT_CFG_RECOVER: automatic recovery from short circuit; depends on short detection and power down",
+          "status": "observed",
+          "value": false,
+          "response_count": 1
+        }
+      },
+      "complete": true,
+      "valget_ack_count_unattributed": 5,
+      "valget_nak_count_unattributed": 0,
+      "limitations": [
+        "ACK/NAK identifies class 06/id 8B, not a key; no per-key unsupported conclusion is made.",
+        "Missing response is UNKNOWN, not disabled or proof of unsupported firmware.",
+        "These are supervisor/control settings, not measurements of antenna bias voltage or current.",
+        "MON-RF DONTKNOW does not establish antenna power OFF, open circuit, or hardware failure.",
+        "Physical effect depends on board wiring; receiver Boolean settings cannot verify that wiring."
+      ],
+      "sources": [
+        "https://content.u-blox.com/sites/default/files/documents/u-blox-F9-HPG-1.51_InterfaceDescription_UBXDOC-963802114-13124.pdf",
+        "https://content.u-blox.com/sites/default/files/ZED-F9P_IntegrationManual_UBX-18010802.pdf"
+      ]
+    },
+    "rf_samples": [
+      [
+        {
+          "block_id": 0,
+          "flags": 0,
+          "antenna_status": 1,
+          "antenna_power": 2,
+          "noise_per_ms": 81,
+          "agc_count": 6669,
+          "cw_suppression": 24
+        },
+        {
+          "block_id": 1,
+          "flags": 0,
+          "antenna_status": 1,
+          "antenna_power": 2,
+          "noise_per_ms": 45,
+          "agc_count": 6669,
+          "cw_suppression": 10
+        }
+      ],
+      [
+        {
+          "block_id": 0,
+          "flags": 0,
+          "antenna_status": 1,
+          "antenna_power": 2,
+          "noise_per_ms": 80,
+          "agc_count": 6669,
+          "cw_suppression": 23
+        },
+        {
+          "block_id": 1,
+          "flags": 0,
+          "antenna_status": 1,
+          "antenna_power": 2,
+          "noise_per_ms": 45,
+          "agc_count": 6669,
+          "cw_suppression": 8
+        }
+      ],
+      [
+        {
+          "block_id": 0,
+          "flags": 0,
+          "antenna_status": 1,
+          "antenna_power": 2,
+          "noise_per_ms": 80,
+          "agc_count": 6669,
+          "cw_suppression": 20
+        },
+        {
+          "block_id": 1,
+          "flags": 0,
+          "antenna_status": 1,
+          "antenna_power": 2,
+          "noise_per_ms": 45,
+          "agc_count": 6669,
+          "cw_suppression": 9
+        }
+      ],
+      [
+        {
+          "block_id": 0,
+          "flags": 0,
+          "antenna_status": 1,
+          "antenna_power": 2,
+          "noise_per_ms": 80,
+          "agc_count": 6669,
+          "cw_suppression": 23
+        },
+        {
+          "block_id": 1,
+          "flags": 0,
+          "antenna_status": 1,
+          "antenna_power": 2,
+          "noise_per_ms": 45,
+          "agc_count": 6669,
+          "cw_suppression": 9
+        }
+      ]
+    ],
+    "rf_interpretation": "All antenna status=1 and power=2 mean DONTKNOW. Control/supervision disabled does not establish physical bias OFF, open cable, short or hardware failure."
+  },
+  "restoration": {
+    "restored": true,
+    "checks": {
+      "same_driver_id_image_config": true,
+      "driver_running": true,
+      "other_15_containers_unchanged": true,
+      "archives_32_preserved": true,
+      "protected_sources_settings_unchanged": true,
+      "gps_receiving_after_restore": true,
+      "idle_disarmed_zero_recorder_idle": true
+    },
+    "post_restore": {
+      "connected": true,
+      "valid": false,
+      "state": "no_fix",
+      "satellites": 0,
+      "age_s": 1.373
+    },
+    "archive_preservation_scope": "32 archives: names, sizes and mtime preserved; not full payload hashes."
+  },
+  "validation": {
+    "local_protocol_unittests_passed": 39,
+    "failed": 0,
+    "hardware_probe_exit_code": 0
+  },
+  "source_sha256": {
+    "gps_rf_probe_002.py": "a05fad64c44c2a44fd7c09419f6c28cee3ebbf4f60236324251bf10b0be67a42",
+    "gps_rf_session_002.py": "1c305f5b3b29a3780d35cc01f5a15d4f0c59cf4cb33daf89fbbc64317e485502",
+    "test_gps_rf_probe_002.py": "3e619409c4cf1f1f81a26f4d08ba5d7098991ae7f518268cded1e9e6ec2db34e"
+  },
+  "private_evidence_sha256": {
+    "gps-rf-inspection-002.json": "0ba1e72fc8a1e4fb69eb04b97851eac2385c82c2ca181264074359aaa50c1c4f"
+  },
+  "next_checks": [
+    "Identify the attached antenna model, GNSS bands, active/passive design and DC requirement.",
+    "Match the actual PCB revision, RF connector path and antenna bias feed to board documentation; USB communication alone does not verify antenna supply.",
+    "If documentation is insufficient, antenna bias and connector continuity require an appropriate physical check. Do not enable control pins blindly.",
+    "Outdoor validation remains pending, but indoor placement is not established as the sole cause."
+  ],
+  "references": [
+    "https://content.u-blox.com/sites/default/files/documents/u-blox-F9-HPG-1.51_InterfaceDescription_UBXDOC-963802114-13124.pdf",
+    "https://content.u-blox.com/sites/default/files/ZED-F9P_IntegrationManual_UBX-18010802.pdf",
+    "https://www.devicemart.co.kr/goods/view?no=15887632"
+  ]
+}

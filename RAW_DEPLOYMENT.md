@@ -12,11 +12,32 @@ image is `96142732`, camera bridge `e0d95231`, IMU bridge `e5b89181`, recorder
 - [Camera preview deployment](docs/jetson_camera_preview_deployment.json)
 - [Recording label follow-up](docs/jetson_imu_recording_label_deployment.json)
 - [Four-sensor observation and ownership limitations](docs/jetson_four_sensor_observation.json)
-- [GPS RF/satellite diagnosis](docs/jetson_gps_reception_diagnosis.json)
+- [Initial GPS RF/satellite diagnosis](docs/jetson_gps_reception_diagnosis.json)
+- [GPS antenna-supervisor follow-up](docs/jetson_gps_antenna_diagnosis.json)
+- [Subsequent Windows USB reception](docs/windows_gps_reception_diagnosis.json)
 
-GPS USB reception works; indoor observations still report no position fix and
-no satellite/signal entries. GNSS enable values were verified, without receiver
-configuration writes. Outdoor antenna validation remains pending. Camera source
+GPS USB reception worked on Jetson; diagnosis002 received 7,059 bytes without rejected UBX
+frames. Its four satellite lists were empty; one signal list contained a BeiDou
+search entry with C/N0=0, not an acquired signal or position fix. Five individually
+queried RAM antenna-control/supervision values were false. This does not prove
+physical antenna power OFF; MON-RF status/power remained DONTKNOW. The user reports
+phone maps working with Wi-Fi and cellular disabled. Indoor placement alone is
+not established as the cause. Board USB5V support does not verify the antenna
+bias feed. Receiver settings were unchanged; the same GPS service was restored
+with seven checks passing, 15 other containers unchanged and 32 archive metadata
+inventories preserved.
+
+The receiver was subsequently moved to Windows COM3 for two bounded observations
+of 60.055s and 120.016s: 2,745 valid packets in total, zero rejected. The final
+report had GPS8/GPS27/GLONASS18 at C/N0 30/29/27dBHz and quality7, but all 45
+independent NAV-PVT samples still reported no fix and zero used satellites.
+Reported signal entries are not the used-satellite count. The user confirmed
+keeping the same antenna, moving both the GPS board and external antenna toward
+a window and changing C-to-A to C-to-C;
+host, placement, cable and elapsed acquisition time are confounded. Both reads
+closed the port and made no receiver configuration writes. A placement-controlled
+host/cable comparison, outdoor position fix and RTK validation remain pending.
+These are observation checkpoints, not a new Jetson deployment. Camera source
 cadence was about15Hz despite30FPS capture settings; sustained30FPS/WAN performance
 is not established. Actual motion, new recordings and physical calibration were
 not performed; the32 existing archives were preserved.
