@@ -1,13 +1,35 @@
 # Raw dashboard deployment checkpoint
 
-## Latest verified state: 2026-10-01 KST
+## Latest verified web state: 2026-10-01 KST
+
+Source `aef37013607a306a2d7b5f0588c1fba5d1eff09e` now runs in web image
+`a993984b`. This changes only `static/app.js`: the Data Recorder detail row
+shares the primary recorder freshness gate, and the existing one-second local
+UI timer expires both displays when network responses stop. Five actual and
+seven SIM Node suites passed; the native ARM candidate passed four recorder
+API freshness tests. Exact served bytes and all ten post-apply checks passed.
+All 15 other containers, including GPS, settings/Compose inputs and 32 archive
+metadata inventories were preserved. The recorder remains idle with fresh API status.
+[Web-only deployment evidence](docs/jetson_recorder_ui_freshness_deployment.json).
+
+Recovery checkpoint: `20261001-022818-recorder-ui-aef37013607a`, release
+`recorder-ui-aef3701-001`, pinned helper `deploy_recorder_ui_001.py rollback`
+with the checkpoint path and
+`--digest cc6483c752e9d8f5b7c71ab2e41c1400b694b7c015f3fe91c53c6e93f0ec724e`.
+Its owned rollback restores only the prior web image/source/default tag; all
+idle/ownership/config guards stay enabled. The default web tag selects the new
+image, and the previous target `7f5ea0aa` has a backup tag. No rollback was needed.
+This checks served code/API state, not a new browser-render or physical recording
+test. Browser timer scheduling remains subject to event-loop/background throttling.
+
+## Prior GPS and recorder API deployment: 2026-10-01 KST
 
 Direct SSH deployment of source `9e5ffd056e486be149c488ac1a939216ee405f3c`
 updated only GPS driver, GPS bridge and web: images `9738ed34`, `b79baa57`
 and `7f5ea0aa`. 39 scoped native ARM tests passed before application; the separate
 source validation has 44 Linux tests. Exact served assets, fresh recorder API
 status, advancing original NAV-SAT/NAV-SIG epochs and all 11 post-apply checks
-passed. The current GPS observation remains `no_fix`, 0 satellites used and fresh
+passed. The GPS observation at that deployment was `no_fix`, 0 satellites used and fresh
 empty satellite/signal lists. Other 13 containers, settings/Compose inputs and 32
 archive metadata inventories were preserved. Recorder, motors and receiver
 configuration were not changed. [Full deployment evidence](docs/jetson_gps_reception_recording_deployment.json).

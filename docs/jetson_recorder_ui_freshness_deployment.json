@@ -1,0 +1,122 @@
+{
+  "schema": "ubts.jetson_recorder_ui_freshness_deployment.v1",
+  "applied": true,
+  "verified_at_utc": "2026-09-30T17:30:56.163750+00:00",
+  "source_revision": "aef37013607a306a2d7b5f0588c1fba5d1eff09e",
+  "scope": {
+    "changed_services": [
+      "dashboard"
+    ],
+    "runtime_source_paths": [
+      "static/app.js"
+    ],
+    "gps_services_restarted": false,
+    "recorder_restarted": false,
+    "motor_commands_sent": false,
+    "recording_started": false,
+    "receiver_configuration_writes": false
+  },
+  "behavior": [
+    "Primary recorder controls and secondary Data Recorder row use the same status.ok, boolean active and inclusive5s original-request age gate.",
+    "The existing1s local UI timer expires both views independently of telemetry/network progress.",
+    "No fallback from missing or stale ordered recorder status to generic telemetry or last_known event snapshots.",
+    "SIM mode/controller labels remain in the separately patched SIM source; this artifact proves the Jetson web deployment only."
+  ],
+  "old_web_image": "sha256:7f5ea0aa5f472b11284351f1795d1b13b56afbc077add7eae25bd9319af5598a",
+  "current_web": {
+    "id": "f56c01f4b14d50ab849274b053c2bd7f4309d5f1c9515325377bc01506965921",
+    "image": "sha256:a993984bcfe9f3289ddb9a16271af33dee6739ce4beef12cf38c8554b95f84e2",
+    "running": true,
+    "started_at": "2026-09-30T17:29:46.122085526Z",
+    "restart_count": 0,
+    "runtime_source_sha256": {
+      "static/app.js": "57a014fa095e53966504f59ea248a85c42ca520e201c418ed9a0fc4a29dc46ba"
+    }
+  },
+  "served_asset_sha256": {
+    "static/app.js": "57a014fa095e53966504f59ea248a85c42ca520e201c418ed9a0fc4a29dc46ba"
+  },
+  "tests": {
+    "local_node_actual_suites": 5,
+    "local_node_sim_suites": 7,
+    "recording_ui_each": "11 lifecycle/freshness/race/slow-link cases plus8 detail-row/timer freshness cases",
+    "offline_helper_tests": 15,
+    "native_arm_candidate": {
+      "passed": 4,
+      "skipped": 0,
+      "elapsed_test_s": 0.01,
+      "scope": "Existing recorder HTTP freshness Python tests; exact candidate app.js hash also checked. Node was not run in the ARM image."
+    }
+  },
+  "recording_api": {
+    "ok": true,
+    "active": false,
+    "status_fresh": true,
+    "status_source": "recorder_api",
+    "archive_count": 32
+  },
+  "verification": {
+    "exact_candidate_images_and_runtime_contracts": true,
+    "host_and_live_source_hash_metadata_exact": true,
+    "served_assets_exact": true,
+    "live_recording_API_fresh": true,
+    "web_default_tag_persisted": true,
+    "original_default_tag_backups_verified": true,
+    "other_15_containers_preserved": true,
+    "archives_32_metadata_preserved": true,
+    "settings_env_compose_protected_sources_preserved": true,
+    "idle_disarmed_zero_and_recorder_idle": true
+  },
+  "default_tag_persistence": {
+    "current": "sha256:a993984bcfe9f3289ddb9a16271af33dee6739ce4beef12cf38c8554b95f84e2",
+    "backup": {
+      "tag": "ubts-rollback/recorder-ui-default-web:20261001-022818-recorder-ui-aef37013607a",
+      "image": "sha256:7f5ea0aa5f472b11284351f1795d1b13b56afbc077add7eae25bd9319af5598a"
+    }
+  },
+  "recovery": {
+    "checkpoint": "20261001-022818-recorder-ui-aef37013607a",
+    "release": "recorder-ui-aef3701-001",
+    "helper": "deploy_recorder_ui_001.py",
+    "helper_sha256": "bc9f6cad9eafa52205ae8c78205f59605ad6b32f3a5e8860ef5ca20819fe0d07",
+    "prepared_sha256": "cc6483c752e9d8f5b7c71ab2e41c1400b694b7c015f3fe91c53c6e93f0ec724e",
+    "phase": "rollback",
+    "instruction": "Use the pinned helper with the exact checkpoint path and --digest; ownership, idle, source and Compose guards must remain intact. Restores only its web image/source/default tag.",
+    "rollback_executed": false
+  },
+  "evidence_sha256": {
+    "recorder-ui-freshness-validation-001.json": "81b14bec6b079110da88b0d2740977719a0b30a2e3aa908cba8d64eba53a2ed2",
+    "recorder-ui-rollout-inventory-001.json": "c47bf51970ae5ace5e0555d87c2978f4feb88449115c6137e023c9568335f74c",
+    "recorder-ui-helper-validation-001.json": "dd19c249f9453eb0283e789fe99f7fac27a906dd0b107ce11f2e1d7095f6284f",
+    "recorder-ui-prepare-inspection-001.json": "54ed9f49f33bbac134dc83efc17d029dba2cc13350ca12a31eb0b505a4c8203f",
+    "recorder-ui-apply-inspection-001.json": "4e009612468c5df39855e8789fc65f951d772f20c50978da60183e766181ca59",
+    "recorder-ui-postapply-verification-001.json": "e88bdd2c63560816021fcd07de5148b72dd84fc34d1fbf5c7981d9c8dc0c6b83",
+    "test_deploy_recorder_ui_001.py": "93b634481b82b7742c82a3039b12f43994237909eea357d92d4ecb2c37946d9d"
+  },
+  "release_manifest_sha256": "3df0901329622874ca12cd16269c881d0ea3886c014d75bee5d5d0c78738663b",
+  "test_fixture_sha256": "9148f7513ffa6d8234ffad0581dedad51421062affa9db7d36bedf48dc29867c",
+  "worktree_git_normalization": {
+    "static/app.js": {
+      "worktree_sha256": "57a014fa095e53966504f59ea248a85c42ca520e201c418ed9a0fc4a29dc46ba",
+      "git_blob_sha256": "5f1cc8b9a947496d7f8c6db7e3f948a93418bf4a90524430c971189b45dc47b3",
+      "normalization_only": true
+    },
+    "tests/test_recording_status_freshness.py": {
+      "worktree_sha256": "da91791a6879390ae8cf02201c4618c602141e3d0d09e54cd8cce27920378333",
+      "git_blob_sha256": "da91791a6879390ae8cf02201c4618c602141e3d0d09e54cd8cce27920378333",
+      "normalization_only": false
+    },
+    "tests/test_recording_status_ui.js": {
+      "worktree_sha256": "9148f7513ffa6d8234ffad0581dedad51421062affa9db7d36bedf48dc29867c",
+      "git_blob_sha256": "9148f7513ffa6d8234ffad0581dedad51421062affa9db7d36bedf48dc29867c",
+      "normalization_only": false
+    }
+  },
+  "limitations": [
+    "Post-deployment proof checks API state, served source bytes and runtime identities/configuration; no new browser-render or physical recording test was performed.",
+    "A1s UI timer is subject to browser event-loop/background throttling; this is not a hard real-time display guarantee.",
+    "Archive preservation compares the32-record metadata inventory, not every archived content byte.",
+    "GPS/IMU/camera/LiDAR processes were preserved, not requalified for physical reception, camera FPS, or unplug recovery here.",
+    "The SIM source is patched and tested; its runtime rollout is separate."
+  ]
+}
