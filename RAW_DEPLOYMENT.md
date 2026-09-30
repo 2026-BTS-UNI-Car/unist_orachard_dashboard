@@ -1,8 +1,30 @@
 # Raw dashboard deployment checkpoint
 
-## Latest verified state: 2026-09-30 KST
+## Latest verified state: 2026-10-01 KST
 
-This section supersedes pending/deployed statements in the historical entries below.
+Direct SSH deployment of source `9e5ffd056e486be149c488ac1a939216ee405f3c`
+updated only GPS driver, GPS bridge and web: images `9738ed34`, `b79baa57`
+and `7f5ea0aa`. 39 scoped native ARM tests passed before application; the separate
+source validation has 44 Linux tests. Exact served assets, fresh recorder API
+status, advancing original NAV-SAT/NAV-SIG epochs and all 11 post-apply checks
+passed. The current GPS observation remains `no_fix`, 0 satellites used and fresh
+empty satellite/signal lists. Other 13 containers, settings/Compose inputs and 32
+archive metadata inventories were preserved. Recorder, motors and receiver
+configuration were not changed. [Full deployment evidence](docs/jetson_gps_reception_recording_deployment.json).
+
+Recovery uses checkpoint `20261001-015431-gps-reception-9e5ffd056e48` and its
+captured per-role Compose chains, source backups and `rollback-*.json` files.
+The release `gps-reception-9e5ffd0-002` retains the pinned
+`deploy_gps_reception_002.py rollback` command; it requires the checkpoint path
+and `--digest f2d1c91bac0f16789e06a113c41daa919819c8d89f6539ecbd965d9998ae17d7`.
+Its ownership/idle guards must remain intact. The three default image tags now
+select the new images, with original tag targets backed up; older explicit
+overrides still select their saved images. No rollback was required. This
+checkpoint verifies API/served bytes, not a new browser or physical recording test.
+
+## Historical sensor state: 2026-09-30 KST
+
+This historical section was superseded by the latest deployment above.
 Direct SSH deployment completed the USB GPS mapping, native IMU relay/recording,
 camera preview policy and the remaining native-IMU recording label. Current web
 image is `96142732`, camera bridge `e0d95231`, IMU bridge `e5b89181`, recorder

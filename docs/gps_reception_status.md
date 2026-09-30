@@ -1,6 +1,8 @@
 # GPS 신호와 녹화 상태 표시
 
-2026-10-01. 아래 내용은 소스 검증 결과이며 실제 배포 여부는 별도 배포 기록으로 확인한다.
+2026-10-01: deployed to the real Jetson from source `9e5ffd056e486be149c488ac1a939216ee405f3c`. The GPS driver, GPS bridge and web images are `9738ed34`, `b79baa57` and `7f5ea0aa` respectively. [Deployment evidence](jetson_gps_reception_recording_deployment.json) records 39 native ARM tests, fresh independent NAV-SAT/NAV-SIG epochs and the recorder API freshness contract. The observed receiver remains `no_fix` with 0 satellites used and fresh empty diagnostic reports; this does not imply an antenna-power diagnosis.
+
+Checkpoint `20261001-015431-gps-reception-9e5ffd056e48` retains the original source bytes/metadata, per-role Compose chains and `rollback-*.json`. The pinned `deploy_gps_reception_002.py rollback` phase requires prepared digest `f2d1c91bac0f16789e06a113c41daa919819c8d89f6539ecbd965d9998ae17d7`, disarmed/idle state and unchanged owned resources. Defaults for the three image tags were persisted, with the original tag targets backed up. Historical explicit overrides still refer to older images. No rollback was needed; no recorder restart, new recording, motor actuation or receiver configuration write occurred. Other 13 containers and 32 archive metadata entries were preserved.
 
 GPS 화면은 **위치 계산에 사용된 위성**, **검출된 신호**, **추적 중인 신호**를 구분한다. 신호를 추적해도 위치 fix가 없으면 좌표를 유효하게 표시하지 않는다. NAV-SIG의 여러 주파수 신호 개수와 NAV-SAT의 위성 개수도 합치지 않는다. quality 2~7은 검출, 4~7은 잠금/추적으로 집계하고 목록에 있는 탐색 행만으로 검출 수를 늘리지 않는다.
 
