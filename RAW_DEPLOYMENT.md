@@ -1,5 +1,28 @@
 # Raw dashboard deployment checkpoint
 
+## Latest verified state: 2026-09-30 KST
+
+This section supersedes pending/deployed statements in the historical entries below.
+Direct SSH deployment completed the USB GPS mapping, native IMU relay/recording,
+camera preview policy and the remaining native-IMU recording label. Current web
+image is `96142732`, camera bridge `e0d95231`, IMU bridge `e5b89181`, recorder
+`25401caa` and GPS driver `38e9d1f1` (full digests in the linked evidence).
+
+- [Native IMU deployment](docs/jetson_imu_raw_removal_deployment.json)
+- [Camera preview deployment](docs/jetson_camera_preview_deployment.json)
+- [Recording label follow-up](docs/jetson_imu_recording_label_deployment.json)
+- [Four-sensor observation and ownership limitations](docs/jetson_four_sensor_observation.json)
+- [GPS RF/satellite diagnosis](docs/jetson_gps_reception_diagnosis.json)
+
+GPS USB reception works; indoor observations still report no position fix and
+no satellite/signal entries. GNSS enable values were verified, without receiver
+configuration writes. Outdoor antenna validation remains pending. Camera source
+cadence was about15Hz despite30FPS capture settings; sustained30FPS/WAN performance
+is not established. Actual motion, new recordings and physical calibration were
+not performed; the32 existing archives were preserved.
+
+## Historical checkpoints
+
 2026-09-30 KST source checkpoint: the IMU availability/covariance and quaternion
 corrections are validated but **not yet deployed**. All 154 unique local Iron
 tests passed (152 in the main run, two opt-in integrations separately), with

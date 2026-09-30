@@ -9,9 +9,9 @@ GPS USB/UART driver, offline Korea maps and synchronized GPS recording: [GPS set
 
 녹화별 모터 핀 신호 저장·재생: [PWM 기록 형식과 한계](docs/motor_pwm_recording.md)
 
-Jetson Orin Nano Super에서 실행할 과수원 자율주행 연구용 웹 대시보드입니다. 현재 서버는 Jetson의 실제 시스템, 네트워크, Docker 상태를 읽고, ROS2/로버 데이터는 추후 bridge가 제공하는 JSON 텔레메트리 파일을 통해 연결합니다.
+Jetson Orin Nano Super에서 실행하는 과수원 자율주행 연구용 웹 대시보드입니다. Jetson의 실제 시스템·네트워크·Docker 상태와 ROS2 센서 브리지가 제공하는 데이터를 표시합니다.
 
-실차 센서는 RPLIDAR S2 2D LiDAR, BNO085 IMU, UVC USB 카메라입니다. ZED-F9P GPS는 연결 예정이며, 휠 엔코더는 없습니다. 카메라와 LiDAR는 원시 센서 화면으로 표시합니다. 시뮬레이션 지도·자율주행 개발은 별도 orchard-rover-clone 저장소에서 진행합니다.
+실차 센서는 RPLIDAR S2 2D LiDAR, BNO085 IMU, UVC USB 카메라, USB로 연결한 ZED-F9P GPS이며 휠 엔코더는 없습니다. 2026-09-30 GPS 통신은 정상 확인했지만 실내 안테나 상태에서 위성·신호0개/no-fix이므로 위치 확정은 미완료입니다. [수신 진단](docs/jetson_gps_reception_diagnosis.json). 카메라와 LiDAR는 원시 센서 화면으로 표시합니다. 시뮬레이션 지도·자율주행 개발은 별도 orchard-rover-clone 저장소에서 진행합니다.
 
 ## 주요 화면
 

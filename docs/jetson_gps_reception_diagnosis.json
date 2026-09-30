@@ -1,0 +1,240 @@
+{
+  "schema": "ubts.gps.reception_diagnosis.v1",
+  "date": "2026-09-30",
+  "receiver": {
+    "model": "ZED-F9P",
+    "firmware": "HPG 1.51",
+    "protocol_version": "27.50"
+  },
+  "checkpoint_name": "20260930-gps-rf-001",
+  "result": "RECEIVER_RESPONDING_NO_SATELLITES_OR_SIGNALS_OBSERVED",
+  "environment": {
+    "antenna_indoors": true,
+    "source": "User confirmation during this diagnostic session",
+    "outdoor_fix_verification": "PENDING"
+  },
+  "scope": {
+    "receiver_operations": "Status polls and RAM configuration reads only.",
+    "receiver_configuration_writes": false,
+    "receiver_reset_or_firmware_change": false,
+    "temporary_service_interruption": true,
+    "service_interruption_description": "The GPS driver was temporarily stopped to release the USB device exclusively for the bounded probe, then the same driver container was restarted and reception checked.",
+    "probe_duration_s": 16.005432398000266,
+    "duration_limit": "Probe duration is not a measurement of the complete GPS service interruption.",
+    "motor_commands_sent": false,
+    "new_sensor_recording_started": false
+  },
+  "observations": {
+    "bytes_received": 7441,
+    "valid_ubx_counts": {
+      "06:8b": 1,
+      "05:01": 1,
+      "01:35": 4,
+      "01:43": 4,
+      "0a:38": 4
+    },
+    "rejected_ubx_frames": 0,
+    "status_poll_response_counts": {
+      "MON-RF": 4,
+      "NAV-SAT": 4,
+      "NAV-SIG": 4
+    },
+    "satellite_counts": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "signal_counts": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "satellites_used": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "signal_configuration": {
+      "layer": "RAM",
+      "complete": true,
+      "missing_keys": [],
+      "enabled": {
+        "GPS": true,
+        "GPS_L1CA": true,
+        "GPS_L2C": true,
+        "Galileo": true,
+        "Galileo_E1": true,
+        "Galileo_E5b": true,
+        "BeiDou": true,
+        "BeiDou_B1": true,
+        "BeiDou_B2": true,
+        "QZSS": true,
+        "QZSS_L1CA": true,
+        "QZSS_L2C": true,
+        "GLONASS": true,
+        "GLONASS_L1": true,
+        "GLONASS_L2": true
+      }
+    },
+    "rf_blocks": [
+      {
+        "block_id": 0,
+        "samples": 4,
+        "antenna_status_code": 1,
+        "antenna_status": "UNKNOWN",
+        "antenna_power_code": 2,
+        "antenna_power": "UNKNOWN",
+        "noise_per_ms_observed_range": [
+          79,
+          80
+        ],
+        "agc_count_observed_range": [
+          6669,
+          6669
+        ],
+        "cw_suppression_observed_range": [
+          26,
+          30
+        ]
+      },
+      {
+        "block_id": 1,
+        "samples": 4,
+        "antenna_status_code": 1,
+        "antenna_status": "UNKNOWN",
+        "antenna_power_code": 2,
+        "antenna_power": "UNKNOWN",
+        "noise_per_ms_observed_range": [
+          46,
+          46
+        ],
+        "agc_count_observed_range": [
+          6669,
+          6669
+        ],
+        "cw_suppression_observed_range": [
+          7,
+          8
+        ]
+      }
+    ]
+  },
+  "poll_allowlist": [
+    {
+      "message": "MON-RF",
+      "class_hex": "0a",
+      "id_hex": "38",
+      "payload_length": 0,
+      "requests": 4
+    },
+    {
+      "message": "NAV-SAT",
+      "class_hex": "01",
+      "id_hex": "35",
+      "payload_length": 0,
+      "requests": 4
+    },
+    {
+      "message": "NAV-SIG",
+      "class_hex": "01",
+      "id_hex": "43",
+      "payload_length": 0,
+      "requests": 4
+    },
+    {
+      "message": "CFG-VALGET",
+      "class_hex": "06",
+      "id_hex": "8b",
+      "request_version": 0,
+      "layer": "RAM",
+      "position": 0,
+      "key_count": 15,
+      "requests": 1
+    }
+  ],
+  "restoration": {
+    "restored": true,
+    "checks": {
+      "same_driver_id_image_config": true,
+      "driver_running": true,
+      "other_15_containers_unchanged": true,
+      "archives_32_preserved": true,
+      "protected_sources_settings_unchanged": true,
+      "gps_receiving_after_restore": true,
+      "idle_disarmed_zero_recorder_idle": true
+    },
+    "archive_count_preserved": 32,
+    "other_containers_preserved": 15,
+    "post_restore": {
+      "connected": true,
+      "valid": false,
+      "state": "no_fix",
+      "satellites": 0,
+      "serial_open": true,
+      "serial_open_s": 1.9,
+      "status_age_s": 1.314
+    }
+  },
+  "validation": {
+    "local_protocol_unittests": {
+      "passed": 29,
+      "failed": 0,
+      "elapsed_s": 0.038,
+      "coverage": [
+        "Independent poll checksums and explicit read-only message list",
+        "RF/SAT/SIG offsets and repeated epochs",
+        "Partial packets, corrupt lengths, checksum failures and resynchronization",
+        "VALGET Boolean values, duplicate rejection and missing-key uncertainty",
+        "Bounded memory and NAV-SIG maximum count"
+      ]
+    },
+    "actual_hardware_probe_exit_code": 0
+  },
+  "source_sha256": {
+    "gps_rf_probe_001.py": "78475960d456ce88208f1510174877a39da8b1c4990d3665e733e8a0ff94749e",
+    "gps_rf_session_001.py": "9830c3f4445c8e0f78796ce1b8600b6e07e84350c2d456c2f4526822be8d277d",
+    "test_gps_rf_probe_001.py": "7a7ad05c26ebfc6cc3c9bebdd899bba1b9655a04d6cc6deea9f35844a3036b8b"
+  },
+  "private_evidence_sha256": {
+    "gps-rf-inspection-001.json": "7b9e10c363a39b879a9518644035bc70063652c41ccbb5a4c90f87a3dc9b28e2"
+  },
+  "interpretation": [
+    "The receiver answered all four RF/satellite/signal query rounds and reported all 15 queried constellation/signal settings enabled.",
+    "No satellites or signals were reported in this indoor observation; successful USB communication is distinct from a valid position fix.",
+    "Antenna status code 1 and power code 2 both mean unknown. They do not establish antenna power OFF, an open cable, a disconnected antenna or hardware failure.",
+    "Indoor placement is confirmed context, not a proven sole cause. Reception and a valid fix still need verification with outdoor sky visibility.",
+    "RF noise, gain and suppression numbers are observations only; no interference or antenna-fault threshold is inferred."
+  ],
+  "limits": [
+    "No valid outdoor position or RTK solution has been established by this result.",
+    "The read-only receiver queries required a temporary interruption of the GPS service; the other 15 containers were preserved.",
+    "Archive preservation compares file names, sizes and mtime, not complete archive payload hashes.",
+    "No coordinates, raw sensor packets, server addresses or credentials are published in this summary."
+  ],
+  "official_references": [
+    {
+      "title": "u-blox F9 HPG 1.51 Interface description, protocol 27.50",
+      "url": "https://content.u-blox.com/sites/default/files/documents/u-blox-F9-HPG-1.51_InterfaceDescription_UBXDOC-963802114-13124.pdf",
+      "sections": [
+        "3.5.2",
+        "3.10.24",
+        "3.14.9",
+        "3.15.16",
+        "3.15.18",
+        "6.9.23"
+      ]
+    },
+    {
+      "title": "ZED-F9P Integration manual",
+      "url": "https://content.u-blox.com/sites/default/files/ZED-F9P_IntegrationManual_UBX-18010802.pdf",
+      "sections": [
+        "3.1.4.4",
+        "3.10",
+        "4.4.2"
+      ]
+    }
+  ]
+}
