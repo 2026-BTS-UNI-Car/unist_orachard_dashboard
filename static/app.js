@@ -2533,7 +2533,7 @@ function cameraBridgeLive() {
 function renderStatusRows(targetId, rows) {
   const target = $(targetId);
   if (!target) return;
-  const renderKey = JSON.stringify(rows.map((row) => [row.title, row.sub, row.value, row.ok, row.level]));
+  const renderKey = JSON.stringify(rows.map((row) => [row.id, row.title, row.sub, row.value, row.ok, row.level]));
   if (target.dataset.renderKey === renderKey) return;
   target.dataset.renderKey = renderKey;
   target.innerHTML = "";
@@ -2541,6 +2541,7 @@ function renderStatusRows(targetId, rows) {
     const level = row.ok ? "ok" : row.level || "bad";
     const div = document.createElement("div");
     div.className = "status-item";
+    if (row.id) div.id = row.id;
     div.innerHTML = `
       <i class="status-dot ${escapeHtml(level)}"></i>
       <span><strong>${escapeHtml(row.title)}</strong><small>${escapeHtml(row.sub || "")}</small></span>
@@ -3426,7 +3427,6 @@ function renderRoverControl(data) {
   const roverBridge = services.rover_bridge || {};
   // Recording controls use their ordered status endpoint. General telemetry
   // can arrive late and must not replace a newer START/STOP acknowledgement.
-  const recorder = state.recordings.status || services.data_recorder || {};
   const imuSensor = data.sensors?.imu || data.connection?.sensors?.imu || {};
   if (!state.imuLive.topicAlive && imuSensor.raw) {
     state.imuLive.raw = imuSensor.raw || {};
@@ -3438,8 +3438,6 @@ function renderRoverControl(data) {
   text("roverControlBase", roverBridge.serial_port || "--");
   text("roverProxyState", rover.mode || roverBridge.mode || "esp_manual");
   text("roverRosState", roverBridge.ok ? "ready" : roverBridge.state || "대기");
-  text("roverRecorderState", recorder.active ? "recording" : recorder.state || "대기");
-  text("roverRecorderKind", recorder.active ? recordingKindLabel(recorder.kind) : recorder.archive_count !== undefined ? `${recorder.archive_count} archives` : "대기");
   renderStatusRows("roverControlDetails", [
     {
       title: SIMULATION ? "Simulation Controller" : "ESP8266 Bridge",
@@ -3477,11 +3475,12 @@ function renderRoverControl(data) {
       value: imuSensor.state || services.imu_bridge?.state || "대기",
     },
     {
+      id: "roverRecorderDetail",
       title: "Data Recorder",
-      sub: recorder.recording_id || recorder.status_url || "ros2-data-recorder",
-      ok: Boolean(recorder.ok),
-      level: recorder.ok ? "ok" : "warn",
-      value: recorder.active ? `${recordingKindLabel(recorder.kind)} 기록 중` : recorder.state || "대기",
+      sub: "현재 상태를 확인할 수 없습니다",
+      ok: false,
+      level: "warn",
+      value: "상태 미확인",
     },
   ]);
   renderRoverMotionReadout();
@@ -3960,6 +3959,18 @@ function renderRecordingStatus(override) {
     && typeof status.active === "boolean"
     && Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= 5000;
   const active = known && status.active;
+  // This secondary row shares the exact primary freshness gate. It must age
+  // locally even when general telemetry and recorder requests stop arriving.
+  const detail = $("roverRecorderDetail");
+  if (detail) {
+    detail.querySelector(".status-dot").className = `status-dot ${known ? "ok" : "warn"}`;
+    detail.querySelector("small").textContent = known
+      ? status.recording_id || status.status_url || "ros2-data-recorder"
+      : "현재 상태를 확인할 수 없습니다";
+    detail.querySelector("b").textContent = status.state === "disabled" ? "disabled"
+      : !known ? "상태 미확인"
+      : active ? `${recordingKindLabel(status.kind)} 기록 중` : status.state || "ready";
+  }
   const kind = recordingKindLabel(active ? status.kind : state.recordings.kind);
   const includeImu = active ? status.include_imu !== false : state.recordings.includeImu;
   const includeGps = active ? status.include_gps !== false : state.recordings.includeGps;
@@ -5214,5 +5225,7 @@ loadDocs().catch(console.error);
 tick();
 setInterval(tick, POLL_INTERVAL_MS);
 setInterval(() => {
+  // UI freshness must expire independently of network/telemetry progress.
+  if (currentRoute() === "/rover-control") renderRecordingStatus();
   if (routeSupportsCameraLive() && (state.cameraLive.enabled || state.cameraLive.lastDecodedAt !== null)) renderCameraLiveState();
 }, 1000);
