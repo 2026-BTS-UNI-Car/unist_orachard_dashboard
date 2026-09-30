@@ -961,19 +961,29 @@ class TelemetryProvider:
     def recording_status(self) -> dict[str, Any]:
         remote = self._recorder_get("/status")
         if remote.get("ok"):
-            return remote
+            return {**remote, "status_fresh": True, "status_source": "recorder_api"}
         data = _load_json(self.data_recorder_status_file)
         if data:
-            data.setdefault("ok", False)
-            data.setdefault("state", "status_file_only")
-            data["status_file"] = str(self.data_recorder_status_file)
-            data["status_url"] = f"{self.recorder_api_url}/status"
-            data["archive_count"] = self._recording_archive_count()
-            return data
+            # This file is an event snapshot, not a heartbeat. Even a recent
+            # mtime cannot prove that the recorder is still running or idle.
+            updated = data.get("updated_at")
+            age = time.time() - updated if type(updated) in (int, float) else None
+            if age is not None and (not math.isfinite(age) or age < 0): age = None
+            return {
+                "ok": False, "active": None, "state": "unknown",
+                "status_fresh": False, "status_source": "event_snapshot",
+                "status_file": str(self.data_recorder_status_file),
+                "status_url": f"{self.recorder_api_url}/status",
+                "archive_count": self._recording_archive_count(),
+                "last_known": data, "last_known_age_s": age,
+                "error": remote.get("error") or "recorder_unavailable",
+            }
         return {
             "ok": False,
-            "active": False,
+            "active": None,
             "state": "not_connected",
+            "status_fresh": False,
+            "status_source": "unavailable",
             "status_url": f"{self.recorder_api_url}/status",
             "status_file": str(self.data_recorder_status_file),
             "archive_dir": str(self.recording_archive_dir),

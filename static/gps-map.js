@@ -1,5 +1,5 @@
 import * as maplibregl from './vendor/maplibre-gl/maplibre-gl.mjs';
-import {FollowModel, validFix, coordinates, frameAt, pathFeatures, accuracyCircle} from './gps-map-model.mjs';
+import {FollowModel, validFix, coordinates, frameAt, pathFeatures, accuracyCircle, usedSatellitesText, receptionText} from './gps-map-model.mjs';
 
 const byId = id => document.getElementById(id);
 const text = (id, value) => { const element = byId(id); if (element) element.textContent = value; };
@@ -88,13 +88,14 @@ class GpsMapView {
     this.map.addLayer({id:'gps-track-line', type:'line', source:'gps-track', paint:{'line-color':'#00b4cf','line-width':3,'line-opacity':.8}});
     this.lastTrackKey = '';
   }
-  update(sample, frames, until=Infinity) {
+  update(sample, frames, until=Infinity, receptionElapsedS=0) {
     this.sample = sample || {}; this.frames = frames || []; this.until = until;
     this.model.update(this.sample);
     this.paint();
     const sampleValid = validFix(this.sample);
     text(`${this.prefix}Position`, sampleValid ? `${number(this.sample.latitude, 7)}, ${number(this.sample.longitude, 7)}` : this.model.position ? `마지막 위치 ${number(this.model.position[1], 7)}, ${number(this.model.position[0], 7)}` : 'GPS 위치 수신 대기');
-    text(`${this.prefix}Quality`, sampleValid ? `${qualityName[this.sample.fix_type] || 'GNSS'} · 위성 ${this.sample.satellites ?? '—'}개` : this.sample.state === 'stale' ? '수신 끊김 · 마지막 위치' : this.sample.state === 'no_fix' ? `위치 미확정 · 위성 ${this.sample.satellites ?? '—'}개` : 'GPS 데이터 없음');
+    text(`${this.prefix}Quality`, sampleValid ? `${qualityName[this.sample.fix_type] || 'GNSS'} · ${usedSatellitesText(this.sample)}` : this.sample.state === 'stale' ? '수신 끊김 · 마지막 위치' : this.sample.state === 'no_fix' ? `위치 미확정 · ${usedSatellitesText(this.sample)}` : 'GPS 데이터 없음');
+    text(`${this.prefix}Signals`, receptionText(this.sample, receptionElapsedS));
     text(`${this.prefix}Accuracy`, sampleValid && this.sample.h_acc_m != null ? `수평 ±${number(this.sample.h_acc_m, 3)} m` : '정확도 미보고');
     text(`${this.prefix}Speed`, sampleValid && this.sample.speed_mps != null ? `${number(this.sample.speed_mps*3.6, 1)} km/h` : '— km/h');
     text(`${this.prefix}Altitude`, sampleValid ? `해발 ${number(this.sample.altitude_msl_m, 1)} m · HDOP ${number(this.sample.hdop, 1)}` : '현재 위치가 확정되면 표시됩니다.');
@@ -140,7 +141,7 @@ function paintLive() {
   if (!latest || !active()) return;
   const age = (latest.age_s ?? 0) + (Date.now()-receivedAt)/1000;
   const sample = age > 3 ? {...latest, valid:false, state:'stale'} : latest;
-  live.update(sample, frames);
+  live.update(sample, frames, Infinity, Math.max(0, (Date.now()-receivedAt)/1000));
   const driver = latest.driver || {};
   const uart = driver.uart_counters;
   const errors = uart ? (uart.frame || 0)+(uart.parity || 0)+(uart.overrun || 0)+(uart.buf_overrun || 0) : 0;

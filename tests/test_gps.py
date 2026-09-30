@@ -146,7 +146,8 @@ class DecoderTests(unittest.TestCase):
                 with self.assertRaises(OSError): other.open()
                 serial.read()
                 self.assertEqual(os.read(master, 4096), ubx_packet(10, 4)+ubx_packet(1, 7)+ubx_packet(1, 20)
-                                 +nmea('EIGNQ,GGA')+nmea('EIGNQ,RMC')+nmea('EIGPQ,GGA')+nmea('EIGPQ,RMC'))
+                                 +nmea('EIGNQ,GGA')+nmea('EIGNQ,RMC')+nmea('EIGPQ,GGA')+nmea('EIGPQ,RMC')
+                                 +ubx_packet(1, 0x35)+ubx_packet(1, 0x43))
                 os.write(master, pvt())
                 deadline = time.monotonic()+1; frames = []
                 while not frames and time.monotonic() < deadline:

@@ -1,0 +1,80 @@
+{
+  "schema": "ubts.gps_reception_recording_validation.v1",
+  "date": "2026-10-01",
+  "source_sha256_worktree_bytes": {
+    "dashboard_server/gps_reception.py": "1f719599b45b33b1b10c3c7eef4169881f9aa3644ecd7b71393b8e4162063d01",
+    "dashboard_server/gps.py": "fa44e1402f446769e39b5ed19febdd7ed9163050b0dd06084cd67c5087c73453",
+    "scripts/gps_ros2_driver.py": "3b381bb5be24175facfe218df4d5fffd7b09aee51b2cecc3604af3f7878a54c0",
+    "scripts/gps_ws_bridge.py": "3fcb14def0fbc42e292dc804af9ba05b9bc19f922464b6bcbf6dfd50b8740faf",
+    "static/gps-map-model.mjs": "2af085e34021a1490983a07bee1bdf3bf075be453c6d9946e59a55abe62b0fb4",
+    "static/gps-map.js": "3e7bbe309e690a55915e184dfa11c5a268ff8ba56b07966e36b55a13fb7d7ec9",
+    "static/index.html": "35c0438e80ed5c2d9e4071a9d92dd5fbfbae9ed5fd4f539a456a08d4c4cb983f",
+    "tests/test_gps.py": "afc1e9f50078e70447bd5762eeb03e940d6cab254d583c8453f9eb411a6aa773",
+    "tests/test_gps_serial_reconnect.py": "65b47bcf5ee5731c0b888474c46b8099b2d93d0cd2b97121d51ddb207d45a114",
+    "tests/test_gps_reception.py": "2224ce4328f32aa9a71f6166ce22cd69e955ad98ad21a93b763f0a4197595ee0",
+    "tests/test_gps_reception.mjs": "97f78492a501a66b9766ea9073d3278eab44044f031f714f4b8722bd67a3c42b",
+    "dashboard_server/telemetry.py": "a8b34d912410d6b63546158be859c568e24472ee366005c6dca919c8dbd6a101",
+    "static/app.js": "2c6369f87521a9a416a053be782fe5b385cc982bdb9f5c63e77baa719c44ff10",
+    "tests/test_recording_status_freshness.py": "da91791a6879390ae8cf02201c4618c602141e3d0d09e54cd8cce27920378333",
+    "tests/test_recording_status_ui.js": "d88d6293f7a752e33fea6243a4e48ed306d236c95e9745784ae8c4de825269a4"
+  },
+  "tests": {
+    "ros_iron_linux": {
+      "image": "sha256:2b6bf9c0cb6e16efde71be45b4f616f79e193f0243f57a194ac305c0dfc03e8f",
+      "tests_passed": 44,
+      "test_seconds": 3.275,
+      "source_unchanged": true,
+      "network": "none",
+      "devices": [],
+      "stderr_sha256": "fcfe5423e786dda640c20e9cce4782cd8140d1ecbaf69bbeade5f16c1f940f37",
+      "stdout_sha256": "d620e3f929f4a161abbb4c74efbd3f3f1bae7e229a292b4b8990c061460949f3"
+    },
+    "independent_wsl_tests_passed": 37,
+    "recorder_ui_scenarios_passed": 11,
+    "node_suites_passed": [
+      "GPS reception model",
+      "GPS map",
+      "recording status",
+      "motor archive",
+      "raw IMU archive"
+    ],
+    "retained_initial_test_failure": "One GPS archive module required /app/tests on PYTHONPATH; 39 passed, one import error, one opt-in integration skipped. No production change."
+  },
+  "gps_polling": {
+    "sole_existing_owner": true,
+    "messages": [
+      "NAV-SAT 01/35 empty payload",
+      "NAV-SIG 01/43 empty payload"
+    ],
+    "interval_seconds": 5,
+    "stale_after_seconds": 12,
+    "bounded_tx": "One nonblocking batch; partial writes resume without queueing/interleaving",
+    "receiver_configuration_writes": false
+  },
+  "gps_semantics": [
+    "Quality2..7 detected; quality4..7 tracked; listed/searching rows not detection.",
+    "Signal counts and satellite counts independent, neither substitutes NAV-PVT/GGA satellites-used or creates fix.",
+    "Independent original receipt/iTOW; duplicates never refresh age; week rollover supported.",
+    "Missing, stale, malformed, disconnect and lost driver status retain unknown counts instead of fake zero.",
+    "New diag reception does not publish navigation sample or renew position age.",
+    "Original reconnect cleanup and passive mode retained."
+  ],
+  "recording_semantics": [
+    "Live API response has explicit freshness/source.",
+    "Disconnected event file is last_known only, active unknown; not a heartbeat.",
+    "Browser freshness includes request transit using monotonic request-start time; five-second validity.",
+    "Four-second GET timeout aborts and releases the guarded slot; later recovery is possible.",
+    "START/STOP cancel older reads and invalidate response tickets; general telemetry cannot overwrite.",
+    "Unknown status disables START but keeps STOP available. Existing archives unchanged."
+  ],
+  "source_only": true,
+  "deployed": false,
+  "physical_motor_commands": false,
+  "physical_recording": false,
+  "gps_fix_verified": false,
+  "limits": [
+    "No real WAN/browser performance or physical antenna validation.",
+    "Existing recorder live endpoint supplies data; no recorder container/source restart/change required.",
+    "A later deployment report must prove ARM validation, live GPS diagnostics, UI and preserved resources."
+  ]
+}

@@ -3424,9 +3424,8 @@ function renderRoverControl(data) {
   const rover = data.rover || data.connection?.rover || {};
   const services = data.services || data.connection?.services || {};
   const roverBridge = services.rover_bridge || {};
-  if (services.data_recorder?.state || services.data_recorder?.active) {
-    state.recordings.status = { ...(state.recordings.status || {}), ...services.data_recorder, ok: services.data_recorder.ok ?? state.recordings.status?.ok };
-  }
+  // Recording controls use their ordered status endpoint. General telemetry
+  // can arrive late and must not replace a newer START/STOP acknowledgement.
   const recorder = state.recordings.status || services.data_recorder || {};
   const imuSensor = data.sensors?.imu || data.connection?.sensors?.imu || {};
   if (!state.imuLive.topicAlive && imuSensor.raw) {
@@ -3837,20 +3836,49 @@ function renderRoverMotionReadout() {
 }
 
 async function refreshRecordingStatus() {
-  try {
-    const status = await getJson("/api/recordings/status");
-    state.recordings.status = status;
+  if (state.recordings.statusInFlight || state.recordings.actionInFlight) return;
+  const ticket = state.recordings.statusRequestId = (state.recordings.statusRequestId || 0) + 1;
+  state.recordings.statusInFlight = ticket;
+  const requestedAt = performance.now();
+  const controller = state.recordings.statusController = new AbortController();
+  const timeout = setTimeout(() => {
+    if (ticket !== state.recordings.statusRequestId) return;
+    invalidateRecordingStatusRead();
+    state.recordings.status = {ok: false, state: "unavailable", error: "status_timeout"};
     state.recordings.lastStatusAt = Date.now();
     renderRecordingStatus();
+  }, 4000);
+  try {
+    const status = await getJson("/api/recordings/status", {signal: controller.signal});
+    if (ticket !== state.recordings.statusRequestId) return;
+    state.recordings.status = status;
+    state.recordings.lastStatusAt = Date.now();
+    state.recordings.lastStatusSteadyAt = requestedAt;
+    renderRecordingStatus();
   } catch (err) {
+    if (ticket !== state.recordings.statusRequestId) return;
     state.recordings.status = { ok: false, state: "unavailable", error: err.message };
     state.recordings.lastStatusAt = Date.now();
     renderRecordingStatus();
+  } finally {
+    clearTimeout(timeout);
+    if (state.recordings.statusInFlight === ticket) {
+      state.recordings.statusInFlight = null;
+      state.recordings.statusController = null;
+    }
   }
+}
+
+function invalidateRecordingStatusRead() {
+  state.recordings.statusRequestId = (state.recordings.statusRequestId || 0) + 1;
+  state.recordings.statusController?.abort();
+  state.recordings.statusController = null;
+  state.recordings.statusInFlight = null;
 }
 
 function maybeRefreshRecordingStatus() {
   if (currentRoute() !== "/rover-control") return;
+  renderRecordingStatus();
   const now = Date.now();
   if (now - (state.recordings.lastStatusAt || 0) < 2200) return;
   refreshRecordingStatus().catch((err) => debugLog("recording", "status refresh failed", err));
@@ -3859,6 +3887,8 @@ function maybeRefreshRecordingStatus() {
 async function startRecording(kind) {
   if (state.recordings.actionInFlight) return;
   state.recordings.actionInFlight = true;
+  invalidateRecordingStatusRead();
+  const requestedAt = performance.now();
   renderRecordingStatus("기록 시작 중");
   try {
 	    const payload = await postJson("/api/recordings/start", {
@@ -3868,6 +3898,7 @@ async function startRecording(kind) {
 	    });
 	    state.recordings.status = payload.status || payload;
 	    state.recordings.lastStatusAt = Date.now();
+    state.recordings.lastStatusSteadyAt = requestedAt;
     renderRecordingStatus();
     await loadRecordings();
   } catch (err) {
@@ -3875,17 +3906,21 @@ async function startRecording(kind) {
     renderRecordingStatus();
   } finally {
     state.recordings.actionInFlight = false;
+    renderRecordingStatus();
   }
 }
 
 async function stopRecording() {
   if (state.recordings.actionInFlight) return;
   state.recordings.actionInFlight = true;
+  invalidateRecordingStatusRead();
+  const requestedAt = performance.now();
   renderRecordingStatus("기록 중지 중");
   try {
     const payload = await postJson("/api/recordings/stop", {});
     state.recordings.status = payload.status || payload;
     state.recordings.lastStatusAt = Date.now();
+    state.recordings.lastStatusSteadyAt = requestedAt;
     renderRecordingStatus();
     await loadRecordings();
   } catch (err) {
@@ -3893,6 +3928,7 @@ async function stopRecording() {
     renderRecordingStatus();
   } finally {
     state.recordings.actionInFlight = false;
+    renderRecordingStatus();
   }
 }
 
@@ -3919,40 +3955,46 @@ function recordingSensorLabel(payload) {
 
 function renderRecordingStatus(override) {
   const status = state.recordings.status || {};
-  const active = Boolean(status.active);
+  const ageMs = performance.now() - state.recordings.lastStatusSteadyAt;
+  const known = status.ok === true && status.status_fresh !== false
+    && typeof status.active === "boolean"
+    && Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= 5000;
+  const active = known && status.active;
   const kind = recordingKindLabel(active ? status.kind : state.recordings.kind);
   const includeImu = active ? status.include_imu !== false : state.recordings.includeImu;
   const includeGps = active ? status.include_gps !== false : state.recordings.includeGps;
   const sensorLabel = `${kind}${includeImu ? "+IMU" : ""}${includeGps ? "+GPS" : ""}`;
   const duration = recordingDurationSeconds(status);
-  const message = override || (active
+  const message = override || (!known && status.state !== "disabled"
+    ? "기록 상태 확인 중 · 연결을 확인하세요"
+    : active
     ? `${sensorLabel} 기록 중 · ${status.recording_id || ""}`
     : status.error || status.state || `${sensorLabel} 기록 대기`);
   const target = $("roverRecordingStatus");
   if (target) {
-    target.className = `test-result ${active || status.ok ? "ok" : status.error ? "bad" : "testing"}`;
+    target.className = `test-result ${known ? "ok" : status.error ? "bad" : "testing"}`;
     target.textContent = message;
   }
   document.querySelectorAll("[data-record-kind]").forEach((button) => {
-    button.disabled = state.recordings.actionInFlight || active;
+    button.disabled = state.recordings.actionInFlight || active || !known;
     button.classList.toggle("active", (active ? status.kind : state.recordings.kind) === button.dataset.recordKind);
   });
   const start = $("roverRecordStartButton");
   if (start) {
-    start.disabled = state.recordings.actionInFlight || active || status.state === "disabled";
+    start.disabled = state.recordings.actionInFlight || active || !known || status.state === "disabled";
     start.textContent = status.state === "disabled" ? "녹화는 후속 단계에서 활성화" : active ? "기록 중" : `${recordingKindLabel(state.recordings.kind)} 기록 시작`;
   }
   const stop = $("roverRecordStopButton");
-  if (stop) stop.disabled = state.recordings.actionInFlight || !active;
-  text("roverRecordingTimer", active ? fmtClock(duration) : "00:00");
-  text("roverRecorderState", active ? "recording" : status.ok ? "ready" : status.state || "--");
+  if (stop) stop.disabled = state.recordings.actionInFlight || (known && !active) || status.state === "disabled";
+  text("roverRecordingTimer", !known ? "--:--" : active ? fmtClock(duration) : "00:00");
+  text("roverRecorderState", !known ? "상태 미확인" : active ? "recording" : "ready");
   text("roverRecorderKind", active ? sensorLabel : status.archive_count !== undefined ? `${status.archive_count} archives` : "대기");
   const imuToggle = $("roverRecordImuToggle");
   const gpsToggle = $("roverRecordGpsToggle");
-  if (gpsToggle) { gpsToggle.checked = includeGps; gpsToggle.disabled = state.recordings.actionInFlight || active; }
+  if (gpsToggle) { gpsToggle.checked = includeGps; gpsToggle.disabled = state.recordings.actionInFlight || active || !known; }
   if (imuToggle) {
     imuToggle.checked = includeImu;
-    imuToggle.disabled = state.recordings.actionInFlight || active;
+    imuToggle.disabled = state.recordings.actionInFlight || active || !known;
   }
 }
 

@@ -23,6 +23,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
 from dashboard_server.gps import GnssDecoder, fresh_snapshot, ubx_packet, valid_position
+from dashboard_server.gps_reception import RECEPTION_POLL_SECONDS
 
 
 SERIAL_ERRORS = (OSError, termios.error)
@@ -80,6 +81,8 @@ class GpsSerial:
         self.bytes_received = 0
         self.connected_at = 0
         self.next_poll = 0
+        self.next_reception_poll = 0
+        self.pending_poll = b''
         self.last_good_packet = None
         self.device_name = None
         self.counter_baseline = None
@@ -131,6 +134,8 @@ class GpsSerial:
         self.decoder.buffer.clear()
         self.last_good_packet = None
         self.next_poll = 0
+        self.next_reception_poll = 0
+        self.pending_poll = b''
 
     def read(self):
         # With VMIN=0 an empty read alone is not a reliable disconnect signal.
@@ -153,7 +158,7 @@ class GpsSerial:
         if not self.fixed_baud and now - (self.last_good_packet or self.connected_at) > 5:
             self.baud_index = (self.baud_index + 1) % len(self.BAUDS)
             self.set_baud(self.BAUDS[self.baud_index])
-        if self.poll_ubx and now >= self.next_poll:
+        if self.poll_ubx and now >= self.next_poll and not self.pending_poll:
             # Query data only, including receivers configured without periodic output.
             polls = ubx_packet(1, 7) + ubx_packet(1, 20)
             if not self.decoder.identity: polls = ubx_packet(10, 4) + polls
@@ -162,9 +167,18 @@ class GpsSerial:
             if self.decoder.last_sample_at is None or time.time()-self.decoder.last_sample_at > 3:
                 polls += b''.join(nmea_poll(talker, message)
                                   for talker in ('GN', 'GP') for message in ('GGA', 'RMC'))
-            try: os.write(self.fd, polls)
-            except BlockingIOError: pass
+            if now >= self.next_reception_poll:
+                # Empty NAV-SAT/NAV-SIG polls only, in this same serial owner.
+                # Keep a fixed bounded cadence even when unsupported or unanswered.
+                polls += ubx_packet(1, 0x35) + ubx_packet(1, 0x43)
+                self.next_reception_poll = now + RECEPTION_POLL_SECONDS
+            self.pending_poll = polls
             self.next_poll = now + 1.0
+        if self.poll_ubx and self.pending_poll:
+            # Nonblocking short writes resume the same bounded packet batch;
+            # never append another batch or interleave a new packet mid-frame.
+            try: self.pending_poll = self.pending_poll[os.write(self.fd, self.pending_poll):]
+            except BlockingIOError: pass
         if self.decoder.packets > before: self.error = None
         return frames
 
@@ -195,7 +209,8 @@ class GpsSerial:
                       uart_counters=counts, uart_counters_scope='since_uart_open' if counts is not None else None)
         # A recently valid fix must become invalid immediately on disconnect.
         received_at = self.decoder.last_sample_at if self.fd is not None else None
-        return fresh_snapshot(self.decoder.sample, received_at, driver=driver)
+        return fresh_snapshot(self.decoder.sample, received_at, driver=driver,
+                              reception=self.decoder.reception)
 
     def close(self):
         fd, lock_fd, original = self.fd, self.lock_fd, self.original

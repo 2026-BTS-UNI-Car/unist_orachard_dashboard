@@ -7,6 +7,32 @@ export function coordinates(sample) {
 
 export function validFix(sample) { return sample?.valid === true && Boolean(coordinates(sample)); }
 
+export function usedSatellitesText(sample) {
+  const count = sample?.satellites;
+  const current = sample?.state !== 'stale' && sample?.state !== 'no_data' && sample?.connected !== false;
+  return `위치계산 사용 ${current && Number.isInteger(count) && count >= 0 && count <= 255 ? count : '—'}개`;
+}
+
+export function receptionText(sample, elapsedS = 0) {
+  const reception = sample?.reception;
+  if (!reception || !Number.isFinite(elapsedS) || elapsedS < 0) return '신호 진단 미보고';
+  const parts = [];
+  for (const [key, label] of [['nav_sig', '신호'], ['nav_sat', '위성']]) {
+    const report = reception[key];
+    if (!report || report.state === 'no_data') continue;
+    const age = typeof report.age_s === 'number' && Number.isFinite(report.age_s) ? report.age_s + elapsedS : null;
+    const counts = [report.detected_count, report.tracked_count];
+    if (report.state === 'disconnected') parts.push(`${label} 진단 연결 끊김`);
+    else if (report.state === 'stale' || (age !== null && age > 12)) parts.push(`${label} 진단 오래됨`);
+    else if (report.state === 'fresh' && age !== null && age >= 0
+             && counts.every(value => Number.isInteger(value) && value >= 0 && value <= (key === 'nav_sig' ? 120 : 255))
+             && counts[1] <= counts[0])
+      parts.push(`${label} 검출 ${counts[0]} · 추적 ${counts[1]} (${age.toFixed(1)}초 전)`);
+    else parts.push(`${label} 진단 확인 불가`);
+  }
+  return parts.join(' / ') || '신호 진단 미보고';
+}
+
 export class FollowModel {
   constructor() { this.follow = true; this.position = null; this.fresh = false; }
   userPan() { this.follow = false; }

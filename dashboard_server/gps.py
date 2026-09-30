@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import math
 import struct
 import time
+from .gps_reception import MESSAGES, WEEK_MS, parse_reception, reception_snapshot
 
 GPS_SCHEMA = "orchard.gps.v1"
 GPS_TIMELINE_SCHEMA = "orchard.gps_timeline.v1"
@@ -64,6 +65,8 @@ class GnssDecoder:
         self.gst = {}
         self.identity = {}
         self.sequence = 0
+        self.reception = {}
+        self.reception_epochs = {}
 
     def feed(self, data):
         self.buffer.extend(data)
@@ -97,7 +100,10 @@ class GnssDecoder:
                 if raw != ubx_packet(raw[2], raw[3], raw[6:-2]):
                     del self.buffer[0]; self.rejected += 1; continue
                 del self.buffer[:length+8]
-                frame = self._ubx(raw[2], raw[3], raw[6:-2])
+                try:
+                    frame = self._ubx(raw[2], raw[3], raw[6:-2])
+                except (ValueError, IndexError, struct.error):
+                    self.rejected += 1; continue
             else:
                 del self.buffer[0]
                 continue
@@ -106,6 +112,7 @@ class GnssDecoder:
             if frame is not None:
                 self.sequence += 1
                 frame.update(schema=GPS_SCHEMA, sequence=self.sequence, received_at=self.clock(), frame_id="gps_link")
+                frame['reception'] = reception_snapshot(self.reception, now=frame['received_at'])
                 if frame.get('fix_dimension') == 2:
                     frame.update(altitude_ellipsoid_m=None, altitude_msl_m=None, v_acc_m=None)
                 if not valid_position(frame):
@@ -173,6 +180,22 @@ class GnssDecoder:
         return frame
 
     def _ubx(self, cls, msg_id, p):
+        if (cls, msg_id) in MESSAGES:
+            key = MESSAGES[(cls, msg_id)][0]
+            try:
+                report = parse_reception(cls, msg_id, p)
+                previous = self.reception_epochs.get(key)
+                if previous is not None:
+                    delta = (report['i_tow_ms'] - previous) % WEEK_MS
+                    # Polling the same navigation epoch must not renew its age.
+                    if delta == 0: return None
+                    if delta >= WEEK_MS // 2: raise ValueError('reordered_reception_epoch')
+            except ValueError as error:
+                self.reception[key] = dict(error=str(error), received_at=self.clock())
+                raise
+            self.reception_epochs[key] = report['i_tow_ms']
+            self.reception[key] = dict(report, received_at=self.clock())
+            return None  # Reception information is never a new position/fix sample.
         if (cls, msg_id) == (10, 4) and len(p) >= 40:
             self.identity = dict(software=p[:30].rstrip(b"\0").decode("ascii", "replace"),
                                  hardware=p[30:40].rstrip(b"\0").decode("ascii", "replace"),
@@ -210,14 +233,17 @@ class GnssDecoder:
         return frame
 
 
-def fresh_snapshot(sample, received_at, *, now=None, driver=None, stale_s=3.0):
+def fresh_snapshot(sample, received_at, *, now=None, driver=None, stale_s=3.0, reception=None):
     now = time.time() if now is None else now
     received_at = finite(received_at)
     age = max(0, now - received_at) if received_at is not None and received_at <= now + 1 else None
-    fresh = age is not None and age <= stale_s
+    fresh = age is not None and age <= stale_s and (driver or {}).get('serial_open') is not False
     payload = copy.deepcopy(sample or {})
     payload.update(schema=GPS_SCHEMA, type="gps", updated_at=now, age_s=round(age, 3) if age is not None else None,
                    connected=fresh, valid=fresh and valid_position(payload))
     payload["state"] = "fix" if payload["valid"] else "no_fix" if fresh else "stale" if sample and received_at is not None else "no_data"
     payload["driver"] = dict(driver or {})
+    payload['reception'] = reception_snapshot(reception if reception is not None else payload.get('reception'),
+        now=now, connected=(payload['driver'].get('serial_open') is not False
+                           and payload['driver'].get('topic_alive') is not False))
     return payload

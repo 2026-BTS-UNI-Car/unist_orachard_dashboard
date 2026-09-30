@@ -23,6 +23,7 @@ class GpsBridgeState:
         self.received_at = None
         self.driver = {}
         self.driver_at = None
+        self.reception = None
 
     def update(self, msg, status=False):
         try:
@@ -35,6 +36,7 @@ class GpsBridgeState:
             if status:
                 self.driver = payload.get('driver') or {}
                 self.driver_at = time.time()
+                self.reception = payload.get('reception')
             else:
                 self.sample = payload
                 # Preserve source receipt time so replayed/delayed DDS data is not fresh.
@@ -45,7 +47,8 @@ class GpsBridgeState:
         with self.lock:
             driver = dict(self.driver)
             driver['topic_alive'] = self.driver_at is not None and time.time()-self.driver_at < 3
-            return fresh_snapshot(self.sample, self.received_at, driver=driver)
+            return fresh_snapshot(self.sample, self.received_at, driver=driver,
+                                  reception=self.reception)
 
 
 async def stream(websocket, state):
