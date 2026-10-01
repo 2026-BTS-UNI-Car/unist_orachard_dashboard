@@ -74,11 +74,12 @@ vm.createContext(context); vm.runInContext(code, context);
   await context.startRecording('both');
   assert.equal(nodes.roverRecordingTimer.textContent, '--:--', 'action response age also includes transit time');
   testSecondaryRecorderRow();
-  console.log('recording status UI: 11 lifecycle cases + 8 detail-row/timer freshness cases PASS');
+  await testRecurringRecorderPolling();
+  console.log('recording status UI: 11 lifecycle + 8 detail-row cases + recurring polling/outage recovery PASS');
 })().catch(error => {console.error(error); process.exitCode = 1;});
 
 // Execute the real generic row renderer, rover render, and existing one-second
-// UI timer. The receiver and HTTP are absent; no telemetry event drives expiry.
+// UI timer. An already blocked GET owns admission; no telemetry event drives expiry.
 function testSecondaryRecorderRow() {
   const elements = new Map();
   class Node {
@@ -100,7 +101,7 @@ function testSecondaryRecorderRow() {
   let clock = 50000, localTick;
   const c = {
     state: {recordings: {kind: 'both', includeImu: true, includeGps: true,
-      status: {...live(true), recording_id: 'current-session'}, lastStatusSteadyAt: clock}, imuLive: {}},
+      status: {...live(true), recording_id: 'current-session'}, lastStatusSteadyAt: clock, statusInFlight: 1}, imuLive: {}},
     SIMULATION: true, window: {SimMap: {autonomyStatus: () => ({active:false})}},
     $: id => elements.get(id), text: (id, value) => {node(id).textContent = value;},
     performance: {now: () => clock}, document: {createElement: () => new Node(), querySelectorAll: () => []},
@@ -148,4 +149,77 @@ function testSecondaryRecorderRow() {
   assert.equal(field('.status-dot').className, 'status-dot warn', 'clock regression is unknown');
   clock = Infinity; localTick();
   assert.equal(field('.status-dot').className, 'status-dot warn', 'nonfinite age is unknown');
+}
+
+// Real recurring timer + real maybeRefresh/refresh functions for virtual40+s.
+// No generic telemetry callbacks, recorder POSTs, browser or sensor are used.
+async function testRecurringRecorderPolling() {
+  const ui = Object.fromEntries(ids.map(id => [id, {textContent:'', disabled:false}]));
+  const detail = Object.fromEntries(['.status-dot','small','b'].map(key => [key, {textContent:'',className:''}]));
+  ui.roverRecorderDetail = {querySelector: key => detail[key]};
+  let steady = 0, wall = 1800000000000, mode = 'idle', activeSince = 0, interval;
+  let route = '/rover-control', nextTimeout = 0;
+  const deadlines = new Map(), requests = [], pending = [];
+  const c = {
+    state:{recordings:{kind:'both',includeImu:true,includeGps:true,status:null}},
+    $: id => ui[id], text:(id,value) => {ui[id].textContent=value;},
+    document:{querySelectorAll:()=>[]}, performance:{now:()=>steady}, Date:{now:()=>wall},
+    currentRoute:()=>route, routeSupportsCameraLive:()=>false, fmtClock:seconds=>`elapsed:${seconds}`,
+    AbortController, debugLog(){},
+    setInterval:(fn,ms)=>{assert.equal(ms,1000);interval=fn;},
+    setTimeout:(fn,ms)=>{const id=++nextTimeout;deadlines.set(id,{fn,due:steady+ms});return id;},
+    clearTimeout:id=>deadlines.delete(id),
+    postJson:()=>{throw Error('This regression must never send recorder commands');},
+    getJson:(path,{signal})=>{
+      assert.equal(path,'/api/recordings/status');
+      assert.equal(requests.filter(r=>!r.settled&&!r.signal.aborted).length,0,'no overlapping active GET');
+      const request={at:steady,signal,settled:false};requests.push(request);
+      if(mode==='blocked')return new Promise(resolve=>pending.push(value=>{request.settled=true;resolve(value);}));
+      request.settled=true;
+      return Promise.resolve(live(mode==='active',mode==='active'?(steady-activeSince)/1000:0));
+    },
+  };
+  vm.createContext(c);vm.runInContext(code,c);
+  vm.runInContext(source.slice(source.lastIndexOf('setInterval(() => {')),c);
+  const flush=async()=>{for(let i=0;i<4;i++)await Promise.resolve();};
+  const step=async()=>{
+    steady+=1000;wall+=1000;
+    for(const [id,timer] of [...deadlines])if(timer.due<=steady){deadlines.delete(id);timer.fn();}
+    interval();await flush();
+  };
+  for(let i=0;i<6;i++){
+    await step();assert.equal(ui.roverRecorderState.textContent,'ready');
+    assert.equal(detail['.status-dot'].className,'status-dot ok');
+  }
+  assert.equal(requests.length,2,'1s timer throttles real GETs to the2200ms cadence');
+  mode='active';activeSince=steady;const durations=[];
+  for(let i=0;i<15;i++){
+    await step();assert.equal(ui.roverRecorderState.textContent,'recording');
+    assert.equal(ui.roverRecordStopButton.disabled,false);
+    durations.push(Number(ui.roverRecordingTimer.textContent.split(':')[1]));
+  }
+  assert.ok(durations.at(-1)>=13&&durations.at(-1)>durations[0],'elapsed updates beyond initial5s freshness window');
+  mode='idle';for(let i=0;i<6;i++)await step();
+  assert.equal(ui.roverRecorderState.textContent,'ready');
+  assert.equal(ui.roverRecordingTimer.textContent,'00:00');
+  const beforeOutage=requests.length;
+  mode='blocked';wall-=86400000; // OS wall-clock regression cannot suspend status polls.
+  await step();await step();await step();
+  assert.equal(requests.length,beforeOutage+1,'blocked read cannot overlap before timeout');
+  assert.equal(c.state.recordings.statusInFlight!==null,true);
+  for(let i=0;i<4;i++)await step();
+  assert.equal(ui.roverRecorderState.textContent,'\uc0c1\ud0dc \ubbf8\ud655\uc778');
+  assert.equal(detail['.status-dot'].className,'status-dot warn');
+  assert.equal(ui.roverRecordStartButton.disabled,true);
+  assert.equal(ui.roverRecordStopButton.disabled,false);
+  assert.equal(requests.filter(r=>!r.settled&&!r.signal.aborted).length,1);
+  assert.equal(pending.length,2,'timeout abort permits one recovery request');
+  mode='idle';pending[1](live(false));await flush();
+  pending[0](live(true,999));await flush();
+  assert.equal(ui.roverRecorderState.textContent,'ready','old aborted response cannot undo recovery');
+  for(let i=0;i<9;i++){await step();assert.equal(ui.roverRecorderState.textContent,'ready');}
+  const beforeAway=requests.length;route='/docs';for(let i=0;i<6;i++)await step();
+  assert.equal(requests.length,beforeAway,'polling is scoped to the visible control route');
+  route='/rover-control';await step();assert.equal(ui.roverRecorderState.textContent,'ready');
+  assert.ok(steady>=40000&&requests.length>=10);
 }

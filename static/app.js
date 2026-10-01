@@ -3839,6 +3839,7 @@ async function refreshRecordingStatus() {
   const ticket = state.recordings.statusRequestId = (state.recordings.statusRequestId || 0) + 1;
   state.recordings.statusInFlight = ticket;
   const requestedAt = performance.now();
+  state.recordings.lastStatusPollSteadyAt = requestedAt;
   const controller = state.recordings.statusController = new AbortController();
   const timeout = setTimeout(() => {
     if (ticket !== state.recordings.statusRequestId) return;
@@ -3878,8 +3879,10 @@ function invalidateRecordingStatusRead() {
 function maybeRefreshRecordingStatus() {
   if (currentRoute() !== "/rover-control") return;
   renderRecordingStatus();
-  const now = Date.now();
-  if (now - (state.recordings.lastStatusAt || 0) < 2200) return;
+  const now = performance.now();
+  const last = state.recordings.lastStatusPollSteadyAt;
+  if (!Number.isFinite(now)) return;
+  if (Number.isFinite(last) && now >= last && now - last < 2200) return;
   refreshRecordingStatus().catch((err) => debugLog("recording", "status refresh failed", err));
 }
 
@@ -5225,7 +5228,7 @@ loadDocs().catch(console.error);
 tick();
 setInterval(tick, POLL_INTERVAL_MS);
 setInterval(() => {
-  // UI freshness must expire independently of network/telemetry progress.
-  if (currentRoute() === "/rover-control") renderRecordingStatus();
+  // Recorder polling and UI expiry are independent of general telemetry.
+  maybeRefreshRecordingStatus();
   if (routeSupportsCameraLive() && (state.cameraLive.enabled || state.cameraLive.lastDecodedAt !== null)) renderCameraLiveState();
 }, 1000);
