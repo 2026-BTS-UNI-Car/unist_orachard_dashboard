@@ -1,6 +1,32 @@
 # Raw dashboard deployment checkpoint
 
-## Latest verified web state: 2026-10-01 KST
+## Latest verified recorder polling: 2026-10-01 KST
+
+Source `037607f0743364e04b4a99d05709756c7253eb31` runs in web image
+`664ee011`. The recorder UI now polls repeatedly while the control page is open,
+using a monotonic attempt interval and the existing timeout, single-flight and
+reply-order guards. This fixes the display becoming unknown after the initial
+freshness window despite a healthy recorder. Both recorder views recover when
+requests resume; the timer only issues status GET requests.
+
+Six actual and eight SIM JavaScript suites passed. The exact committed Git bytes
+also passed the frozen UI suite, with 15 deployment-helper tests and four native
+ARM recorder API tests. A separate post-deployment observation kept fresh idle
+status for at least 20 seconds. Exact served source, runtime/configuration,
+default image tag and all preservation checks passed: 15 other containers,
+settings/Compose inputs and all 32 archive metadata inventories were unchanged.
+[Polling deployment evidence](docs/jetson_recorder_ui_polling_deployment.json).
+
+Recovery checkpoint: `20261001-130315-recorder-poll-037607f07433`, release
+`recorder-poll-037607f-003`, pinned helper `deploy_recorder_ui_polling_003.py rollback`
+with the checkpoint path and
+`--digest edfa6ef1d5d6dc786383338d9a1c3fa19ae0aa0122368cab4f6fa88131f33b7a`.
+The guarded rollback restores only its web image/source/default tag; the previous
+image `a993984b` has a backup tag. No rollback, motor command or recording was
+performed. This checkpoint verifies served source and API behavior; live browser
+rendering and physical recording are separate checks.
+
+## Prior recorder display freshness: 2026-10-01 KST
 
 Source `aef37013607a306a2d7b5f0588c1fba5d1eff09e` now runs in web image
 `a993984b`. This changes only `static/app.js`: the Data Recorder detail row
