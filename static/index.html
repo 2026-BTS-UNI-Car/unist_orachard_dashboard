@@ -835,13 +835,7 @@
 <div class="sim-map-stage"><canvas id="liveArchiveCanvas" aria-label="기록 센서로 재생성한 지도" width="720" height="440"></canvas><div class="sim-map-zoom"><button data-archive-zoom="out" type="button">−</button><button data-archive-zoom="fit" type="button">주변 자동</button><button data-archive-zoom="full" type="button">전체</button><button data-archive-zoom="in" type="button">+</button></div></div>
 <p id="liveArchiveStatus" class="sim-map-status" role="status">기록을 선택하세요. 원본 센서 기록은 보존됩니다.</p>
 </section>
-<section class="archive-gps-panel" hidden="" id="roverArchiveGpsPanel">
-<div class="panel-head mini"><div><p class="eyebrow">Time-aligned GPS</p><h3>기록된 로버 위치</h3></div><button aria-pressed="true" class="action-button secondary" id="roverArchiveGpsFollow" type="button">로버 중심 추적 중</button></div>
-<div aria-label="기록 GPS 동기 재생 지도" class="gps-map gps-archive-map" id="roverArchiveGpsMap" role="region"></div>
-<div class="gps-readouts"><div><span>위도 · 경도</span><strong id="roverArchiveGpsPosition">기록 선택 대기</strong></div><div><span>수신 상태</span><strong id="roverArchiveGpsQuality">—</strong></div><div><span>신호 검출 · 추적 (기록 시점)</span><strong id="roverArchiveGpsSignals">신호 진단 미보고</strong></div><div><span>수신기 보고 정확도</span><strong id="roverArchiveGpsAccuracy">—</strong></div><div><span>이동 속도</span><strong id="roverArchiveGpsSpeed">—</strong></div></div>
-<div class="gps-map-footer"><span id="roverArchiveGpsTime">GPS 타임라인 대기</span><span id="roverArchiveGpsMapStatus"></span></div>
-<p class="gps-caption" id="roverArchiveGpsAltitude"></p>
-</section>
+
 <section class="archive-imu-panel" hidden="" id="roverArchiveImuPanel">
 <div class="panel-head mini">
 <div>
@@ -857,6 +851,14 @@
 </div>
 <div class="chart-readout compact" id="roverArchiveImuStats"></div>
 </div>
+</section>
+
+<section class="archive-gps-panel" hidden="" id="roverArchiveGpsPanel">
+<div class="panel-head mini"><div><p class="eyebrow">Time-aligned GPS</p><h3>기록된 로버 위치</h3></div><button aria-pressed="true" class="action-button secondary" id="roverArchiveGpsFollow" type="button">로버 중심 추적 중</button></div>
+<div aria-label="기록 GPS 동기 재생 지도" class="gps-map gps-archive-map" id="roverArchiveGpsMap" role="region"></div>
+<div class="gps-readouts"><div><span>위도 · 경도</span><strong id="roverArchiveGpsPosition">기록 선택 대기</strong></div><div><span>수신 상태</span><strong id="roverArchiveGpsQuality">—</strong></div><div><span>신호 검출 · 추적 (기록 시점)</span><strong id="roverArchiveGpsSignals">신호 진단 미보고</strong></div><div><span>수신기 보고 정확도</span><strong id="roverArchiveGpsAccuracy">—</strong></div><div><span>이동 속도</span><strong id="roverArchiveGpsSpeed">—</strong></div></div>
+<div class="gps-map-footer"><span id="roverArchiveGpsTime">GPS 타임라인 대기</span><span id="roverArchiveGpsMapStatus"></span></div>
+<p class="gps-caption" id="roverArchiveGpsAltitude"></p>
 </section>
 
 <section class="archive-motor-panel" hidden="" id="roverArchiveMotorPanel">
