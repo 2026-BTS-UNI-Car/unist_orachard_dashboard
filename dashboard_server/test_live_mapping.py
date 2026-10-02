@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from dashboard_server.live_mapping import LiveMapping, attitude, translation
 from dashboard_server.autonomy_settings import AutonomySettings
-from dashboard_server.archive_mapping import ArchiveMapping
+from dashboard_server.archive_mapping import ArchiveMapping,renderer_snapshot
 
 
 def frame(stamp=10.,yaw=0.):
@@ -63,6 +63,17 @@ class Tests(unittest.TestCase):
             archives=ArchiveMapping(root)
             for name in ('..','../outside','/outside','missing'):
                 with self.assertRaises(ValueError):archives.status(name)
+
+    def test_renderer_xy_bounds_and_y_flip_preserve_geometry(self):
+        import base64
+        import cv2
+        image=np.full((50,100,3),146,dtype=np.uint8);image[0,0]=25;image[-1,-1]=245
+        ok,png=cv2.imencode('.png',image);self.assertTrue(ok)
+        value=renderer_snapshot(png,{'render_world_bounds_m':[-3.,7.,-2.,3.],'frame_index':4},'fixture')
+        self.assertEqual(value['grid']['origin'],{'x':-3.,'y':-2.})
+        self.assertEqual(value['grid']['resolution'],.1)
+        decoded=cv2.imdecode(np.frombuffer(base64.b64decode(value['grid']['image_base64']),dtype=np.uint8),cv2.IMREAD_COLOR)
+        self.assertEqual(int(decoded[-1,0,0]),25);self.assertEqual(int(decoded[0,-1,0]),245)
 
 
 if __name__=='__main__':unittest.main()

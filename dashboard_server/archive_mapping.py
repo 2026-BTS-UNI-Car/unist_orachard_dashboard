@@ -9,6 +9,27 @@ from urllib.request import Request, urlopen
 from dashboard_server.occupancy_map import atomic_json, read_json
 
 
+def renderer_snapshot(png,meta,archive_id):
+    import cv2
+    import numpy as np
+    image=cv2.imdecode(np.frombuffer(png,dtype=np.uint8),cv2.IMREAD_COLOR)
+    if image is None or image.shape[0]*image.shape[1]>4_194_304:raise ValueError('render_size_exceeded')
+    # Renderer bounds are [minX,maxX,minY,maxY], not an XYXY bounding box.
+    xmin,xmax,ymin,ymax=meta['render_world_bounds_m']
+    h,w=image.shape[:2];resolution=(xmax-xmin)/w
+    if resolution<=0 or abs(resolution-(ymax-ymin)/h)>.001:raise ValueError('non_square_grid_scale')
+    # Retain the existing renderer's permanent age gradient, showing its rover
+    # marker in red consistently with the live dashboard.
+    green=((image==[94,197,34]).all(axis=2)|(image==[61,128,21]).all(axis=2))
+    image[green]=[67,50,240]
+    ok,encoded=cv2.imencode('.png',cv2.flip(image,0))
+    if not ok:raise ValueError('render_encode_failed')
+    return dict(ok=True,scan_count=int(meta.get('frame_index',0))+1,version=1,map_epoch='archive-'+archive_id,
+                coordinate_frame='archive_unqualified_lidar_imu_display',path=[],pose=None,
+                runtime_authority=False,source='raw_recorded_sensors',renderer_metadata=meta,
+                grid=dict(width=w,height=h,resolution=resolution,origin=dict(x=xmin,y=ymin),encoding='png',row_order='min_y_first',image_base64=base64.b64encode(encoded).decode()))
+
+
 class ArchiveMapping:
     def __init__(self, root, renderer='http://127.0.0.1:8810'):
         self.root=Path(root);self.renderer=renderer.rstrip('/')
@@ -51,20 +72,7 @@ class ArchiveMapping:
                 png=response.read(16*1024*1024+1)
                 meta=json.loads(response.headers['X-OGM-Meta'])
             if len(png)>16*1024*1024:raise ValueError('render_png_too_large')
-            import cv2
-            import numpy as np
-            image=cv2.imdecode(np.frombuffer(png,dtype=np.uint8),cv2.IMREAD_COLOR)
-            if image is None or image.shape[0]*image.shape[1]>4_194_304:raise ValueError('render_size_exceeded')
-            # Existing renderer uses screen-style max-Y-first PNG rows.
-            ok,encoded=cv2.imencode('.png',cv2.flip(image,0))
-            if not ok:raise ValueError('render_encode_failed')
-            xmin,ymin,xmax,ymax=meta['render_world_bounds_m']
-            h,w=image.shape[:2];resolution=(xmax-xmin)/w
-            if abs(resolution-(ymax-ymin)/h)>.001:raise ValueError('non_square_grid_scale')
-            value=dict(ok=True,scan_count=int(meta.get('frame_index',0))+1,version=1,map_epoch='archive-'+archive_id,
-                       coordinate_frame='archive_unqualified_lidar_imu_display',path=[],pose=None,
-                       runtime_authority=False,source='raw_recorded_sensors',renderer_metadata=meta,
-                       grid=dict(width=w,height=h,resolution=resolution,origin=dict(x=xmin,y=ymin),encoding='png',row_order='min_y_first',image_base64=base64.b64encode(encoded).decode()))
+            value=renderer_snapshot(png,meta,archive_id)
             atomic_json(self.directory(archive_id)/'dashboard_occupancy_grid.json',value)
         except Exception as error:
             with self.lock:self.errors[archive_id]=str(error)[:240]
