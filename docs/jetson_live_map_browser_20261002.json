@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "headless": true,
+  "page_errors": [],
+  "live_map_scans": 9,
+  "speed_setting_restored": 100,
+  "hardware_start_disabled": true,
+  "archive_regenerated": true,
+  "archive_scans": 11,
+  "archive_grid_size": [
+    960,
+    986
+  ],
+  "new_recording": false
+}

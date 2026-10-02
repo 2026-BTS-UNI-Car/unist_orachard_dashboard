@@ -1,0 +1,120 @@
+{
+  "ok": true,
+  "source_commit": "7165518b44556d646b4ac4ebffafa49b89b99899",
+  "web_id": "0d9023ae55868fd4ec52c5e6c77517012f41641ff0cb65911af3723d73d37b87",
+  "image": "sha256:6909dee030229d9bd72f2bcfa09f651f12c7bc4f698f77c0de5ceacbdf86fd74",
+  "served_hashes": {
+    "static/app.js": "55a5c96f0bf81571085c1897a8bb31a85e1b262056d3e2faf9f445bac7fb50cc",
+    "static/index.html": "f1468ed29df3c94affba614a17af3af0bedb9e7bebb6e0808941ae547b68da6b",
+    "static/live-map.css": "ea4ecf8b2f0c0340409cb44dbfc039224122dc7a84c057b4ca6e39cd870f2fad",
+    "static/live-map.js": "73162d31eca79ffddcd5b0ed3caecd0bcc6e6261b6ac1b55c0987b5d0b17076b",
+    "static/metric-map.mjs": "07cb6d15fbbb18fad40cff29dbcb40bc27b5e283a75151bd2ea2bd09912cf867",
+    "static/sim-map-model.mjs": "a3f06b9b5f2ac398ab40bfe45b64b4cdce58c0d43d30c9fa15a64edaa1f44adb"
+  },
+  "live_trial": [
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 1,
+      "version": 1,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 2,
+      "version": 2,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 3,
+      "version": 3,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 3,
+      "version": 3,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 4,
+      "version": 4,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 5,
+      "version": 5,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 6,
+      "version": 6,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 7,
+      "version": 7,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 7,
+      "version": 7,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 7,
+      "version": 7,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 8,
+      "version": 8,
+      "runtime_authority": false
+    },
+    {
+      "active": true,
+      "state": "drawing",
+      "reason": null,
+      "scan_count": 9,
+      "version": 9,
+      "runtime_authority": false
+    }
+  ],
+  "map_stopped": true,
+  "other_containers_preserved": 12,
+  "archives_preserved": 32,
+  "motor_armed": false,
+  "motor_moving": false,
+  "recorder_state": "idle",
+  "new_recording": false,
+  "physical_autonomy_enabled": false
+}

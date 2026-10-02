@@ -1,5 +1,30 @@
 # Raw dashboard deployment checkpoint
 
+## Latest live mapping and speed preference: 2026-10-02 KST
+
+Source `7165518` is directly SSH-deployed in web image `6909dee0`. It adds the
+below-LiDAR live map, stopped-map retention, occupied-object automatic framing,
+persistent manual zoom and red trajectory, plus archived grid regeneration from
+the original LiDAR/IMU records. The archive order is media, grid, IMU, GPS, PWM.
+The autonomous speed preference is saved, while physical autonomous START stays
+disabled pending encoderless localization/braking qualification.
+
+The ARM isolated suite passed7 tests; native browser checks had no JavaScript
+errors and generated a saved11-scan archive grid. Real live mapping accumulated9
+scans in6 seconds, then stopped and retained the grid.12 other container
+identities,32 original archive metadata inventories and protected settings were
+preserved. No physical drive or new recording was performed. Existing camera,
+manual control, raw IMU, LiDAR, PWM and recurring recording UI suites pass.
+
+[Deployment proof](docs/jetson_live_map_deployment_20261002.json),
+[browser proof](docs/jetson_live_map_browser_20261002.json),
+[implementation and limits](docs/live_mapping_autonomy_speed.md).
+The recovery helper and exact prior web image/source backup are retained at
+`/home/unist/workspace/ubts-dashboard-releases/live-map-20261002/`.
+Its `remote_release.py rollback` restores only the saved web image and selected
+source files; sensor/motor services and raw archives are outside its mutations.
+The final backup is the prior live-mapping web release, not the September image.
+
 ## Latest verified recorder polling: 2026-10-01 KST
 
 Source `037607f0743364e04b4a99d05709756c7253eb31` runs in web image
