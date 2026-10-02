@@ -1656,7 +1656,7 @@ function renderCameraLiveState(overrideLabel) {
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
-    { label: "수신 FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
+    { label: "수신 FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · ${frameAge}`, color: colors.blue },
   ]);
   text("roverCameraCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · ${frameAge} · ${cameraDelivery}${ackLabel}` : socketText);
   const roverButton = $("roverCameraToggle");
@@ -1670,7 +1670,7 @@ function renderCameraLiveState(overrideLabel) {
     { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
     { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
     { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
-    { label: "수신 FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · frames ${state.cameraLive.frameCount || 0} · ${frameAge}`, color: colors.blue },
+    { label: "수신 FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · ${frameAge}`, color: colors.blue },
   ]);
 }
 

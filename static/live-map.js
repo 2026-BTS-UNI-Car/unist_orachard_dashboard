@@ -10,7 +10,7 @@ async function request(path,body){
 function paint(value){
   live.set(value);text('liveMapState',value.active?'그리는 중':value.state==='needs_reset'?'위치 추정 중단':'멈춤');
   $('liveMapStart').disabled=value.active||value.state==='needs_reset';$('liveMapStop').disabled=!value.active;
-  text('liveMapStatus',`${value.scan_count||0} scans · ${value.active?'지도 누적 중':value.state==='needs_reset'?'새 지도 필요':'마지막 지도 유지'}${value.reason?` · ${value.reason}`:''}`);
+  text('liveMapStatus',`${value.active?'지도 누적 중':value.state==='needs_reset'?'새 지도 필요':'마지막 지도 유지'}${value.reason?` · ${value.reason}`:''}`);
 }
 for(const operation of ['start','stop','reset'])$('liveMap'+operation[0].toUpperCase()+operation.slice(1)).addEventListener('click',async()=>{
   try{paint(await request('/api/live/map/'+operation,{}));}catch(error){text('liveMapStatus',error.message);}
