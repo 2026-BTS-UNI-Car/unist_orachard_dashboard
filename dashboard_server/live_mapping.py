@@ -12,6 +12,7 @@ from pathlib import Path
 import threading
 import time
 import uuid
+from collections import deque
 
 import numpy as np
 from dashboard_server.occupancy_map import OccupancyMap, atomic_json, read_json
@@ -60,6 +61,8 @@ class LiveMapping:
     def __init__(self, state_dir, start_worker=True):
         self.state_dir = Path(state_dir)
         self.lock = threading.RLock()
+        self.inbox_lock = threading.Lock()
+        self.imu_history = deque(maxlen=60)
         self.map = OccupancyMap(max_beams=450,laser_x=0.,laser_y=0.)
         self.map_epoch = uuid.uuid4().hex
         self.version = 0
@@ -93,7 +96,12 @@ class LiveMapping:
                         try: packet=json.loads(await asyncio.wait_for(socket.recv(),1))
                         except asyncio.TimeoutError: continue
                         if packet.get('type') != kind: continue
-                        with self.lock: self.latest[kind]=(packet,time.monotonic())
+                        # Sensor receipt never waits for ICP/grid integration.
+                        # A small history pairs an older scan with its actual
+                        # attitude, rather than whichever IMU arrived last.
+                        with self.inbox_lock:
+                            row=(packet,time.monotonic());self.latest[kind]=row
+                            if kind=='imu':self.imu_history.append(row)
             except (OSError,ValueError,websockets.exceptions.WebSocketException):
                 await asyncio.sleep(1)
 
@@ -101,7 +109,14 @@ class LiveMapping:
         while not self.stop_event.wait(.5):
             with self.lock:
                 if not self.tracking: continue
-                scan=self.latest.get('scan');imu=self.latest.get('imu')
+            with self.inbox_lock:
+                scan=self.latest.get('scan');history=list(self.imu_history)
+            def distance(row):
+                try:
+                    stamp=row[0]['raw']['stamp']
+                    return abs(float(stamp['sec'])+float(stamp['nanosec'])*1e-9-float(scan[0]['stamp']))
+                except (KeyError,TypeError,ValueError):return math.inf
+            imu=min(history,key=distance) if scan and history else None
             if scan and imu:
                 try: self.ingest(scan,imu)
                 except (KeyError,ValueError,TypeError,OverflowError) as error:
@@ -120,12 +135,12 @@ class LiveMapping:
         frame,received=scan;imu_frame,imu_received=imu
         stamp=float(frame['stamp'])
         if not math.isfinite(stamp):raise ValueError('invalid_scan_stamp')
-        if not 0 <= now-received <= 1.5 or not 0 <= now-imu_received <= .5 or imu_frame.get('imu_topic_alive') is not True:
+        if not 0 <= now-received <= 1.5 or not 0 <= now-imu_received <= 1.5 or imu_frame.get('imu_topic_alive') is not True:
             raise ValueError('stale_lidar_or_imu')
         raw=imu_frame.get('raw') or {}
         imu_stamp=raw.get('stamp') or {}
         source_imu=float(imu_stamp['sec'])+float(imu_stamp['nanosec'])*1e-9
-        if not math.isfinite(source_imu) or abs(source_imu-stamp)>.5:raise ValueError('unaligned_lidar_imu')
+        if not math.isfinite(source_imu) or abs(source_imu-stamp)>.2:raise ValueError('unaligned_lidar_imu')
         angles=[];ranges=[]
         for p in frame.get('points',[]):
             angle,distance=float(p['angle_deg']),float(p['distance_m'])
