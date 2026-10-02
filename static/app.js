@@ -4437,6 +4437,7 @@ function renderRecordingDetail(detail) {
   const normalizedPreview = hasLidar ? normalizeArchiveLidarResult(preview, analysis) : null;
 
   const id = payload ? payload.id || metadata.id || state.recordings.selectedId || "" : "";
+  window.LiveMap?.selectArchive(id);
   if (!id) state.recordings.timeline = null;
   setupArchivePlayback(payload, normalizedPreview);
   const rows = id ? [

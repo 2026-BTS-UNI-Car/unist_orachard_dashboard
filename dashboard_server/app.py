@@ -131,7 +131,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path.startswith("/api/rover/"):
+        if path.startswith('/api/live/') or path.startswith('/api/autonomy/'):
+            self._live_request(parsed, action=True)
+        elif path.startswith("/api/rover/"):
             self._rover_action(path)
         elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
@@ -146,7 +148,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             payload = self._read_json_body()
             self._send_json(self.provider.start_recording(payload))
         elif path == "/api/recordings/stop":
-            self._send_json(self.provider.stop_recording())
+            result = self.provider.stop_recording()
+            if result.get('ok') and result.get('recording_id'):
+                try:self.archive_mapping.regenerate(str(result['recording_id']))
+                except ValueError:pass
+            self._send_json(result)
         elif path == "/api/imu/zero":
             self._send_json(self.provider.zero_imu(), status=410)
         elif path == "/api/network/mode":
@@ -171,7 +177,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path.startswith("/occupancy-api"):
+        if path.startswith('/api/live/') or path == '/api/autonomy':
+            self._live_request(parsed)
+        elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
         elif path == "/ws/lidar":
             self._proxy_lidar_websocket()
@@ -252,6 +260,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._proxy_occupancy_request(parsed)
         else:
             self.send_error(404, "Not found")
+
+    def _live_request(self, parsed, action=False):
+        if action:
+            origin=self.headers.get('Origin')
+            if origin and urlparse(origin).netloc != self.headers.get('Host'):
+                self.send_error(403,'Origin mismatch');return
+            if not self._ensure_session(create=False):
+                self.send_error(403,'Dashboard session required');return
+            payload=self._read_json_body()
+            if not isinstance(payload,dict):self.send_error(400,'Object required');return
+        path=parsed.path
+        try:
+            if path=='/api/autonomy' and not action:
+                result=self.autonomy_settings.status()
+            elif path=='/api/autonomy/speed' and action:
+                result=self.autonomy_settings.set_speed(payload.get('speed_percent'))
+            elif path=='/api/autonomy/start' and action:
+                self._send_json({**self.autonomy_settings.status(),'ok':False},409);return
+            elif path=='/api/live/map' and not action:
+                result=self.live_mapping.status(parse_qs(parsed.query).get('since',[None])[0])
+            elif path.startswith('/api/live/map/') and action:
+                result=self.live_mapping.action(path.rsplit('/',1)[-1])
+            elif path.startswith('/api/live/recordings/'):
+                parts=path.split('/')
+                if len(parts)!=6:raise ValueError('invalid_archive_route')
+                archive_id=unquote(parts[4])
+                if parts[5]=='map' and not action:result=self.archive_mapping.status(archive_id)
+                elif parts[5]=='regenerate' and action:result=self.archive_mapping.regenerate(archive_id)
+                else:self.send_error(404);return
+            else:self.send_error(404);return
+            self._send_json(result)
+        except ValueError as error:
+            self._send_json({'ok':False,'error':str(error)},400)
 
     def _rover_action(self, path):
         from dashboard_server.rover_api import request
@@ -1021,6 +1062,12 @@ class DashboardServer(ThreadingHTTPServer):
 
 def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:
     DashboardHandler.provider = TelemetryProvider(config)
+    from dashboard_server.live_mapping import LiveMapping
+    from dashboard_server.archive_mapping import ArchiveMapping
+    from dashboard_server.autonomy_settings import AutonomySettings
+    DashboardHandler.live_mapping=LiveMapping(ROOT/'runtime/live-map',start_worker=os.environ.get('DASHBOARD_LIVE_MAP_WORKER','1')=='1')
+    DashboardHandler.archive_mapping=ArchiveMapping(DashboardHandler.provider.recording_archive_dir)
+    DashboardHandler.autonomy_settings=AutonomySettings(ROOT/'runtime/autonomy_settings.json')
     dashboard_log("server.create", host=host, port=port, session_ttl_s=SESSION_TTL_S)
     return DashboardServer((host, port), DashboardHandler)
 
@@ -1038,6 +1085,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        DashboardHandler.live_mapping.close()
         server.server_close()
 
 
