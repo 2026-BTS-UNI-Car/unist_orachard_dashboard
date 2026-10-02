@@ -77,8 +77,8 @@ class LiveMapping:
         self.threads = []
         self._publish()
         if start_worker:
-            for kind,url in [('scan',os.environ.get('LIDAR_WS_UPSTREAM','ws://127.0.0.1:8765/ws/lidar')+'?max_points=900'),
-                             ('imu',os.environ.get('IMU_WS_UPSTREAM','ws://127.0.0.1:8775/ws/imu'))]:
+            for kind,url in [('scan',os.environ.get('LIDAR_WS_UPSTREAM','ws://127.0.0.1:8765/ws/lidar')+'?max_points=900&profile=detail'),
+                             ('imu',os.environ.get('IMU_WS_UPSTREAM','ws://127.0.0.1:8775/ws/imu')+'?profile=detail')]:
                 thread = threading.Thread(target=lambda k=kind,u=url:asyncio.run(self._receive(k,u)),daemon=True)
                 thread.start();self.threads.append(thread)
             thread=threading.Thread(target=self._run,daemon=True,name='display-occupancy-map')
