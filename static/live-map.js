@@ -51,6 +51,7 @@ async function poll(){
   if(results[0].status==='fulfilled')paint(results[0].value);else text('liveMapStatus',`지도 연결 대기 · 마지막 지도 유지 · ${results[0].reason.message}`);
   if(results[1].status==='fulfilled'&&!speedBusy&&document.activeElement!==$('hardwareAutonomySpeed')){
     $('hardwareAutonomySpeed').value=results[1].value.speed_percent;text('hardwareAutonomySpeedValue',`${results[1].value.speed_percent}%`);
+    text('hardwareAutonomyStatus',`${results[1].value.message} · 현재 순항속도 설정 ${results[1].value.speed_percent}%`);
   }
   polling=false;if(active())timer=setTimeout(poll,1000);
 }
