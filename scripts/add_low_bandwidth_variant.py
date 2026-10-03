@@ -2,6 +2,10 @@
 """Extend a verified generated VOD package; native/high-quality assets stay byte-identical."""
 import argparse,hashlib,json,os,re,shutil,subprocess
 from pathlib import Path
+try:
+    from scripts.hls_bandwidth import hls_bandwidth_metrics
+except ModuleNotFoundError:
+    from hls_bandwidth import hls_bandwidth_metrics
 
 def sha(path):
     h=hashlib.sha256()
@@ -37,11 +41,11 @@ def extend(package,output,ffmpeg='ffmpeg'):
         '-hls_segment_filename','segment-%05d.m4s','index.m3u8']
     with (output/'low-encoder.log').open('wb') as log:subprocess.run(args,cwd=folder,stdout=log,stderr=subprocess.STDOUT,check=True)
     names=[p.relative_to(output).as_posix() for p in folder.iterdir() if p.is_file()]
-    peak=max((output/n).stat().st_size*8/4 for n in names if n.endswith('.m4s'))
-    m['variants'].append(dict(height=240,width=width,bandwidth=max(180000,int(peak*1.15)),playlist='240/index.m3u8'))
+    m['variants'].append(dict(height=240,width=width,playlist='240/index.m3u8',**hls_bandwidth_metrics(folder)))
     master=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-INDEPENDENT-SEGMENTS']
     for v in sorted(m['variants'],key=lambda v:v['height']):
-        master.extend([f"#EXT-X-STREAM-INF:BANDWIDTH={v['bandwidth']},RESOLUTION={v['width']}x{v['height']}",v['playlist']])
+        average=f",AVERAGE-BANDWIDTH={v['average_bandwidth']}" if 'average_bandwidth' in v else ''
+        master.extend([f"#EXT-X-STREAM-INF:BANDWIDTH={v['bandwidth']}{average},RESOLUTION={v['width']}x{v['height']}",v['playlist']])
     (output/m['master']).write_text('\n'.join(master)+'\n')
     for name in names+[m['master']]:m['assets'][name]=dict(bytes=(output/name).stat().st_size,sha256=sha(output/name))
     m['generated_upgrade_source_manifest_sha256']=sha(manifest)

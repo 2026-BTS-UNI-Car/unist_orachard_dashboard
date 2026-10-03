@@ -17,7 +17,8 @@ class LowVariantTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             p=self.fixture(root);before={n:low.sha(p/n) for n in ('native.mp4','master.m3u8','adaptive_video.json')}
             def ffmpeg(*a,**k):
-                for n in ('init.mp4','index.m3u8','segment-00000.m4s'):(Path(k['cwd'])/n).write_bytes(n.encode())
+                for n in ('init.mp4','segment-00000.m4s'):(Path(k['cwd'])/n).write_bytes(n.encode())
+                (Path(k['cwd'])/'index.m3u8').write_text('#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nsegment-00000.m4s\n#EXT-X-ENDLIST\n')
             with patch.object(low.subprocess,'run',side_effect=ffmpeg):m=low.extend(p,Path(root)/'new')
             self.assertEqual(m['source_frames'],150);self.assertEqual(m['timeline_offset_s'],.7)
             self.assertEqual(m['source_width'],1280);self.assertEqual(m['generated_upgrade_source_manifest_sha256'],before['adaptive_video.json'])

@@ -38,7 +38,10 @@ def install(package,root,replace_manifest_sha256=None):
         old=json.loads((target/'adaptive_video.json').read_text())
         if old==m and all(sha(target/n)==v['sha256'] for n,v in m['assets'].items()):return dict(archive_id=name,state='already_installed')
         # Resuming an older batch must preserve a verified newer rendition.
-        if old.get('generated_upgrade_source_manifest_sha256')==sha(package/'adaptive_video.json') and all(
+        ancestry=old.get('generated_upgrade_manifest_ancestry_sha256',[])
+        if not isinstance(ancestry,list) or len(ancestry)>16 or any(not re.fullmatch(r'[0-9a-f]{64}',str(v)) for v in ancestry):
+            raise ValueError('invalid_generated_ancestry')
+        if sha(package/'adaptive_video.json') in ancestry+[old.get('generated_upgrade_source_manifest_sha256')] and all(
             n==m.get('master') or old.get('assets',{}).get(n)==v for n,v in m['assets'].items()) and all(
             sha(target/n)==v['sha256'] for n,v in old['assets'].items()):
             return dict(archive_id=name,state='already_installed_upgraded')

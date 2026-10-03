@@ -64,7 +64,9 @@ class GpsRosTests(unittest.TestCase):
                 self.assertIn(topic,state.topics_for('both'))
             self.assertNotIn('/gps/data',state.topics_for('both',include_gps=False))
             at=time.time()
-            sample=dict(schema=GPS_SCHEMA,valid=True,quality=4,latitude=35.57,longitude=129.19,received_at=at,gps_time='2026-09-26T00:00:00Z')
+            sample=dict(schema=GPS_SCHEMA,valid=True,quality=4,latitude=35.57,longitude=129.19,received_at=at,gps_time='2026-09-26T00:00:00Z',
+                speed_mps=.8,speed_accuracy_m_s=.075,course_accuracy_deg=12.5,
+                velocity_ned_m_s=dict(north=.8,east=0.,down=0.),gps_time_fully_resolved=True,gps_time_fraction_ns=-123456789)
             path=Path(temp)/'gps.jsonl'
             with path.open('w') as state.gps_log:
                 state.observe_gps(SimpleNamespace(data=json.dumps(sample)))
@@ -80,6 +82,8 @@ class GpsRosTests(unittest.TestCase):
             self.assertEqual(state.gps_valid_count,1)
             self.assertAlmostEqual(rows[0]['t_s'],at-state.active['started_monotonic'],places=5)
             self.assertEqual(rows[0]['sample']['gps_time'],sample['gps_time'])
+            for key in ('speed_mps','speed_accuracy_m_s','course_accuracy_deg','velocity_ned_m_s','gps_time_fully_resolved','gps_time_fraction_ns'):
+                self.assertEqual(rows[0]['sample'][key],sample[key])
             self.assertFalse(rows[1]['sample']['valid'])
 
     def test_recording_start_stop_persists_gps_manifest(self):

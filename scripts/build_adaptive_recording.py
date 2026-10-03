@@ -8,6 +8,10 @@ source capture FPS or upscales its resolution. FFmpeg is an offline dependency.
 import argparse,hashlib,json,math,re,subprocess,time,zipfile
 from pathlib import Path
 from datetime import datetime
+try:
+    from scripts.hls_bandwidth import hls_bandwidth_metrics
+except ModuleNotFoundError:
+    from hls_bandwidth import hls_bandwidth_metrics
 
 
 def digest(path):
@@ -79,13 +83,13 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
                '-hls_segment_filename','segment-%05d.m4s','index.m3u8']
         run(args,output/'encoder.log',cwd=folder)
         names=[p.relative_to(output).as_posix() for p in folder.iterdir() if p.is_file()];assetnames+=names
-        actual_rate=max(int((folder/s.split('/')[-1]).stat().st_size*8/4) for s in names if s.endswith('.m4s'))
-        variants.append(dict(height=h,width=w,bandwidth=max(rate,int(actual_rate*1.15)),playlist=f'{h}/index.m3u8'))
+        metrics=hls_bandwidth_metrics(folder)
+        variants.append(dict(height=h,width=w,playlist=f'{h}/index.m3u8',**metrics))
     master=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-INDEPENDENT-SEGMENTS']
     for v in sorted(variants,key=lambda v:v['height']):
         # The decoder reads the actual AVC configuration in init.mp4. Do not
         # fabricate a profile/level CODECS string for arbitrary source sizes.
-        master.extend([f"#EXT-X-STREAM-INF:BANDWIDTH={v['bandwidth']},RESOLUTION={v['width']}x{v['height']}",v['playlist']])
+        master.extend([f"#EXT-X-STREAM-INF:BANDWIDTH={v['bandwidth']},AVERAGE-BANDWIDTH={v['average_bandwidth']},RESOLUTION={v['width']}x{v['height']}",v['playlist']])
     (output/'master.m3u8').write_text('\n'.join(master)+'\n');assetnames.append('master.m3u8')
     duration=frames[-1]['t_s']-frames[0]['t_s']+last_dt
     public=dict(schema='orchard.adaptive_video.v1',complete=True,archive_id=m['archive_id'],

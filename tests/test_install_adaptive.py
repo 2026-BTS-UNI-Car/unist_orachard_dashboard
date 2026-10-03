@@ -51,6 +51,19 @@ class AtomicInstallTest(unittest.TestCase):
             self.assertTrue((a/('.adaptive_video-backup-'+baseline[:16])/'adaptive_video.json').is_file())
             self.assertEqual(installer.install(p,r)['state'],'already_installed_upgraded')
             self.assertEqual(installer.install(u,r,baseline)['state'],'already_installed')
+            # A metadata-only correction is a second generation. Resuming
+            # either older package must keep the newest complete directory.
+            corrected=Path(root)/'corrected';shutil.copytree(u,corrected)
+            parent=installer.sha(u/'adaptive_video.json');m=json.loads((corrected/'adaptive_video.json').read_text())
+            m['generated_upgrade_manifest_ancestry_sha256']=[baseline,parent]
+            m['generated_upgrade_source_manifest_sha256']=parent
+            (corrected/'master.m3u8').write_bytes(b'#EXTM3U\n#MEASURED-BANDWIDTH\n')
+            m['assets']['master.m3u8']=dict(bytes=(corrected/'master.m3u8').stat().st_size,sha256=installer.sha(corrected/'master.m3u8'))
+            (corrected/'adaptive_video.json').write_text(json.dumps(m))
+            self.assertEqual(installer.install(corrected,r,parent)['state'],'upgraded')
+            self.assertEqual(installer.install(p,r)['state'],'already_installed_upgraded')
+            self.assertEqual(installer.install(u,r)['state'],'already_installed_upgraded')
+            self.assertEqual(installer.sha(a/'adaptive_video/native.mp4'),native)
 
 
 if __name__=='__main__':unittest.main()
