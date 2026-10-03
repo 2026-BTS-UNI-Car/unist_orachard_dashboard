@@ -46,7 +46,11 @@ async function pollArchive(id,epoch){
       value.history_available?'첫 지도 관측 전 · 재생하면 지도가 쌓입니다.':'저장된 지도 없음 · 기록으로 재생성을 누르세요.');
   }finally{
     if(archivePending===pending)archivePending=null;
-    if(epoch===archiveEpoch&&(value?.state==='regenerating'||archivePlaying))scheduleArchive();
+    // A paused seek can occur while the previous request is in flight. Its
+    // timer may have found that request busy; always service the newest cursor
+    // after completion instead of leaving the canvas empty until another seek.
+    const cursorChanged=!followGeneration&&(target===null||Math.abs(target-archiveTimeS)>.05);
+    if(epoch===archiveEpoch&&(value?.state==='regenerating'||archivePlaying||cursorChanged))scheduleArchive();
   }
 }
 function scheduleArchive(){
