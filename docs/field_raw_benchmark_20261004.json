@@ -1,0 +1,523 @@
+{
+  "schema": "orchard.field_candidate_benchmark.v1",
+  "date_kst": "2026-10-04",
+  "baseline_source_commit": "3e0ad9f",
+  "baseline_code_hashes": {
+    "analyze_quality.py": "8a4c9ddc9dfc793ff8dfcf1c8ff197d49c2c5d925e46b487a0f28923ce1abc61",
+    "audit_mapping_inputs.py": "e5744ba29ed1805ab8927aaff5ee3c9b1d3476e849f128fb603cb0ba478bea1b",
+    "raw_localization.py": "11d9d84e98eccdea24952f422bc47a8038e7113977d4880f33bd4abeb21df1f8",
+    "gnss_constraints.py": "1d845385d7f4b9e92cd681c1a1ec824cc378efa38feb9c7a4c17ecedc76e063f",
+    "replay_raw_mapping.py": "7394273a6a4f8723397c351b4634c2daf0946474869ec9665f3e1bfea8658fa2"
+  },
+  "map_raster_source_commit": "5bb0f2a",
+  "all_seven_complete": true,
+  "registration_timing_platform": "Local Windows PC; not Jetson runtime",
+  "baseline": [
+    {
+      "archive_id": "20261003T072238Z_both",
+      "scene": "road",
+      "scans": 7799,
+      "accepted_scans": 7701,
+      "segments": 3,
+      "GNSS_aligned_segments": 3,
+      "all_registration_p95_ms": 46.28672000035294,
+      "calls_over_100ms": 2,
+      "limited_maps": 2,
+      "source_sensor_sha256": "0fe3de9fd9793b176ebd102d97f35a3b9df72efb8141307b4646d019c2e0c5fd"
+    },
+    {
+      "archive_id": "20261003T072329Z_both",
+      "scene": "road",
+      "scans": 913,
+      "accepted_scans": 906,
+      "segments": 1,
+      "GNSS_aligned_segments": 1,
+      "all_registration_p95_ms": 24.598360003437847,
+      "calls_over_100ms": 0,
+      "limited_maps": 0,
+      "source_sensor_sha256": "b2604bb6f4af97aab92675eaf92027a79b989dc7581254ff0d423e7282f14017"
+    },
+    {
+      "archive_id": "20261003T072530Z_both",
+      "scene": "road",
+      "scans": 5243,
+      "accepted_scans": 5205,
+      "segments": 3,
+      "GNSS_aligned_segments": 3,
+      "all_registration_p95_ms": 38.82876999996367,
+      "calls_over_100ms": 2,
+      "limited_maps": 0,
+      "source_sensor_sha256": "488c0bb55f162a99722e36c86945d368bb90aec03f2694101d03a2a64e55838b"
+    },
+    {
+      "archive_id": "20261003T073551Z_both",
+      "scene": "road",
+      "scans": 8108,
+      "accepted_scans": 7875,
+      "segments": 12,
+      "GNSS_aligned_segments": 6,
+      "all_registration_p95_ms": 52.80620999910751,
+      "calls_over_100ms": 23,
+      "limited_maps": 0,
+      "source_sensor_sha256": "cfa30201f94a90750b9550a05a263b3233ba5ef4cc1a156ccac4a78e4f629906"
+    },
+    {
+      "archive_id": "20261003T080351Z_both",
+      "scene": "orchard",
+      "scans": 2459,
+      "accepted_scans": 1801,
+      "segments": 61,
+      "GNSS_aligned_segments": 0,
+      "all_registration_p95_ms": 63.53244000492847,
+      "calls_over_100ms": 10,
+      "limited_maps": 0,
+      "source_sensor_sha256": "90a792f56b8881d764f47f3fb335fe2ce77adabdaaef124401e46b67524d311e"
+    },
+    {
+      "archive_id": "20261003T080909Z_both",
+      "scene": "orchard",
+      "scans": 2093,
+      "accepted_scans": 1663,
+      "segments": 39,
+      "GNSS_aligned_segments": 0,
+      "all_registration_p95_ms": 56.84970000147581,
+      "calls_over_100ms": 3,
+      "limited_maps": 0,
+      "source_sensor_sha256": "cb4b994bfc1ebc94b864e2b82a8381de497ad9bb010fa7e7cbde10f7a5864b26"
+    },
+    {
+      "archive_id": "20261003T081934Z_both",
+      "scene": "road",
+      "scans": 5432,
+      "accepted_scans": 5251,
+      "segments": 9,
+      "GNSS_aligned_segments": 3,
+      "all_registration_p95_ms": 47.51470000010158,
+      "calls_over_100ms": 7,
+      "limited_maps": 1,
+      "source_sensor_sha256": "39d549eb2eae73f2d6d4cb167eebc64dfc4fd7cdf15dc51343f3f1c5ede7511f"
+    }
+  ],
+  "experimental_fallback": {
+    "archive_id": "20261003T080351Z_both",
+    "source_commit": "4d4b6e1",
+    "code_hashes": {
+      "raw_localization.py": "f770a8e43240baf597fa67b38f69fe193dc0b8276299d0d624e5cd551ffc024e",
+      "gnss_constraints.py": "1d845385d7f4b9e92cd681c1a1ec824cc378efa38feb9c7a4c17ecedc76e063f",
+      "replay_raw_mapping.py": "67631f3b4e149fd8b50ad424678830d267a75e29a600d08cd87670f36bd51866",
+      "analyze_quality.py": "8a4c9ddc9dfc793ff8dfcf1c8ff197d49c2c5d925e46b487a0f28923ce1abc61",
+      "audit_mapping_inputs.py": "e5744ba29ed1805ab8927aaff5ee3c9b1d3476e849f128fb603cb0ba478bea1b",
+      "raw_point_support.py": "0c9fcf6a9d57b3cf3478c114981ff264a8dc52725fd95ec685b77ffff2930237"
+    },
+    "accepted_scans": 1961,
+    "segments": 48,
+    "all_registration_p95_ms": 98.27994000297622,
+    "calls_over_100ms": 102,
+    "holdout_validation_complete": false
+  },
+  "PWM": {
+    "source_hashes_verified": true,
+    "archives": {
+      "20261003T072329Z_both": {
+        "archive_id": "20261003T072329Z_both",
+        "mode_summary": {
+          "differential_forward": {
+            "intervals": 3,
+            "raw_IMU_count": 258,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 3,
+              "min": 2.2381163872297782,
+              "median": 2.685739664675734,
+              "p95": 3.1389582330897636,
+              "max": 3.1893158518024336
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 3,
+              "min": 2.1074311815625526,
+              "median": 2.406918990565873,
+              "p95": 5.02160802000261,
+              "max": 5.312129023273359
+            }
+          },
+          "equal_forward": {
+            "intervals": 7,
+            "raw_IMU_count": 634,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 7,
+              "min": 0.11190581936148891,
+              "median": 0.7833407355304224,
+              "p95": 2.5738338453142444,
+              "max": 2.909551303398712
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 7,
+              "min": 1.0230113341831384,
+              "median": 2.0295361634327223,
+              "p95": 3.8040346830978464,
+              "max": 4.304516542400793
+            }
+          },
+          "zero_output": {
+            "intervals": 1,
+            "raw_IMU_count": 72,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 1,
+              "min": 0.0,
+              "median": 0.0,
+              "p95": 0.0,
+              "max": 0.0
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 1,
+              "min": 0.18694645524029063,
+              "median": 0.18694645524029063,
+              "p95": 0.18694645524029063,
+              "max": 0.18694645524029063
+            }
+          }
+        },
+        "source_hashes_verified": true,
+        "tool_sha256": "1f2f1e97c76040fc7ed48e9e28904370799879f83c0c29f73eed86ee90711874"
+      },
+      "20261003T072530Z_both": {
+        "archive_id": "20261003T072530Z_both",
+        "mode_summary": {
+          "zero_output": {
+            "intervals": 2,
+            "raw_IMU_count": 110,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 2,
+              "min": 0.0,
+              "median": 0.0,
+              "p95": 0.0,
+              "max": 0.0
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 2,
+              "min": 0.18063465050106586,
+              "median": 0.18379055287067825,
+              "p95": 0.1866308650033294,
+              "max": 0.18694645524029063
+            }
+          },
+          "differential_forward": {
+            "intervals": 28,
+            "raw_IMU_count": 1552,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 28,
+              "min": 0.0,
+              "median": 1.2869169226571224,
+              "p95": 4.3643269550980675,
+              "max": 4.8119502325440235
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 28,
+              "min": 0.7381742104178727,
+              "median": 1.8126940702576952,
+              "p95": 2.699071276835981,
+              "max": 2.7265656788820207
+            }
+          },
+          "equal_forward": {
+            "intervals": 26,
+            "raw_IMU_count": 3592,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 26,
+              "min": 0.0,
+              "median": 0.5595290968074446,
+              "p95": 1.7904931097838226,
+              "max": 3.1333629421216895
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 26,
+              "min": 0.4363630987718352,
+              "median": 1.5629431406522958,
+              "p95": 2.2362043141825607,
+              "max": 2.5696654339302283
+            }
+          }
+        },
+        "source_hashes_verified": true,
+        "tool_sha256": "1f2f1e97c76040fc7ed48e9e28904370799879f83c0c29f73eed86ee90711874"
+      },
+      "20261003T072238Z_both": {
+        "archive_id": "20261003T072238Z_both",
+        "mode_summary": {
+          "zero_output": {
+            "intervals": 2,
+            "raw_IMU_count": 437,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 2,
+              "min": 0.0,
+              "median": 0.0,
+              "p95": 0.0,
+              "max": 0.0
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 2,
+              "min": 0.16714724167608352,
+              "median": 0.2643785649002849,
+              "p95": 0.3518867558020661,
+              "max": 0.36160988812448625
+            }
+          },
+          "equal_forward": {
+            "intervals": 58,
+            "raw_IMU_count": 8957,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 58,
+              "min": 0.0,
+              "median": 0.867270100051539,
+              "p95": 2.7305019924203284,
+              "max": 3.7488449486098787
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 58,
+              "min": 1.9967971810757614,
+              "median": 3.8529605762933175,
+              "p95": 5.907740374651827,
+              "max": 8.895531478392355
+            }
+          }
+        },
+        "source_hashes_verified": true,
+        "tool_sha256": "1f2f1e97c76040fc7ed48e9e28904370799879f83c0c29f73eed86ee90711874"
+      },
+      "20261003T080351Z_both": {
+        "archive_id": "20261003T080351Z_both",
+        "mode_summary": {
+          "zero_output": {
+            "intervals": 5,
+            "raw_IMU_count": 354,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 5,
+              "min": 0.0,
+              "median": 0.0,
+              "p95": 0.0,
+              "max": 0.0
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 5,
+              "min": 0.17547474756252512,
+              "median": 0.18795691872347575,
+              "p95": 0.21673361112664888,
+              "max": 0.2173353188203535
+            }
+          },
+          "equal_forward": {
+            "intervals": 12,
+            "raw_IMU_count": 592,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 12,
+              "min": 0.0,
+              "median": 1.0631052839341446,
+              "p95": 3.0550288685686464,
+              "max": 3.916703677652112
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 12,
+              "min": 3.2114284702864455,
+              "median": 4.702119854447085,
+              "p95": 5.847757963234119,
+              "max": 5.925648576681647
+            }
+          },
+          "pivot_or_counter_rotation": {
+            "intervals": 3,
+            "raw_IMU_count": 173,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 3,
+              "min": 19.023989291453116,
+              "median": 25.402620995057983,
+              "p95": 31.596608096716395,
+              "max": 32.28482888578955
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 3,
+              "min": 1.7167759610969044,
+              "median": 3.1399943024831374,
+              "p95": 3.6607188106576314,
+              "max": 3.7185770893436865
+            }
+          },
+          "equal_reverse": {
+            "intervals": 1,
+            "raw_IMU_count": 32,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 1,
+              "min": 3.580986219567645,
+              "median": 3.580986219567645,
+              "p95": 3.580986219567645,
+              "max": 3.580986219567645
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 1,
+              "min": 5.275593984790007,
+              "median": 5.275593984790007,
+              "p95": 5.275593984790007,
+              "max": 5.275593984790007
+            }
+          }
+        },
+        "source_hashes_verified": true,
+        "tool_sha256": "1f2f1e97c76040fc7ed48e9e28904370799879f83c0c29f73eed86ee90711874"
+      },
+      "20261003T080909Z_both": {
+        "archive_id": "20261003T080909Z_both",
+        "mode_summary": {
+          "zero_output": {
+            "intervals": 2,
+            "raw_IMU_count": 194,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 2,
+              "min": 0.0,
+              "median": 0.0,
+              "p95": 0.0,
+              "max": 0.0
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 2,
+              "min": 0.1950291686894552,
+              "median": 0.19860086322526005,
+              "p95": 0.2018153883074844,
+              "max": 0.2021725577610649
+            }
+          },
+          "equal_forward": {
+            "intervals": 18,
+            "raw_IMU_count": 1241,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 18,
+              "min": 0.0,
+              "median": 0.8392936452111668,
+              "p95": 2.562643263378095,
+              "max": 3.1333629421216895
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 18,
+              "min": 1.062247842516797,
+              "median": 2.26206252052268,
+              "p95": 6.043217040000845,
+              "max": 6.542948992239266
+            }
+          },
+          "differential_forward": {
+            "intervals": 4,
+            "raw_IMU_count": 155,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 4,
+              "min": 2.126210567868289,
+              "median": 3.5809862195676447,
+              "p95": 7.346617041081745,
+              "max": 7.833407355304224
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 4,
+              "min": 1.6029947217159766,
+              "median": 2.56929375224685,
+              "p95": 4.300467573817786,
+              "max": 4.578536508974041
+            }
+          }
+        },
+        "source_hashes_verified": true,
+        "tool_sha256": "1f2f1e97c76040fc7ed48e9e28904370799879f83c0c29f73eed86ee90711874"
+      },
+      "20261003T073551Z_both": {
+        "archive_id": "20261003T073551Z_both",
+        "mode_summary": {
+          "zero_output": {
+            "intervals": 4,
+            "raw_IMU_count": 328,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 4,
+              "min": 0.0,
+              "median": 0.0,
+              "p95": 0.0,
+              "max": 0.0
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 4,
+              "min": 0.1633172790576758,
+              "median": 0.1778468066580059,
+              "p95": 0.18830767250458838,
+              "max": 0.18894686343735856
+            }
+          },
+          "equal_forward": {
+            "intervals": 69,
+            "raw_IMU_count": 7911,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 69,
+              "min": 0.0,
+              "median": 1.0071523742534003,
+              "p95": 3.3347934169723676,
+              "max": 4.028609497013601
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 69,
+              "min": 1.5753090178006612,
+              "median": 3.478159078094936,
+              "p95": 7.456238810011998,
+              "max": 9.178633262803551
+            }
+          }
+        },
+        "source_hashes_verified": true,
+        "tool_sha256": "1f2f1e97c76040fc7ed48e9e28904370799879f83c0c29f73eed86ee90711874"
+      },
+      "20261003T081934Z_both": {
+        "archive_id": "20261003T081934Z_both",
+        "mode_summary": {
+          "equal_forward": {
+            "intervals": 48,
+            "raw_IMU_count": 4994,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 48,
+              "min": 0.0,
+              "median": 1.0071523742534003,
+              "p95": 3.1333629421216895,
+              "max": 6.826254981050823
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 48,
+              "min": 2.6228484522023514,
+              "median": 4.132578359898556,
+              "p95": 6.4650848644269105,
+              "max": 8.597894405228821
+            }
+          },
+          "zero_output": {
+            "intervals": 3,
+            "raw_IMU_count": 788,
+            "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+              "count": 3,
+              "min": 0.0,
+              "median": 0.0,
+              "p95": 0.0,
+              "max": 0.0
+            },
+            "stable_interval_p95_acceleration_deviation_m_s2": {
+              "count": 3,
+              "min": 0.2017587061030124,
+              "median": 0.21040325139269633,
+              "p95": 0.21147018070368429,
+              "max": 0.21158872840490517
+            }
+          }
+        },
+        "source_hashes_verified": true,
+        "tool_sha256": "1f2f1e97c76040fc7ed48e9e28904370799879f83c0c29f73eed86ee90711874"
+      }
+    },
+    "MCU_output_age_verified": false,
+    "physical_voltage_measured": false,
+    "wheel_speed_measured": false,
+    "calibrated_body_yaw_rate": false
+  },
+  "deployed": false,
+  "mapping_accuracy_validated": false,
+  "deskew_validated": false,
+  "autonomy_eligible": false,
+  "motor_commands_sent": false
+}

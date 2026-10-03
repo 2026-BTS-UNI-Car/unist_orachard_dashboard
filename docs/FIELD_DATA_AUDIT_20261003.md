@@ -63,3 +63,9 @@ Offline pairing uses the complete nearest source-stamp IMU history, not an exact
 | `20261003T081934Z_both` | 0.000 | 0.000 | `unaligned_lidar_imu` | 20 |
 
 All seven runs stop early: five on registration uncertainty and two at startup without aligned IMU. The two orchard runs stop at about 8.5s and 11.1s at display cadence. Higher scan cadence alone does not fix continuity. Startup synchronization should wait for a valid pair before an origin is established; registration must account for rotation, robust geometric support and relocalization, without joining an unknown gap as zero motion. Relative mount tilt remains unmeasured. The older SIM candidate has a 3,200-beam cap while measured bags contain 3,240 beams; it cannot be declared compatible without an explicit bounded-cap change and regression verification.
+
+## 2026-10-04 continuation
+
+Full-stream candidate replay and all seven PWM interval audits are now recorded in
+[the field benchmark](FIELD_RAW_BENCHMARK_20261004.md). These are offline diagnostics;
+the candidate has not been deployed or qualified for autonomous control.
