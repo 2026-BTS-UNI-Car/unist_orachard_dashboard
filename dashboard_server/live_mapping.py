@@ -5,6 +5,7 @@ The estimate is explicitly unqualified. Missing attitude, scan gaps, ambiguous
 registration and tilt freeze insertion rather than declare measured free space.
 """
 import asyncio
+import base64
 import json
 import math
 import os
@@ -12,6 +13,9 @@ from pathlib import Path
 import threading
 import time
 import uuid
+import re
+import struct
+import zlib
 from collections import deque
 
 import numpy as np
@@ -79,7 +83,10 @@ class LiveMapping:
         self.snapshot = {}
         self.stop_event = threading.Event()
         self.threads = []
+        self.restored_snapshot = None
+        self.persistence = {}
         self._publish()
+        self._restore_saved_map()
         if start_worker:
             for kind,url in [('scan',os.environ.get('LIDAR_WS_UPSTREAM','ws://127.0.0.1:8765/ws/lidar')+'?max_points=900&profile=detail'),
                              ('imu',os.environ.get('IMU_WS_UPSTREAM','ws://127.0.0.1:8775/ws/imu')+'?profile=detail')]:
@@ -189,15 +196,74 @@ class LiveMapping:
             return True
 
     def _publish(self):
-        self.snapshot=dict(ok=True,simulated=False,active=self.active,state=self.state,
-                           reason=self.reason,version=self.version,map_epoch=self.map_epoch,
-                           **self.map.snapshot())
+        self.snapshot={**(self.restored_snapshot or self.map.snapshot()),
+                       'ok':True,'simulated':False,'active':self.active,'state':self.state,
+                       'reason':self.reason,'version':self.version,'map_epoch':self.map_epoch}
+        # Historical PNGs are retained only as displays. They must not replace
+        # the current process's state/authority or provide a resume pose.
+        self.snapshot.update(active=self.active,state=self.state,reason=self.reason,
+                             version=self.version,map_epoch=self.map_epoch)
         self.snapshot.update(scan_count=self.version,coordinate_frame='unqualified_lidar_origin',
                              runtime_authority=False,autonomy_eligible=False,
                              localization='unqualified_lidar_imu_display_without_loop_closure',
                              pose_source='unqualified_lidar_imu_display',mount_height_m=.60,
                              diagnostic=dict(self.diagnostic),source='display_decimated_bridge',
                              note='표시용 LiDAR·IMU 위치 추정 · 장착 방향·rolling timing 미검증 · 주행 제어에 사용하지 않음')
+        if self.persistence:
+            self.snapshot['persistence']=dict(self.persistence)
+            if self.persistence.get('native_cells') and self.restored_snapshot is None:
+                self.snapshot['native_checkpoint']='last_native_map.json'
+
+    def _restore_saved_map(self):
+        path=self.state_dir/'last_map.json'
+        if not path.is_file():return
+        try:
+            if path.is_symlink() or path.stat().st_size>8*1024*1024:
+                raise ValueError('invalid_saved_map_size')
+            saved=read_json(path)
+            count=saved.get('scan_count',0)
+            if type(count) is not int or not 0<=count<=1000000000:
+                raise ValueError('invalid_saved_map_count')
+            if not count:return
+            epoch=saved.get('map_epoch','')
+            if not re.fullmatch(r'[0-9a-f]{32}',epoch):
+                raise ValueError('invalid_saved_map_epoch')
+            if saved.get('native_checkpoint'):
+                if saved['native_checkpoint']!='last_native_map.json':
+                    raise ValueError('invalid_saved_map_checkpoint_path')
+                from dashboard_server.tiled_checkpoint import digest
+                native=self.state_dir/'last_native_map.json'
+                if digest(native)!=(saved.get('persistence') or {}).get('manifest_sha256'):
+                    raise ValueError('saved_map_generation_mismatch')
+                self.map=OccupancyMap.load_checkpoint(native)
+                if self.map.scan_count!=count:
+                    raise ValueError('saved_map_generation_mismatch')
+                self.persistence={**saved['persistence'],'restored':True,'native_cells':True}
+            else:
+                grid=saved.get('grid') or {}
+                w,h=grid.get('width'),grid.get('height')
+                if type(w) is not int or type(h) is not int or not 1<=w*h<=4194304 or min(w,h)<1:
+                    raise ValueError('invalid_saved_map_grid_size')
+                png=base64.b64decode(grid.get('image_base64',''),validate=True)
+                if len(png)<24 or png[:8]!=b'\x89PNG\r\n\x1a\n' or struct.unpack('>II',png[16:24])!=(w,h):
+                    raise ValueError('invalid_saved_map_png')
+                origin=grid.get('origin') or {}
+                if not all(type(v) in (int,float) and math.isfinite(v) for v in
+                           (grid.get('resolution'),origin.get('x'),origin.get('y'))) or grid['resolution']<=0:
+                    raise ValueError('invalid_saved_map_geometry')
+                self.restored_snapshot=saved
+                self.persistence={'restored':True,'native_cells':False,'legacy_PNG_only':True}
+            self.map_epoch=epoch;self.version=count
+            self.active=self.tracking=False
+            self.state='needs_reset';self.reason='saved_map_requires_new_localization'
+            self._publish()
+        except (OSError,ValueError,TypeError,KeyError,EOFError,zlib.error) as error:
+            # A corrupt file cannot partly install cells or create an authority.
+            self.map=OccupancyMap(max_beams=450,laser_x=0.,laser_y=0.)
+            self.restored_snapshot=None;self.version=0
+            self.state='idle';self.reason=None
+            self.persistence={'restored':False,'error':str(error)[:160]}
+            self._publish()
 
     def status(self, since=None):
         value=self.snapshot
@@ -212,6 +278,7 @@ class LiveMapping:
                 self.pose=np.zeros(3);self.previous=None;self.last_source_stamp=None
                 self.map_epoch=uuid.uuid4().hex;self.version=0;self.reason=None
                 self.active=self.tracking=False;self.state='idle'
+                self.restored_snapshot=None;self.persistence={}
             elif operation=='start':
                 if self.state=='needs_reset':raise ValueError('새 지도를 눌러 위치 추정을 다시 시작하세요')
                 self.active=self.tracking=True;self.state='waiting_for_sensors'
@@ -220,9 +287,19 @@ class LiveMapping:
                 if self.state!='needs_reset':self.state='paused'
             else:raise ValueError('unknown_map_operation')
             self._publish()
-            if operation in ('stop','reset'):atomic_json(self.state_dir/'last_map.json',self.snapshot)
+            if operation in ('stop','reset'):
+                if self.restored_snapshot is None:
+                    try:
+                        proof=self.map.save_checkpoint(self.state_dir/'last_native_map.json')
+                        self.persistence={'saved':True,'native_cells':True,**proof}
+                    except (OSError,ValueError,TypeError) as error:
+                        self.persistence={'saved':False,'native_cells':False,'error':str(error)[:160]}
+                    self._publish()
+                atomic_json(self.state_dir/'last_map.json',self.snapshot)
             return self.status()
 
     def close(self):
         self.stop_event.set()
         for thread in self.threads:thread.join(timeout=2)
+        if self.version:
+            self.action('stop')

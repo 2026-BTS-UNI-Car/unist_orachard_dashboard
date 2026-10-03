@@ -15,6 +15,70 @@ def frame(stamp=10.,yaw=0.):
 
 
 class Tests(unittest.TestCase):
+    def test_native_restart_preserves_map_but_requires_new_localization(self):
+        with tempfile.TemporaryDirectory() as root:
+            mapper=LiveMapping(root,start_worker=False);mapper.action('start')
+            scan,imu=frame();mapper.ingest(scan,imu,10.)
+            mapper.action('stop');saved=mapper.status();cells=mapper.map.cells.copy()
+            restored=LiveMapping(root,start_worker=False)
+            self.assertEqual(restored.status()['grid'],saved['grid'])
+            self.assertEqual(restored.map.cells,cells)
+            self.assertEqual(restored.status()['path'],saved['path'])
+            self.assertEqual(restored.status()['map_epoch'],saved['map_epoch'])
+            self.assertFalse(restored.tracking);self.assertFalse(restored.status()['active'])
+            self.assertFalse(restored.status()['runtime_authority'])
+            self.assertTrue(restored.status()['persistence']['native_cells'])
+            with self.assertRaises(ValueError):restored.action('start')
+            scan,imu=frame(30.);self.assertFalse(restored.ingest(scan,imu,30.))
+            self.assertEqual(restored.map.cells,cells)
+            restored.action('reset');restored.action('start')
+            self.assertTrue(restored.ingest(scan,imu,30.))
+            self.assertEqual(restored.status()['scan_count'],1)
+            self.assertNotEqual(restored.status()['map_epoch'],saved['map_epoch'])
+
+    def test_legacy_saved_png_survives_restart_without_claiming_native_cells(self):
+        from dashboard_server.occupancy_map import atomic_json
+        with tempfile.TemporaryDirectory() as root:
+            mapper=LiveMapping(root,start_worker=False);mapper.action('start')
+            scan,imu=frame();mapper.ingest(scan,imu,10.);saved=mapper.status()
+            atomic_json(Path(root)/'last_map.json',saved)
+            restored=LiveMapping(root,start_worker=False)
+            self.assertEqual(restored.status()['grid'],saved['grid'])
+            self.assertEqual(restored.status()['scan_count'],1)
+            self.assertTrue(restored.status()['persistence']['legacy_PNG_only'])
+            self.assertEqual(restored.map._cell_count,0)
+            with self.assertRaises(ValueError):restored.action('start')
+            restored.action('stop');again=LiveMapping(root,start_worker=False)
+            self.assertEqual(again.status()['grid'],saved['grid'])
+
+    def test_corrupt_native_restart_cannot_install_partial_cells(self):
+        import json
+        with tempfile.TemporaryDirectory() as root:
+            mapper=LiveMapping(root,start_worker=False);mapper.action('start')
+            scan,imu=frame();mapper.ingest(scan,imu,10.);mapper.action('stop')
+            path=Path(root)/'last_native_map.json';value=json.loads(path.read_text())
+            value['cell_count']+=1;path.write_text(json.dumps(value))
+            restored=LiveMapping(root,start_worker=False)
+            self.assertFalse(restored.status()['persistence']['restored'])
+            self.assertEqual(restored.status()['scan_count'],0)
+            self.assertEqual(restored.map._cell_count,0)
+            self.assertFalse(restored.tracking)
+
+    def test_native_write_failure_still_stops_and_retains_legacy_png(self):
+        from unittest.mock import patch
+        from dashboard_server.tiled_occupancy import TiledOccupancyMap
+        with tempfile.TemporaryDirectory() as root:
+            mapper=LiveMapping(root,start_worker=False);mapper.action('start')
+            scan,imu=frame();mapper.ingest(scan,imu,10.);saved=mapper.status()
+            with patch.object(TiledOccupancyMap,'save_checkpoint',side_effect=OSError('disk failed')):
+                stopped=mapper.action('stop')
+            self.assertFalse(stopped['active']);self.assertEqual(stopped['state'],'paused')
+            self.assertFalse(stopped['persistence']['saved'])
+            self.assertEqual(stopped['grid'],saved['grid'])
+            restored=LiveMapping(root,start_worker=False)
+            self.assertEqual(restored.status()['grid'],saved['grid'])
+            self.assertTrue(restored.status()['persistence']['legacy_PNG_only'])
+
     def test_transient_sensor_pairing_waits_without_insertion_or_reset(self):
         with tempfile.TemporaryDirectory() as root:
             mapper=LiveMapping(root,start_worker=False);mapper.action('start')

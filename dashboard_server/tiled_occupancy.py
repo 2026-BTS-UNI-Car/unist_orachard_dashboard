@@ -108,6 +108,15 @@ class TiledOccupancyMap(OccupancyMap):
         return dict(super().snapshot(),storage='tiled_logodds_v1',retained_tiles=len(self._tiles),
                     display_downsampled=self.grid()['downsample_factor']>1)
 
+    def save_checkpoint(self, path):
+        from dashboard_server.tiled_checkpoint import save
+        return save(self, path)
+
+    @classmethod
+    def load_checkpoint(cls, path):
+        from dashboard_server.tiled_checkpoint import load
+        return load(cls, path)
+
     def planning(self):
         occupied=[];free_count=0
         for (tx,ty),tile in self._tiles.items():
