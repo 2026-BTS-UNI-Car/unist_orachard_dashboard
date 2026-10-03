@@ -1,0 +1,549 @@
+{
+  "complete": true,
+  "archives": [
+    {
+      "archive_id": "20261003T072238Z_both",
+      "mode_summary": {
+        "zero_output": {
+          "intervals": 2,
+          "raw_IMU_count": 437,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 2,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "max": 0.0
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 2,
+            "min": 0.16714724167608352,
+            "median": 0.2643785649002849,
+            "p95": 0.3518867558020661,
+            "max": 0.36160988812448625
+          },
+          "intervals_with_GNSS_speed": 2,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 2,
+            "min": 0.019,
+            "median": 0.1105,
+            "p95": 0.19285,
+            "max": 0.202
+          }
+        },
+        "equal_forward": {
+          "intervals": 58,
+          "raw_IMU_count": 8957,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 58,
+            "min": 0.0,
+            "median": 0.867270100051539,
+            "p95": 2.7305019924203284,
+            "max": 3.7488449486098787
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 58,
+            "min": 1.9967971810757614,
+            "median": 3.8529605762933175,
+            "p95": 5.907740374651827,
+            "max": 8.895531478392355
+          },
+          "intervals_with_GNSS_speed": 57,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 57,
+            "min": 0.22,
+            "median": 0.937,
+            "p95": 1.0574,
+            "max": 1.1320000000000001
+          }
+        }
+      },
+      "MCU_output_age_verified": false
+    },
+    {
+      "archive_id": "20261003T072329Z_both",
+      "mode_summary": {
+        "differential_forward": {
+          "intervals": 3,
+          "raw_IMU_count": 258,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 3,
+            "min": 2.2381163872297782,
+            "median": 2.685739664675734,
+            "p95": 3.1389582330897636,
+            "max": 3.1893158518024336
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 3,
+            "min": 2.1074311815625526,
+            "median": 2.406918990565873,
+            "p95": 5.02160802000261,
+            "max": 5.312129023273359
+          },
+          "intervals_with_GNSS_speed": 3,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 3,
+            "min": 0.72,
+            "median": 0.7575000000000001,
+            "p95": 0.7750499999999999,
+            "max": 0.7769999999999999
+          }
+        },
+        "equal_forward": {
+          "intervals": 7,
+          "raw_IMU_count": 634,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 7,
+            "min": 0.11190581936148891,
+            "median": 0.7833407355304224,
+            "p95": 2.5738338453142444,
+            "max": 2.909551303398712
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 7,
+            "min": 1.0230113341831384,
+            "median": 2.0295361634327223,
+            "p95": 3.8040346830978464,
+            "max": 4.304516542400793
+          },
+          "intervals_with_GNSS_speed": 7,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 7,
+            "min": 0.583,
+            "median": 0.726,
+            "p95": 0.75905,
+            "max": 0.761
+          }
+        },
+        "zero_output": {
+          "intervals": 1,
+          "raw_IMU_count": 72,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 1,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "max": 0.0
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 1,
+            "min": 0.18694645524029063,
+            "median": 0.18694645524029063,
+            "p95": 0.18694645524029063,
+            "max": 0.18694645524029063
+          },
+          "intervals_with_GNSS_speed": 1,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 1,
+            "min": 0.036,
+            "median": 0.036,
+            "p95": 0.036,
+            "max": 0.036
+          }
+        }
+      },
+      "MCU_output_age_verified": false
+    },
+    {
+      "archive_id": "20261003T072530Z_both",
+      "mode_summary": {
+        "zero_output": {
+          "intervals": 2,
+          "raw_IMU_count": 110,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 2,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "max": 0.0
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 2,
+            "min": 0.18063465050106586,
+            "median": 0.18379055287067825,
+            "p95": 0.1866308650033294,
+            "max": 0.18694645524029063
+          },
+          "intervals_with_GNSS_speed": 2,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 2,
+            "min": 0.0165,
+            "median": 0.02325,
+            "p95": 0.029325,
+            "max": 0.030000000000000002
+          }
+        },
+        "differential_forward": {
+          "intervals": 28,
+          "raw_IMU_count": 1552,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 28,
+            "min": 0.0,
+            "median": 1.2869169226571224,
+            "p95": 4.3643269550980675,
+            "max": 4.8119502325440235
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 28,
+            "min": 0.7381742104178727,
+            "median": 1.8126940702576952,
+            "p95": 2.699071276835981,
+            "max": 2.7265656788820207
+          },
+          "intervals_with_GNSS_speed": 28,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 28,
+            "min": 0.493,
+            "median": 0.834,
+            "p95": 0.962125,
+            "max": 0.9630000000000001
+          }
+        },
+        "equal_forward": {
+          "intervals": 26,
+          "raw_IMU_count": 3592,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 26,
+            "min": 0.0,
+            "median": 0.5595290968074446,
+            "p95": 1.7904931097838226,
+            "max": 3.1333629421216895
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 26,
+            "min": 0.4363630987718352,
+            "median": 1.5629431406522958,
+            "p95": 2.2362043141825607,
+            "max": 2.5696654339302283
+          },
+          "intervals_with_GNSS_speed": 26,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 26,
+            "min": 0.332,
+            "median": 0.8280000000000001,
+            "p95": 0.90075,
+            "max": 0.9440000000000001
+          }
+        }
+      },
+      "MCU_output_age_verified": false
+    },
+    {
+      "archive_id": "20261003T073551Z_both",
+      "mode_summary": {
+        "zero_output": {
+          "intervals": 4,
+          "raw_IMU_count": 328,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "max": 0.0
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 4,
+            "min": 0.1633172790576758,
+            "median": 0.1778468066580059,
+            "p95": 0.18830767250458838,
+            "max": 0.18894686343735856
+          },
+          "intervals_with_GNSS_speed": 4,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 4,
+            "min": 0.0195,
+            "median": 0.029000000000000005,
+            "p95": 0.044649999999999995,
+            "max": 0.046
+          }
+        },
+        "equal_forward": {
+          "intervals": 69,
+          "raw_IMU_count": 7911,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 69,
+            "min": 0.0,
+            "median": 1.0071523742534003,
+            "p95": 3.3347934169723676,
+            "max": 4.028609497013601
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 69,
+            "min": 1.5753090178006612,
+            "median": 3.478159078094936,
+            "p95": 7.456238810011998,
+            "max": 9.178633262803551
+          },
+          "intervals_with_GNSS_speed": 69,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 69,
+            "min": 0.797,
+            "median": 0.921,
+            "p95": 1.0004,
+            "max": 1.157
+          }
+        }
+      },
+      "MCU_output_age_verified": false
+    },
+    {
+      "archive_id": "20261003T080351Z_both",
+      "mode_summary": {
+        "zero_output": {
+          "intervals": 5,
+          "raw_IMU_count": 354,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 5,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "max": 0.0
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 5,
+            "min": 0.17547474756252512,
+            "median": 0.18795691872347575,
+            "p95": 0.21673361112664888,
+            "max": 0.2173353188203535
+          },
+          "intervals_with_GNSS_speed": 5,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 5,
+            "min": 0.011,
+            "median": 0.035,
+            "p95": 0.041,
+            "max": 0.042
+          }
+        },
+        "equal_forward": {
+          "intervals": 12,
+          "raw_IMU_count": 592,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 12,
+            "min": 0.0,
+            "median": 1.0631052839341446,
+            "p95": 3.0550288685686464,
+            "max": 3.916703677652112
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 12,
+            "min": 3.2114284702864455,
+            "median": 4.702119854447085,
+            "p95": 5.847757963234119,
+            "max": 5.925648576681647
+          },
+          "intervals_with_GNSS_speed": 12,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 12,
+            "min": 0.77,
+            "median": 0.8685,
+            "p95": 0.9254,
+            "max": 0.9430000000000001
+          }
+        },
+        "pivot_or_counter_rotation": {
+          "intervals": 3,
+          "raw_IMU_count": 173,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 3,
+            "min": 19.023989291453116,
+            "median": 25.402620995057983,
+            "p95": 31.596608096716395,
+            "max": 32.28482888578955
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 3,
+            "min": 1.7167759610969044,
+            "median": 3.1399943024831374,
+            "p95": 3.6607188106576314,
+            "max": 3.7185770893436865
+          },
+          "intervals_with_GNSS_speed": 3,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 3,
+            "min": 0.154,
+            "median": 0.242,
+            "p95": 0.2681,
+            "max": 0.271
+          }
+        },
+        "equal_reverse": {
+          "intervals": 1,
+          "raw_IMU_count": 32,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 1,
+            "min": 3.580986219567645,
+            "median": 3.580986219567645,
+            "p95": 3.580986219567645,
+            "max": 3.580986219567645
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 1,
+            "min": 5.275593984790007,
+            "median": 5.275593984790007,
+            "p95": 5.275593984790007,
+            "max": 5.275593984790007
+          },
+          "intervals_with_GNSS_speed": 1,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 1,
+            "min": 0.8260000000000001,
+            "median": 0.8260000000000001,
+            "p95": 0.8260000000000001,
+            "max": 0.8260000000000001
+          }
+        }
+      },
+      "MCU_output_age_verified": false
+    },
+    {
+      "archive_id": "20261003T080909Z_both",
+      "mode_summary": {
+        "zero_output": {
+          "intervals": 2,
+          "raw_IMU_count": 194,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 2,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "max": 0.0
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 2,
+            "min": 0.1950291686894552,
+            "median": 0.19860086322526005,
+            "p95": 0.2018153883074844,
+            "max": 0.2021725577610649
+          },
+          "intervals_with_GNSS_speed": 2,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 2,
+            "min": 0.038,
+            "median": 0.03925,
+            "p95": 0.040375,
+            "max": 0.0405
+          }
+        },
+        "equal_forward": {
+          "intervals": 18,
+          "raw_IMU_count": 1241,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 18,
+            "min": 0.0,
+            "median": 0.8392936452111668,
+            "p95": 2.562643263378095,
+            "max": 3.1333629421216895
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 18,
+            "min": 1.062247842516797,
+            "median": 2.26206252052268,
+            "p95": 6.043217040000845,
+            "max": 6.542948992239266
+          },
+          "intervals_with_GNSS_speed": 18,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 18,
+            "min": 0.269,
+            "median": 0.5369999999999999,
+            "p95": 0.7715249999999998,
+            "max": 0.8765000000000001
+          }
+        },
+        "differential_forward": {
+          "intervals": 4,
+          "raw_IMU_count": 155,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 4,
+            "min": 2.126210567868289,
+            "median": 3.5809862195676447,
+            "p95": 7.346617041081745,
+            "max": 7.833407355304224
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 4,
+            "min": 1.6029947217159766,
+            "median": 2.56929375224685,
+            "p95": 4.300467573817786,
+            "max": 4.578536508974041
+          },
+          "intervals_with_GNSS_speed": 4,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 4,
+            "min": 0.3435,
+            "median": 0.443,
+            "p95": 0.7926999999999998,
+            "max": 0.844
+          }
+        }
+      },
+      "MCU_output_age_verified": false
+    },
+    {
+      "archive_id": "20261003T081934Z_both",
+      "mode_summary": {
+        "equal_forward": {
+          "intervals": 48,
+          "raw_IMU_count": 4994,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 48,
+            "min": 0.0,
+            "median": 1.0071523742534003,
+            "p95": 3.1333629421216895,
+            "max": 6.826254981050823
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 48,
+            "min": 2.6228484522023514,
+            "median": 4.132578359898556,
+            "p95": 6.4650848644269105,
+            "max": 8.597894405228821
+          },
+          "intervals_with_GNSS_speed": 48,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 48,
+            "min": 0.608,
+            "median": 0.8815,
+            "p95": 0.978425,
+            "max": 0.982
+          }
+        },
+        "zero_output": {
+          "intervals": 3,
+          "raw_IMU_count": 788,
+          "stable_interval_median_abs_sensor_gyro_Z_deg_s": {
+            "count": 3,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "max": 0.0
+          },
+          "stable_interval_p95_acceleration_deviation_m_s2": {
+            "count": 3,
+            "min": 0.2017587061030124,
+            "median": 0.21040325139269633,
+            "p95": 0.21147018070368429,
+            "max": 0.21158872840490517
+          },
+          "intervals_with_GNSS_speed": 3,
+          "stable_interval_median_antenna_ground_speed_mps": {
+            "count": 3,
+            "min": 0.033,
+            "median": 0.049,
+            "p95": 0.0553,
+            "max": 0.056
+          }
+        }
+      },
+      "MCU_output_age_verified": false
+    }
+  ],
+  "source_hashes_verified": true,
+  "stable_intervals": 297,
+  "independent_receiver_speed_samples": 3169,
+  "receiver_speed_accuracy_available": false,
+  "antenna_speed_not_wheel_or_body_speed": true,
+  "physical_motor_commands": false,
+  "braking_model_validated": false,
+  "calibrated_actuator_gains": false
+}

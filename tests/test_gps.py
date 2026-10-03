@@ -44,6 +44,28 @@ def sample(**kwargs):
 
 
 class DecoderTests(unittest.TestCase):
+    def test_receiver_velocity_accuracy_and_clock_flags_are_preserved(self):
+        data=bytearray(pvt()[6:-2]);data[11]=7
+        struct.pack_into('<Ii',data,12,17000,-123456789)
+        struct.pack_into('<iii',data,48,800,-600,200)
+        struct.pack_into('<II',data,68,75,1234567)
+        decoder=GnssDecoder();frame=decoder.feed(ubx_packet(1,7,data))[0]
+        self.assertEqual(frame['velocity_ned_m_s'],dict(north=.8,east=-.6,down=.2))
+        self.assertAlmostEqual(frame['speed_accuracy_m_s'],.075)
+        self.assertAlmostEqual(frame['course_accuracy_deg'],12.34567)
+        self.assertTrue(frame['gps_time_fully_resolved'])
+        self.assertEqual(frame['gps_time_fraction_ns'],-123456789)
+        self.assertAlmostEqual(frame['gps_time_accuracy_s'],.000017)
+        hp=bytearray(36);struct.pack_into('<I',hp,4,123456)
+        self.assertEqual(decoder.feed(ubx_packet(1,20,hp))[0]['speed_accuracy_m_s'],.075)
+        data[20]=2
+        self.assertIsNone(decoder.feed(ubx_packet(1,7,data))[0]['velocity_ned_m_s']['down'])
+        data[21]=0
+        invalid=decoder.feed(ubx_packet(1,7,data))[0]
+        self.assertIsNone(invalid['speed_accuracy_m_s']);self.assertIsNone(invalid['velocity_ned_m_s'])
+        nmea_frame=GnssDecoder().feed(nmea('GNRMC,010203.00,A,3534,N,12911,E,1.0,30.0,260926,,,A'))[0]
+        self.assertIsNone(nmea_frame['speed_accuracy_m_s'])
+
     def test_fragmented_mixed_stream_checksum_and_rtk(self):
         decoder = GnssDecoder()
         good = nmea('GNGGA,010203.00,3534.2000,N,12911.4000,E,4,23,0.6,29.0,M,26.0,M,,')

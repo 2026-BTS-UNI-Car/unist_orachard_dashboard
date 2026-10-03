@@ -127,7 +127,9 @@ class GnssDecoder:
                     fix_type=FIX_NAMES.get(quality, "unknown"), latitude=None, longitude=None,
                     altitude_msl_m=None, altitude_ellipsoid_m=None, satellites=None, hdop=None,
                     h_acc_m=None, v_acc_m=None, accuracy_source=None, speed_mps=None,
-                    course_deg=None, gps_time=None)
+                    course_deg=None, gps_time=None, speed_accuracy_m_s=None,
+                    course_accuracy_deg=None, motion_accuracy_source=None,
+                    velocity_ned_m_s=None)
 
     def _nmea(self, f):
         kind = f[0][-3:]
@@ -218,7 +220,8 @@ class GnssDecoder:
         quality = (4 if carrier == 2 else 5 if carrier == 1 else 2 if p[21] & 2 else 1) if valid else 0
         frame = self._base("UBX_NAV_PVT", quality)
         lon, lat, height, msl, h_acc, v_acc = struct.unpack_from("<iiiiII", p, 24)
-        speed, heading = struct.unpack_from("<ii", p, 60)
+        vel_n,vel_e,vel_d,speed,heading = struct.unpack_from("<iiiii", p, 48)
+        speed_acc,heading_acc = struct.unpack_from("<II", p, 68)
         gps_time = None
         try:
             if p[11] & 3 == 3:
@@ -229,7 +232,16 @@ class GnssDecoder:
                      h_acc_m=h_acc*.001, v_acc_m=v_acc*.001, accuracy_source="UBX_NAV_PVT",
                      satellites=p[23], pdop=struct.unpack_from("<H", p, 76)[0]*.01,
                      speed_mps=max(0, speed*.001), course_deg=(heading*1e-5) % 360,
-                     gps_time=gps_time, fix_dimension=p[20])
+                     gps_time=gps_time, fix_dimension=p[20],
+                     speed_accuracy_m_s=speed_acc*.001 if valid else None,
+                     course_accuracy_deg=heading_acc*1e-5 if valid else None,
+                     motion_accuracy_source='UBX_NAV_PVT' if valid else None,
+                     velocity_ned_m_s=dict(north=vel_n*.001,east=vel_e*.001,
+                         down=vel_d*.001 if p[20]==3 else None) if valid else None,
+                     gps_time_valid_date=bool(p[11]&1),gps_time_valid_time=bool(p[11]&2),
+                     gps_time_fully_resolved=bool(p[11]&4),
+                     gps_time_accuracy_s=struct.unpack_from('<I',p,12)[0]*1e-9,
+                     gps_time_fraction_ns=struct.unpack_from('<i',p,16)[0])
         return frame
 
 
