@@ -72,6 +72,9 @@ class Tests(unittest.TestCase):
         value=renderer_snapshot(png,{'render_world_bounds_m':[-3.,7.,-2.,3.],'frame_index':4},'fixture')
         self.assertEqual(value['grid']['origin'],{'x':-3.,'y':-2.})
         self.assertEqual(value['grid']['resolution'],.1)
+        self.assertEqual(value['grid']['occupied_bounds']['minX'],-3.)
+        self.assertAlmostEqual(value['grid']['occupied_bounds']['minY'],2.9)
+        self.assertAlmostEqual(value['grid']['occupied_bounds']['maxY'],3.)
         decoded=cv2.imdecode(np.frombuffer(base64.b64decode(value['grid']['image_base64']),dtype=np.uint8),cv2.IMREAD_COLOR)
         self.assertEqual(int(decoded[-1,0,0]),25);self.assertEqual(int(decoded[0,-1,0]),245)
 
