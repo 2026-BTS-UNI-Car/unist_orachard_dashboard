@@ -69,4 +69,15 @@
 
 GPS 속도 오차/NED velocity/UTC 품질은 actual GPS serial owner0df5ccd/image20d54fad에 추가했다. 다른12역할·metadata41 보존, API field 전달/패킷 증가 확인. 실제 recorder image 격리 ROS 검증5개·제외0으로 JSONL 보존을 확인했다. 현재 실내 no-fix다. 과거 speed accuracy는 저장되어 있지 않아 복구하지 않는다. [GPS/PWM 진단](GPS_PWM_SPEED_AUDIT_20261004.md).
 
-새 raw/GNSS mapper는 여전히offline/defaultoff이며 main SIM은legacywheel/IMU다. candidate submap 회복·beam timing/장착·독립 기하/Jetson latency 검증, native tile persistence, 새 녹화 자동 adaptive 큐, 실차 제동/운동 fitting과 새 과수원 자율주행을 완료 처리하지 않는다. 최신 근거는 `field_followup_deployment_20261004.json`이며 이전 단락의 배포/진행 정보는 당시 이력이다.
+새 raw/GNSS mapper는 여전히offline/defaultoff이며 main SIM은legacywheel/IMU다. candidate submap 회복·beam timing/장착·독립 기하/Jetson latency 검증, native tile LOD/과거 시각별 runtime 연결, 새 녹화 자동 adaptive 큐, 실차 제동/운동 fitting과 새 과수원 자율주행을 완료 처리하지 않는다. 최신 근거는 `field_followup_deployment_20261004.json`이며 이전 단락의 배포/진행 정보는 당시 이력이다.
+
+
+<!-- NATIVE_TILE_FOLLOWUP_20261004 -->
+
+## Native 셀 보관 추가 적용
+
+실제 web source9520713/imagee89b6093, SIM webbe318b8/imagedca7e565에 적용했다. 실제 다른12역할·metadata41, SIM 다른3역할·metadata10·속도100%·자율주행inactive를 보존했다. 실제 기존9scans/2018cells PNG도 동일하게 복구했고 Cloudflare 브라우저에서 저장된 지도/이어 그리기 차단을 확인했다. 현재 이 기존 지도에 native 셀이 새로 생겼다는 뜻은 아니다. 새 live 지도는STOP/새 지도/정상 종료에 native cells를 저장한다. SIM 녹화 종료/재생성에도 연결했다.
+
+격리된 actual image23검사(HTTP1포함), SIM image39검사를 통과했다. 0개가 발견된 일반test_api.py 패턴을 성공한 API 검사로 세지 않고, 실제 이미지의 구체적 HTTP fixture1개를 별도 실행했다. 도로5/과수원2의98개 분리 submap 최종 native 셀12,626,589개·6714tiles·약4.59MB compressed를 private disk에 저장·로드해 모든 배열/snapshot을 비교했다. clipping0·메모리limit0이고 서로 연결하지 않았다. 시각별overview와source scan/궤적도 보존했다.
+
+native LOD/API, 과거 시각별 native 셀, GNSS 보정 후 재삽입을live/archive 공통 mapper에 연결하는 단계는 미완료다. 이 저장 성공이 지도 위치 정확도 검증이나 raw 후보 실차 채택은 아니다. `NATIVE_TILE_CHECKPOINTS_20261004.md`와 `native_tile_checkpoints_20261004.json`에 동작/제약/근거를 기록했다.

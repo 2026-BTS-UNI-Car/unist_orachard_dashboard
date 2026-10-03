@@ -1,13 +1,25 @@
 {
-  "updated_utc": "2026-10-03T20:28:32.787254+00:00",
+  "updated_utc": "2026-10-03T21:10:46.963881+00:00",
   "actual_web": {
     "ok": true,
-    "source_commit": "d267fbb8faca49826682949d3a44147f003321db",
-    "web_id": "9bd2468841890e8e889868625cc6f09f8945af01dbc2e24b11797c99f3aa58f5",
-    "image": "sha256:a432830de7d5d0ec61b2cc11b1c65d2e0cd25b9a87e0aa0f452b42822f7a9847",
+    "map_preserved": {
+      "scan_count": 9,
+      "cell_count": 2018,
+      "state": "needs_reset",
+      "active": false,
+      "persistence": {
+        "restored": true,
+        "native_cells": false,
+        "legacy_PNG_only": true
+      },
+      "runtime_authority": false,
+      "autonomy_eligible": false
+    },
+    "source_commit": "9520713f460f83db630ee5e761b6146a353924bc",
+    "web_id": "5c5251aadb16d4c18426ad954f0167d36fb4eaddf5dd1bfacafc5895a26c44c0",
+    "image": "sha256:e89b6093cb4e96716dcb2b536fe538a5b4f125cf8e1f23c2c200915ac8a676cf",
     "served_hashes": {
-      "static/app.js": "7e9180cd641e684360d04b2b5e5cad6fc0776f65223b3c7e23eb3e887a2abc0b",
-      "static/live-map.js": "b34aaa223bec5fd9ed7eef46564a044fb61008441db0de24ebfef2b4a7e4ff96"
+      "static/live-map.js": "52f0fe82f75daee1ff8134a5bdc0d51621f687b536c223aa63b5ec0cdf917be3"
     },
     "other_containers_preserved": 12,
     "archives_preserved": 41,
@@ -20,11 +32,14 @@
   },
   "SIM_web": {
     "ok": true,
-    "source_commit": "3be39fe05854a9d91df6f22761e6ff22c3be59e5",
-    "web_id": "89f3cd7f97607c28ff41a77631f2154898ec2cb60f104525647c6c253d50a524",
-    "image": "sha256:64e6e26a3ad56fc6312496b174b177376e7c25fc876e251c182e11a1071e1d71",
+    "map_before_empty_preserved": true,
+    "native_tile_persistence_installed": true,
+    "source_commit": "be318b87f774737f23bd8959f19276c5c792e679",
+    "web_id": "5fc80d070b31652f0654943d5c22f19eb46a179a7fc2fd9d62e0a9ca4c4f35fb",
+    "image": "sha256:dca7e5653b745e7595a1df5b6ed2fce560f04a5a7ee2aaa6e4560f353dff9464",
     "served_hashes": {
-      "dashboard/static/app.js": "c5ced8a81ea44786cff5c893e304d385d5a074864ce8c3b429c569687c4d5b1f"
+      "dashboard/static/live-map.js": "52f0fe82f75daee1ff8134a5bdc0d51621f687b536c223aa63b5ec0cdf917be3",
+      "dashboard/static/sim-map.js": "f2e4826ea22586e16bb23c5d2bac76049455797a22bb5cbe6fa485d5d96020c2"
     },
     "other_containers_preserved": 3,
     "archives_preserved": 10,
@@ -257,10 +272,15 @@
     "new_recording": false
   },
   "real_readonly_followup": {
-    "state": "paused",
-    "active": false,
     "scan_count": 9,
-    "cells": 2018,
+    "cell_count": 2018,
+    "state": "needs_reset",
+    "active": false,
+    "persistence": {
+      "restored": true,
+      "native_cells": false,
+      "legacy_PNG_only": true
+    },
     "runtime_authority": false,
     "autonomy_eligible": false
   },
@@ -2077,5 +2097,265 @@
   "real_autonomy": "deferred",
   "physical_motor_commands": false,
   "pending_batch_jobs": [],
-  "camera_used_for_localization": false
+  "camera_used_for_localization": false,
+  "before_native_tile_followup": {
+    "actual_web": {
+      "ok": true,
+      "source_commit": "d267fbb8faca49826682949d3a44147f003321db",
+      "web_id": "9bd2468841890e8e889868625cc6f09f8945af01dbc2e24b11797c99f3aa58f5",
+      "image": "sha256:a432830de7d5d0ec61b2cc11b1c65d2e0cd25b9a87e0aa0f452b42822f7a9847",
+      "served_hashes": {
+        "static/app.js": "7e9180cd641e684360d04b2b5e5cad6fc0776f65223b3c7e23eb3e887a2abc0b",
+        "static/live-map.js": "b34aaa223bec5fd9ed7eef46564a044fb61008441db0de24ebfef2b4a7e4ff96"
+      },
+      "other_containers_preserved": 12,
+      "archives_preserved": 41,
+      "motor_armed": false,
+      "motor_moving": false,
+      "recorder_state": "idle",
+      "new_recording": false,
+      "physical_autonomy_enabled": false,
+      "offline_encoder_excluded": "verified task-owned network-none device-free audit-only mount"
+    },
+    "SIM_web": {
+      "ok": true,
+      "source_commit": "3be39fe05854a9d91df6f22761e6ff22c3be59e5",
+      "web_id": "89f3cd7f97607c28ff41a77631f2154898ec2cb60f104525647c6c253d50a524",
+      "image": "sha256:64e6e26a3ad56fc6312496b174b177376e7c25fc876e251c182e11a1071e1d71",
+      "served_hashes": {
+        "dashboard/static/app.js": "c5ced8a81ea44786cff5c893e304d385d5a074864ce8c3b429c569687c4d5b1f"
+      },
+      "other_containers_preserved": 3,
+      "archives_preserved": 10,
+      "autonomy_active": false,
+      "speed_percent_unchanged": 100.0
+    }
+  },
+  "native_tile_followup": {
+    "updated_utc": "2026-10-03T21:10:46.963881+00:00",
+    "actual_web": {
+      "ok": true,
+      "map_preserved": {
+        "scan_count": 9,
+        "cell_count": 2018,
+        "state": "needs_reset",
+        "active": false,
+        "persistence": {
+          "restored": true,
+          "native_cells": false,
+          "legacy_PNG_only": true
+        },
+        "runtime_authority": false,
+        "autonomy_eligible": false
+      },
+      "source_commit": "9520713f460f83db630ee5e761b6146a353924bc",
+      "web_id": "5c5251aadb16d4c18426ad954f0167d36fb4eaddf5dd1bfacafc5895a26c44c0",
+      "image": "sha256:e89b6093cb4e96716dcb2b536fe538a5b4f125cf8e1f23c2c200915ac8a676cf",
+      "served_hashes": {
+        "static/live-map.js": "52f0fe82f75daee1ff8134a5bdc0d51621f687b536c223aa63b5ec0cdf917be3"
+      },
+      "other_containers_preserved": 12,
+      "archives_preserved": 41,
+      "motor_armed": false,
+      "motor_moving": false,
+      "recorder_state": "idle",
+      "new_recording": false,
+      "physical_autonomy_enabled": false,
+      "offline_encoder_excluded": "verified task-owned network-none device-free audit-only mount"
+    },
+    "SIM_web": {
+      "ok": true,
+      "map_before_empty_preserved": true,
+      "native_tile_persistence_installed": true,
+      "source_commit": "be318b87f774737f23bd8959f19276c5c792e679",
+      "web_id": "5fc80d070b31652f0654943d5c22f19eb46a179a7fc2fd9d62e0a9ca4c4f35fb",
+      "image": "sha256:dca7e5653b745e7595a1df5b6ed2fce560f04a5a7ee2aaa6e4560f353dff9464",
+      "served_hashes": {
+        "dashboard/static/live-map.js": "52f0fe82f75daee1ff8134a5bdc0d51621f687b536c223aa63b5ec0cdf917be3",
+        "dashboard/static/sim-map.js": "f2e4826ea22586e16bb23c5d2bac76049455797a22bb5cbe6fa485d5d96020c2"
+      },
+      "other_containers_preserved": 3,
+      "archives_preserved": 10,
+      "autonomy_active": false,
+      "speed_percent_unchanged": 100.0
+    },
+    "actual_browser": {
+      "ok": true,
+      "state_text": "저장된 지도",
+      "status_text": "저장된 지도 유지 · 새 지도를 눌러 그리기를 시작하세요.",
+      "scan_count": 9,
+      "cell_count": 2018,
+      "saved_map_preserved": true,
+      "resume_blocked": true,
+      "legacy_PNG_not_native": true,
+      "page_errors": [],
+      "API_POST_requests": 0,
+      "physical_motor_commands": false,
+      "new_recording": false,
+      "initial_test_PowerShell_stdin_ASCII_encoding_corrected": true
+    },
+    "SIM_browser": {
+      "ok": true,
+      "lidar_pixel": {
+        "x": 80,
+        "y": 130
+      },
+      "autonomy_active": false,
+      "mapping_active": false,
+      "GUI_services_untouched": true,
+      "page_errors": [],
+      "physical_motor_commands": false,
+      "new_recording": false
+    },
+    "actual_image_isolated_tests": 23,
+    "SIM_image_isolated_tests": 39,
+    "actual_HTTP_isolated_test": 1,
+    "zero_test_discovery_not_counted": true,
+    "native_rebuild": {
+      "ok": true,
+      "archives": 7,
+      "source_scans": 32047,
+      "accepted_scans": 30742,
+      "isolated_submaps": 98,
+      "native_cells": 12626589,
+      "native_tiles": 6714,
+      "compressed_bytes": 4585532,
+      "all_native_arrays_roundtrip_verified": true,
+      "segments_joined": false,
+      "spatial_clipping": 0,
+      "private_diagnostic_artifacts": true,
+      "actual_raw_candidate_archive_installed": false,
+      "mapping_accuracy_validated": false,
+      "runtime_authority": false,
+      "physical_motor_commands": false,
+      "rows": [
+        {
+          "archive_id": "20261003T072238Z_both",
+          "source_scans": 7799,
+          "accepted_scans": 7704,
+          "submaps": 3,
+          "native_cells": 2211612,
+          "native_tiles": 856,
+          "compressed_bytes": 598732,
+          "all_native_arrays_roundtrip_verified": true,
+          "limited_submaps": 0,
+          "snapshot_count": 191,
+          "mapper_sha256": "bbd5d2a51b25b1950f1fa2e042981fe7b1cfc7f234ffc713c4926bf4f9c84478",
+          "raster_sha256": "6b5a595f235edac133e37b2e7654fe113860cab72c7dfe9f4296c4c42f6a63a8",
+          "checkpoint_sha256": "c7bd05307d13abffc0973124a87e6ca3efa521db3534d56a3134ed4e93bcef73",
+          "source_sensor_sha256": "0fe3de9fd9793b176ebd102d97f35a3b9df72efb8141307b4646d019c2e0c5fd",
+          "trajectory_sha256": "39c553af88c2a9ddecdbd871b0aaa9514b15478f777074d7913f0535d74dd28b"
+        },
+        {
+          "archive_id": "20261003T072329Z_both",
+          "source_scans": 913,
+          "accepted_scans": 906,
+          "submaps": 1,
+          "native_cells": 326221,
+          "native_tiles": 125,
+          "compressed_bytes": 86112,
+          "all_native_arrays_roundtrip_verified": true,
+          "limited_submaps": 0,
+          "snapshot_count": 23,
+          "mapper_sha256": "bbd5d2a51b25b1950f1fa2e042981fe7b1cfc7f234ffc713c4926bf4f9c84478",
+          "raster_sha256": "6b5a595f235edac133e37b2e7654fe113860cab72c7dfe9f4296c4c42f6a63a8",
+          "checkpoint_sha256": "c7bd05307d13abffc0973124a87e6ca3efa521db3534d56a3134ed4e93bcef73",
+          "source_sensor_sha256": "b2604bb6f4af97aab92675eaf92027a79b989dc7581254ff0d423e7282f14017",
+          "trajectory_sha256": "cf1e5c14d6e972dc8b57c934d1e5b30ff023ec38c459d015a5e5205784f343f6"
+        },
+        {
+          "archive_id": "20261003T072530Z_both",
+          "source_scans": 5243,
+          "accepted_scans": 5208,
+          "submaps": 3,
+          "native_cells": 1631818,
+          "native_tiles": 641,
+          "compressed_bytes": 517235,
+          "all_native_arrays_roundtrip_verified": true,
+          "limited_submaps": 0,
+          "snapshot_count": 129,
+          "mapper_sha256": "bbd5d2a51b25b1950f1fa2e042981fe7b1cfc7f234ffc713c4926bf4f9c84478",
+          "raster_sha256": "6b5a595f235edac133e37b2e7654fe113860cab72c7dfe9f4296c4c42f6a63a8",
+          "checkpoint_sha256": "c7bd05307d13abffc0973124a87e6ca3efa521db3534d56a3134ed4e93bcef73",
+          "source_sensor_sha256": "488c0bb55f162a99722e36c86945d368bb90aec03f2694101d03a2a64e55838b",
+          "trajectory_sha256": "c506d2721a6ecc1a4a67111e70d7ec1ce5513c7bd9d9d06cbfadf94ce3363271"
+        },
+        {
+          "archive_id": "20261003T073551Z_both",
+          "source_scans": 8108,
+          "accepted_scans": 7877,
+          "submaps": 12,
+          "native_cells": 2899141,
+          "native_tiles": 1271,
+          "compressed_bytes": 899372,
+          "all_native_arrays_roundtrip_verified": true,
+          "limited_submaps": 0,
+          "snapshot_count": 203,
+          "mapper_sha256": "bbd5d2a51b25b1950f1fa2e042981fe7b1cfc7f234ffc713c4926bf4f9c84478",
+          "raster_sha256": "6b5a595f235edac133e37b2e7654fe113860cab72c7dfe9f4296c4c42f6a63a8",
+          "checkpoint_sha256": "c7bd05307d13abffc0973124a87e6ca3efa521db3534d56a3134ed4e93bcef73",
+          "source_sensor_sha256": "cfa30201f94a90750b9550a05a263b3233ba5ef4cc1a156ccac4a78e4f629906",
+          "trajectory_sha256": "eb5e3ccda5b3c57690c08a532e657e98cc4392a0ef57d5a9166c98153f8fcaf7"
+        },
+        {
+          "archive_id": "20261003T080351Z_both",
+          "source_scans": 2459,
+          "accepted_scans": 1961,
+          "submaps": 48,
+          "native_cells": 2193942,
+          "native_tiles": 1919,
+          "compressed_bytes": 1073281,
+          "all_native_arrays_roundtrip_verified": true,
+          "limited_submaps": 0,
+          "snapshot_count": 81,
+          "mapper_sha256": "bbd5d2a51b25b1950f1fa2e042981fe7b1cfc7f234ffc713c4926bf4f9c84478",
+          "raster_sha256": "6b5a595f235edac133e37b2e7654fe113860cab72c7dfe9f4296c4c42f6a63a8",
+          "checkpoint_sha256": "c7bd05307d13abffc0973124a87e6ca3efa521db3534d56a3134ed4e93bcef73",
+          "source_sensor_sha256": "90a792f56b8881d764f47f3fb335fe2ce77adabdaaef124401e46b67524d311e",
+          "trajectory_sha256": "364e9e88bf27f384b1adc392dcb309f947e3e5ebaf76bfa08e664618a70bf1c2"
+        },
+        {
+          "archive_id": "20261003T080909Z_both",
+          "source_scans": 2093,
+          "accepted_scans": 1816,
+          "submaps": 23,
+          "native_cells": 1741115,
+          "native_tiles": 1125,
+          "compressed_bytes": 816700,
+          "all_native_arrays_roundtrip_verified": true,
+          "limited_submaps": 0,
+          "snapshot_count": 59,
+          "mapper_sha256": "bbd5d2a51b25b1950f1fa2e042981fe7b1cfc7f234ffc713c4926bf4f9c84478",
+          "raster_sha256": "6b5a595f235edac133e37b2e7654fe113860cab72c7dfe9f4296c4c42f6a63a8",
+          "checkpoint_sha256": "c7bd05307d13abffc0973124a87e6ca3efa521db3534d56a3134ed4e93bcef73",
+          "source_sensor_sha256": "cb4b994bfc1ebc94b864e2b82a8381de497ad9bb010fa7e7cbde10f7a5864b26",
+          "trajectory_sha256": "d42601410c7aac231a683f3a29ccc236a54a8a9fcc7a8ca61976ef131e7be531"
+        },
+        {
+          "archive_id": "20261003T081934Z_both",
+          "source_scans": 5432,
+          "accepted_scans": 5270,
+          "submaps": 8,
+          "native_cells": 1622740,
+          "native_tiles": 777,
+          "compressed_bytes": 594100,
+          "all_native_arrays_roundtrip_verified": true,
+          "limited_submaps": 0,
+          "snapshot_count": 135,
+          "mapper_sha256": "bbd5d2a51b25b1950f1fa2e042981fe7b1cfc7f234ffc713c4926bf4f9c84478",
+          "raster_sha256": "6b5a595f235edac133e37b2e7654fe113860cab72c7dfe9f4296c4c42f6a63a8",
+          "checkpoint_sha256": "c7bd05307d13abffc0973124a87e6ca3efa521db3534d56a3134ed4e93bcef73",
+          "source_sensor_sha256": "39d549eb2eae73f2d6d4cb167eebc64dfc4fd7cdf15dc51343f3f1c5ede7511f",
+          "trajectory_sha256": "8dacbe3a7978bb2441e0a5dbc5d523f8e4db238e5805ec1d1d536b2239b88af1"
+        }
+      ]
+    },
+    "current_real_saved_map_is_legacy_PNG": true,
+    "actual_raw_GNSS_candidate_installed": false,
+    "raw_candidate_artifacts_private": true,
+    "native_HTTP_LOD_integrated": false,
+    "past_time_native_tiles_integrated": false,
+    "physical_motor_commands": false,
+    "new_recording": false
+  }
 }
