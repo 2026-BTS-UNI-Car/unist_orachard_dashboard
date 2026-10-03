@@ -1,0 +1,146 @@
+{
+  "schema": "ubts.ap_ip_access.v1",
+  "date_kst": "2026-10-04",
+  "dashboard_url": "http://10.77.0.1",
+  "installed": true,
+  "effective": "next_AP_activation",
+  "physical_AP_client_test": false,
+  "verification_method": "Production candidate with loopback-only listen substitution; actual Jetson dashboard and TLS-verified Portainer upstreams",
+  "checks": {
+    "physical_AP_client_test": false,
+    "network_changed": false,
+    "motor_commands_sent": false,
+    "production_template_sha256": "7192967ce6eda402113cc8f4523a581b987edf0b2a023863db0ee67cee17499d",
+    "IP_health": {
+      "status": 200,
+      "redirect": false,
+      "HSTS": false
+    },
+    "IP_page_static_map_network_status": true,
+    "legacy_dashboard_domain": true,
+    "Portainer_TLS_verified": true,
+    "unknown_Host_still_404": true,
+    "same_origin_rejection": {
+      "10.77.0.1": {
+        "status": 400,
+        "Origin_preserved": true,
+        "state_changed": false
+      },
+      "10.77.0.1:58099": {
+        "status": 400,
+        "Origin_preserved": true,
+        "state_changed": false
+      }
+    },
+    "WebSocket": {
+      "/ws/lidar": {
+        "status": 101,
+        "frames": [
+          {
+            "opcode": 1,
+            "bytes": 77,
+            "type": "socket",
+            "source_alive": null
+          },
+          {
+            "opcode": 1,
+            "bytes": 270,
+            "type": "status",
+            "source_alive": true
+          }
+        ],
+        "transport_verified": true
+      },
+      "/ws/camera?fps=1&width=640": {
+        "status": 101,
+        "frames": [
+          {
+            "opcode": 1,
+            "bytes": 95,
+            "type": "socket",
+            "source_alive": null
+          },
+          {
+            "opcode": 1,
+            "bytes": 590,
+            "type": "status",
+            "source_alive": null
+          }
+        ],
+        "transport_verified": true
+      },
+      "/ws/imu": {
+        "status": 101,
+        "frames": [
+          {
+            "opcode": 1,
+            "bytes": 63,
+            "type": "socket",
+            "source_alive": null
+          },
+          {
+            "opcode": 1,
+            "bytes": 1796,
+            "type": "imu",
+            "source_alive": null
+          }
+        ],
+        "transport_verified": true
+      },
+      "/ws/gps": {
+        "status": 101,
+        "frames": [
+          {
+            "opcode": 1,
+            "bytes": 1803,
+            "type": "gps",
+            "source_alive": null
+          }
+        ],
+        "transport_verified": true
+      }
+    },
+    "existing_video_Range": {
+      "status": 206,
+      "bytes": 1024
+    },
+    "nginx_syntax": "passed",
+    "passed": true
+  },
+  "required_mock_safety_tests": {
+    "passed": 43,
+    "failed": 0
+  },
+  "changes": {
+    "/opt/ubts-offline-ap/nginx/default.conf.template": {
+      "before_sha256": "764556156586e4d6b039ab818c85536ea497b151b47352e47206532efa732cae",
+      "after_sha256": "7192967ce6eda402113cc8f4523a581b987edf0b2a023863db0ee67cee17499d"
+    },
+    "/opt/ubts-offline-ap/compose.yaml": {
+      "before_sha256": "7bdd81333d3afa31140db9f9261c96ad20a4c821237171ce1a7ba0c0d7aee254",
+      "after_sha256": "33a0ae755b41946bb7d91a277fe96444ef5f18669c5eb2d9cb17f75dcb99a0b7"
+    }
+  },
+  "proxy_fingerprint": {
+    "before": "97d2064a77f6b719ca9ea6909df29affd6d3a79099eb8f4fd3e3ffee83d0f433",
+    "after": "5e4ed289f1fd82e28801082958e8f98f91e6d0cff7136317ed88de37b000b680"
+  },
+  "preserved": {
+    "containers": 13,
+    "archive_metadata": 41,
+    "protected_configuration": true,
+    "routes_and_rules": true,
+    "network_controller_running": true
+  },
+  "AP_activated": false,
+  "services_restarted": false,
+  "motor_commands_sent": false,
+  "backup": "/var/lib/ubts-ap-ip/20261004",
+  "rollback": "docker exec unist-orachard-dashboard nsenter -t 1 -m -u -i -n -p -- python3 /home/unist/workspace/ubts_releases/20261004-ap-ip/install_proxy.py rollback",
+  "pending": [
+    "Physical AP client HTTP access with and without a separate internet uplink"
+  ],
+  "client_limits": [
+    "IP access does not use DNS. Public-domain HSTS and client-enforced HTTPS-only policies cannot be disabled by this HTTP proxy."
+  ]
+}

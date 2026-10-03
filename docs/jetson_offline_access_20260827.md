@@ -3,6 +3,18 @@
 검증일: 2026-08-27 KST  
 대상: NVIDIA Jetson Orin Nano Developer Kit Super (`L4T R36.5.0`)
 
+2026-10-04 변경: AP 대시보드의 권장 주소는 **`http://10.77.0.1`**이다.
+nginx가 IP Host를 대시보드로 보내며 기존 도메인 경로도 유지한다.
+AP가 활성화된 뒤 `BTS_Jetson`에 연결하고 주소 전체를 입력한다. IP 요청은
+DNS를 조회하지 않으므로 다른 인터넷 연결의 DNS/브라우저 Secure DNS와 함께
+사용할 수 있다. 클라이언트는 AP의 `10.77.0.0/24` 로컬 경로를 사용하고
+기존 인터넷 기본 경로는 유지한다. nginx에는 HTTPS 리다이렉트가 없다.
+브라우저의 별도 HTTPS 전용 정책은 서버에서 강제로 해제할 수 없다.
+
+설정 배포와 실제 백엔드를 통한 프록시 검증은 별도 기록에 남긴다.
+AP 클라이언트에서 새 IP 경로를 직접 확인한 결과는
+`docs/ap_ip_access_20261004.json`의 검증 범위를 따른다.
+
 ## 운영 결론
 
 Jetson의 단일 Wi-Fi 인터페이스 `wlP1p1s0`를 station과 AP 사이에서 안전하게 전환하는
@@ -64,6 +76,7 @@ IP forwarding, NAT/masquerade, 방화벽 변경, upstream DNS forwarding도 사�
 있는 장치의 기존 인터넷 기본 경로를 빼앗지 않는다.
 
 ```text
+http://10.77.0.1                -> 10.77.0.1:80 -> dashboard 127.0.0.1:8080
 http://bts.sarihub.com            -> 10.77.0.1:80 -> dashboard 127.0.0.1:8080
 http://bts-docker.sarihub.com     -> 10.77.0.1:80 -> Portainer 127.0.0.1:9443
 ssh unist@jetson-ssh.sarihub.com  -> 10.77.0.1:22 direct
@@ -76,8 +89,11 @@ upstream은 보드의 `localhost` 인증서를 CA 파일로 고정해 `proxy_ssl
 유지한다.
 
 공개 도메인에 HSTS가 캐시된 휴대폰은 HTTP를 HTTPS로 자동 승격할 수 있다. 이 경우
-인증서 검증을 끄지 말고, 브라우저에서 명시적으로 `http://`를 사용하거나 추후 휴대폰이
-신뢰하는 로컬 CA/로컬 전용 도메인을 설계한다.
+`http://bts.sarihub.com`을 명시해도 HSTS가 적용될 수 있으므로
+`http://10.77.0.1`로 접속한다. Jetson에서 클라이언트가 사용하는 외부 DNS나
+공개 도메인의 HSTS를 강제로 바꿀 수는 없다. AP는 DHCP option 6으로
+`10.77.0.1` DNS를 계속 제공하며, 도메인 접속은 그 DNS를 사용하는 경우에만
+로컬 대시보드로 연결된다.
 
 ## Ethernet 우선 규칙
 

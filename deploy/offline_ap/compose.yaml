@@ -45,6 +45,7 @@ services:
       test:
         - CMD-SHELL
         - >-
+          wget -q -O /dev/null "http://$${AP_ADDRESS}/api/health" &&
           wget -q -O /dev/null --header='Host: bts.sarihub.com'
           "http://$${AP_ADDRESS}/api/health" &&
           wget -q -O /dev/null --header='Host: bts-docker.sarihub.com'

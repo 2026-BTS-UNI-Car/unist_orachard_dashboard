@@ -19,6 +19,11 @@ systemd unit만 설치합니다. NetworkManager를 재시작/리로드하지 않
 
 ## 구성
 
+2026-10-04부터 대시보드는 `http://10.77.0.1`로도 접속한다. 다른 인터넷의
+DNS나 공개 도메인의 HSTS와 무관하게 AP IP로 직접 요청하는 권장 경로다.
+현재 보드의 단일 무선랜 자동 전환 구성은
+[`jetson_offline_access_20260827.md`](../../docs/jetson_offline_access_20260827.md)를 따른다.
+
 ```text
 phone --WPA2--> USB Wi-Fi AP (10.77.0.1/24)
                    |-- DNS bts.sarihub.com        -> 10.77.0.1
@@ -49,6 +54,7 @@ masquerade/NAT 또는 firewall rule을 만들지 않습니다. 따라서 이 AP�
 클라이언트가 접속하는 주소는 다음 두 **HTTP URL**과 로컬 SSH 이름을 지원합니다.
 
 - `http://bts.sarihub.com`
+- `http://10.77.0.1` (권장 대시보드 주소, DNS 조회 없음)
 - `http://bts-docker.sarihub.com`
 - `ssh unist@jetson-ssh.sarihub.com` (DNS가 `10.77.0.1`을 반환하고 TCP 22로 직접 접속)
 
@@ -258,7 +264,8 @@ http://bts.sarihub.com
 http://bts-docker.sarihub.com
 ```
 
-IP 직접 접속이나 `https://` 접속은 이 번들의 성공 판정이 아닙니다.
+대시보드의 권장 주소는 `http://10.77.0.1`입니다. IP 요청도 대시보드 healthcheck에
+포함됩니다. `https://10.77.0.1`의 TLS 접속은 제공하지 않습니다.
 
 ## 8. USB 재연결/부팅 후 자동 재시도(명시적 opt-in)
 
