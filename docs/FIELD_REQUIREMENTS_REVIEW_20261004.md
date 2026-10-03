@@ -59,3 +59,14 @@
 기존 native MP4/상위 variant bytes와 원본 metadata/bag는 보존한다. generated manifest SHA를 지정한 Linux atomic directory exchange로만 새 variant를 설치하고 이전 generated directory를 backup으로 남긴다. 중단한 구형 batch를 재개해도 SHA로 검증된 상위 패키지를 다시 덮지 않는다. codec은 native·4 HLS 스트림 각1360 packet(원본1359+last hold1),102asset SHA로 검증했다. 직접 SSH background에서7개를 계속 처리한다.
 
 현재 SIM plant만 네 가지 수동 입력을 실행했다. 같은50/50 요청에서 약0.428/0.431m/s effective target의 작은 편향,50/75 요청에서0.492/0.651의 완만한 차이,35/-35 PWM 존재에도 pivot effective0,70/-70에서강한pivot target과 즉시STOP0을 확인했다. 이 수치는 가정 계수의 가상 actuator target이며 실차 속도/제동·encoderless 위치 정확도 검증이 아니다. 새 녹화와 자율주행은 시작하지 않았다. 근거는 `sim_field_stress_runtime_20261004.json`이다.
+
+
+## 최종 추가 적용 관측 · 2026-10-04
+
+최신 실제 web은d267fbb/imagea432830d, SIM web3be39fe/image64e6e26a다. 센서 대기와 기록 재생 중 live camera preview 경합 수정은 두 환경에 적용했고, 실제 Cloudflare에서 자동 중지/복구를 관측했다. actual 정지 상태6초에서9scans/2018cells 생성 후 STOPpaused 보존. 주행 지도 정확도 합격은 아니다.
+
+7개 전체 영상 native와4화질 HLS 변환·설치 및 native+4HLS의 packet/codec/SHA 검증을 완료했다. native47,084원본 프레임을 유지하고 마지막 hold만 각1개 추가했다. 모든 기록의 Cloudflare playlist/native Range를 확인했다. 이후 RFC8216 실제 segment 길이/bytes로 master BANDWIDTH와AVERAGE-BANDWIDTH를 바로잡았고 영상 bytes·시각·원본은 재인코딩하지 않았다. sourcef2804c6 도구로 generated sidecar만 atomic 교체/backup 보존했다. 150ms RTT 동일 fixture 관측에서2Mbps auto360p/첫재생2.7초,512kbps240p/7.2초,10초 drop0·seek·720p 수동을 확인했다. 긴 실제 느린 회선의 무버퍼링은 미확인이다.
+
+GPS 속도 오차/NED velocity/UTC 품질은 actual GPS serial owner0df5ccd/image20d54fad에 추가했다. 다른12역할·metadata41 보존, API field 전달/패킷 증가 확인. 실제 recorder image 격리 ROS 검증5개·제외0으로 JSONL 보존을 확인했다. 현재 실내 no-fix다. 과거 speed accuracy는 저장되어 있지 않아 복구하지 않는다. [GPS/PWM 진단](GPS_PWM_SPEED_AUDIT_20261004.md).
+
+새 raw/GNSS mapper는 여전히offline/defaultoff이며 main SIM은legacywheel/IMU다. candidate submap 회복·beam timing/장착·독립 기하/Jetson latency 검증, native tile persistence, 새 녹화 자동 adaptive 큐, 실차 제동/운동 fitting과 새 과수원 자율주행을 완료 처리하지 않는다. 최신 근거는 `field_followup_deployment_20261004.json`이며 이전 단락의 배포/진행 정보는 당시 이력이다.

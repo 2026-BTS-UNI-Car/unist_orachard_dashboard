@@ -539,11 +539,28 @@
     }
   ],
   "source_hashes_verified": true,
-  "stable_intervals": 297,
   "independent_receiver_speed_samples": 3169,
   "receiver_speed_accuracy_available": false,
   "antenna_speed_not_wheel_or_body_speed": true,
   "physical_motor_commands": false,
   "braking_model_validated": false,
-  "calibrated_actuator_gains": false
+  "calibrated_actuator_gains": false,
+  "stable_intervals_raw": 297,
+  "stable_intervals_with_IMU_measurements": 296,
+  "GPS_capture_deployed": true,
+  "GPS_source_commit": "0df5ccd45542bda6e34e1e01012eba0bfb9debc9",
+  "GPS_recording_contract": {
+    "ok": true,
+    "tests": 5,
+    "skipped": 0,
+    "ROS_setup_sourced": true,
+    "network": "none",
+    "hardware_devices": false,
+    "fake_recording_in_temporary_directory": true,
+    "real_recording_started": false,
+    "live_ROS_replay": false,
+    "motion_fields_preserved_in_JSONL": true,
+    "actual_recorder_image": "sha256:25401caa35f1a591825e97d9a5b81fa9e7355462b0d2f01322ac3eb4f10a7102",
+    "test_source_sha256": "de8be35f6090b81195d4a55bfa2c4dbdb017f3901736cecec41caf7ea40d8e0a"
+  }
 }
