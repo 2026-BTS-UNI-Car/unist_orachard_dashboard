@@ -1,0 +1,69 @@
+{
+  "hardware": {
+    "ok": true,
+    "source_commit": "3d8ba8a7dcd37e36477b3877a862ff1548e5c365",
+    "web_id": "004f0c88c9427d3269d8f3e12581f1e38959927f2d0f72d62fbf837615fc2157",
+    "image": "sha256:063a82d27f9cb1dc5b6a2ba6961e5b9431ce45648e15dcb8805d7db5e61cf503",
+    "served_hashes": {
+      "static/app.js": "df215b6acadaf7406c1ee37676ead743cae3b4a8289ee6c31fdc06d933faa483",
+      "static/live-map.js": "2f29151b41d357aa78aa5c5b3aaf24c605521ab9ad5e00c95bbd98205832d408",
+      "static/metric-map.mjs": "e2453c8da299a1f9b8e896fe444631fb2ece6b2cf6d62ccba182e321d1871d80"
+    },
+    "other_containers_preserved": 12,
+    "archives_preserved": 41,
+    "motor_armed": false,
+    "motor_moving": false,
+    "recorder_state": "idle",
+    "new_recording": false,
+    "physical_autonomy_enabled": false
+  },
+  "simulation": {
+    "ok": true,
+    "source_commit": "df21c755adcd6d2b9f6c169dbdf6fb97705138b3",
+    "web_id": "3e398eca5c80e498485e23dc625de0b40e8ac4b8979dacd375cc1c63ee7c0c62",
+    "image": "sha256:cfdbddf0e0040952f6dac23760d02806ee640f5eab6acc57fee42d6382141682",
+    "served_hashes": {
+      "dashboard/static/app.js": "15921015142ecd318db576ec7a20d69f15f4bb720435d8c7fb2fad5a31c305d3",
+      "dashboard/static/live-map.js": "e30c8403a06e93eb2f7d68c3418d29eb420e37136104e1438861fa5410fb4bc1",
+      "dashboard/static/metric-map.mjs": "e2453c8da299a1f9b8e896fe444631fb2ece6b2cf6d62ccba182e321d1871d80"
+    },
+    "other_containers_preserved": 3,
+    "archives_preserved": 10,
+    "autonomy_active": false,
+    "speed_percent_unchanged": 100.0
+  },
+  "archive_browser": {
+    "ok": true,
+    "archive_id": "20261003T080351Z_both",
+    "before": {
+      "selected": "20261003T080351Z_both",
+      "time": 0,
+      "map": "첫 지도 관측 전 · 재생하면 지도가 쌓입니다."
+    },
+    "later_t_s": 59.42,
+    "earlier_t_s": 3.866,
+    "manual_zoom_preserved": true,
+    "history_epoch": "dfd7890af2264c019b9bc12a8ef658ce",
+    "lidar_pixel": {
+      "x": 80,
+      "y": 130
+    },
+    "page_errors": [],
+    "new_recording": false,
+    "motor_command_sent": false,
+    "gps_fusion_validated": false,
+    "mapping_accuracy_validated": false
+  },
+  "archive_generation_intermediate_frames": 4,
+  "sim_browser": {
+    "ok": true,
+    "lidar_pixel": {
+      "x": 80,
+      "y": 130
+    },
+    "autonomy_active": false,
+    "page_errors": []
+  },
+  "gps_fusion_validated": false,
+  "mapping_accuracy_validated": false
+}

@@ -47,3 +47,19 @@ Original size: 32,226,406,747 bytes. Sum of recording durations: 3214.45s. Raw s
 - Private full sensor extractions, original sidecar copies, hashes and quality tables remain on Jetson under `runtime/field_audit/20261003/extracted`. `.partial` folders never count as complete.
 - Reproducible read-only extraction/quality tools: `tools/field_data/`. Run inside the ROS recorder environment for extraction; quality analysis requires NumPy. Camera/GPS paths/bags are not committed to GitHub.
 - Deployment and real-data history playback validation are tracked separately in the checkpoint/TODO; unit-test success alone is not deployment evidence.
+
+## Full-stream reproduction of the current live display mapper
+
+Offline pairing uses the complete nearest source-stamp IMU history, not an exact live-network receipt reproduction. All source scans and raw IMU were read; numerical ICP replay stops at the first rejected update. Raw-rate runs still use the existing display mapper, without deskew or GPS. These are failure reproductions, not accuracy tests.
+
+| Archive | Display 2Hz first stop (s) | Raw scan cadence first stop (s) | Reason | Sensor tilt-change >3deg at display cadence |
+|---|---:|---:|---|---:|
+| `20261003T072238Z_both` | 21.682 | 36.568 | `scan_registration_uncertain` | 9 |
+| `20261003T072329Z_both` | 0.595 | 2.295 | `scan_registration_uncertain` | 1 |
+| `20261003T072530Z_both` | 0.000 | 0.000 | `unaligned_lidar_imu` | 1 |
+| `20261003T073551Z_both` | 12.502 | 56.955 | `scan_registration_uncertain` | 8 |
+| `20261003T080351Z_both` | 8.496 | 8.598 | `scan_registration_uncertain` | 72 |
+| `20261003T080909Z_both` | 11.091 | 10.990 | `scan_registration_uncertain` | 25 |
+| `20261003T081934Z_both` | 0.000 | 0.000 | `unaligned_lidar_imu` | 20 |
+
+All seven runs stop early: five on registration uncertainty and two at startup without aligned IMU. The two orchard runs stop at about 8.5s and 11.1s at display cadence. Higher scan cadence alone does not fix continuity. Startup synchronization should wait for a valid pair before an origin is established; registration must account for rotation, robust geometric support and relocalization, without joining an unknown gap as zero motion. Relative mount tilt remains unmeasured. The older SIM candidate has a 3,200-beam cap while measured bags contain 3,240 beams; it cannot be declared compatible without an explicit bounded-cap change and regression verification.
