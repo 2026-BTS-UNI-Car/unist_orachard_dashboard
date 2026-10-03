@@ -901,7 +901,7 @@
           "auto": false
         },
         "segments": 5,
-        "caption": "720p · 14.9 fps · 00:56"
+        "caption": "720p \u00b7 14.9 fps \u00b7 00:56"
       },
       "page_errors": [],
       "bad_media_responses": [],
@@ -939,7 +939,7 @@
           "auto": true
         },
         "segments": 1,
-        "caption": "360p · 자동 · 14.9 fps · 00:44"
+        "caption": "360p \u00b7 \uc790\ub3d9 \u00b7 14.9 fps \u00b7 00:44"
       },
       "page_errors": [],
       "bad_media_responses": [],
@@ -949,6 +949,8 @@
   ],
   "pose_accuracy_validated": false,
   "real_autonomy": false,
-  "deployed": false,
-  "source_video_clock_correction_s": 0.7016375064849854
+  "deployed": true,
+  "source_video_clock_correction_s": 0.7016375064849854,
+  "deployment_scope": "tiled display storage and adaptive playback web; qualified raw/GNSS estimator remains offline",
+  "deployment_evidence": "field_rollout_deployment_20261004.json"
 }

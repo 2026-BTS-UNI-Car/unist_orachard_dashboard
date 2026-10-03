@@ -128,6 +128,14 @@ class LiveMapping:
     def freeze(self, reason):
         with self.lock:
             if not self.tracking:return
+            # Sensor arrival order/temporary receipt delay is not a failed
+            # geometric match. Keep listening without inserting any cells.
+            # An established pose still has to pass the source-clock gap
+            # check before drawing resumes; unknown travel is never filled.
+            if reason in ('lidar_or_imu_unavailable','stale_lidar_or_imu',
+                          'unaligned_lidar_imu','imu_orientation_unavailable'):
+                self.state='waiting_for_sensors';self.reason=reason;self._publish()
+                return
             self.active=self.tracking=False
             self.state='needs_reset';self.reason=reason;self._publish()
 

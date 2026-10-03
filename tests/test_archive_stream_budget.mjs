@@ -1,0 +1,26 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+const source=fs.readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
+const functions=source.slice(source.indexOf('function suspendLiveCameraForArchive() {'),source.indexOf('async function toggleArchivePlayback() {'));
+const state={telemetry:{services:{rover_bridge:{armed:false,updated_at:100}}},roverControl:{},
+  cameraLive:{socket:{},userStopped:false},archivePlayback:{resumeLiveCamera:false}};
+let closed=0,started=0,route=true;
+const context=vm.createContext({state,Date:{now:()=>101000},Number,
+  closeCameraLive(){closed++;state.cameraLive.socket=null;state.cameraLive.userStopped=true;},
+  startCameraLive(){started++;state.cameraLive.socket={};state.cameraLive.userStopped=false;},
+  routeSupportsCameraLive:()=>route});
+vm.runInContext(functions,context);
+const call=n=>vm.runInContext(n+'()',context);
+call('suspendLiveCameraForArchive');assert.equal(closed,1);assert.equal(state.archivePlayback.resumeLiveCamera,true);
+call('resumeLiveCameraAfterArchive');assert.equal(started,1);call('resumeLiveCameraAfterArchive');assert.equal(started,1);
+for(const status of [{armed:true,updated_at:100},{updated_at:100},{armed:false,updated_at:90},{armed:false,updated_at:102}]) {
+  state.telemetry.services.rover_bridge=status;call('suspendLiveCameraForArchive');assert.equal(closed,1);
+}
+state.telemetry.services.rover_bridge={armed:false,updated_at:100};state.roverControl.lease='active';
+call('suspendLiveCameraForArchive');assert.equal(closed,1);delete state.roverControl.lease;
+// User choice during playback cancels restoration; leaving the live route
+// must not open a stream either.
+call('suspendLiveCameraForArchive');state.archivePlayback.resumeLiveCamera=false;
+call('resumeLiveCameraAfterArchive');assert.equal(started,1);
+state.archivePlayback.resumeLiveCamera=true;route=false;call('resumeLiveCameraAfterArchive');assert.equal(started,1);
+assert.equal(state.archivePlayback.resumeLiveCamera,false);
+console.log('archive/live bandwidth contention, driver state, manual choice and route lifecycle passed');

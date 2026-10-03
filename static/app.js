@@ -196,6 +196,7 @@ const state = {
 	    nativeVideoUrl: "",
 	    nativeVideoReady: false,
 	    nativeVideoError: "",
+	    resumeLiveCamera: false,
 	  },
   selectedContainerId: null,
   containerDetail: null,
@@ -1258,6 +1259,8 @@ function restartLidarLiveForSettings() {
 }
 
 function toggleCameraLive() {
+  // An explicit camera choice cancels automatic restoration after playback.
+  state.archivePlayback.resumeLiveCamera = false;
   if (state.cameraLive.connected || state.cameraLive.socket) {
     stopCameraLive("사용자가 카메라 실시간 연결을 중지했습니다.");
     return;
@@ -3655,6 +3658,7 @@ function roverKeyTargetBlocked(event) {
 }
 
 async function armEspRover() {
+  resumeLiveCameraAfterArchive();
   const c = state.roverControl;
   if (c.lease) { await stopRoverNow("operator_disarm"); return; }
   if (c.inFlight || c.disarming) return;
@@ -4580,12 +4584,32 @@ function setupArchivePlayback(payload, fallbackPreview) {
   renderArchiveFrame();
 }
 
+function suspendLiveCameraForArchive() {
+  const data = state.telemetry || {};
+  const bridge = (data.services || data.connection?.services || {}).rover_bridge || {};
+  const age = Date.now() / 1000 - Number(bridge.updated_at);
+  // Only a fresh, explicitly disarmed controller permits saving bandwidth.
+  // No sensor capture/recording setting is changed; this tab's preview alone
+  // is suspended. Active/unknown driving must retain its live camera view.
+  if (state.roverControl.lease || bridge.armed !== false || !Number.isFinite(age) || age < -0.25 || age > 3) return;
+  if (!state.cameraLive.socket || state.cameraLive.userStopped) return;
+  state.archivePlayback.resumeLiveCamera = true;
+  closeCameraLive("기록 재생을 위해 실시간 영상 수신을 잠시 멈춥니다.", { userStopped: true });
+}
+
+function resumeLiveCameraAfterArchive() {
+  if (!state.archivePlayback.resumeLiveCamera) return;
+  state.archivePlayback.resumeLiveCamera = false;
+  if (routeSupportsCameraLive() && !state.cameraLive.socket) startCameraLive();
+}
+
 async function toggleArchivePlayback() {
   if (state.archivePlayback.playing) {
     stopArchivePlayback(false);
     return;
   }
   if (!state.recordings.timeline) return;
+  suspendLiveCameraForArchive();
   const startTime = state.archivePlayback.timeS >= state.archivePlayback.durationS ? 0 : state.archivePlayback.timeS;
   const video = archiveNativeVideo();
   if (video) {
@@ -4594,6 +4618,7 @@ async function toggleArchivePlayback() {
       await video.play();
     } catch (err) {
       state.archivePlayback.nativeVideoError = err?.message || "native video play failed";
+      resumeLiveCameraAfterArchive();
       renderArchiveFrame();
       return;
     }
@@ -4608,6 +4633,7 @@ async function toggleArchivePlayback() {
 
 function stopArchivePlayback(reset = false) {
   state.archivePlayback.playing = false;
+  resumeLiveCameraAfterArchive();
   const video = archiveNativeVideo();
   if (video && !video.paused) video.pause();
   if (state.archivePlayback.raf) {

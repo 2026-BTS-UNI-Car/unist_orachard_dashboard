@@ -15,6 +15,24 @@ def frame(stamp=10.,yaw=0.):
 
 
 class Tests(unittest.TestCase):
+    def test_transient_sensor_pairing_waits_without_insertion_or_reset(self):
+        with tempfile.TemporaryDirectory() as root:
+            mapper=LiveMapping(root,start_worker=False);mapper.action('start')
+            for reason in ('lidar_or_imu_unavailable','stale_lidar_or_imu','unaligned_lidar_imu','imu_orientation_unavailable'):
+                mapper.freeze(reason)
+                self.assertTrue(mapper.tracking);self.assertTrue(mapper.status()['active'])
+                self.assertEqual(mapper.status()['state'],'waiting_for_sensors')
+                self.assertEqual(mapper.status()['scan_count'],0)
+            scan,imu=frame();self.assertTrue(mapper.ingest(scan,imu,10.))
+            saved=mapper.status();mapper.freeze('unaligned_lidar_imu')
+            self.assertEqual(mapper.status()['grid'],saved['grid'])
+            scan,imu=frame(10.5);self.assertTrue(mapper.ingest(scan,imu,10.5))
+            self.assertEqual(mapper.status()['scan_count'],2)
+            mapper.freeze('stale_lidar_or_imu');scan,imu=frame(14.)
+            with self.assertRaisesRegex(ValueError,'scan_clock_gap'):mapper.ingest(scan,imu,14.)
+            mapper.freeze('scan_clock_gap_or_reset')
+            self.assertFalse(mapper.tracking);self.assertEqual(mapper.status()['state'],'needs_reset')
+
     def test_map_stop_preserves_reset_clears_and_repeated_frame_is_not_new_scan(self):
         with tempfile.TemporaryDirectory() as root:
             mapper=LiveMapping(root,start_worker=False);mapper.action('start')
