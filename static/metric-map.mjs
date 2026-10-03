@@ -85,10 +85,12 @@ export class MetricMap {
     // Grid pixels, geometry, pose and path become visible in one draw. Bounds
     // and automatic zoom change only when that same complete view is accepted.
     const previous = this.snapshot;
-    const newMap = !this.schematic && ((!snapshot.grid && !!previous.grid) ||
-      (snapshot.scan_count === 0 && previous.scan_count > 0) ||
+    const historicalSeek = snapshot.preserve_view_on_seek === true &&
+      snapshot.map_epoch && snapshot.map_epoch === previous.map_epoch;
+    const newMap = !this.schematic && ((!historicalSeek && !snapshot.grid && !!previous.grid) ||
+      (!historicalSeek && snapshot.scan_count === 0 && previous.scan_count > 0) ||
       (snapshot.map_epoch && previous.map_epoch && snapshot.map_epoch !== previous.map_epoch) ||
-      (Number.isFinite(snapshot.version) && Number.isFinite(previous.version) && snapshot.version < previous.version) ||
+      (!historicalSeek && Number.isFinite(snapshot.version) && Number.isFinite(previous.version) && snapshot.version < previous.version) ||
       (snapshot.coordinate_frame && previous.coordinate_frame && snapshot.coordinate_frame !== previous.coordinate_frame));
     if (newMap) {this.view = null; this.auto = true; this.fitMode = 'nearby';}
     this.snapshot = snapshot; this.requestFullImage = false;

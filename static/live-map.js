@@ -3,8 +3,9 @@ const $=id=>document.getElementById(id),text=(id,value)=>{if($(id))$(id).textCon
 const live=new MetricMap('liveMapCanvas'),archive=new MetricMap('liveArchiveCanvas');
 const active=()=>location.pathname.replace(/\/$/,'')==='/rover-control'&&!document.hidden;
 let polling=false,timer=null,selected='',archiveEpoch=0,speedBusy=false;
-async function request(path,body){
-  const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(8000),...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
+let archiveTimer=null,archivePending=null,archiveTimeS=0,archivePlaying=false,followGeneration=false,archiveGenerating=false;
+async function request(path,body,signal){
+  const response=await fetch(path,{cache:'no-store',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000),...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
   const value=await response.json();if(!response.ok||value.ok===false)throw new Error(value.error||value.message||`HTTP ${response.status}`);return value;
 }
 function paint(value){
@@ -18,25 +19,58 @@ for(const operation of ['start','stop','reset'])$('liveMap'+operation[0].toUpper
 for(const button of document.querySelectorAll('[data-live-zoom]'))button.addEventListener('click',()=>live.zoom(button.dataset.liveZoom));
 for(const button of document.querySelectorAll('[data-archive-zoom]'))button.addEventListener('click',()=>archive.zoom(button.dataset.archiveZoom));
 async function selectArchive(id){
-  if(id===selected)return;selected=id;const epoch=++archiveEpoch;archive.set({});$('liveArchiveRegenerate').disabled=!id;
+  if(id===selected)return;selected=id;const epoch=++archiveEpoch;
+  clearTimeout(archiveTimer);archiveTimer=null;archivePending?.controller.abort();
+  archiveTimeS=0;archivePlaying=false;followGeneration=false;archiveGenerating=false;archive.set({});$('liveArchiveRegenerate').disabled=!id;
   if(!id){text('liveArchiveStatus','기록을 선택하세요.');return;}
   try{await pollArchive(id,epoch);}catch(error){if(epoch===archiveEpoch)text('liveArchiveStatus',error.message);}
 }
 async function pollArchive(id,epoch){
-  const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map`);
-  if(epoch!==archiveEpoch)return;
-  if(value.state==='regenerating'){
-    text('liveArchiveStatus','원본 LiDAR·IMU 기록으로 지도 만드는 중…');
-    setTimeout(()=>{if(epoch===archiveEpoch)pollArchive(id,epoch).catch(error=>text('liveArchiveStatus',error.message));},2000);return;
+  if(epoch!==archiveEpoch||archivePending?.epoch===epoch)return;
+  const pending={epoch,controller:new AbortController()},target=followGeneration?null:archiveTimeS;
+  archivePending=pending;const query=new URLSearchParams();
+  if(target!==null)query.set('t_s',(Math.floor(target*1000)/1000).toFixed(3));
+  if(archive.imageVersion!==undefined)query.set('since',`${archive.snapshot.map_epoch}:${archive.imageVersion}`);
+  let value;
+  try{
+    value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map?${query}`,undefined,pending.controller.signal);
+    if(epoch!==archiveEpoch||(!followGeneration&&(target===null||target>archiveTimeS+.001)))return;
+    if(value.grid||value.scan_count===0)archive.set(value);
+    const generation=value.generation||{},duration=Number(generation.duration_s)||0;
+    archiveGenerating=value.state==='regenerating';$('liveArchiveRegenerate').disabled=archiveGenerating;
+    text('liveArchiveStatus',value.regeneration_error?`재생성 실패 · ${value.regeneration_error}`:
+      value.state==='regenerating'?(generation.stage==='localizing'?'LiDAR·IMU 위치 추정 계산 중…':`지도 생성 ${Math.round((generation.progress||0)*100)}% · ${(generation.processed_t_s||0).toFixed(1)} / ${duration.toFixed(1)}초`):
+      value.needs_regeneration?'시각별 지도 재생성이 필요합니다. 기록으로 재생성을 누르세요.':
+      value.state==='interrupted'?'중단된 지도 생성 · 부분 결과 유지 · 다시 재생성할 수 있습니다.':
+      value.grid?`${followGeneration?'생성된 전체 지도':'재생 시각의 지도'} · ${(value.frame_t_s||0).toFixed(1)}초 · 표시용 위치 추정`:
+      value.history_available?'첫 지도 관측 전 · 재생하면 지도가 쌓입니다.':'저장된 지도 없음 · 기록으로 재생성을 누르세요.');
+  }finally{
+    if(archivePending===pending)archivePending=null;
+    if(epoch===archiveEpoch&&(value?.state==='regenerating'||archivePlaying))scheduleArchive();
   }
-  if(value.grid)archive.set(value);
-  text('liveArchiveStatus',value.regeneration_error?`재생성 실패 · ${value.regeneration_error}`:value.grid?`저장된 지도 · ${value.scan_count} scans · 빨간 경로는 전체 기록 · 표시용 위치 추정`:'저장된 지도 없음 · 기록으로 재생성을 누르세요.');
+}
+function scheduleArchive(){
+  if(archiveTimer!==null||!selected||!active())return;
+  const id=selected,epoch=archiveEpoch;
+  archiveTimer=setTimeout(()=>{archiveTimer=null;pollArchive(id,epoch).catch(error=>{if(epoch===archiveEpoch&&error.name!=='AbortError')text('liveArchiveStatus',error.message);});},800);
+}
+function archiveTime(id,timeS,playing){
+  if(id!==selected)return;
+  if(playing||Math.abs(timeS-archiveTimeS)>.05)followGeneration=false;
+  if(!followGeneration&&Math.max(Number(archive.snapshot.frame_t_s)||0,Number(archive.pendingImage?.snapshot.frame_t_s)||0)>timeS){
+    // Cancel a future PNG decoder immediately on backward seek/play-from-zero.
+    // The same epoch keeps the user's metric zoom/pan while an earlier frame loads.
+    archive.set({map_epoch:archive.snapshot.map_epoch,preserve_view_on_seek:true,scan_count:0,version:0});
+  }
+  const changed=Math.abs(timeS-archiveTimeS)>.05||Boolean(playing)!==archivePlaying;
+  archiveTimeS=Math.max(0,Number(timeS)||0);archivePlaying=Boolean(playing);
+  if(changed)scheduleArchive();
 }
 $('liveArchiveRegenerate').addEventListener('click',async()=>{
   const id=selected,epoch=archiveEpoch;if(!id)return;$('liveArchiveRegenerate').disabled=true;
-  try{await request(`/api/live/recordings/${encodeURIComponent(id)}/regenerate`,{});await pollArchive(id,epoch);}
+  try{await request(`/api/live/recordings/${encodeURIComponent(id)}/regenerate`,{});if(epoch!==archiveEpoch)return;archiveGenerating=true;followGeneration=true;await pollArchive(id,epoch);scheduleArchive();}
   catch(error){if(epoch===archiveEpoch)text('liveArchiveStatus',error.message);}
-  finally{if(epoch===archiveEpoch)$('liveArchiveRegenerate').disabled=false;}
+  finally{if(epoch===archiveEpoch)$('liveArchiveRegenerate').disabled=archiveGenerating;}
 });
 $('hardwareAutonomySpeed').addEventListener('input',()=>text('hardwareAutonomySpeedValue',`${$('hardwareAutonomySpeed').value}%`));
 $('hardwareAutonomySpeed').addEventListener('change',async()=>{
@@ -55,8 +89,8 @@ async function poll(){
   }
   polling=false;if(active())timer=setTimeout(poll,1000);
 }
-function routeChanged(){live.draw();archive.draw();if(active())poll();}
-window.LiveMap={selectArchive,routeChanged};
+function routeChanged(){live.draw();archive.draw();if(active()){poll();if(selected)scheduleArchive();}}
+window.LiveMap={selectArchive,archiveTime,routeChanged};
 document.addEventListener('visibilitychange',routeChanged);window.addEventListener('popstate',routeChanged);
 // The main application exposes route changes through the GPS hook.
 const gps=window.RoverGps;if(gps){const original=gps.routeChanged;gps.routeChanged=(...args)=>{original?.(...args);routeChanged();};}

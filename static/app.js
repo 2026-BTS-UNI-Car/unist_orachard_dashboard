@@ -4611,6 +4611,7 @@ function setArchiveTime(value, options = {}) {
 function renderArchiveFrame() {
   const timeline = state.recordings.timeline;
   const timeS = Math.max(0, Number(state.archivePlayback.timeS) || 0);
+  window.LiveMap?.archiveTime(state.recordings.selectedId, timeS, state.archivePlayback.playing);
   const cache = state.archivePlayback.cache || {};
   window.RoverGps?.archive(cache.gpsFrames || [], timeS, state.recordings.selectedId, timeline?.gps?.enabled === true);
   renderArchiveMotor(timeline?.motor, cache.motorFrames || [], timeS);
@@ -5075,8 +5076,7 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
     ctx.save();
     ctx.fillStyle = colors.cyan;
     for (const point of points) {
-      const x = cx + ((Number(point.x_m) || 0) / range) * radius;
-      const y = cy - ((Number(point.y_m) || 0) / range) * radius;
+      const { x, y } = lidarCanvasPoint(point, { cx, cy, range, radius });
       const quality = Math.max(0, Math.min(63, Number(point.quality) || 0));
       ctx.globalAlpha = Math.max(0.75, Math.min(0.95, 0.75 + quality / 315));
       ctx.beginPath();
@@ -5098,9 +5098,10 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
 }
 
 function lidarCanvasPoint(point, viewport) {
+  // Display-only half turn; preserve raw angles, exports and mapping inputs.
   return {
-    x: viewport.cx + ((Number(point?.x_m) || 0) / viewport.range) * viewport.radius,
-    y: viewport.cy - ((Number(point?.y_m) || 0) / viewport.range) * viewport.radius,
+    x: viewport.cx - ((Number(point?.x_m) || 0) / viewport.range) * viewport.radius,
+    y: viewport.cy + ((Number(point?.y_m) || 0) / viewport.range) * viewport.radius,
   };
 }
 
@@ -5143,10 +5144,10 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const labelOffset = 20;
-  ctx.fillText("0°", cx, cy - radius - labelOffset);
-  ctx.fillText("270°", cx + radius + labelOffset, cy);
-  ctx.fillText("180°", cx, cy + radius + labelOffset);
-  ctx.fillText("90°", cx - radius - labelOffset, cy);
+  ctx.fillText("180°", cx, cy - radius - labelOffset);
+  ctx.fillText("90°", cx + radius + labelOffset, cy);
+  ctx.fillText("0°", cx, cy + radius + labelOffset);
+  ctx.fillText("270°", cx - radius - labelOffset, cy);
   ctx.fillStyle = cssVar("--text", "#f7f9ff");
   ctx.beginPath();
   ctx.arc(cx, cy, 5, 0, Math.PI * 2);

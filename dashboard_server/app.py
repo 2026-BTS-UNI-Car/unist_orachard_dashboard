@@ -286,7 +286,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 parts=path.split('/')
                 if len(parts)!=6:raise ValueError('invalid_archive_route')
                 archive_id=unquote(parts[4])
-                if parts[5]=='map' and not action:result=self.archive_mapping.status(archive_id)
+                if parts[5]=='map' and not action:
+                    query=parse_qs(parsed.query)
+                    result=self.archive_mapping.status(archive_id,query.get('t_s',[None])[0],query.get('since',[None])[0])
                 elif parts[5]=='regenerate' and action:result=self.archive_mapping.regenerate(archive_id)
                 else:self.send_error(404);return
             else:self.send_error(404);return
