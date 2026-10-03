@@ -50,3 +50,12 @@
 후속 실시간 센서 동기화 대기는 구현/7회귀 검증 완료이며 별도 배포를 진행한다. 기록 재생과 실시간 카메라가 같은 회선을 사용하던 경합도 수정 중이다. fresh disarmed 상태에서 해당 브라우저의 preview만 일시 중지하고, 정지·실패·사용자 조종 활성화 시 복구한다. 센서 캡처/녹화 설정은 바꾸지 않는다.
 
 안정 표면만으로 overlap 분모를 바꾸는 추가 가지 대응 후보는080351 전체2459스캔에서1961승인/48구간으로 개선이 없었다. 채택하지 않고 private 실험·해시·결과를 보존했다. 정합 기준을 느슨하게 해서 모르는 구간을 연결하지 않는다.
+
+
+## 512kbps 재생 보완과 SIM 구동 검증
+
+360p 영상 peak 약593kbps에 4초 센서 chunk 약90.6KB(gzip)가 더해져512kbps에서는 지속 버퍼가 부족했다. 원본720p/480p/360p를 보존하고240p/180kbps target variant를 추가했다. 별도 fixture Chrome150ms RTT에서 첫 재생2Mbps 약2.7초·512kbps 약7.1초, 이후10초 관측에서 각170프레임·드롭0·버퍼29.1/1.1초를 확인했다. 과거/미래 seek와720p 수동 선택도 유지했다. 512kbps에서는 실제240p라고 표시한다. 전체 긴 기록/실제 저속 Cloudflare 회선의 무버퍼링을 보증하지 않는다.
+
+기존 native MP4/상위 variant bytes와 원본 metadata/bag는 보존한다. generated manifest SHA를 지정한 Linux atomic directory exchange로만 새 variant를 설치하고 이전 generated directory를 backup으로 남긴다. 중단한 구형 batch를 재개해도 SHA로 검증된 상위 패키지를 다시 덮지 않는다. codec은 native·4 HLS 스트림 각1360 packet(원본1359+last hold1),102asset SHA로 검증했다. 직접 SSH background에서7개를 계속 처리한다.
+
+현재 SIM plant만 네 가지 수동 입력을 실행했다. 같은50/50 요청에서 약0.428/0.431m/s effective target의 작은 편향,50/75 요청에서0.492/0.651의 완만한 차이,35/-35 PWM 존재에도 pivot effective0,70/-70에서강한pivot target과 즉시STOP0을 확인했다. 이 수치는 가정 계수의 가상 actuator target이며 실차 속도/제동·encoderless 위치 정확도 검증이 아니다. 새 녹화와 자율주행은 시작하지 않았다. 근거는 `sim_field_stress_runtime_20261004.json`이다.

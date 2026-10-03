@@ -14,6 +14,9 @@ const sandbox={MetricMap,console,URLSearchParams,AbortController,AbortSignal,
   fetch(url){return new Promise(resolve=>requests.push({url,resolve}));}};
 const source=fs.readFileSync(new URL('../static/live-map.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/,'');
 vm.runInNewContext(source,sandbox);
+sandbox.paint({active:true,state:'waiting_for_sensors',scan_count:0});
+assert.equal(element('liveMapState').textContent,'센서 동기화 대기');
+assert.equal(element('liveMapStart').disabled,true);assert.equal(element('liveMapStop').disabled,false);
 sandbox.location.pathname='/rover-control';
 const selected=sandbox.window.LiveMap.selectArchive('recording');
 assert.equal(requests.length,1);

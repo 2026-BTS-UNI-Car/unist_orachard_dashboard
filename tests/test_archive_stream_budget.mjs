@@ -23,4 +23,13 @@ call('suspendLiveCameraForArchive');state.archivePlayback.resumeLiveCamera=false
 call('resumeLiveCameraAfterArchive');assert.equal(started,1);
 state.archivePlayback.resumeLiveCamera=true;route=false;call('resumeLiveCameraAfterArchive');assert.equal(started,1);
 assert.equal(state.archivePlayback.resumeLiveCamera,false);
+// Production services is a summary without armed/updated_at. Use the raw
+// connection bridge and never let its active state be replaced by a summary.
+route=true;state.cameraLive.socket={};state.cameraLive.userStopped=false;
+state.telemetry={services:{rover_bridge:{ok:true}},connection:{rover_bridge:{armed:true,updated_at:100,alive:true}}};
+call('suspendLiveCameraForArchive');assert.equal(closed,2);
+state.telemetry.connection.rover_bridge.armed=false;
+call('suspendLiveCameraForArchive');assert.equal(closed,3);assert.equal(state.archivePlayback.resumeLiveCamera,true);
+call('resumeLiveCameraAfterArchive');assert.equal(started,2);
+state.telemetry.connection.rover_bridge.alive=false;call('suspendLiveCameraForArchive');assert.equal(closed,3);
 console.log('archive/live bandwidth contention, driver state, manual choice and route lifecycle passed');

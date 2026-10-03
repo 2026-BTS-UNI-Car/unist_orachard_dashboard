@@ -4586,12 +4586,12 @@ function setupArchivePlayback(payload, fallbackPreview) {
 
 function suspendLiveCameraForArchive() {
   const data = state.telemetry || {};
-  const bridge = (data.services || data.connection?.services || {}).rover_bridge || {};
+  const bridge = data.connection?.rover_bridge || (data.services || data.connection?.services || {}).rover_bridge || {};
   const age = Date.now() / 1000 - Number(bridge.updated_at);
   // Only a fresh, explicitly disarmed controller permits saving bandwidth.
   // No sensor capture/recording setting is changed; this tab's preview alone
   // is suspended. Active/unknown driving must retain its live camera view.
-  if (state.roverControl.lease || bridge.armed !== false || !Number.isFinite(age) || age < -0.25 || age > 3) return;
+  if (state.roverControl.lease || bridge.alive === false || bridge.armed !== false || !Number.isFinite(age) || age < -0.25 || age > 3) return;
   if (!state.cameraLive.socket || state.cameraLive.userStopped) return;
   state.archivePlayback.resumeLiveCamera = true;
   closeCameraLive("기록 재생을 위해 실시간 영상 수신을 잠시 멈춥니다.", { userStopped: true });

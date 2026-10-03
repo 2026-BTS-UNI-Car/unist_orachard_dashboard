@@ -64,7 +64,7 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
     # Full source-sized high-quality MP4 is the fallback and top ABR variant.
     native=output/'native.mp4'
     run(prefix+['-crf','20','-maxrate','3000k','-bufsize','6000k','-movflags','+faststart',str(native)],output/'encoder.log')
-    rates=[(height,3000000,None),(480,1100000,24),(360,450000,25)]
+    rates=[(height,3000000,None),(480,1100000,24),(360,450000,25),(240,180000,28)]
     variants=[];assetnames=['native.mp4']
     for h,rate,crf in rates:
         if h>height or any(v['height']==h for v in variants):continue

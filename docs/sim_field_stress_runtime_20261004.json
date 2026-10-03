@@ -1,0 +1,106 @@
+{
+  "ok": true,
+  "origin": "http://127.0.0.1:18080",
+  "simulated_controller_only": true,
+  "cases": [
+    {
+      "case": "straight",
+      "requested_percent": [
+        50,
+        50
+      ],
+      "commanded_m_s": [
+        0.5,
+        0.5
+      ],
+      "effective_m_s": [
+        0.4284715909090909,
+        0.43084659090909094
+      ],
+      "reported_PWM": {
+        "D8": 128,
+        "D5": 0,
+        "D3": 128,
+        "D0": 0
+      },
+      "coefficients_fitted": false
+    },
+    {
+      "case": "differential",
+      "requested_percent": [
+        50,
+        75
+      ],
+      "commanded_m_s": [
+        0.5,
+        0.75
+      ],
+      "effective_m_s": [
+        0.4923920454545455,
+        0.6510170454545455
+      ],
+      "reported_PWM": {
+        "D8": 128,
+        "D5": 0,
+        "D3": 191,
+        "D0": 0
+      },
+      "coefficients_fitted": false
+    },
+    {
+      "case": "low_pivot",
+      "requested_percent": [
+        35,
+        -35
+      ],
+      "commanded_m_s": [
+        0.35,
+        -0.35
+      ],
+      "effective_m_s": [
+        0.0,
+        0.0
+      ],
+      "reported_PWM": {
+        "D8": 89,
+        "D5": 0,
+        "D3": 0,
+        "D0": 89
+      },
+      "coefficients_fitted": false
+    },
+    {
+      "case": "strong_pivot",
+      "requested_percent": [
+        70,
+        -70
+      ],
+      "commanded_m_s": [
+        0.7,
+        -0.7
+      ],
+      "effective_m_s": [
+        0.35195185381408767,
+        -0.35695185381408767
+      ],
+      "reported_PWM": {
+        "D8": 178,
+        "D5": 0,
+        "D3": 0,
+        "D0": 178
+      },
+      "coefficients_fitted": false
+    }
+  ],
+  "after_armed": false,
+  "after_outputs": {
+    "D8": 0,
+    "D5": 0,
+    "D3": 0,
+    "D0": 0
+  },
+  "encoderless_localization_validated": false,
+  "physical_motor_commands": false,
+  "new_recording": false,
+  "autonomy_started": false
+}
