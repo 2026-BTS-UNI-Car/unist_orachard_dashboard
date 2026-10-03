@@ -33,10 +33,19 @@ An optional dense-point fallback (`4d4b6e1`) on orchard080351 accepted
 1961/2459 scans in 48 segments, versus1801/2459 in61segments.
 All-call p95 rose to 98.28ms and
 102 calls exceeded100ms. It remains off by default and
-has not passed road/other-orchard holdout or geometric accuracy validation.
+has not completed all road/other-orchard holdouts or geometric accuracy validation.
 Point-to-line support diagnostics identify insufficient stable overlap as a main
 failure mode. Branches, grass, changing scan plane and dynamic objects are possible
 contributors, not proven individually from this counter alone.
+
+Additional offline checks of the same frozen fallback finished on the92second road
+recording072329 and the second orchard080909. The road stayed906/913 accepted
+in1segment (p95≈33.02ms;0 calls>100ms). The second orchard improved from
+1663/2093 accepted in39segments to1816/2093 in23segments, but p95≈93.82ms
+and96 calls>100ms. Continuity improved without proving accuracy. Four remaining
+road holdouts, the physical mounting/deskew assumptions and geometric validation
+still prevent runtime adoption. Concurrent local-PC timing is not a controlled
+Jetson performance comparison.
 
 ## Requested/MCU-reported PWM versus raw IMU
 

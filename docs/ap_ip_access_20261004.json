@@ -26,7 +26,7 @@
         "Origin_preserved": true,
         "state_changed": false
       },
-      "10.77.0.1:58099": {
+      "10.77.0.1:47531": {
         "status": 400,
         "Origin_preserved": true,
         "state_changed": false
@@ -44,9 +44,15 @@
           },
           {
             "opcode": 1,
-            "bytes": 270,
+            "bytes": 269,
             "type": "status",
             "source_alive": true
+          },
+          {
+            "opcode": 1,
+            "bytes": 4884,
+            "type": "scan",
+            "source_alive": null
           }
         ],
         "transport_verified": true
@@ -64,6 +70,12 @@
             "opcode": 1,
             "bytes": 590,
             "type": "status",
+            "source_alive": true
+          },
+          {
+            "opcode": 1,
+            "bytes": 6565,
+            "type": "frame",
             "source_alive": null
           }
         ],
@@ -80,7 +92,7 @@
           },
           {
             "opcode": 1,
-            "bytes": 1796,
+            "bytes": 1812,
             "type": "imu",
             "source_alive": null
           }
@@ -92,7 +104,7 @@
         "frames": [
           {
             "opcode": 1,
-            "bytes": 1803,
+            "bytes": 1805,
             "type": "gps",
             "source_alive": null
           }
@@ -110,6 +122,13 @@
   "required_mock_safety_tests": {
     "passed": 43,
     "failed": 0
+  },
+  "public_endpoint_observation": {
+    "time_utc": "2026-10-03T15:42:23Z",
+    "http_status": 301,
+    "location": "https://bts.sarihub.com/",
+    "server": "cloudflare",
+    "https_status": 200
   },
   "changes": {
     "/opt/ubts-offline-ap/nginx/default.conf.template": {

@@ -11,6 +11,10 @@ DNS를 조회하지 않으므로 다른 인터넷 연결의 DNS/브라우저 Sec
 기존 인터넷 기본 경로는 유지한다. nginx에는 HTTPS 리다이렉트가 없다.
 브라우저의 별도 HTTPS 전용 정책은 서버에서 강제로 해제할 수 없다.
 
+2026-10-04 KST 확인 시 외부 DNS로 도달하는 Cloudflare HTTP 경로는
+`301 Location: https://bts.sarihub.com/`를 반환했다. AP DNS 대신 외부 DNS가
+선택되면 이 공개 경로를 거치게 된다. IP 직접 접속은 Cloudflare도 거치지 않는다.
+
 설정 배포와 실제 백엔드를 통한 프록시 검증은 별도 기록에 남긴다.
 AP 클라이언트에서 새 IP 경로를 직접 확인한 결과는
 `docs/ap_ip_access_20261004.json`의 검증 범위를 따른다.

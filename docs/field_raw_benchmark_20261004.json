@@ -115,6 +115,26 @@
     "calls_over_100ms": 102,
     "holdout_validation_complete": false
   },
+  "selected_fallback_holdouts": [
+    {
+      "archive_id": "20261003T072329Z_both",
+      "source_commit": "4d4b6e1",
+      "accepted_scans": 906,
+      "segments": 1,
+      "all_registration_p95_ms": 33.022440000786446,
+      "calls_over_100ms": 0,
+      "mapping_accuracy_validated": false
+    },
+    {
+      "archive_id": "20261003T080909Z_both",
+      "source_commit": "4d4b6e1",
+      "accepted_scans": 1816,
+      "segments": 23,
+      "all_registration_p95_ms": 93.8233400011085,
+      "calls_over_100ms": 96,
+      "mapping_accuracy_validated": false
+    }
+  ],
   "PWM": {
     "source_hashes_verified": true,
     "archives": {
