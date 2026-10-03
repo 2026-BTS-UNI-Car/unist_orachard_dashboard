@@ -15,7 +15,8 @@ import uuid
 from collections import deque
 
 import numpy as np
-from dashboard_server.occupancy_map import OccupancyMap, atomic_json, read_json
+from dashboard_server.occupancy_map import atomic_json, read_json
+from dashboard_server.tiled_occupancy import TiledOccupancyMap as OccupancyMap
 
 
 def attitude(raw):

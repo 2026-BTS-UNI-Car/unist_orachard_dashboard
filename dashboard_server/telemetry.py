@@ -22,6 +22,7 @@ from typing import Any
 import urllib.request
 from collections import OrderedDict
 from dashboard_server.motor_pwm import with_recorded_motor
+from dashboard_server.playback_profile import POLAR_PROFILE, point_fields
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
@@ -1188,6 +1189,11 @@ class TelemetryProvider:
             path, metadata, preview_scan=preview_scan
         )
         source_video = self.recording_video(recording_id)
+        adaptive = self.recording_adaptive_video(recording_id)
+        if not source_video and adaptive:
+            source_video = dict(fps=adaptive.get('fps'), width=adaptive.get('source_width'),
+                                height=adaptive.get('source_height'), file='native.mp4',
+                                timeline_offset_s=adaptive.get('timeline_offset_s'))
         public_video = {
             key: value for key, value in (source_video or {}).items() if key != "path"
         }
@@ -1201,11 +1207,27 @@ class TelemetryProvider:
                 "timeline_summary": timeline_summary,
                 "download_url": f"/api/recordings/{path.name}/download",
                 "source_video": public_video or None,
+                "adaptive_video": adaptive,
                 "video_url": f"/api/recordings/{path.name}/video?v={source_video.get('bytes')}"
-                if source_video
-                else None,
+                if source_video and not adaptive
+                else adaptive.get('fallback_url') if adaptive else None,
             },
         }
+
+    def recording_adaptive_video(self, recording_id: str):
+        from dashboard_server.adaptive_video import manifest, public_info
+        archive = self.recording_archive_path(recording_id)
+        if archive is None or not archive.is_dir(): return None
+        value = manifest(archive)
+        return public_info(archive, value) if value else None
+
+    def recording_adaptive_asset(self, recording_id: str, filename: str):
+        from dashboard_server.adaptive_video import manifest, asset_path, MIMES
+        archive = self.recording_archive_path(recording_id)
+        if archive is None or not archive.is_dir(): return None
+        value = manifest(archive)
+        path = asset_path(archive, value, filename) if value else None
+        return dict(path=path, mime=MIMES[path.suffix]) if path else None
 
     def recording_video(self, recording_id: str) -> dict[str, Any] | None:
         archive = self.recording_archive_path(recording_id)
@@ -1248,6 +1270,8 @@ class TelemetryProvider:
         def response(timeline):
             timeline = self._with_recorded_gps(path, timeline, start_s, duration_s)
             timeline = with_recorded_motor(path, timeline, start_s, duration_s)
+            if profile in (PLAYBACK_DASHBOARD_PROFILE, POLAR_PROFILE) and self.recording_adaptive_video(recording_id):
+                timeline = dict(timeline, camera=dict(timeline.get('camera') or {}, frames=[]))
             return {
                 "ok": True,
                 "timeline": self._playback_response_profile(timeline, profile),
@@ -1331,17 +1355,18 @@ class TelemetryProvider:
         complete IMU covariance/orientation records add substantial parse work while
         not being used by the playback canvases.
         """
-        if str(profile or "") != PLAYBACK_DASHBOARD_PROFILE:
+        if str(profile or "") not in (PLAYBACK_DASHBOARD_PROFILE, POLAR_PROFILE):
             return timeline
         result = dict(timeline)
         lidar = dict(timeline.get("lidar") or {})
+        fields = point_fields(lidar.get('frames') or [], profile)
         compact_lidar_frames: list[dict[str, Any]] = []
         for source_frame in lidar.get("frames", []) or []:
             frame = dict(source_frame)
             points = frame.get("points") or []
             if points and isinstance(points[0], dict):
                 frame["points"] = [
-                    [point.get(field) for field in PLAYBACK_LIDAR_POINT_FIELDS]
+                    [point.get(field) for field in fields]
                     for point in points
                 ]
             compact_lidar_frames.append(frame)
@@ -1378,8 +1403,8 @@ class TelemetryProvider:
         playback = dict(timeline.get("playback") or {})
         playback.update(
             {
-                "profile": PLAYBACK_DASHBOARD_PROFILE,
-                "lidar_point_fields": list(PLAYBACK_LIDAR_POINT_FIELDS),
+                "profile": profile,
+                "lidar_point_fields": list(fields),
                 "archive_source_preserved": True,
             }
         )

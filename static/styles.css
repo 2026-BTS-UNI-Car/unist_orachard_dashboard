@@ -3049,3 +3049,8 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 
 .simulation-banner { position: sticky; top: 0; z-index: 100; padding: 8px 18px; background: #174a68; color: #fff; text-align: center; font-weight: 700; }
 .simulation-banner[hidden] { display: none; }
+.archive-video-quality {
+  position: absolute; right: 10px; top: 10px; z-index: 2;
+  padding: 5px 8px; border-radius: 6px; background: #111827dd; color: #fff;
+  border: 1px solid #64748b; font-size: 12px;
+}

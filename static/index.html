@@ -823,6 +823,7 @@
 <canvas class="lidar-map" height="520" id="roverArchiveLidarCanvas" width="520"></canvas>
 </div>
 <figure class="archive-camera-frame">
+<select id="roverArchiveVideoQuality" class="archive-video-quality" aria-label="기록 영상 화질" hidden=""></select>
 <video id="roverArchiveCameraVideo" muted="" playsinline="" preload="metadata"></video>
 <img alt="Archived camera preview" id="roverArchiveCameraImage"/>
 
@@ -916,6 +917,8 @@
 </section>
 </main>
 </div>
+<script src="/static/vendor/hls/hls.min.js"></script>
+<script src="/static/archive-video.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/vendor/pmtiles/pmtiles.js"></script>
 <script src="/static/gps-map.js" type="module"></script>

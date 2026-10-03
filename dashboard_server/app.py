@@ -501,6 +501,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not raw:
             self.send_error(404, "Recording id required")
             return
+        if "/adaptive-video/" in raw:
+            recording_id, filename = raw.split("/adaptive-video/", 1)
+            asset = self.provider.recording_adaptive_asset(unquote(recording_id), unquote(filename))
+            if not asset:
+                self.send_error(404, "Adaptive recording asset not found")
+                return
+            self._send_range_file(asset)
+            return
         if "/camera-frame/" in raw:
             recording_id, filename = raw.split("/camera-frame/", 1)
             frame = self.provider.recording_camera_frame(unquote(recording_id), unquote(filename))

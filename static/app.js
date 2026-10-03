@@ -12,7 +12,7 @@ const LIDAR_RANGE_AUTO_KEY = "ubts-lidar-map-range-auto-v2";
 const LIDAR_POINTS_KEY = "ubts-lidar-points-v1";
 const ARCHIVE_RANGE_KEY = "ubts-archive-lidar-range-v1";
 const ARCHIVE_SEGMENT_SECONDS = 4;
-const ARCHIVE_PLAYBACK_PROFILE = "dashboard-compact-v1";
+const ARCHIVE_PLAYBACK_PROFILE = "dashboard-polar-v2";
 const ARCHIVE_IMU_SYNC_MAX_DELTA_S = 0.2;
 const LIDAR_SPEC_MAX_POINTS = 3200;
 const LIDAR_COORDINATE_FRAME = "lidar_bridge_xy_v1";
@@ -4141,7 +4141,15 @@ function expandArchiveLidarPoints(points, fields) {
   const names = Array.isArray(fields) && fields.length
     ? fields
     : ["x_m", "y_m", "distance_m", "quality", "angle_deg"];
-  return points.map((values) => Object.fromEntries(names.map((name, index) => [name, values[index]])));
+  return points.map((values) => {
+    const point = Object.fromEntries(names.map((name, index) => [name, values[index]]));
+    if (!names.includes("x_m") && Number.isFinite(point.angle_deg) && Number.isFinite(point.distance_m)) {
+      const angle = point.angle_deg * Math.PI / 180;
+      point.x_m = Math.sin(angle) * point.distance_m;
+      point.y_m = Math.cos(angle) * point.distance_m;
+    }
+    return point;
+  });
 }
 
 function mergeArchiveTimelineSegment(timeline) {
@@ -4226,8 +4234,34 @@ function mergeArchiveTimelineSegment(timeline) {
   }
   cache.gpsFrames.sort((a, b) => a.t_s-b.t_s);
   mergeArchiveMotorSegment(timeline.motor);
+  trimArchiveTimelineCache();
   state.archivePlayback.lastLidarRenderKey = "";
   state.archivePlayback.lastCameraRenderKey = "";
+}
+
+function trimArchiveTimelineCache() {
+  const cache = state.archivePlayback.cache;
+  const duration = Math.max(1, Number(state.archivePlayback.segmentDurationS) || ARCHIVE_SEGMENT_SECONDS);
+  const center = Math.floor(Math.max(0, state.archivePlayback.timeS || 0) / duration) * duration;
+  const first = Math.max(0, center - 2 * duration), last = center + 4 * duration;
+  for (const kind of ["lidar", "camera", "imu"]) {
+    const name = `${kind}Frames`, keys = `${kind}Keys`;
+    cache[name] = (cache[name] || []).filter(frame => frame.t_s >= first && frame.t_s < last);
+    cache[keys] = new Set(cache[name].map(frame => frame.cacheKey));
+    cache[name].forEach((frame, index) => { frame.cacheIndex = index; });
+  }
+  for (const [key, value] of state.archivePlayback.segmentCache) {
+    if (value.start_s + value.duration_s <= first || value.start_s >= last) state.archivePlayback.segmentCache.delete(key);
+  }
+  for (const [key, url] of cache.objectUrls) {
+    if (!cache.cameraKeys.has(key)) {
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      cache.objectUrls.delete(key);
+    }
+  }
+  for (const key of cache.imageElements.keys()) {
+    if (!cache.cameraKeys.has(key)) cache.imageElements.delete(key);
+  }
 }
 
 function archiveFrameKey(frame, kind) {
@@ -4244,7 +4278,7 @@ async function ensureArchiveSegmentForTime(timeS, options = {}) {
   const startS = Math.max(0, Math.floor((Number(timeS) || 0) / segmentDuration) * segmentDuration);
   await loadArchiveTimelineSegment(id, startS, segmentDuration, options);
   const nextStart = startS + segmentDuration;
-  const cameraBootstrapNeeded = (state.archivePlayback.cache.cameraFrames?.length || 0) === 0
+  const cameraBootstrapNeeded = !archiveNativeVideo() && (state.archivePlayback.cache.cameraFrames?.length || 0) === 0
     && Number(timeline.sync?.camera_frames || 0) > 0;
   if (cameraBootstrapNeeded && nextStart < state.archivePlayback.durationS + 0.25) {
     await loadArchiveTimelineSegment(id, nextStart, segmentDuration);
@@ -4315,6 +4349,7 @@ async function loadArchiveTimelineSegment(id, startS, durationS, options = {}) {
           lidar_frames: payload.timeline.lidar?.frames?.length || 0,
           camera_frames: payload.timeline.camera?.frames?.length || 0,
         });
+        trimArchiveTimelineCache();
         if (currentRoute() === "/rover-control") renderArchiveFrame();
       }
       return payload;
@@ -4458,6 +4493,9 @@ function configureArchiveNativeVideo(payload) {
   const url = String(payload?.video_url || "");
   const changed = url !== state.archivePlayback.nativeVideoUrl;
   if (changed) {
+    state.archivePlayback.videoPlayer?.destroy();
+    state.archivePlayback.videoPlayer = null;
+    state.archivePlayback.videoQuality = {};
     video.pause();
     video.removeAttribute("src");
     video.load();
@@ -4467,19 +4505,20 @@ function configureArchiveNativeVideo(payload) {
     const image = $("roverArchiveCameraImage");
     if (url && image) image.removeAttribute("src");
   }
+  state.archivePlayback.nativeVideoOffsetS = Math.max(0, Number(payload?.adaptive_video?.timeline_offset_s || payload?.source_video?.timeline_offset_s) || 0);
   frame?.classList.toggle("native-video", Boolean(url));
   if (!url) return;
   video.onloadedmetadata = () => {
     if (url !== state.archivePlayback.nativeVideoUrl) return;
     state.archivePlayback.nativeVideoReady = true;
     state.archivePlayback.nativeVideoError = "";
-    const duration = Number(video.duration);
+    const duration = Number(video.duration) + state.archivePlayback.nativeVideoOffsetS;
     if (Number.isFinite(duration) && duration > 0) {
       state.archivePlayback.durationS = Math.max(state.archivePlayback.durationS, duration);
       syncArchiveScrubberBounds();
     }
-    if (!state.archivePlayback.playing && Math.abs(video.currentTime - state.archivePlayback.timeS) > 0.08) {
-      video.currentTime = state.archivePlayback.timeS;
+    if (!state.archivePlayback.playing && Math.abs(video.currentTime - archiveVideoTime(state.archivePlayback.timeS)) > 0.08) {
+      video.currentTime = archiveVideoTime(state.archivePlayback.timeS);
     }
     renderArchiveFrame();
   };
@@ -4495,9 +4534,15 @@ function configureArchiveNativeVideo(payload) {
     stopArchivePlayback(false);
   };
   if (changed) {
-    video.src = url;
-    video.load();
+    state.archivePlayback.videoPlayer = new window.ArchiveVideoPlayer(video,
+      $("roverArchiveVideoQuality"), payload?.adaptive_video, url, quality => {
+        state.archivePlayback.videoQuality = quality; renderArchiveFrame();
+      });
   }
+}
+
+function archiveVideoTime(timeS) {
+  return Math.max(0, Number(timeS) - (state.archivePlayback.nativeVideoOffsetS || 0));
 }
 
 function archiveNativeVideo() {
@@ -4545,7 +4590,7 @@ async function toggleArchivePlayback() {
   const video = archiveNativeVideo();
   if (video) {
     try {
-      video.currentTime = startTime;
+      video.currentTime = archiveVideoTime(startTime);
       await video.play();
     } catch (err) {
       state.archivePlayback.nativeVideoError = err?.message || "native video play failed";
@@ -4582,7 +4627,7 @@ function archivePlaybackTick(now = performance.now()) {
   if (!state.archivePlayback.playing) return;
   const video = archiveNativeVideo();
   const elapsed = (now - state.archivePlayback.startedAt) / 1000;
-  const next = video ? Number(video.currentTime) : state.archivePlayback.startTimeS + elapsed;
+  const next = video ? Number(video.currentTime) + (state.archivePlayback.nativeVideoOffsetS || 0) : state.archivePlayback.startTimeS + elapsed;
   if (next >= state.archivePlayback.durationS) {
     state.archivePlayback.timeS = state.archivePlayback.durationS;
     stopArchivePlayback(false);
@@ -4601,8 +4646,8 @@ function setArchiveTime(value, options = {}) {
   if (options.pause) stopArchivePlayback(false);
   state.archivePlayback.timeS = Math.max(0, Math.min(state.archivePlayback.durationS, Number(value) || 0));
   const video = archiveNativeVideo();
-  if (video && Math.abs(Number(video.currentTime || 0) - state.archivePlayback.timeS) > 0.04) {
-    try { video.currentTime = state.archivePlayback.timeS; } catch (_) { /* metadata is not ready yet */ }
+  if (video && Math.abs(Number(video.currentTime || 0) - archiveVideoTime(state.archivePlayback.timeS)) > 0.04) {
+    try { video.currentTime = archiveVideoTime(state.archivePlayback.timeS); } catch (_) { /* metadata is not ready yet */ }
   }
   scheduleArchiveSeek(state.archivePlayback.timeS);
   renderArchiveFrame();
@@ -4648,6 +4693,8 @@ function renderArchiveFrame() {
   const sourceVideo = state.recordings.selected?.recording?.source_video || state.recordings.selected?.source_video || {};
   const cameraCaption = state.archivePlayback.nativeVideoError
     ? `video error · ${state.archivePlayback.nativeVideoError}`
+    : nativeVideo
+      ? `${nativeVideo.videoHeight || state.archivePlayback.videoQuality?.height || sourceVideo.height || ""}p · ${state.archivePlayback.videoQuality?.auto ? "자동 · " : ""}${fmtNumber(sourceVideo.fps || 0, 1)} fps · ${fmtClock(timeS)}`
     : cameraFrame
       ? `${nativeVideo ? `native ${fmtNumber(sourceVideo.fps || 0, 0)} fps · ` : ""}${cameraFrame.frame_id || "camera"} · ${fmtClock(timeS)} · ${cameraFrame.source_width || cameraFrame.width}x${cameraFrame.source_height || cameraFrame.height}`
       : state.archivePlayback.sync ? "camera preview 없음" : "동시 재생 꺼짐";
