@@ -18,7 +18,9 @@ export class ArchiveMapBuffer {
       for(const tile of row.tiles||[])tiles.set(`${tile.x},${tile.y}`,tile);
       path.push(...(row.path||[]));packet=row;
     }
-    return {...latest,tiles:[...tiles.values()],path,tiles_reset:reset,path_append:!reset};
+    return {...latest,segments:latest.segments??this.seed.segments,
+      needs_regeneration:latest.needs_regeneration??this.seed.needs_regeneration,
+      tiles:[...tiles.values()],path,tiles_reset:reset,path_append:!reset};
   }
 }
 
