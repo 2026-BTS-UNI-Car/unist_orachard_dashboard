@@ -23,9 +23,11 @@ const context=vm.createContext({MetricMap,ArchiveMapBuffer:class{},ArchiveSegmen
 const source=fs.readFileSync(new URL('../static/live-map.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
 vm.runInContext(source,context);
 await Promise.race([vm.runInContext("selectArchive('example')",context),new Promise((_,reject)=>setTimeout(()=>reject(new Error('bulk window blocked first frame')),250))]);
-assert.ok(calls[0].path.includes('/map?'));assert.ok(calls[1].path.includes('/map-window?'));
+assert.ok(calls[0].path.includes('/map?'));assert.equal(calls.length,1,'paused selection loads only the current frame');
 assert.equal(vm.runInContext('archive.snapshot.frame_t_s',context),0);
-const old=calls[1];vm.runInContext("archiveTime('example',15,false)",context);
+vm.runInContext('archivePlaying=true',context);await vm.runInContext("pollArchive('example',archiveEpoch)",context);
+const old=calls.find(c=>c.path.includes('/map-window?'));assert.ok(old);
+vm.runInContext("archiveTime('example',15,false)",context);
 assert.equal(old.signal.aborted,true);
 await vm.runInContext("pollArchive('example',archiveEpoch)",context);
 assert.equal(vm.runInContext('archive.snapshot.frame_t_s',context),15);
