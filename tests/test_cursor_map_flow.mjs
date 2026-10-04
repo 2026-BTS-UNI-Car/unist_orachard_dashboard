@@ -11,10 +11,11 @@ const context=vm.createContext({MetricMap,ArchiveMapBuffer:class{},ArchiveSegmen
   calls.push({path,body:options.body?JSON.parse(options.body):undefined});
   return {ok:true,json:async()=>path.endsWith('/new-map')?{ok:true,map_epoch:'new'}:
    path.includes('/map-playback')?{ok:true,playback_driven:true}:
-   {ok:true,playback_driven:true,scan_count:0,version:0,map_epoch:'new',tiles:[],generation:{processed_t_s:0}}};
+   {ok:true,playback_driven:true,state:'regenerating',scan_count:0,version:0,map_epoch:'new',tiles:[],generation:{processed_t_s:0}}};
  }});
 vm.runInContext(fs.readFileSync(new URL('../static/live-map.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,''),context);
 await vm.runInContext("selectArchive('record')",context);
+assert.equal(element('liveArchiveRegenerate').disabled,false,'causal worker must allow user to make a new map');
 await element('liveArchiveRegenerate').events.click();
 assert.equal(calls.filter(c=>c.path?.endsWith('/new-map')).length,1);
 assert.ok(calls.some(c=>c.seek===0&&c.options.pause));

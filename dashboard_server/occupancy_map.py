@@ -99,7 +99,13 @@ def raster_cells(endpoints):
     """
     if not endpoints:
         return np.empty((0,2),dtype=np.int64),np.empty((0,2),dtype=np.int64)
-    rays=np.asarray(endpoints,dtype=np.int64);ends_x,ends_y,hits=rays.T
+    rays=np.asarray(endpoints,dtype=np.int64)
+    # Nearby S2 returns often land in the same grid endpoint. Bresenham is
+    # deterministic, so repeating an identical ray cannot change this union.
+    # Remove those duplicates before allocating per-beam scratch arrays; retain
+    # both hit/free variants so the occupied-endpoint precedence stays exact.
+    rays=np.unique(rays,axis=0)
+    ends_x,ends_y,hits=rays.T
     xmin,ymin=min(0,int(ends_x.min())),min(0,int(ends_y.min()))
     width=max(0,int(ends_x.max()))-xmin+1
     height=max(0,int(ends_y.max()))-ymin+1

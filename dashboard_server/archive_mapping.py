@@ -73,6 +73,11 @@ class ArchiveMapping:
     def playback(self,archive_id,t_s,playing):
         path=self.directory(archive_id)
         from dashboard_server.playback_mapping import PlaybackMapper
+        history=read_json(path/'integrated_map_history.json')
+        # Old segmented recordings convert once, on Play. Keep their previous
+        # pointer/epochs recoverable and never open a new frame during tracking.
+        if playing is True and not history.get('playback_driven') and (path/'mapping_source/sensors.jsonl.gz').is_file():
+            self.new_map(archive_id)
         with self.lock:
             mapper=self.playback_mappers.get(archive_id)
             history=mapper.history if mapper and not mapper.closed else read_json(path/'integrated_map_history.json')

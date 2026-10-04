@@ -54,5 +54,10 @@ class MapGeometryTests(unittest.TestCase):
                 expected=_raster_cells_sorted(rays);actual=raster_cells(rays)
                 for first,second in zip(expected,actual):np.testing.assert_array_equal(first,second)
 
+    def test_repeated_nearby_rays_and_hit_free_endpoint_preserve_exact_union(self):
+        rays=[[8,3,1]]*1600+[[8,3,0]]*800+[[-4,7,1]]*800+[[0,0,1]]*40
+        for expected,actual in zip(_raster_cells_sorted(rays),raster_cells(rays)):
+            np.testing.assert_array_equal(expected,actual)
+
 
 if __name__=='__main__':unittest.main()

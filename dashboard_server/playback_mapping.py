@@ -12,6 +12,9 @@ from pathlib import Path
 import threading
 import time
 import uuid
+from collections import deque
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 from .occupancy_map import atomic_json,read_json
 from .integrated_archive import (rows,digest,localization_fingerprint,raster_fingerprint)
 from .integrated_mapping import integrate
@@ -19,6 +22,54 @@ from .raw_mapping.continuous_localization import ContinuousLocalization
 from .raw_mapping.raw_localization import source_stamp
 from .raw_mapping.gnss_constraints import UniqueGNSS,robust_rigid_alignment
 from .tile_transport import StreamingOccupancyMap
+
+
+class SourceCursorLocalizer:
+    """Ordered raw prefix only; independent of raster/storage and HTTP work."""
+    def __init__(self):
+        self.engine=ContinuousLocalization();self.gnss=UniqueGNSS()
+        self.imus=[];self.stamps=[];self.pending_imus=[];self.pairs=[];self.basis=None
+        self.input_scans=0;self.note=dict(state='no_usable_fix')
+
+    def consume(self,batch):
+        engine=self.engine;result=None
+        for row in batch:
+            topic=row['topic'];message=row['message']
+            if topic=='/imu/data_raw':
+                self.pending_imus.append(message)
+                i=bisect.bisect_right(self.stamps,source_stamp(message))
+                self.imus.insert(i,message);self.stamps.insert(i,source_stamp(message))
+                if len(self.imus)>64:self.imus.pop(0);self.stamps.pop(0)
+            elif topic=='/gps/data':
+                sample=json.loads(message['data']);factor=self.gnss.add(sample)
+                if factor:engine.gps(sample)
+                if factor and engine.previous:
+                    self.pairs.append((engine.pose[:2].copy(),factor))
+                    if self.basis is None and len(self.pairs)>=8:
+                        fit=robust_rigid_alignment(np_array([p for p,f in self.pairs]),[f for p,f in self.pairs])
+                        if fit['accepted']:self.basis=fit
+                    if self.basis:
+                        local=(np_array(factor.xy)-self.basis['translation'])@self.basis['rotation']
+                        scale=math.hypot(factor.scale_m,2*float(np_array(local).dot(np_array(local)))**.5*self.basis['heading_uncertainty_lower_bound_rad'])
+                        engine.gps_prior(factor.stamp,local,scale)
+                    self.note=dict(state='position_consistency_validation' if self.basis else 'waiting_for_motion_baseline',epochs=len(self.gnss.accepted),reported_hacc_m=factor.reported_hacc_m)
+            elif topic=='/scan':
+                stamp=source_stamp(message);index=bisect.bisect_right(self.stamps,stamp)-1
+                self.pending_imus.sort(key=source_stamp)
+                while self.pending_imus and source_stamp(self.pending_imus[0])<=stamp:engine.imu(self.pending_imus.pop(0))
+                result=engine.add(message,self.imus[index] if index>=0 else None);self.input_scans+=1
+        return result,dict(input_scans=self.input_scans,rejected_scans=engine.rejected,
+                          motion_prior_scans=engine.motion_prior_count),self.note
+
+
+_pipeline_localizer=None
+def initialize_localizer_process():
+    global _pipeline_localizer
+    _pipeline_localizer=SourceCursorLocalizer()
+
+
+def localize_prefix_batch(batch):
+    return _pipeline_localizer.consume(batch)
 
 
 def persist_json(path,value):
@@ -97,48 +148,25 @@ class PlaybackMapper:
                 raise ValueError('unverified_mapping_sensor_source')
             if self.history['localization_fingerprint']!=localization_fingerprint():raise ValueError('mapping_algorithm_changed_new_map_required')
             start=datetime.fromisoformat(read_json(self.archive/'metadata.json')['started_at']).timestamp()
-            folder=self.archive/'integrated_map'/self.history['epoch'];engine=ContinuousLocalization()
+            folder=self.archive/'integrated_map'/self.history['epoch']
             grid=StreamingOccupancyMap(max_beams=450,laser_x=0.,laser_y=0.)
-            gnss=UniqueGNSS();imus=[];stamps=[];pending_imus=[];pairs=[];basis=None
-            saved_index=len(self.history['events']);accepted_index=0;input_scans=0
-            next_checkpoint=-float('inf');last_saved=0.;gnss_note=dict(state='no_usable_fix')
+            saved_index=len(self.history['events']);accepted_index=0
+            next_checkpoint=-float('inf');last_saved=0.
+            # One ordered localization process overlaps with raster/storage.
+            # At most two scans from the requested prefix are in flight. No
+            # future scan is prefetched or dropped, and pose math is unchanged.
+            pipeline=os.environ.get('UBTS_MAP_PIPELINE','0' if os.name=='nt' else '1')=='1'
+            executor=ProcessPoolExecutor(max_workers=1,mp_context=multiprocessing.get_context('spawn'),
+                initializer=initialize_localizer_process) if pipeline else None
+            localizer=None if pipeline else SourceCursorLocalizer();pending=deque();batch=[]
             with (folder/'events.jsonl').open('ab') as log:
-                for row in rows(file):
-                    t=max(0.,row['bag_time_ns']/1e9-start)
-                    if t>self.history['duration_s']+.01:break
-                    with self.condition:
-                        while not self.closed and t>self.target+1e-6:
-                            self._save(log);self.condition.wait(timeout=2.)
-                        if self.closed:return
-                    topic=row['topic'];message=row['message']
-                    if topic=='/imu/data_raw':
-                        pending_imus.append(message)
-                        i=bisect.bisect_right(stamps,source_stamp(message));imus.insert(i,message);stamps.insert(i,source_stamp(message))
-                        if len(imus)>64:imus.pop(0);stamps.pop(0)
-                        continue
-                    if topic=='/gps/data':
-                        factor=gnss.add(json.loads(message['data']))
-                        if factor:engine.gps(json.loads(message['data']))
-                        if factor and engine.previous:
-                            pairs.append((engine.pose[:2].copy(),factor))
-                            if basis is None and len(pairs)>=8:
-                                fit=robust_rigid_alignment(np_array([p for p,f in pairs]),[f for p,f in pairs])
-                                if fit['accepted']:basis=fit
-                            if basis:
-                                local=(np_array(factor.xy)-basis['translation'])@basis['rotation']
-                                # Position uncertainty includes the uncalibrated
-                                # rigid-frame heading over the distance travelled.
-                                scale=math.hypot(factor.scale_m,2*float(np_array(local).dot(np_array(local)))**.5*basis['heading_uncertainty_lower_bound_rad'])
-                                engine.gps_prior(factor.stamp,local,scale)
-                            gnss_note=dict(state='position_consistency_validation' if basis else 'waiting_for_motion_baseline',epochs=len(gnss.accepted),reported_hacc_m=factor.reported_hacc_m)
-                        continue
-                    if topic!='/scan':continue
-                    stamp=source_stamp(message);index=bisect.bisect_right(stamps,stamp)-1
-                    pending_imus.sort(key=source_stamp)
-                    while pending_imus and source_stamp(pending_imus[0])<=stamp:engine.imu(pending_imus.pop(0))
-                    imu=imus[index] if index>=0 else None
-                    result=engine.add(message,imu);input_scans+=1
-                    self.history.update(input_scans=input_scans,rejected_scans=engine.rejected,tracking=result['tracking'],motion_prior_scans=engine.motion_prior_count)
+                def finish(observation):
+                    nonlocal accepted_index,next_checkpoint,last_saved
+                    future,message,t=observation
+                    result,counters,gnss_note=future.result() if pipeline else future
+                    if self.closed:return
+                    stamp=source_stamp(message)
+                    self.history.update(**counters,tracking=result['tracking'])
                     if result['accepted'] and result.get('map_eligible',True):
                         previous=grid.scan_count;integrate(grid,message,result['pose'],t);accepted_index+=1
                         if grid.path and result.get('path_break'):grid.path[-1]['break_before']=True
@@ -150,7 +178,7 @@ class PlaybackMapper:
                                 preserve_view_on_seek=True,coordinate_frame='continuous_sensor_local_frame',
                                 pose_accuracy_validated=False,autonomy_eligible=False,runtime_authority=False,
                                 source='causal_recorded_LaserScan_IMU_GNSS',gnss=gnss_note,no_encoder=True,
-                                tracking=result['tracking'],playback_driven=True,motion_prior_scans=engine.motion_prior_count)
+                                tracking=result['tracking'],playback_driven=True,motion_prior_scans=counters['motion_prior_scans'])
                             encoded=(json.dumps(packet,separators=(',',':'),allow_nan=False)+'\n').encode()
                             self.history['events'].append(dict(t_s=t,offset=log.tell(),bytes=len(encoded),version=accepted_index,segment=0));log.write(encoded)
                             if t>=next_checkpoint or accepted_index==saved_index+1:
@@ -160,6 +188,25 @@ class PlaybackMapper:
                     self.history['processed_t_s']=max(self.history['processed_t_s'],t)
                     if time.monotonic()-last_saved>.25:
                         self._save(log);last_saved=time.monotonic()
+                try:
+                    for row in rows(file):
+                        t=max(0.,row['bag_time_ns']/1e9-start)
+                        if t>self.history['duration_s']+.01:break
+                        if t>self.target+1e-6:
+                            while pending:finish(pending.popleft())
+                        with self.condition:
+                            while not self.closed and t>self.target+1e-6:
+                                self._save(log);self.condition.wait(timeout=2.)
+                            if self.closed:return
+                        batch.append(row)
+                        if row['topic']!='/scan':continue
+                        future=executor.submit(localize_prefix_batch,batch) if pipeline else localizer.consume(batch)
+                        pending.append((future,row['message'],t));batch=[]
+                        if len(pending)>=(2 if pipeline else 1):finish(pending.popleft())
+                    while pending:finish(pending.popleft())
+                    if self.closed:return
+                finally:
+                    if executor:executor.shutdown(wait=True,cancel_futures=True)
                 self.history.update(complete=True,processed_t_s=self.history['duration_s']);self._save(log)
                 grid.save_checkpoint(folder/'native-continuous.json')
         except Exception as error:

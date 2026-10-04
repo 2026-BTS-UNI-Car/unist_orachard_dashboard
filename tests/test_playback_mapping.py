@@ -1,4 +1,5 @@
 import gzip,hashlib,json,tempfile,time,unittest
+from unittest.mock import patch
 from contextlib import ExitStack
 from pathlib import Path
 from dashboard_server.archive_mapping import ArchiveMapping
@@ -8,6 +9,33 @@ from test_integrated_mapping import scan
 
 
 class PlaybackTests(unittest.TestCase):
+    def test_play_converts_legacy_segments_once_and_pause_preserves_source(self):
+        with tempfile.TemporaryDirectory() as root, ExitStack() as cleanup:
+            archive,digest=self.fixture(root);manager=ArchiveMapping(root);cleanup.callback(manager.close)
+            old=dict(schema='ubts.integrated_archive.v1',epoch='a'*32,segments=4,complete=True)
+            (archive/'integrated_map_history.json').write_text(json.dumps(old))
+            self.assertFalse(manager.playback('record',0,False)['playback_driven'])
+            self.assertEqual(read_json(archive/'integrated_map_history.json'),old)
+            first=manager.playback('record',.25,True);self.wait(archive,.2)
+            second=manager.playback('record',.35,True);self.wait(archive,.3)
+            self.assertEqual(first['map_epoch'],second['map_epoch'])
+            self.assertEqual(read_json(archive/'integrated_map_history.json')['segments'],1)
+            self.assertTrue(list(archive.glob('integrated_map_history-previous-*.json')))
+            self.assertEqual(hashlib.sha256((archive/'mapping_source/sensors.jsonl.gz').read_bytes()).hexdigest(),digest)
+
+    def test_process_pipeline_preserves_exact_cells_poses_and_cursor_prefix(self):
+        def run(enabled):
+            with tempfile.TemporaryDirectory() as root, ExitStack() as cleanup, patch.dict('os.environ',{'UBTS_MAP_PIPELINE':str(enabled)}):
+                archive,_=self.fixture(root);manager=ArchiveMapping(root);cleanup.callback(manager.close)
+                manager.new_map('record');manager.playback('record',.25,True);self.wait(archive,.2)
+                manager.playback('record',.25,False);time.sleep(.08)
+                self.assertLessEqual(read_json(archive/'integrated_map_history.json')['processed_t_s'],.25)
+                manager.playback('record',.8,True);history=self.wait(archive,.8)
+                manager.close()
+                snapshot=IndexedTileHistory().status(archive,.8)
+                return {k:snapshot[k] for k in ('pose','path','tiles','cell_count','scan_count','grid')}
+        self.assertEqual(run(0),run(1))
+
     def fixture(self,root):
         archive=Path(root)/'record';source=archive/'mapping_source';source.mkdir(parents=True)
         (archive/'metadata.json').write_text(json.dumps(dict(started_at='1970-01-01T00:16:40Z',duration_s=.8)))

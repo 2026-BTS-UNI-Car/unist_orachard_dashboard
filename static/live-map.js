@@ -12,6 +12,7 @@ let mapBuffer=null,nextMapBuffer=null,mapWindowPending=null,bufferPaintPending=f
 let archiveTimer=null,archivePending=null,archiveTimeS=0,archivePlaying=false,followGeneration=false,archiveGenerating=false;
 let archiveRetryMs=75;
 let cursorMapping=false,playbackPending=null,lastPlaybackPush=-Infinity;
+let triedCausalMap=false;
 const segments=new ArchiveSegmentGallery(archive,time=>window.setArchiveTime?.(time,{pause:true}));
 archive.beforeCommit=(previous,next)=>segments.beforeCommit(previous,next);
 archive.afterDraw=()=>{
@@ -61,6 +62,7 @@ async function selectArchive(id){
   clearTimeout(archiveTimer);archiveTimer=null;archivePending?.controller.abort();
   mapBuffer=null;nextMapBuffer=null;windowSupported=null;mapWindowPending?.controller.abort();mapWindowPending=null;
   archiveTimeS=0;archivePlaying=false;followGeneration=false;archiveGenerating=false;cursorMapping=false;lastPlaybackPush=-Infinity;
+  triedCausalMap=false;
   playbackPending?.controller.abort();playbackPending=null;segments.reset();archive.set({});$('liveArchiveRegenerate').disabled=!id;
   if(!id){text('liveArchiveStatus','기록을 선택하세요.');return;}
   try{await pollArchive(id,epoch);}catch(error){if(epoch===archiveEpoch&&error.name!=='AbortError'){text('liveArchiveStatus',error.message);scheduleArchive(500);}}
@@ -105,7 +107,9 @@ async function pollArchive(id,epoch){
       });
     }
     const generation=value.generation||{},duration=Number(generation.duration_s)||0;
-    archiveGenerating=value.state==='regenerating';$('liveArchiveRegenerate').disabled=archiveGenerating;
+    // A causal worker can be interrupted by New map. Only the legacy bulk
+    // regeneration requires waiting; it must not lock this new workflow.
+    archiveGenerating=!cursorMapping&&value.state==='regenerating';$('liveArchiveRegenerate').disabled=archiveGenerating;
     text('liveArchiveStatus',value.mapping_error?`지도 처리 오류 · ${value.mapping_error} · 이전 지도 유지`:value.regeneration_error?`재생성 실패 · ${value.regeneration_error}`:
       cursorMapping?`${value.grid?(archivePlaying?'재생하며 지도 저장 중':'저장된 지도 유지'):'재생하면 새 지도가 쌓입니다'} · ${(value.frame_t_s||0).toFixed(1)}초${archiveQuality(value)}`:
       value.state==='regenerating'?(generation.stage==='localizing'?'LiDAR·IMU 위치 추정 계산 중…':`지도 생성 ${Math.round((generation.progress||0)*100)}% · ${(generation.processed_t_s||0).toFixed(1)} / ${duration.toFixed(1)}초`):
@@ -164,7 +168,7 @@ function archiveTime(id,timeS,playing,seekRequested=false){
   const playChanged=Boolean(playing)!==archivePlaying;
   const changed=Math.abs(jump)>.05||playChanged;
   archiveTimeS=Math.max(0,Number(timeS)||0);archivePlaying=Boolean(playing);
-  if(cursorMapping && (changed || archivePlaying))pushPlayback(playChanged||seekRequested);
+  if((cursorMapping || (!triedCausalMap && archivePlaying)) && (changed || archivePlaying))pushPlayback(playChanged||seekRequested);
   // A future window is intentionally ahead of the clock. Normal playback must
   // not abort it simply because the current cursor precedes its start.
   if(mapWindowPending && seek && (archiveTimeS<mapWindowPending.start || archiveTimeS>mapWindowPending.end)){
@@ -174,11 +178,18 @@ function archiveTime(id,timeS,playing,seekRequested=false){
   if(changed)scheduleArchive();
 }
 async function pushPlayback(force=false){
-  if(!cursorMapping||!selected||playbackPending||(!force&&performance.now()-lastPlaybackPush<250))return;
+  if((!cursorMapping && (triedCausalMap||!archivePlaying))||!selected||playbackPending||(!force&&performance.now()-lastPlaybackPush<250))return;
   const id=selected,epoch=archiveEpoch,time=archiveTimeS,playing=archivePlaying;
   const pending={controller:new AbortController(),epoch};playbackPending=pending;lastPlaybackPush=performance.now();
   try{
-    await request(`/api/live/recordings/${encodeURIComponent(id)}/map-playback`,{t_s:time,playing},pending.controller.signal);
+    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-playback`,{t_s:time,playing},pending.controller.signal);
+    if(epoch===archiveEpoch){
+      triedCausalMap=true;
+      if(value.playback_driven && !cursorMapping){
+        cursorMapping=true;mapBuffer=null;nextMapBuffer=null;
+        mapWindowPending?.controller.abort();mapWindowPending=null;scheduleArchive();
+      }
+    }
   }catch(error){if(epoch===archiveEpoch&&error.name!=='AbortError')text('liveArchiveStatus',`${error.message} · 마지막 지도 유지`);}
   finally{
     if(playbackPending===pending)playbackPending=null;
@@ -194,7 +205,7 @@ $('liveArchiveRegenerate').addEventListener('click',async()=>{
   try{
     const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/new-map`,{});
     if(epoch!==archiveEpoch)return;
-    cursorMapping=true;archiveTimeS=0;archivePlaying=false;archiveGenerating=false;followGeneration=false;
+    cursorMapping=true;triedCausalMap=true;archiveTimeS=0;archivePlaying=false;archiveGenerating=false;followGeneration=false;
     segments.reset();archive.set({map_epoch:value.map_epoch,preserve_view_on_seek:true,version:0,scan_count:0,tiles:[],tiles_reset:true,playback_driven:true});
     text('liveArchiveStatus','새 지도 준비됨 · 재생을 누르면 지도가 쌓이고 저장됩니다.');
   }
