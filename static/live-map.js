@@ -73,7 +73,7 @@ async function pollArchive(id,epoch){
   if(epoch!==archiveEpoch||archivePending?.epoch===epoch)return;
   if(cursorMapping && !bufferedCursorMap && inlinePlaybackMap && archivePlaying){await pushPlayback();return;}
   if((!cursorMapping||bufferedCursorMap) && !followGeneration && windowSupported!==false){
-    if(nextMapBuffer?.contains(archiveTimeS)){mapBuffer=nextMapBuffer;nextMapBuffer=null;}
+    if(!mapBuffer?.contains(archiveTimeS) && nextMapBuffer?.contains(archiveTimeS)){mapBuffer=nextMapBuffer;nextMapBuffer=null;}
     if(mapBuffer?.contains(archiveTimeS)){
       if(!bufferPaintPending){
         const value=mapBuffer.at(archiveTimeS,archive.snapshot.tile_version,archive.tileEpoch);
@@ -84,7 +84,10 @@ async function pollArchive(id,epoch){
         text('liveArchiveStatus',`GPS·IMU·LiDAR 통합 지도 · ${(archive.snapshot.frame_t_s||0).toFixed(1)}초 · 센서 시각 동기 재생${archiveQuality(archive.snapshot)}`);
       }
       if(archivePlaying && !nextMapBuffer && !mapWindowPending && mapBuffer.end_s<mapBuffer.duration_s && mapBuffer.end_s-archiveTimeS<10){
-        loadMapWindow(id,epoch,mapBuffer.end_s,12,true).catch(()=>{});
+        // Overlap the boundary so the last displayed scan is also present in
+        // the new window. A late render tick then stays incremental instead
+        // of repeatedly installing its full-history seed.
+        loadMapWindow(id,epoch,Math.max(mapBuffer.start_s,mapBuffer.end_s-2),12,true).catch(()=>{});
       }
       if(archivePlaying)scheduleArchive();return;
     }

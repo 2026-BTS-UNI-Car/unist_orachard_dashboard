@@ -27,4 +27,12 @@ assert.equal(next.tiles_reset,false,'a seed before the first scan must not erase
 assert.deepEqual(next.tiles,[tile(1,'second')]);assert.deepEqual(next.path,[{stamp:.2}]);
 assert.equal(cold.at(.2,2,'continuous').tiles_reset,false);
 assert.equal(cold.at(0,2,'continuous').scan_count,0,'backward seek still clears future cells');
+// Next windows overlap the end of the previous one. Even if its last render
+// was just before the boundary, the displayed version remains incremental.
+const overlap=new ArchiveMapBuffer({start_s:10,end_s:22,
+ seed:{tile_epoch:'continuous',tile_version:100,version:100,tiles:[tile(0,'retained')],path:[]},
+ events:[{tile_epoch:'continuous',tile_version:120,version:120,frame_t_s:12,tiles:[tile(1,'end')],path:[{stamp:12}]},
+         {tile_epoch:'continuous',tile_version:121,version:121,frame_t_s:12.1,tiles:[tile(2,'new')],path:[{stamp:12.1}]}]});
+assert.equal(overlap.at(12.1,120,'continuous').tiles_reset,false);
+assert.deepEqual(overlap.at(12.1,120,'continuous').tiles,[tile(2,'new')]);
 console.log('Map cache playback cursor, backward seek and disconnected submaps passed');
