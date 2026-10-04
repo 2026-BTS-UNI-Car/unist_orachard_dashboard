@@ -14,7 +14,16 @@ let archiveRetryMs=75;
 let cursorMapping=false,playbackPending=null,lastPlaybackPush=-Infinity;
 const segments=new ArchiveSegmentGallery(archive,time=>window.setArchiveTime?.(time,{pause:true}));
 archive.beforeCommit=(previous,next)=>segments.beforeCommit(previous,next);
-archive.afterDraw=()=>{segments.update(archive.snapshot,archiveTimeS);mapControls('archive',archive);};
+archive.afterDraw=()=>{
+  if(archive.snapshot.playback_driven){
+    if($('liveArchiveSegments'))$('liveArchiveSegments').hidden=true;
+    text('liveArchiveMapNote','새 지도 만들기 → 재생 · 일시정지 시 지도 유지 · 원본 기록 보존');
+  }else{
+    segments.update(archive.snapshot,archiveTimeS);
+    text('liveArchiveMapNote','이전 방식의 기록 지도 · 새 지도 만들기 후 재생하면 같은 지도에 계속 누적합니다.');
+  }
+  mapControls('archive',archive);
+};
 live.afterDraw=()=>mapControls('live',live);
 function mapControls(kind,map){
   for(const button of document.querySelectorAll(`[data-${kind}-zoom]`)){
@@ -98,7 +107,7 @@ async function pollArchive(id,epoch){
     const generation=value.generation||{},duration=Number(generation.duration_s)||0;
     archiveGenerating=value.state==='regenerating';$('liveArchiveRegenerate').disabled=archiveGenerating;
     text('liveArchiveStatus',value.mapping_error?`지도 처리 오류 · ${value.mapping_error} · 이전 지도 유지`:value.regeneration_error?`재생성 실패 · ${value.regeneration_error}`:
-      cursorMapping?`${value.grid?'재생하며 지도 저장 중':'재생하면 새 지도가 쌓입니다'} · ${(value.frame_t_s||0).toFixed(1)}초${archiveQuality(value)}`:
+      cursorMapping?`${value.grid?(archivePlaying?'재생하며 지도 저장 중':'저장된 지도 유지'):'재생하면 새 지도가 쌓입니다'} · ${(value.frame_t_s||0).toFixed(1)}초${archiveQuality(value)}`:
       value.state==='regenerating'?(generation.stage==='localizing'?'LiDAR·IMU 위치 추정 계산 중…':`지도 생성 ${Math.round((generation.progress||0)*100)}% · ${(generation.processed_t_s||0).toFixed(1)} / ${duration.toFixed(1)}초`):
       value.needs_regeneration?'이전 방식의 지도입니다. 새 지도 만들기 후 재생하세요.':
       value.state==='interrupted'?'중단된 지도 생성 · 부분 결과 유지 · 다시 재생성할 수 있습니다.':
@@ -181,7 +190,7 @@ $('liveArchiveRegenerate').addEventListener('click',async()=>{
     const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/new-map`,{});
     if(epoch!==archiveEpoch)return;
     cursorMapping=true;archiveTimeS=0;archivePlaying=false;archiveGenerating=false;followGeneration=false;
-    segments.reset();archive.set({map_epoch:value.map_epoch,preserve_view_on_seek:true,version:0,scan_count:0,tiles:[],tiles_reset:true});
+    segments.reset();archive.set({map_epoch:value.map_epoch,preserve_view_on_seek:true,version:0,scan_count:0,tiles:[],tiles_reset:true,playback_driven:true});
     text('liveArchiveStatus','새 지도 준비됨 · 재생을 누르면 지도가 쌓이고 저장됩니다.');
   }
   catch(error){if(epoch===archiveEpoch)text('liveArchiveStatus',error.message);}
