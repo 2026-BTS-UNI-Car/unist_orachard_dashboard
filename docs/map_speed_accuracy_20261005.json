@@ -1,0 +1,875 @@
+{
+  "schema": "ubts.map_speed_accuracy.summary.v1",
+  "runtime_source": "33b7833205cb2573155a7a5adf62336f05464e5d",
+  "image": "sha256:bd53f0c95eb1b278094ff4f4e6798be394b96d07571f70f164f15f3e61828709",
+  "native_tests_passed": 42,
+  "native_full_pipeline": {
+    "20261003T080909Z_both": {
+      "state": "verified",
+      "duration_s": 210.12,
+      "processed_t_s": 210.12,
+      "observed_scans": 2057,
+      "rejected_scans": 17,
+      "motion_prior_scans": 19,
+      "cell_count": 377203,
+      "unexpected_resets": 0,
+      "epochs": 1,
+      "elapsed_s": 185.31033557699993,
+      "pause_backlog_frozen": true,
+      "pause_stale_play_ignored": true,
+      "source_SHA_preserved": true,
+      "pause_prefix_verified": true,
+      "backward_seek_verified": true
+    },
+    "20261003T080351Z_both": {
+      "state": "verified",
+      "duration_s": 246.76,
+      "processed_t_s": 246.76,
+      "observed_scans": 2425,
+      "rejected_scans": 25,
+      "motion_prior_scans": 9,
+      "cell_count": 265271,
+      "unexpected_resets": 0,
+      "epochs": 1,
+      "elapsed_s": 235.89763030799804,
+      "pause_backlog_frozen": true,
+      "pause_stale_play_ignored": true,
+      "source_SHA_preserved": true,
+      "pause_prefix_verified": true,
+      "backward_seek_verified": true
+    },
+    "20261003T072530Z_both": {
+      "state": "verified",
+      "duration_s": 524.78,
+      "processed_t_s": 524.78,
+      "observed_scans": 5227,
+      "rejected_scans": 12,
+      "motion_prior_scans": 4,
+      "cell_count": 1360843,
+      "unexpected_resets": 0,
+      "epochs": 1,
+      "elapsed_s": 453.59155405800266,
+      "pause_backlog_frozen": true,
+      "pause_stale_play_ignored": true,
+      "source_SHA_preserved": true,
+      "pause_prefix_verified": true,
+      "backward_seek_verified": true
+    }
+  },
+  "offline_records": [
+    {
+      "archive": "20261003T072530Z_both",
+      "input_scans": 5243,
+      "drawn": 5227,
+      "rejected": 12,
+      "motion_priors": 4,
+      "frames": 1,
+      "latency_ms_p50_p95": [
+        41.32400001981296,
+        134.72748999192845
+      ],
+      "elapsed_s": 295.37465990000055,
+      "relative_overlap": [
+        {
+          "separation_scans": 20,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 522,
+              "baseline_median": [
+                0.09384538764140486,
+                0.34400750417869375,
+                0.6420908829450676
+              ],
+              "candidate_median": [
+                0.0883549323962359,
+                0.3509292109949289,
+                0.6573934106220392
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 522,
+              "baseline_median": [
+                0.2247396887517939,
+                0.6687976696025419,
+                0.3455304928989139
+              ],
+              "candidate_median": [
+                0.20356093437954786,
+                0.6695922657870041,
+                0.3842268842268842
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 50,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 519,
+              "baseline_median": [
+                0.18524071652106766,
+                0.7715072555632502,
+                0.44611528822055135
+              ],
+              "candidate_median": [
+                0.17836807098394342,
+                0.7556276989310561,
+                0.45866666666666667
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 519,
+              "baseline_median": [
+                0.4783438139108736,
+                1.4633588650367493,
+                0.1588785046728972
+              ],
+              "candidate_median": [
+                0.45759456653558545,
+                1.4438609916494136,
+                0.18604651162790697
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 100,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 514,
+              "baseline_median": [
+                0.39363991910194707,
+                1.360943930701433,
+                0.23102580202890705
+              ],
+              "candidate_median": [
+                0.38218964798370914,
+                1.3425437658931865,
+                0.24129823991083454
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 514,
+              "baseline_median": [
+                0.927679675153325,
+                3.232311946228088,
+                0.08591299410971542
+              ],
+              "candidate_median": [
+                0.8953014587407477,
+                3.2639857060209754,
+                0.08418086676506105
+              ]
+            }
+          }
+        }
+      ],
+      "absolute_accuracy_validated": false,
+      "motor_commands_sent": false,
+      "production_modified": false
+    },
+    {
+      "archive": "20261003T080909Z_both",
+      "input_scans": 2093,
+      "drawn": 2057,
+      "rejected": 17,
+      "motion_priors": 19,
+      "frames": 1,
+      "latency_ms_p50_p95": [
+        46.142299979692325,
+        170.63949999283065
+      ],
+      "elapsed_s": 138.46991700000945,
+      "relative_overlap": [
+        {
+          "separation_scans": 20,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 199,
+              "baseline_median": [
+                0.12644584561858543,
+                0.39817855116659495,
+                0.5510204081632653
+              ],
+              "candidate_median": [
+                0.12052783554896196,
+                0.4009378927304974,
+                0.5611888111888111
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 199,
+              "baseline_median": [
+                0.5382435280416863,
+                2.1047614434835378,
+                0.1888111888111888
+              ],
+              "candidate_median": [
+                0.5346841328579766,
+                2.106676226269218,
+                0.21455938697318008
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 50,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 197,
+              "baseline_median": [
+                0.20618531833845177,
+                0.6301394875786213,
+                0.4124168514412417
+              ],
+              "candidate_median": [
+                0.19085890058090615,
+                0.6243712904935366,
+                0.4349514563106796
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 197,
+              "baseline_median": [
+                0.9103313662230126,
+                2.689799651119441,
+                0.11956521739130435
+              ],
+              "candidate_median": [
+                0.9304642892614805,
+                2.707148926355265,
+                0.13227513227513227
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 100,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 192,
+              "baseline_median": [
+                0.3299383862857036,
+                0.8973086481078156,
+                0.2821766471071695
+              ],
+              "candidate_median": [
+                0.3143708645011129,
+                0.8772601596138869,
+                0.2951600893521966
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 192,
+              "baseline_median": [
+                1.2603721296480785,
+                3.490470456129055,
+                0.09045631344274738
+              ],
+              "candidate_median": [
+                1.2421847954245253,
+                3.4895434050175265,
+                0.1104851330203443
+              ]
+            }
+          }
+        }
+      ],
+      "absolute_accuracy_validated": false,
+      "motor_commands_sent": false,
+      "production_modified": false
+    },
+    {
+      "archive": "20261003T080351Z_both",
+      "input_scans": 2459,
+      "drawn": 2425,
+      "rejected": 25,
+      "motion_priors": 9,
+      "frames": 1,
+      "latency_ms_p50_p95": [
+        51.14049999974668,
+        167.7886000019498
+      ],
+      "elapsed_s": 158.91554080002243,
+      "relative_overlap": [
+        {
+          "separation_scans": 20,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 241,
+              "baseline_median": [
+                0.14012156129765485,
+                0.42927966619378954,
+                0.5206766917293233
+              ],
+              "candidate_median": [
+                0.1346808538285375,
+                0.4204779959065444,
+                0.5378151260504201
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 241,
+              "baseline_median": [
+                0.6552517635837468,
+                2.0452776872750853,
+                0.16831683168316833
+              ],
+              "candidate_median": [
+                0.6484640609523685,
+                2.0945280495141883,
+                0.17613636363636365
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 50,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 238,
+              "baseline_median": [
+                0.2340769874329653,
+                0.7274486173823667,
+                0.37282913165266107
+              ],
+              "candidate_median": [
+                0.23465860841399222,
+                0.7102873388221134,
+                0.38012477047650584
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 238,
+              "baseline_median": [
+                1.0291380907865526,
+                2.9231877350981224,
+                0.10074730912944063
+              ],
+              "candidate_median": [
+                0.9898947460976233,
+                2.9168821678930335,
+                0.10905808643941807
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 100,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 233,
+              "baseline_median": [
+                0.33255965306558954,
+                0.8986299004344244,
+                0.27240773286467485
+              ],
+              "candidate_median": [
+                0.3193112055164884,
+                0.8871602504649776,
+                0.2841269841269841
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 233,
+              "baseline_median": [
+                1.3889928381204797,
+                3.4362470312052773,
+                0.07476635514018691
+              ],
+              "candidate_median": [
+                1.390562705611058,
+                3.4791731735726716,
+                0.08189655172413793
+              ]
+            }
+          }
+        }
+      ],
+      "absolute_accuracy_validated": false,
+      "motor_commands_sent": false,
+      "production_modified": false
+    },
+    {
+      "archive": "20261003T072238Z_both",
+      "input_scans": 7799,
+      "drawn": 7703,
+      "rejected": 92,
+      "motion_priors": 4,
+      "frames": 1,
+      "latency_ms_p50_p95": [
+        35.12119999504648,
+        134.4233000039821
+      ],
+      "elapsed_s": 411.37262740000733,
+      "relative_overlap": [
+        {
+          "separation_scans": 20,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 764,
+              "baseline_median": [
+                0.12432691360657676,
+                0.5172365500370206,
+                0.5771213322759714
+              ],
+              "candidate_median": [
+                0.11530586621670896,
+                0.5111061332915183,
+                0.6109101141662647
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 764,
+              "baseline_median": [
+                0.1887969754126264,
+                0.6578280991697842,
+                0.4039906453699557
+              ],
+              "candidate_median": [
+                0.17217260547610141,
+                0.6521316798067119,
+                0.44652014652014654
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 50,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 762,
+              "baseline_median": [
+                0.268000202525839,
+                1.0556841542653435,
+                0.2683444722918407
+              ],
+              "candidate_median": [
+                0.23244460491905766,
+                1.07417219852429,
+                0.31464362815913777
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 762,
+              "baseline_median": [
+                0.3886855479972936,
+                1.561465325138047,
+                0.20309805174065793
+              ],
+              "candidate_median": [
+                0.35931873023418365,
+                1.5300746128634541,
+                0.21230198183866905
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 100,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 756,
+              "baseline_median": [
+                0.6011537101769104,
+                1.7527382379588379,
+                0.1056957874024078
+              ],
+              "candidate_median": [
+                0.5097458706257223,
+                1.7283212573400024,
+                0.14136703074756174
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 756,
+              "baseline_median": [
+                0.8449702408689089,
+                3.9198761403636797,
+                0.12952969649398222
+              ],
+              "candidate_median": [
+                0.8033802339509981,
+                3.9477494868554643,
+                0.12887256467582242
+              ]
+            }
+          }
+        }
+      ],
+      "absolute_accuracy_validated": false,
+      "motor_commands_sent": false,
+      "production_modified": false
+    },
+    {
+      "archive": "20261003T072329Z_both",
+      "input_scans": 913,
+      "drawn": 904,
+      "rejected": 9,
+      "motion_priors": 0,
+      "frames": 1,
+      "latency_ms_p50_p95": [
+        60.85979999625124,
+        168.27705999021418
+      ],
+      "elapsed_s": 66.96252130001085,
+      "relative_overlap": [
+        {
+          "separation_scans": 20,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 85,
+              "baseline_median": [
+                0.273756610574559,
+                1.0681315095159343,
+                0.29
+              ],
+              "candidate_median": [
+                0.2699496820929319,
+                1.068770450502842,
+                0.30701754385964913
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 85,
+              "baseline_median": [
+                0.3034088933963268,
+                0.9568234232092734,
+                0.21621621621621623
+              ],
+              "candidate_median": [
+                0.29251617394881774,
+                0.9579664620595426,
+                0.2217391304347826
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 50,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 82,
+              "baseline_median": [
+                0.49746788517725327,
+                2.1791232365561606,
+                0.14741390265599186
+              ],
+              "candidate_median": [
+                0.5068232651472746,
+                2.215644082210364,
+                0.16416040100250626
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 82,
+              "baseline_median": [
+                0.5894221716789324,
+                1.4993854241006495,
+                0.10875402792696026
+              ],
+              "candidate_median": [
+                0.5688449132316997,
+                1.4947172984355754,
+                0.11085509472606248
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 100,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 77,
+              "baseline_median": [
+                0.6196856499828518,
+                2.2304421981943525,
+                0.08016877637130802
+              ],
+              "candidate_median": [
+                0.607100663803793,
+                2.2551442977857263,
+                0.08191126279863481
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 77,
+              "baseline_median": [
+                0.8943392897438538,
+                3.2216379362978587,
+                0.08673469387755102
+              ],
+              "candidate_median": [
+                0.8534123585512995,
+                3.2287636256496683,
+                0.06415094339622641
+              ]
+            }
+          }
+        }
+      ],
+      "absolute_accuracy_validated": false,
+      "motor_commands_sent": false,
+      "production_modified": false
+    },
+    {
+      "archive": "20261003T073551Z_both",
+      "input_scans": 8108,
+      "drawn": 7968,
+      "rejected": 130,
+      "motion_priors": 10,
+      "frames": 1,
+      "latency_ms_p50_p95": [
+        59.350249997805804,
+        199.02969500108156
+      ],
+      "elapsed_s": 675.6786677000055,
+      "relative_overlap": [
+        {
+          "separation_scans": 20,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 785,
+              "baseline_median": [
+                0.21179575637863765,
+                0.981136715383552,
+                0.3879598662207358
+              ],
+              "candidate_median": [
+                0.20642381111005909,
+                0.9854772023451503,
+                0.3963963963963964
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 785,
+              "baseline_median": [
+                0.3100585535731618,
+                1.0332534646778586,
+                0.2815533980582524
+              ],
+              "candidate_median": [
+                0.29863372427758056,
+                1.0265322840166424,
+                0.2894736842105263
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 50,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 784,
+              "baseline_median": [
+                0.4960798983181097,
+                1.8663709746856183,
+                0.16617357001972388
+              ],
+              "candidate_median": [
+                0.48610399916910035,
+                1.8847958704328192,
+                0.17734598503829274
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 784,
+              "baseline_median": [
+                0.6611805381757248,
+                2.0059716043423013,
+                0.11169009480222294
+              ],
+              "candidate_median": [
+                0.6475619355382496,
+                2.01499684011133,
+                0.11652236652236653
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 100,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 777,
+              "baseline_median": [
+                0.978692125900163,
+                2.4719545251605393,
+                0.055350553505535055
+              ],
+              "candidate_median": [
+                0.9384843245695077,
+                2.484436525462269,
+                0.06857142857142857
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 777,
+              "baseline_median": [
+                1.23059526375059,
+                3.591442904172159,
+                0.04945054945054945
+              ],
+              "candidate_median": [
+                1.2509404986535957,
+                3.5987950722239463,
+                0.05187319884726225
+              ]
+            }
+          }
+        }
+      ],
+      "absolute_accuracy_validated": false,
+      "motor_commands_sent": false,
+      "production_modified": false
+    },
+    {
+      "archive": "20261003T081934Z_both",
+      "input_scans": 5432,
+      "drawn": 5346,
+      "rejected": 78,
+      "motion_priors": 8,
+      "frames": 1,
+      "latency_ms_p50_p95": [
+        53.014000004623085,
+        154.05759501300054
+      ],
+      "elapsed_s": 373.53936119997525,
+      "relative_overlap": [
+        {
+          "separation_scans": 20,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 526,
+              "baseline_median": [
+                0.08121065284131693,
+                0.18573325674950542,
+                0.7408326440584505
+              ],
+              "candidate_median": [
+                0.07804665403875954,
+                0.183384023303734,
+                0.7511379110937004
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 526,
+              "baseline_median": [
+                0.17444997611293156,
+                0.7111880732173486,
+                0.43978021978021975
+              ],
+              "candidate_median": [
+                0.1588895733700938,
+                0.6853132577364864,
+                0.48221700667990613
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 50,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 523,
+              "baseline_median": [
+                0.14479490918971916,
+                0.36517236469100195,
+                0.5117370892018779
+              ],
+              "candidate_median": [
+                0.13917318292837255,
+                0.35955985356726333,
+                0.5280172413793104
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 523,
+              "baseline_median": [
+                0.3385134646815813,
+                1.5847153008060695,
+                0.2440677966101695
+              ],
+              "candidate_median": [
+                0.29859990010371135,
+                1.572918325064216,
+                0.27835051546391754
+              ]
+            }
+          }
+        },
+        {
+          "separation_scans": 100,
+          "bands": {
+            "near_0_8m": {
+              "pairs": 518,
+              "baseline_median": [
+                0.2873058039839635,
+                0.7655083920853987,
+                0.2615880070205948
+              ],
+              "candidate_median": [
+                0.280034989906262,
+                0.7401741745850667,
+                0.27835020426234125
+              ]
+            },
+            "far_8_20m": {
+              "pairs": 518,
+              "baseline_median": [
+                0.7404771946024842,
+                4.359480730481523,
+                0.14712721430685327
+              ],
+              "candidate_median": [
+                0.6958501615485355,
+                4.376272044276698,
+                0.15922648637900177
+              ]
+            }
+          }
+        }
+      ],
+      "absolute_accuracy_validated": false,
+      "motor_commands_sent": false,
+      "production_modified": false
+    }
+  ],
+  "production_verified": {
+    "unchanged_other_roles": 12,
+    "unchanged_source_files": 59,
+    "protected_configuration_unchanged": true,
+    "saved_live_map_preserved": true
+  },
+  "browser": {
+    "archive": "20261003T072530Z_both",
+    "paused_with_backlog_s": 116.54789361409962,
+    "paused_observation_s": 99.19840000000596,
+    "archive_map_requests_while_paused": 0,
+    "manual_zoom_preserved": true,
+    "one_observed_epoch": true,
+    "slow_HTTP": {
+      "latency_ms": 250,
+      "download_kbps": 512,
+      "upload_kbps": 256,
+      "commits": 123,
+      "duration_s": 146.68139999997615,
+      "map_age_p50_p95_max_s": [
+        2.944875452142824,
+        7.8014275238286075,
+        8.954355334528088
+      ],
+      "absolute_real_time_guaranteed": false
+    }
+  },
+  "absolute_accuracy_validated": false,
+  "end_to_end_latency_complete": false,
+  "motor_commands_sent": false,
+  "limitations": [
+    "Overlap distances are consistency measurements; no independent survey truth.",
+    "Some long-range long-interval metrics worsen; gyro consistency is not uniformly improved.",
+    "HTTP throttling does not establish identical WebSocket throttling.",
+    "SIM and live mapper causal migration remain separate.",
+    "Private strong70 experiment is not deployed."
+  ]
+}
