@@ -88,6 +88,10 @@ async function pollArchive(id,epoch){
       }
       if(archivePlaying)scheduleArchive();return;
     }
+    // A small window can arrive after the clock has already passed its end.
+    // Repeated current-frame GETs then compete with that same download forever.
+    // Keep the last map while one sufficiently long window catches up.
+    if(archivePlaying && mapWindowPending){scheduleArchive(150);return;}
     // A seek gets one complete map first. Bulk look-ahead must not block that
     // response or occupy the connection needed by the current playback cursor.
   }
@@ -105,7 +109,7 @@ async function pollArchive(id,epoch){
     await acceptArchiveMap(value);
     archiveRetryMs=75;
     if(archivePlaying && (!cursorMapping||bufferedCursorMap) && !followGeneration && windowSupported!==false && !mapWindowPending){
-      loadMapWindow(id,epoch,Math.max(0,archiveTimeS),3,false).then(()=>scheduleArchive()).catch(error=>{
+      loadMapWindow(id,epoch,Math.max(0,archiveTimeS),12,false).then(()=>scheduleArchive()).catch(error=>{
         if(epoch===archiveEpoch&&error.name!=='AbortError')scheduleArchive(500);
       });
     }
