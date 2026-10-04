@@ -9,6 +9,14 @@ from dashboard_server.tiled_occupancy import TiledOccupancyMap
 
 
 class CheckpointTests(unittest.TestCase):
+    def test_conservative_inverse_model_roundtrip_keeps_configuration_and_odds(self):
+        with tempfile.TemporaryDirectory() as root:
+            grid=TiledOccupancyMap(conservative_free=True,endpoint_margin_cells=1)
+            grid.update(dict(stamp=1.,pose=dict(x=0,y=0,yaw=0),scan=dict(ranges=[3.],angle_min=0.,angle_increment=1.,range_min=.05,range_max=5.)))
+            path=Path(root)/'map.json';grid.save_checkpoint(path)
+            loaded=TiledOccupancyMap.load_checkpoint(path)
+            self.assertEqual(loaded.config(),grid.config());self.assertEqual(loaded.cells,grid.cells)
+
     def populate(self):
         grid=TiledOccupancyMap(max_span=64,laser_x=0.,laser_y=0.)
         for t,x in enumerate((-100.,0.,100.),1):

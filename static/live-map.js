@@ -13,6 +13,7 @@ let archiveTimer=null,archivePending=null,archiveTimeS=0,archivePlaying=false,fo
 let archiveRetryMs=75;
 let cursorMapping=false,playbackPending=null,lastPlaybackPush=-Infinity;
 let triedCausalMap=false;
+const playbackClient=globalThis.crypto?.randomUUID?.()||`map-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;let playbackSequence=0;
 const segments=new ArchiveSegmentGallery(archive,time=>window.setArchiveTime?.(time,{pause:true}));
 archive.beforeCommit=(previous,next)=>segments.beforeCommit(previous,next);
 archive.afterDraw=()=>{
@@ -124,7 +125,7 @@ async function pollArchive(id,epoch){
     // after completion instead of leaving the canvas empty until another seek.
     const cursorChanged=!followGeneration&&(target===null||Math.abs(target-archiveTimeS)>.05);
     const legacyGenerating=!cursorMapping&&value?.state==='regenerating';
-    const catchingUp=cursorMapping&&!value?.mapping_error&&value?.generation?.waiting_for_cursor!==true;
+    const catchingUp=cursorMapping&&archivePlaying&&!value?.mapping_error&&value?.generation?.waiting_for_cursor!==true;
     if(epoch===archiveEpoch&&(legacyGenerating||archivePlaying||cursorChanged||catchingUp))scheduleArchive();
   }
 }
@@ -169,6 +170,12 @@ function archiveTime(id,timeS,playing,seekRequested=false){
   const playChanged=Boolean(playing)!==archivePlaying;
   const changed=Math.abs(jump)>.05||playChanged;
   archiveTimeS=Math.max(0,Number(timeS)||0);archivePlaying=Boolean(playing);
+  if(playChanged&&!archivePlaying){
+    clearTimeout(archiveTimer);archiveTimer=null;
+    // Supersede an old Play immediately. Server sequence checks prevent a
+    // delayed request from reviving processing after this newer Pause.
+    playbackPending?.controller.abort();playbackPending=null;
+  }
   if((cursorMapping || (!triedCausalMap && archivePlaying)) && (changed || archivePlaying))pushPlayback(playChanged||seekRequested);
   // A future window is intentionally ahead of the clock. Normal playback must
   // not abort it simply because the current cursor precedes its start.
@@ -183,7 +190,7 @@ async function pushPlayback(force=false){
   const id=selected,epoch=archiveEpoch,time=archiveTimeS,playing=archivePlaying;
   const pending={controller:new AbortController(),epoch};playbackPending=pending;lastPlaybackPush=performance.now();
   try{
-    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-playback`,{t_s:time,playing},pending.controller.signal);
+    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-playback`,{t_s:time,playing,control:{client:playbackClient,sequence:++playbackSequence}},pending.controller.signal);
     if(epoch===archiveEpoch){
       triedCausalMap=true;
       if(value.playback_driven && !cursorMapping){

@@ -94,7 +94,12 @@ def fit_surfaces(target,current,theta,initial_xy,max_translation,max_yaw,failure
         matrix=jac*np.sqrt(weight[:,None]);rhs=r*np.sqrt(weight)
         if yaw_prior is not None:
             expected,sigma=yaw_prior
-            matrix=np.vstack((matrix,[0.,0.,1/sigma]));rhs=np.r_[rhs,(expected-theta)/sigma]
+            # Point-to-line residuals are metres, the gyro residual is radians.
+            # Convert the prior to the same residual scale (30 mm sensor floor).
+            # Using 1/sigma beside unwhitened metre residuals made a noisy gyro
+            # overpower observed geometry and smear distant objects into lines.
+            prior_weight=.03/sigma
+            matrix=np.vstack((matrix,[0.,0.,prior_weight]));rhs=np.r_[rhs,(expected-theta)*prior_weight]
         delta=np.linalg.lstsq(matrix,rhs,rcond=1e-6)[0]
         # Each step applies a left SE(2) correction, including the translated
         # scan's rotational lever arm, rather than independently adding yaw.

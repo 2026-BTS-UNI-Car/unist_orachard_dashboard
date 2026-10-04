@@ -8,6 +8,22 @@ from tests.test_integrated_mapping import scan
 
 
 class MapGeometryTests(unittest.TestCase):
+    def test_uncertain_endpoint_neighborhood_retains_evidence_without_inflating_hits(self):
+        free,hits=raster_cells([[5,0,1],[8,0,1]],endpoint_margin_cells=1)
+        self.assertEqual(hits.tolist(),[[5,0],[8,0]])
+        self.assertFalse(any(x in (4,5,6,7) and y==0 for x,y in free))
+        self.assertIn([3,0],free.tolist())
+
+    def test_static_hit_survives_brief_misses_but_sustained_free_space_clears(self):
+        grid=StreamingOccupancyMap(laser_x=0,conservative_free=True,endpoint_margin_cells=1)
+        for _ in range(4):grid._update((8,0),9)
+        for _ in range(6):grid._update((8,0),-4)
+        self.assertGreaterEqual(grid.cells[(8,0)],9)
+        grid._cells_cache=None
+        for _ in range(50):grid._update((8,0),-4)
+        grid._cells_cache=None
+        self.assertLessEqual(grid.cells[(8,0)],-4)
+
     def test_narrow_object_survives_free_ray_sampling(self):
         # A real endpoint between the 450 sampled ray indices must remain
         # occupied, including if a sampled free ray passes through its cell.

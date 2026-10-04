@@ -106,17 +106,30 @@ class ContinuousLocalization:
             prior=(gyro,math.radians(.35+.3*min(dt,10)))
         max_xy=min(3.,max(.35,.12+3*min(dt,1.)))
         max_yaw=min(math.radians(70),angle+math.radians(5))
-        seeds=[(gyro if prior else delta_yaw,predicted),(delta_yaw,predicted)]
+        seeds=[(gyro if prior else delta_yaw,predicted)]
+        if abs(seeds[0][0]-delta_yaw)>math.radians(.1):seeds.append((delta_yaw,predicted))
         candidates=[]
         def solve(seed):
             theta,xy=seed
             return fit_surfaces(reference['surfaces'],current,theta,xy,max_xy,max_yaw,yaw_prior=prior)
-        for result in evaluate(solve,seeds):
+        first=solve(seeds[0])
+        # Most consecutive scans converge in the predicted basin. A second
+        # nearly identical solve adds no independent evidence; retain broad
+        # hypotheses for a weak fit, a larger motion or recovery instead.
+        trials=[first]
+        if not self._strong(first):trials+=evaluate(solve,seeds[1:])
+        for result in trials:
             if result and (prior is None or abs(result['yaw']-gyro)<=max(math.radians(2),3*prior[1])):
                 candidates.append(result)
         if not candidates:return None
         candidates.sort(key=lambda r:(-r['coverage'],r['rmse_m']))
         return candidates[0]
+
+    @staticmethod
+    def _strong(fit):
+        return bool(fit and fit['coverage']>=.8 and fit['rmse_m']<=.035
+                    and fit.get('inliers',0)>=120
+                    and fit.get('information_eigenvalues',[0])[0]>=.005)
 
     def add(self,scan,imu):
         stamp=source_stamp(scan)
@@ -135,21 +148,23 @@ class ContinuousLocalization:
         used='initial_fixed_frame';fit=None
         if self.previous:
             reference=self.previous;dt=stamp-reference['stamp']
-            candidate=registration(reference['surfaces'],current,angular_change(reference['q'],q),dt,self.velocity)
-            if candidate['accepted']:fit=candidate;used='adjacent_surface_fit'
-            weighted=self._fit(reference,current,q,stamp)
-            if weighted and (fit is None or (weighted['coverage']>=fit['coverage']-.03
-                    and weighted['rmse_m']<=max(.015,fit['rmse_m']*1.15))):
-                fit=weighted;used='adjacent_signed_IMU_fit'
-            # A keyframe must explain the scan at least as well as the adjacent
-            # observation. Long/noisy gyro integration cannot veto a good fit.
-            if stamp-self.anchor['stamp']<5:
-                anchored=self._fit(self.anchor,current,q,stamp)
+            # Keep matching an observable fixed keyframe even when stopped for
+            # more than five seconds. Dropping it by age accumulated every tiny
+            # adjacent yaw error while the same geometry remained in view.
+            anchored=self._fit(self.anchor,current,q,stamp)
+            if self._strong(anchored):
+                fit=anchored;reference=self.anchor;used='fixed_keyframe_IMU_fit'
+            else:
+                weighted=anchored if self.anchor is self.previous else self._fit(reference,current,q,stamp)
+                if weighted:fit=weighted;used='adjacent_signed_IMU_fit'
+                if not self._strong(fit):
+                    candidate=registration(reference['surfaces'],current,angular_change(reference['q'],q),dt,self.velocity)
+                    if candidate['accepted'] and (fit is None or (candidate['coverage']>fit['coverage']+.03
+                            and candidate['rmse_m']<=max(.015,fit['rmse_m']*1.15))):
+                        fit=candidate;used='adjacent_surface_fit'
                 if anchored and (fit is None or (anchored['coverage']>=fit['coverage']-.03
                         and anchored['rmse_m']<=max(.02,fit['rmse_m']*1.3))):
                     fit=anchored;reference=self.anchor;used='fixed_keyframe_IMU_fit'
-            if fit is None:
-                reference=self.previous;fit=self._fit(reference,current,q,stamp);used='adjacent_IMU_fit'
             if fit is None:
                 # Dense proposal remains independently surface-validated. It
                 # cannot silently introduce a yaw unsupported by raw gyro.

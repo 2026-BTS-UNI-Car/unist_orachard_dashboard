@@ -70,7 +70,7 @@ class ArchiveMapping:
             self.errors.pop(archive_id,None);self.progress.pop(archive_id,None)
         return dict(ok=True,state='waiting_for_play',map_epoch=history['epoch'],playback_driven=True)
 
-    def playback(self,archive_id,t_s,playing):
+    def playback(self,archive_id,t_s,playing,control=None):
         path=self.directory(archive_id)
         from dashboard_server.playback_mapping import PlaybackMapper
         history=read_json(path/'integrated_map_history.json')
@@ -93,7 +93,7 @@ class ArchiveMapping:
                 mapper=PlaybackMapper(path,history);self.playback_mappers[archive_id]=mapper
             for name,other in self.playback_mappers.items():
                 if name!=archive_id and other.running:other.close()
-            return mapper.advance(t_s,playing)
+            return mapper.advance(t_s,playing,control)
 
     def directory(self, archive_id):
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',archive_id) or archive_id in ('.','..'):
@@ -126,7 +126,8 @@ class ArchiveMapping:
                 active=bool(mapper and not mapper.closed and mapper.running and
                             mapper.history.get('epoch')==indexed.get('map_epoch'))
                 indexed['generation']={**indexed.get('generation',{}),'worker_active':active,
-                    'waiting_for_cursor':not active or bool(mapper.history.get('waiting_for_cursor'))}
+                    'mapping_paused':not active or not mapper.playing,
+                    'waiting_for_cursor':not active or not mapper.playing or bool(mapper.history.get('waiting_for_cursor'))}
             return indexed
         if transport=='tiles':
             indexed=self.tile_history.status(path,target,tile_since,tile_epoch)

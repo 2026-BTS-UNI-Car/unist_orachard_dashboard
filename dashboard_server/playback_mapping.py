@@ -12,7 +12,7 @@ from pathlib import Path
 import threading
 import time
 import uuid
-from collections import deque
+from collections import deque,OrderedDict
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 from .occupancy_map import atomic_json,read_json
@@ -101,7 +101,7 @@ def new_history(archive,signature):
         raster_fingerprint=raster_fingerprint(),hit_endpoints='all_finite_returns',
         free_rays='all_observed_scan_beams',complete=False,events=[],checkpoints=[],
         duration_s=duration,processed_t_s=0.,requested_t_s=0.,progress=0.,segments=1,
-        playback_driven=True,waiting_for_cursor=True,tracking='waiting_for_play',input_scans=0,rejected_scans=0,
+        playback_driven=True,waiting_for_cursor=True,mapping_paused=True,pause_policy='freeze_until_resume',tracking='waiting_for_play',input_scans=0,rejected_scans=0,
         source_sensor_sha256=(manifest.get('output_sha256') or {}).get('sensors.jsonl.gz'))
     persist_json(target,value);return value
 
@@ -111,18 +111,31 @@ class PlaybackMapper:
         self.archive=Path(archive);self.history=history
         self.condition=threading.Condition();self.target=0.;self.closed=False
         self.running=False;self.error=None;self.playing=False;self.thread=None
+        self.control_sequences=OrderedDict()
 
-    def advance(self,time_s,playing):
+    def advance(self,time_s,playing,control=None):
         try:value=float(time_s)
         except (ValueError,TypeError):raise ValueError('invalid_map_time')
         if not math.isfinite(value) or not 0<=value<=self.history['duration_s']+.5:
             raise ValueError('invalid_map_time')
         if not isinstance(playing,bool):raise ValueError('invalid_playback_state')
+        if control is not None:
+            import re
+            if (not isinstance(control,dict) or not isinstance(control.get('client'),str) or not re.fullmatch(r'[a-zA-Z0-9-]{1,64}',control['client'])
+                    or type(control.get('sequence')) is not int or not 0<=control['sequence']<=2**53-1):
+                raise ValueError('invalid_playback_control_sequence')
         with self.condition:
-            # Pause can finish the prefix requested by the paused cursor. A
-            # backward seek is display-only; it never destroys accumulated data.
+            if control is not None:
+                client,sequence=control['client'],control['sequence']
+                if sequence<=self.control_sequences.get(client,-1):
+                    return dict(ok=True,playback_driven=True,map_epoch=self.history['epoch'],stale_control_ignored=True)
+                self.control_sequences[client]=sequence;self.control_sequences.move_to_end(client)
+                if len(self.control_sequences)>8:self.control_sequences.popitem(last=False)
+            # Pause freezes processing, including an already requested backlog.
+            # Retain queued raw scans in order for resume; never skip them.
             self.target=min(value,self.history['duration_s']) if playing else min(value,self.target)
             self.playing=playing
+            self.history['mapping_paused']=not playing
             if self.target>self.history.get('processed_t_s',0) and not self.history.get('complete'):
                 self.history['waiting_for_cursor']=False
             if not self.error and not self.running and not self.history.get('complete') and self.target>self.history.get('processed_t_s',0):
@@ -151,7 +164,7 @@ class PlaybackMapper:
             if self.history['localization_fingerprint']!=localization_fingerprint():raise ValueError('mapping_algorithm_changed_new_map_required')
             start=datetime.fromisoformat(read_json(self.archive/'metadata.json')['started_at']).timestamp()
             folder=self.archive/'integrated_map'/self.history['epoch']
-            grid=StreamingOccupancyMap(max_beams=450,laser_x=0.,laser_y=0.)
+            grid=StreamingOccupancyMap(max_beams=450,laser_x=0.,laser_y=0.,conservative_free=True,endpoint_margin_cells=1)
             saved_index=len(self.history['events']);accepted_index=0
             next_checkpoint=-float('inf');last_saved=0.
             # One ordered localization process overlaps with raster/storage.
@@ -162,11 +175,26 @@ class PlaybackMapper:
                 initializer=initialize_localizer_process) if pipeline else None
             localizer=None if pipeline else SourceCursorLocalizer();pending=deque();batch=[]
             with (folder/'events.jsonl').open('ab') as log:
+                def wait_for_play(t):
+                    with self.condition:
+                        saved=False
+                        while not self.closed and (not self.playing or t>self.target+1e-6):
+                            self.history['waiting_for_cursor']=True
+                            if not saved:self._save(log);saved=True
+                            self.condition.wait()
+                        if self.closed:return False
+                        self.history['waiting_for_cursor']=False
+                        return True
                 def finish(observation):
-                    nonlocal accepted_index,next_checkpoint,last_saved
                     future,message,t=observation
+                    if not wait_for_play(t):return
                     result,counters,gnss_note=future.result() if pipeline else future
-                    if self.closed:return
+                    # A pause response waits only for the current raster commit;
+                    # no later commit can race past its acknowledgement.
+                    with self.condition:
+                        if wait_for_play(t):commit(result,counters,gnss_note,message,t)
+                def commit(result,counters,gnss_note,message,t):
+                    nonlocal accepted_index,next_checkpoint,last_saved
                     stamp=source_stamp(message)
                     self.history.update(**counters,tracking=result['tracking'])
                     if result['accepted'] and result.get('map_eligible',True):
@@ -196,12 +224,7 @@ class PlaybackMapper:
                         if t>self.history['duration_s']+.01:break
                         if t>self.target+1e-6:
                             while pending:finish(pending.popleft())
-                        with self.condition:
-                            while not self.closed and t>self.target+1e-6:
-                                self.history['waiting_for_cursor']=True
-                                self._save(log);self.condition.wait(timeout=2.)
-                            if self.closed:return
-                            self.history['waiting_for_cursor']=False
+                        if not wait_for_play(t):return
                         batch.append(row)
                         if row['topic']!='/scan':continue
                         future=executor.submit(localize_prefix_batch,batch) if pipeline else localizer.consume(batch)

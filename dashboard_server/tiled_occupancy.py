@@ -14,8 +14,8 @@ class TiledOccupancyMap(OccupancyMap):
     TILE = 64
 
     def __init__(self, resolution=.10, max_cells=16000000, max_span=1024,
-                 max_beams=360, laser_x=.18, laser_y=0.):
-        super().__init__(resolution, max_cells, max_span, max_beams, laser_x, laser_y)
+                 max_beams=360, laser_x=.18, laser_y=0.,conservative_free=False,endpoint_margin_cells=0):
+        super().__init__(resolution, max_cells, max_span, max_beams, laser_x, laser_y,conservative_free,endpoint_margin_cells)
         if not math.isfinite(resolution) or resolution <= 0 or not 16 <= max_span <= 4096:
             raise ValueError('invalid_tiled_map_configuration')
         if not 1 <= max_cells <= 32000000:
@@ -40,11 +40,19 @@ class TiledOccupancyMap(OccupancyMap):
         if not len(coordinates): return
         absolute = coordinates + np.array([x0,y0],dtype=np.int64)
         tile_coordinates = absolute//self.TILE
+        order=None
         # Scalar integer keys avoid structured-row sorting on every free cell.
         # Signed ordering and floor division remain identical across zero.
         if np.all((tile_coordinates >= -2147483648) & (tile_coordinates <= 2147483647)):
             encoded = ((tile_coordinates[:,0]+2147483648).astype(np.uint64)<<np.uint64(32)) | (tile_coordinates[:,1]+2147483648).astype(np.uint64)
-            unique, membership = np.unique(encoded,return_inverse=True)
+            if self._cell_count+len(absolute)<=self.max_cells:
+                # Sort tile keys once. The old path sorted them in unique(),
+                # materialized an inverse array, then sorted that array again.
+                order=np.argsort(encoded,kind='stable');sorted_keys=encoded[order]
+                starts=np.r_[0,np.flatnonzero(sorted_keys[1:]!=sorted_keys[:-1])+1,len(order)]
+                unique=sorted_keys[starts[:-1]]
+            else:
+                unique,membership=np.unique(encoded,return_inverse=True)
             keys = np.column_stack(((unique>>np.uint64(32)).astype(np.int64)-2147483648,
                                     (unique & np.uint64(0xffffffff)).astype(np.int64)-2147483648))
         else:
@@ -62,9 +70,10 @@ class TiledOccupancyMap(OccupancyMap):
             allowed=existing | (np.cumsum(~existing)<=self.max_cells-self._cell_count)
             if not allowed.all():self.limited=True
             absolute,membership=absolute[allowed],membership[allowed]
-        order = np.argsort(membership, kind='stable')
-        sorted_groups = membership[order]
-        starts = np.searchsorted(sorted_groups, np.arange(len(keys)+1))
+        if order is None:
+            order = np.argsort(membership, kind='stable')
+            sorted_groups = membership[order]
+            starts = np.searchsorted(sorted_groups, np.arange(len(keys)+1))
         for group, key in enumerate(keys):
             cells = absolute[order[starts[group]:starts[group+1]]]
             if not len(cells):continue
@@ -81,12 +90,17 @@ class TiledOccupancyMap(OccupancyMap):
             fresh = values == 127
             self._cell_count += int(fresh.sum())
             values[fresh] = 0
-            tile[local[:,1],local[:,0]] = np.clip(values+delta,-40,60)
-            xmin,ymin = cells.min(axis=0); xmax,ymax = cells.max(axis=0)
+            # Repeated occupied evidence must survive a few contradictory rays
+            # from pose/range jitter. Genuine sustained free observations still
+            # clear it; no point is kept occupied forever.
+            increments=np.where(values>=9,-1,delta) if self.conservative_free and delta<0 else delta
+            tile[local[:,1],local[:,0]] = np.clip(values+increments,-40,60)
+        if len(absolute):
+            xmin,ymin=absolute.min(axis=0);xmax,ymax=absolute.max(axis=0)
             if self.bounds:
                 old=self.bounds
                 xmin,ymin,xmax,ymax=min(old[0],xmin),min(old[1],ymin),max(old[2],xmax),max(old[3],ymax)
-            self.bounds = tuple(int(v) for v in (xmin,ymin,xmax,ymax))
+            self.bounds=tuple(int(v) for v in (xmin,ymin,xmax,ymax))
 
     def grid(self):
         if self._grid_cache is not None: return self._grid_cache

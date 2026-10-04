@@ -14,6 +14,27 @@ def imu(stamp):
 
 
 class ContinuousTests(unittest.TestCase):
+    def test_stationary_geometry_rejects_gyro_bias_after_old_keyframe_age_limit(self):
+        tracker=ContinuousLocalization()
+        for i in range(90):
+            stamp=1000+i*.1;m=imu(stamp)
+            m['angular_velocity']['z']=math.radians(.2)
+            tracker.imu(m);result=tracker.add(scan(stamp),m)
+            self.assertTrue(result['accepted'])
+        self.assertLess(abs(tracker.pose[2]),math.radians(.1))
+        self.assertLess(np.linalg.norm(tracker.pose[:2]),.02)
+
+    def test_real_rotation_is_kept_instead_of_forcing_a_stationary_heading(self):
+        tracker=ContinuousLocalization();ranges=scan()['ranges']
+        for i in range(80):
+            stamp=1000+i*.1;yaw=math.radians(i*.5);m=imu(stamp)
+            m['orientation']=dict(x=0,y=0,z=math.sin(yaw*.5),w=math.cos(yaw*.5))
+            m['angular_velocity']['z']=math.radians(5)
+            current=scan(stamp);current['ranges']=np.roll(ranges,-i).tolist()
+            tracker.imu(m);result=tracker.add(current,m)
+            self.assertTrue(result['accepted'])
+        self.assertLess(abs(tracker.pose[2]-yaw),math.radians(.15))
+
     def test_parallel_fit_hypotheses_preserve_numeric_tracking(self):
         def run(pool):
             tracker=ContinuousLocalization();poses=[]

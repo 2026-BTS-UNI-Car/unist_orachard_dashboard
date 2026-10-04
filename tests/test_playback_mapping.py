@@ -9,6 +9,33 @@ from test_integrated_mapping import scan
 
 
 class PlaybackTests(unittest.TestCase):
+    def test_pause_freezes_requested_backlog_and_stale_play_cannot_resume(self):
+        import threading
+        from dashboard_server.integrated_mapping import integrate as original
+        for pipeline in (0,1):
+            with self.subTest(pipeline=pipeline),tempfile.TemporaryDirectory() as root,ExitStack() as cleanup,patch.dict('os.environ',{'UBTS_MAP_PIPELINE':str(pipeline)}):
+                archive,_=self.fixture(root);manager=ArchiveMapping(root);cleanup.callback(manager.close)
+                ready=threading.Event();commits=[]
+                def slow_integrate(grid,*args):
+                    result=original(grid,*args);commits.append(grid.scan_count)
+                    if len(commits)>=2:ready.set()
+                    time.sleep(.035);return result
+                with patch('dashboard_server.playback_mapping.integrate',side_effect=slow_integrate):
+                    manager.new_map('record')
+                    manager.playback('record',.8,True,dict(client='browser',sequence=1))
+                    self.assertTrue(ready.wait(8),'fixture must contain a pending raw prefix')
+                    manager.playback('record',.8,False,dict(client='browser',sequence=3))
+                    worker=manager.playback_mappers['record'];count=len(commits)
+                    ignored=manager.playback('record',.8,True,dict(client='browser',sequence=2))
+                    self.assertTrue(ignored['stale_control_ignored'])
+                    time.sleep(.15)
+                    self.assertEqual(len(commits),count,'pause acknowledgement must freeze raster commits')
+                    self.assertFalse(worker.playing)
+                    self.assertLess(worker.history['processed_t_s'],.8)
+                    manager.playback('record',.8,True,dict(client='browser',sequence=4))
+                    self.wait(archive,.8)
+                    self.assertEqual(commits,list(range(1,10)),'resume must not skip or duplicate a scan')
+
     def test_play_converts_legacy_segments_once_and_pause_preserves_source(self):
         with tempfile.TemporaryDirectory() as root, ExitStack() as cleanup:
             archive,digest=self.fixture(root);manager=ArchiveMapping(root);cleanup.callback(manager.close)

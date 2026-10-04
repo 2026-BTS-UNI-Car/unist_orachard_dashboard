@@ -3,7 +3,7 @@ const elements=new Map(),calls=[],timers=[];
 const element=id=>{if(!elements.has(id))elements.set(id,{events:{},value:30,addEventListener(event,callback){this.events[event]=callback;}});return elements.get(id);};
 class MetricMap{constructor(){this.snapshot={};}set(value){this.snapshot=value;this.tileEpoch=value.tile_epoch;return Promise.resolve();}draw(){}zoom(){}}
 const context=vm.createContext({MetricMap,ArchiveMapBuffer:class{},ArchiveSegmentGallery:class{reset(){}},decodeArchiveWindow:async value=>value,
- AbortController,AbortSignal,URLSearchParams,performance,Date,location:{pathname:'/other'},
+ AbortController,AbortSignal,URLSearchParams,performance,Date,crypto:{randomUUID:()=> 'test-browser'},location:{pathname:'/other'},
  document:{hidden:false,getElementById:element,querySelectorAll:()=>[],addEventListener(){}},
  window:{addEventListener(){},setArchiveTime(t,options){calls.push({seek:t,options});}},
  setInterval(){},clearTimeout(){},setTimeout(callback,delay){timers.push({callback,delay});return timers.length;},
