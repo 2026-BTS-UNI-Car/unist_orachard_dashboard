@@ -7,7 +7,7 @@ class MetricMap {
   draw(){}zoom(){}
 }
 let fail=false;
-const context=vm.createContext({MetricMap,ArchiveMapBuffer:class{},ArchiveSegmentGallery:class{reset(){}},AbortController,AbortSignal,URLSearchParams,
+const context=vm.createContext({MetricMap,ArchiveMapBuffer:class{},ArchiveSegmentGallery:class{reset(){}},decodeArchiveWindow:async v=>v,AbortController,AbortSignal,URLSearchParams,
  location:{pathname:'/other'},document:{hidden:false,getElementById:element,querySelectorAll:()=>[],addEventListener(){}},
  window:{addEventListener(){}},performance,Date,setInterval(){},clearTimeout(){},
  setTimeout:(callback,delay)=>{timers.push({callback,delay});return timers.length;},

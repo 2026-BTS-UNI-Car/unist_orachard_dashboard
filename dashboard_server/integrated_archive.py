@@ -199,9 +199,9 @@ class IndexedTileHistory:
         result=dict(ok=True,available=True,start_s=start,end_s=coverage,seed=seed,events=values,
                     complete=history.get('complete',False),duration_s=history['duration_s'],
                     segment_catalog=segment_catalog(history, coverage))
-        if codec=='xor2-v1':
+        if codec in ('xor2-v1','xor2-deflate-v1'):
             from dashboard_server.window_cells import compact_window
-            result=compact_window(result)
+            result=compact_window(result,codec)
         return result
 
     def status(self,archive,t_s,since=None,tile_epoch=None):

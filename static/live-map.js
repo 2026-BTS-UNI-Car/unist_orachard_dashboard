@@ -1,6 +1,7 @@
 import {MetricMap} from './metric-map.mjs';
 import {ArchiveMapBuffer} from './archive-map-buffer.mjs';
 import {ArchiveSegmentGallery} from './archive-segments.mjs';
+import {decodeArchiveWindow} from './archive-window-codec.mjs';
 const $=id=>document.getElementById(id),text=(id,value)=>{if($(id))$(id).textContent=value;};
 // Correct the real-rover front marker as requested, without modifying any
 // retained scan coordinates, localization yaw or simulation body-frame heading.
@@ -29,7 +30,7 @@ function archiveQuality(value){
 }
 async function request(path,body,signal){
   const timeout=path.includes('/map-window')||path.includes('/map?')?30000:8000;
-  const response=await fetch(path,{cache:'no-store',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(timeout)]):AbortSignal.timeout(timeout),...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
+  const response=await fetch(path,{cache:'no-store',priority:path.includes('/map')?'high':'auto',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(timeout)]):AbortSignal.timeout(timeout),...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
   const value=await response.json();if(!response.ok||value.ok===false)throw new Error(value.error||value.message||`HTTP ${response.status}`);return value;
 }
 function paint(value){
@@ -85,7 +86,7 @@ async function pollArchive(id,epoch){
     if(value.grid||value.scan_count===0)archive.set(value);
     archiveRetryMs=75;
     if(!followGeneration && windowSupported!==false && !mapWindowPending){
-      loadMapWindow(id,epoch,Math.max(0,archiveTimeS),mapBuffer?12:3,false).then(()=>scheduleArchive()).catch(error=>{
+      loadMapWindow(id,epoch,Math.max(0,archiveTimeS),3,false).then(()=>scheduleArchive()).catch(error=>{
         if(epoch===archiveEpoch&&error.name!=='AbortError')scheduleArchive(500);
       });
     }
@@ -110,7 +111,8 @@ async function loadMapWindow(id,epoch,start,span,next){
   if(mapWindowPending)return;
   const pending={controller:new AbortController(),epoch,start,end:start+span,next};mapWindowPending=pending;
   try{
-    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-window?start_s=${start.toFixed(3)}&span_s=${span}&codec=xor2-v1`,undefined,pending.controller.signal);
+    const raw=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-window?start_s=${start.toFixed(3)}&span_s=${span}&codec=xor2-deflate-v1`,undefined,pending.controller.signal);
+    const value=await decodeArchiveWindow(raw);
     if(epoch!==archiveEpoch)return;
     windowSupported=value.available===true;
     if(windowSupported){const window=new ArchiveMapBuffer(value);if(next)nextMapBuffer=window;else mapBuffer=window;}

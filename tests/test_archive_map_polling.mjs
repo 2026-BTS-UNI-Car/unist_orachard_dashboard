@@ -8,7 +8,7 @@ const timers=new Map();let sequence=0;
 const requests=[];
 class MetricMap {constructor(){this.snapshot={};}set(s){this.snapshot=s;}draw(){}zoom(){}}
 class ArchiveSegmentGallery {reset(){}beforeCommit(){}update(){}}
-const sandbox={MetricMap,ArchiveSegmentGallery,console,URLSearchParams,AbortController,AbortSignal,
+const sandbox={MetricMap,ArchiveSegmentGallery,decodeArchiveWindow:async v=>v,console,URLSearchParams,AbortController,AbortSignal,
   location:{pathname:'/inactive'},document:{hidden:false,getElementById:element,querySelectorAll:()=>[],addEventListener(){},activeElement:null},
   window:{addEventListener(){}},setInterval(){},
   setTimeout(fn){const id=++sequence;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},
