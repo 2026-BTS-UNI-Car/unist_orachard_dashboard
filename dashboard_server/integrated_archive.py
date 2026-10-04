@@ -228,7 +228,8 @@ class IndexedTileHistory:
                                preserve_view_on_seek=True,frame_t_s=0,tiles=[],tiles_reset=True,
                                needs_regeneration=outdated,playback_driven=history.get('playback_driven',False),
                                history_available=True,tracking=history.get('tracking'),
-                               generation=dict(processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s']))
+                               mapping_error=history.get('mapping_error'),
+                               generation=dict(processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s'],waiting_for_cursor=history.get('waiting_for_cursor')))
         segment=events[index]['segment'];epoch=f'{history["epoch"]}:{segment}'
         folder=Path(archive)/'integrated_map'/history['epoch']
         try:since=int(since)
@@ -253,7 +254,7 @@ class IndexedTileHistory:
                 'segment_catalog':segment_catalog(history, target),
                 'state':'outdated' if outdated else 'saved' if history.get('complete') else 'regenerating',
                 'generation':dict(stage='complete' if history.get('complete') else 'drawing',
-                    progress=history.get('progress',0),processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s']),
+                    progress=history.get('progress',0),processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s'],waiting_for_cursor=history.get('waiting_for_cursor')),
                 'history_available':True,'needs_regeneration':outdated,
                 'hit_endpoints':history.get('hit_endpoints','sampled_returns'),
                 'free_rays':history.get('free_rays','sampled_scan_beams'),

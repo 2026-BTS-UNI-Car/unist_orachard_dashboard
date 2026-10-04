@@ -101,7 +101,7 @@ def new_history(archive,signature):
         raster_fingerprint=raster_fingerprint(),hit_endpoints='all_finite_returns',
         free_rays='all_observed_scan_beams',complete=False,events=[],checkpoints=[],
         duration_s=duration,processed_t_s=0.,requested_t_s=0.,progress=0.,segments=1,
-        playback_driven=True,tracking='waiting_for_play',input_scans=0,rejected_scans=0,
+        playback_driven=True,waiting_for_cursor=True,tracking='waiting_for_play',input_scans=0,rejected_scans=0,
         source_sensor_sha256=(manifest.get('output_sha256') or {}).get('sensors.jsonl.gz'))
     persist_json(target,value);return value
 
@@ -123,6 +123,8 @@ class PlaybackMapper:
             # backward seek is display-only; it never destroys accumulated data.
             self.target=min(value,self.history['duration_s']) if playing else min(value,self.target)
             self.playing=playing
+            if self.target>self.history.get('processed_t_s',0) and not self.history.get('complete'):
+                self.history['waiting_for_cursor']=False
             if not self.error and not self.running and not self.history.get('complete') and self.target>self.history.get('processed_t_s',0):
                 self.running=True;self.thread=threading.Thread(target=self._run,daemon=True,name='causal-replay-map');self.thread.start()
             self.condition.notify_all()
@@ -196,8 +198,10 @@ class PlaybackMapper:
                             while pending:finish(pending.popleft())
                         with self.condition:
                             while not self.closed and t>self.target+1e-6:
+                                self.history['waiting_for_cursor']=True
                                 self._save(log);self.condition.wait(timeout=2.)
                             if self.closed:return
+                            self.history['waiting_for_cursor']=False
                         batch.append(row)
                         if row['topic']!='/scan':continue
                         future=executor.submit(localize_prefix_batch,batch) if pipeline else localizer.consume(batch)
@@ -207,7 +211,7 @@ class PlaybackMapper:
                     if self.closed:return
                 finally:
                     if executor:executor.shutdown(wait=True,cancel_futures=True)
-                self.history.update(complete=True,processed_t_s=self.history['duration_s']);self._save(log)
+                self.history.update(complete=True,waiting_for_cursor=True,processed_t_s=self.history['duration_s']);self._save(log)
                 grid.save_checkpoint(folder/'native-continuous.json')
         except Exception as error:
             self.error=str(error)[:240];self.history['mapping_error']=self.error

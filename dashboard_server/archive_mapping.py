@@ -120,15 +120,24 @@ class ArchiveMapping:
         with self.lock:
             running=archive_id in self.running;error=self.errors.get(archive_id)
             progress=dict(self.progress.get(archive_id,{}) )
+            mapper=self.playback_mappers.get(archive_id)
+        def cursor_progress(indexed):
+            if indexed.get('playback_driven'):
+                active=bool(mapper and not mapper.closed and mapper.running and
+                            mapper.history.get('epoch')==indexed.get('map_epoch'))
+                indexed['generation']={**indexed.get('generation',{}),'worker_active':active,
+                    'waiting_for_cursor':not active or bool(mapper.history.get('waiting_for_cursor'))}
+            return indexed
         if transport=='tiles':
             indexed=self.tile_history.status(path,target,tile_since,tile_epoch)
             if indexed is not None:
+                indexed=cursor_progress(indexed)
                 return {**indexed,'regeneration_error':error,'state':'regenerating' if running else indexed.get('state','saved'),
                         'generation':progress or indexed.get('generation',{})}
         if read_json(path/'integrated_map_history.json').get('playback_driven'):
             # A stale legacy final PNG must not reappear after a new-map reset.
             indexed=self.tile_history.status(path,target,tile_since,tile_epoch)
-            if indexed is not None:return indexed
+            if indexed is not None:return cursor_progress(indexed)
         history=read_json(path/'dashboard_occupancy_grid_history.json')
         value={};needs_regeneration=False
         if history:

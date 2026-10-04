@@ -11,7 +11,7 @@ const context=vm.createContext({MetricMap,ArchiveMapBuffer:class{},ArchiveSegmen
   calls.push({path,body:options.body?JSON.parse(options.body):undefined});
   return {ok:true,json:async()=>path.endsWith('/new-map')?{ok:true,map_epoch:'new'}:
    path.includes('/map-playback')?{ok:true,playback_driven:true}:
-   {ok:true,playback_driven:true,state:'regenerating',scan_count:0,version:0,map_epoch:'new',tiles:[],generation:{processed_t_s:0}}};
+   {ok:true,playback_driven:true,state:'regenerating',scan_count:0,version:0,map_epoch:'new',tiles:[],generation:{processed_t_s:0,waiting_for_cursor:true}}};
  }});
 vm.runInContext(fs.readFileSync(new URL('../static/live-map.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,''),context);
 await vm.runInContext("selectArchive('record')",context);
@@ -35,4 +35,7 @@ vm.runInContext("archiveTime('record',.15,false)",context);
 await new Promise(resolve=>setImmediate(resolve));
 assert.ok(calls.some(c=>c.path?.endsWith('/map-playback')&&c.body.playing===false&&c.body.t_s===.15));
 assert.equal(vm.runInContext('archive.snapshot.map_epoch',context),'new');
+vm.runInContext("location.pathname='/rover-control';archiveTimer=null",context);timers.length=0;
+await vm.runInContext("pollArchive('record',archiveEpoch)",context);
+assert.equal(timers.length,0,'paused causal prefix must not poll forever because history is incomplete');
 console.log('New map clears only derived view; play/pause sends causal cursor, no future map prefetch');

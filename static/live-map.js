@@ -123,8 +123,9 @@ async function pollArchive(id,epoch){
     // timer may have found that request busy; always service the newest cursor
     // after completion instead of leaving the canvas empty until another seek.
     const cursorChanged=!followGeneration&&(target===null||Math.abs(target-archiveTimeS)>.05);
-    if(epoch===archiveEpoch&&(value?.state==='regenerating'||archivePlaying||cursorChanged||
-        (cursorMapping&&Number(value?.generation?.processed_t_s||0)<archiveTimeS-.15)))scheduleArchive();
+    const legacyGenerating=!cursorMapping&&value?.state==='regenerating';
+    const catchingUp=cursorMapping&&!value?.mapping_error&&value?.generation?.waiting_for_cursor!==true;
+    if(epoch===archiveEpoch&&(legacyGenerating||archivePlaying||cursorChanged||catchingUp))scheduleArchive();
   }
 }
 async function loadMapWindow(id,epoch,start,span,next){
