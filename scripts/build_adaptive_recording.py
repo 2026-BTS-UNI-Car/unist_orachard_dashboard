@@ -22,6 +22,14 @@ def digest(path):
 
 
 def run(args,log,cwd=None):
+    # Ubuntu ROS Iron uses FFmpeg 4.4, whereas the isolated encoder has 6.x.
+    # Keep variable source timestamps on both; never force constant 30 FPS.
+    if '-fps_mode' in args:
+        probe=subprocess.run([args[0],'-hide_banner','-h','full'],capture_output=True,text=True)
+        if '-fps_mode' not in probe.stdout:
+            args=['-vsync' if item=='-fps_mode' else item for item in args]
+    import shutil
+    if shutil.which('nice'):args=['nice','-n','10',*args]
     with log.open('ab') as f:subprocess.run(args,check=True,stdout=f,stderr=subprocess.STDOUT,cwd=cwd)
 
 
@@ -65,10 +73,11 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
         '-safe','0','-f','concat','-i',str(playlist),'-an','-c:v','libx264','-preset','fast',
         '-threads','2','-pix_fmt','yuv420p','-fps_mode','vfr','-enc_time_base','1:1000',
         '-level:v','4.1','-force_key_frames','expr:gte(t,n_forced*2)']
+    if m.get('rotation_deg')==180:prefix+=['-vf','hflip,vflip']
     # Full source-sized high-quality MP4 is the fallback and top ABR variant.
     native=output/'native.mp4'
-    run(prefix+['-crf','20','-maxrate','3000k','-bufsize','6000k','-movflags','+faststart',str(native)],output/'encoder.log')
-    rates=[(height,3000000,None),(480,1100000,24),(360,450000,25),(240,180000,28)]
+    run(prefix+['-crf','18','-maxrate','6000k' if height>=1080 else '3000k','-bufsize','12000k' if height>=1080 else '6000k','-movflags','+faststart',str(native)],output/'encoder.log')
+    rates=[(height,6000000 if height>=1080 else 3000000,None),(720,2500000,22),(480,1100000,24),(360,450000,25),(240,180000,28)]
     variants=[];assetnames=['native.mp4']
     for h,rate,crf in rates:
         if h>height or any(v['height']==h for v in variants):continue

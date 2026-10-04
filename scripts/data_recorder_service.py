@@ -110,6 +110,7 @@ class RecordingState:
         self.next_gps_sample_at = 0.0
         self.gps_log = None
         self.motor_timeline = MotorTimeline(args.rover_status_topic)
+        self.mapping_writer = None
         self.write_status("start")
 
     def status(self) -> dict[str, Any]:
@@ -364,6 +365,8 @@ class RecordingState:
                 "started_monotonic": started_epoch,
                 "started_steady": started_steady,
             }
+            from scripts.mapping_sensor_writer import MappingSensorWriter
+            self.mapping_writer = MappingSensorWriter(root)
             self.process = self.start_rosbag(root / "rosbag2", topics)
         log(
             "start",
@@ -449,6 +452,12 @@ class RecordingState:
         write_json_atomic(
             root / "timeline.json", self.timeline_payload(active, metadata, duration_s)
         )
+        if self.mapping_writer:
+            self.mapping_writer.close()
+            self.mapping_writer = None
+        if active.get('kind') in ('camera','both'):
+            from scripts.recording_postprocess import enqueue
+            enqueue(root)
         log("stop", id=active.get("id"), duration_s=duration_s)
         self.write_status("stop_recording")
         return {
@@ -567,6 +576,7 @@ class RecordingState:
                 [
                     self.args.camera_topic,
                     self.args.camera_compressed_topic,
+                    getattr(self.args, "camera_recording_topic", "/camera/recording/jpeg"),
                     self.args.camera_info_topic,
                     self.args.camera_preview_info_topic,
                 ]
@@ -574,6 +584,15 @@ class RecordingState:
         return list(
             dict.fromkeys((topic for topic in topics if str(topic or "").strip()))
         )
+
+    def record_mapping_sensor(self, topic, message, receipt=None):
+        with self.lock:
+            active=self.active;writer=getattr(self, 'mapping_writer', None)
+            if not active or active.get('stopping') or not writer:return
+            if topic=='/imu/data_raw' and not active.get('include_imu',True):return
+            if topic=='/gps/data' and not active.get('include_gps',True):return
+            if topic=='/scan' and active.get('kind') not in ('lidar','both'):return
+            writer.add(topic,message,receipt)
 
     def observe_motor(self, msg: String) -> None:
         received_at, received_steady = time.time(), time.monotonic()
@@ -607,6 +626,7 @@ class RecordingState:
                 return
         except (ValueError, TypeError):
             return
+        if not status:self.record_mapping_sensor('/gps/data',{'data':json.dumps(sample,allow_nan=False)},received)
         with self.lock:
             self.gps_latest = sample
             self.gps_last_at = now
@@ -639,6 +659,9 @@ class RecordingState:
             self.gps_valid_count += int(valid_position(sample))
 
     def observe_scan(self, msg: LaserScan) -> None:
+        if getattr(self,'mapping_writer',None):
+            from scripts.mapping_sensor_writer import scan_payload
+            self.record_mapping_sensor('/scan',scan_payload(msg))
         with self.lock:
             if not self.active or self.active.get("kind") not in {"lidar", "both"}:
                 return
@@ -718,6 +741,9 @@ class RecordingState:
         except (TypeError, ValueError, AttributeError, OverflowError) as exc:
             log("imu_message_rejected", error=str(exc))
             return None
+        message={**raw,'header':dict(stamp=raw['stamp'],frame_id=raw['frame_id'])}
+        for group,covariance in raw['covariance'].items():message[group+'_covariance']=covariance
+        self.record_mapping_sensor('/imu/data_raw',message,now_epoch)
         with self.lock:
             self.imu_latest_raw = raw
             self.imu_last_received_monotonic = now_steady
@@ -796,9 +822,8 @@ class RecordingState:
     def observe_camera(self, msg: Image) -> None:
         """Copy the newest sampled ROS image into a single archive slot.
 
-        No JPEG encoding, HTTP inference, or vision wait is allowed in this
-        ROS callback.  The bridge is the sole AI inference owner; a dedicated
-        archive worker stamp-matches its published result later.
+        JPEG encoding runs in the bounded archive worker, separate from raw
+        source capture and the full-resolution recording topic.
         """
         with self.lock:
             if (
@@ -1123,6 +1148,7 @@ def main() -> int:
         "--camera-compressed-topic",
         default=os.environ.get("CAMERA_COMPRESSED_TOPIC", "/camera/image_jpeg"),
     )
+    parser.add_argument("--camera-recording-topic", default=os.environ.get("CAMERA_RECORDING_TOPIC", "/camera/recording/jpeg"))
     parser.add_argument(
         "--camera-info-topic",
         default=os.environ.get("CAMERA_INFO_TOPIC", "/camera/camera_info"),
@@ -1243,6 +1269,8 @@ def main() -> int:
     camera_thread.start()
     log("listen", host=args.host, port=args.port, archive_dir=args.archive_dir)
     rclpy.init()
+    from scripts.recording_postprocess import resume
+    resume(Path(args.archive_dir))
     node = RecorderNode(args, state)
     try:
         rclpy.spin(node)

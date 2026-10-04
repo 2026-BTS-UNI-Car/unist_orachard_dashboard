@@ -53,7 +53,7 @@ def install(package,root,replace_manifest_sha256=None):
         if backup.exists():raise ValueError('generated_backup_already_exists')
     staging=archive/('.adaptive_video-'+uuid.uuid4().hex+'.partial');staging.mkdir()
     for n,v in m['assets'].items():
-        if not re.fullmatch(r'(?:[0-9]{2,4}/)?[A-Za-z0-9_-]+\.(?:m3u8|m4s|mp4)',n):raise ValueError('invalid_asset_name')
+        if not re.fullmatch(r'(?:1080-original/)?(?:[0-9]{2,4}/)?[A-Za-z0-9_-]+\.(?:m3u8|m4s|mp4)',n):raise ValueError('invalid_asset_name')
         p=(package/n).resolve(strict=True)
         if package not in p.parents or p.stat().st_size!=v['bytes'] or sha(p)!=v['sha256']:raise ValueError('invalid_asset_hash')
         dest=staging/n;dest.parent.mkdir(exist_ok=True);shutil.copyfile(p,dest)

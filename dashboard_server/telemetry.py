@@ -1051,11 +1051,7 @@ class TelemetryProvider:
     def recordings(self) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
         if self.recording_archive_dir.exists():
-            for path in sorted(
-                self.recording_archive_dir.iterdir(),
-                key=lambda item: item.stat().st_mtime if item.exists() else 0,
-                reverse=True,
-            ):
+            for path in self.recording_archive_dir.iterdir():
                 if not path.is_dir():
                     continue
                 metadata = _load_json(path / "metadata.json")
@@ -1066,6 +1062,7 @@ class TelemetryProvider:
                         "kind": metadata.get("kind") or "unknown",
                         "state": metadata.get("state") or "archived",
                         "started_at": metadata.get("started_at"),
+                        **__import__("dashboard_server.recording_clock", fromlist=["display_clock"]).display_clock(path, metadata),
                         "finished_at": metadata.get("finished_at"),
                         "duration_s": metadata.get("duration_s"),
                         "path": str(path),
@@ -1075,7 +1072,7 @@ class TelemetryProvider:
         return {
             "ok": True,
             "archive_dir": str(self.recording_archive_dir),
-            "recordings": rows,
+            "recordings": sorted(rows, key=__import__("dashboard_server.recording_clock", fromlist=["sort_key"]).sort_key, reverse=True),
         }
 
     def _recording_archive_count(self) -> int:
@@ -1204,10 +1201,12 @@ class TelemetryProvider:
                 "kind": metadata.get("kind"),
                 "metadata": metadata,
                 "preview_scan": preview_scan,
+                **__import__("dashboard_server.recording_clock", fromlist=["display_clock"]).display_clock(path, metadata),
                 "timeline_summary": timeline_summary,
                 "download_url": f"/api/recordings/{path.name}/download",
                 "source_video": public_video or None,
                 "adaptive_video": adaptive,
+                "video_preparation": _load_json(path / "video_preparation.json"),
                 "video_url": f"/api/recordings/{path.name}/video?v={source_video.get('bytes')}"
                 if source_video and not adaptive
                 else adaptive.get('fallback_url') if adaptive else None,

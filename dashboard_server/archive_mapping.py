@@ -45,6 +45,8 @@ class ArchiveMapping:
     def __init__(self, root, renderer='http://127.0.0.1:8810'):
         self.root=Path(root);self.renderer=renderer.rstrip('/')
         self.lock=threading.Lock();self.running=set();self.errors={};self.progress={}
+        from dashboard_server.integrated_archive import IndexedTileHistory
+        self.tile_history=IndexedTileHistory()
 
     def directory(self, archive_id):
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',archive_id) or archive_id in ('.','..'):
@@ -61,7 +63,7 @@ class ArchiveMapping:
                 s=source.stat();result[name]=[s.st_size,s.st_mtime_ns]
         return result
 
-    def status(self, archive_id, t_s=None, since=None):
+    def status(self, archive_id, t_s=None, since=None, transport=None, tile_since=None, tile_epoch=None):
         path=self.directory(archive_id)
         target=None
         if t_s is not None:
@@ -71,6 +73,11 @@ class ArchiveMapping:
         with self.lock:
             running=archive_id in self.running;error=self.errors.get(archive_id)
             progress=dict(self.progress.get(archive_id,{}) )
+        if transport=='tiles':
+            indexed=self.tile_history.status(path,target,tile_since,tile_epoch)
+            if indexed is not None:
+                return {**indexed,'regeneration_error':error,'state':'regenerating' if running else indexed.get('state','saved'),
+                        'generation':progress or indexed.get('generation',{})}
         history=read_json(path/'dashboard_occupancy_grid_history.json')
         value={};needs_regeneration=False
         if history:
@@ -114,10 +121,20 @@ class ArchiveMapping:
         threading.Thread(target=self._render,args=(archive_id,),daemon=True,name='archive-map').start()
         return {'ok':True,'state':'regenerating'}
 
+    def window(self,archive_id,start_s,span_s=12):
+        return self.tile_history.window(self.directory(archive_id),start_s,span_s)
+
     def _render(self, archive_id):
         session_id=None
         try:
             path=self.directory(archive_id);signature=self.signature(path)
+            if (path/'mapping_source/sensors.jsonl.gz').is_file():
+                from dashboard_server.integrated_archive import build
+                def progress(stage,ratio,time_s):
+                    with self.lock:self.progress[archive_id]=dict(stage=stage,progress=ratio,processed_t_s=time_s,
+                        duration_s=float(read_json(path/'metadata.json').get('duration_s') or 0))
+                build(path,signature,progress)
+                return
             epoch=uuid.uuid4().hex
             folder=path/'dashboard_occupancy_grid_history'/epoch;folder.mkdir(parents=True)
             history=dict(schema='orchard.archive_map_history.v1',epoch=epoch,archive_id=archive_id,

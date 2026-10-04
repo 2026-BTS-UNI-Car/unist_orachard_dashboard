@@ -16,8 +16,9 @@ def manifest(archive):
         assets=value.get('assets')
         if not isinstance(assets,dict) or not 1<=len(assets)<=20000:return None
         for name,row in assets.items():
-            if not re.fullmatch(r'(?:[0-9]{2,4}/)?[A-Za-z0-9_-]+\.(?:m3u8|m4s|mp4)',name):return None
-            if not isinstance(row,dict) or not isinstance(row.get('bytes'),int) or not 0<row['bytes']<=1024**3:return None
+            if not re.fullmatch(r'(?:1080-original/)?(?:[0-9]{2,4}/)?[A-Za-z0-9_-]+\.(?:m3u8|m4s|mp4)',name):return None
+            limit=16*1024**3 if name.endswith('native.mp4') else 64*1024**2
+            if not isinstance(row,dict) or not isinstance(row.get('bytes'),int) or not 0<row['bytes']<=limit:return None
             if not re.fullmatch(r'[0-9a-f]{64}',str(row.get('sha256',''))):return None
         for name in (value.get('master'),value.get('fallback')):
             if name not in assets or asset_path(archive,value,name) is None:return None
@@ -41,4 +42,9 @@ def public_info(archive,value):
     version=value['assets'][value['master']]['sha256'][:16]
     return {**{k:value.get(k) for k in ('source_topic','source_frames','source_width','source_height','fps','duration_s','timeline_offset_s','frame_timing','variants')},
             'manifest_url':prefix+value['master']+'?v='+version,
-            'fallback_url':prefix+value['fallback']+'?v='+version}
+            'fallback_url':prefix+value['fallback']+'?v='+version,
+            'alternative_sources':[{**source,
+                'manifest_url':prefix+source['master']+'?v='+value['assets'][source['master']]['sha256'][:16],
+                'fallback_url':prefix+source['fallback']+'?v='+value['assets'][source['fallback']]['sha256'][:16]}
+                for source in value.get('alternative_sources',[])
+                if source.get('master') in value['assets'] and source.get('fallback') in value['assets']]}

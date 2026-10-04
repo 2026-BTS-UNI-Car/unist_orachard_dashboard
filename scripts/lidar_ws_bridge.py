@@ -26,6 +26,7 @@ class ScanState:
     points: list[dict[str, float | int]] = field(default_factory=list)
     last_scan_at: float | None = None
     error: str | None = None
+    raw_scan: dict = field(default_factory=dict)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def update(
@@ -34,12 +35,14 @@ class ScanState:
         stamp: float,
         points: list[dict[str, float | int]],
         source: str,
+        raw_scan=None,
     ) -> None:
         with self.lock:
             self.frame_id = frame_id or "laser"
             self.source = source
             self.stamp = stamp
             self.points = points
+            self.raw_scan = raw_scan or {}
             self.last_scan_at = time.time()
             self.error = None
 
@@ -59,6 +62,7 @@ class ScanState:
                 "source": self.source,
                 "stamp": self.stamp,
                 "points": list(self.points),
+                "raw_scan": self.raw_scan,
                 "last_scan_age_sec": age,
                 "point_count": len(self.points),
                 "error": self.error,
@@ -197,7 +201,12 @@ def ros_thread(
                 + float(msg.header.stamp.nanosec) / 1000000000
             )
             points = scan_to_points(msg, max_points)
-            state.update(msg.header.frame_id or "laser", stamp, points, "ros2")
+            raw_scan = dict(header=dict(stamp=dict(sec=msg.header.stamp.sec,nanosec=msg.header.stamp.nanosec),frame_id=msg.header.frame_id),
+                ranges=[float(v) if math.isfinite(v) else None for v in msg.ranges],
+                angle_min=float(msg.angle_min),angle_increment=float(msg.angle_increment),
+                range_min=float(msg.range_min),range_max=float(msg.range_max),
+                scan_time=float(msg.scan_time),time_increment=float(msg.time_increment))
+            state.update(msg.header.frame_id or "laser", stamp, points, "ros2", raw_scan)
             self.scan_count += 1
             now = time.time()
             if self.scan_count == 1 or now - self.last_log_at >= 10:
@@ -273,6 +282,7 @@ async def serve_websocket(
             await websocket.close(code=1008, reason="unsupported path")
             return
         params = parse_qs(urlparse(actual_path).query)
+        mapping = (params.get("profile") or [""])[0] == "mapping"
         compact = (params.get("format") or [""])[0] == "polar-v1"
         ack_flow = (params.get("flow") or [""])[0] == "ack"
         budget = StreamBudget((params.get("profile") or ["auto"])[0])
@@ -342,7 +352,11 @@ async def serve_websocket(
                 payload = compact_scan_payload(
                     snap, points, sequence, compact, budget.values[0] > 320
                 )
-                message = json.dumps(payload, separators=(",", ":"))
+                if mapping:
+                    payload["raw_scan"] = snap["raw_scan"]
+                    payload["points"] = []
+                    payload["source"] = "source_native_LaserScan"
+                message = json.dumps(payload, allow_nan=False, separators=(",", ":"))
                 await asyncio.wait_for(websocket.send(message), timeout=2)
                 last_stamp = snap["stamp"]
                 if ack_flow:
@@ -359,8 +373,9 @@ async def serve_websocket(
                     if budget.values[0] <= 640
                     else 10,
                 )
+                if mapping: hz = max_hz
                 delay = max(
-                    1 / max(0.1, hz), len(message) / max(2000, budget.values[4] / 4)
+                    1 / max(0.1, hz), 0 if mapping else len(message) / max(2000, budget.values[4] / 4)
                 ) - (time.monotonic() - started)
                 if delay > 0:
                     await asyncio.sleep(delay)

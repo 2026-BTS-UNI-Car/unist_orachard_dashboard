@@ -4458,7 +4458,7 @@ function renderRecordings() {
     button.innerHTML = `
       <span>${escapeHtml(recordingSensorLabel(item))}</span>
       <strong>${escapeHtml(item.id)}</strong>
-      <small>${escapeHtml(formatShortDate(item.started_at || item.created_at))} · ${escapeHtml(item.duration_s ? `${fmtNumber(item.duration_s, 1)}s` : item.state || "ready")} · L${escapeHtml(item.timeline?.lidar_frames ?? 0)} C${escapeHtml(item.timeline?.camera_frames ?? 0)} I${escapeHtml(item.timeline?.imu_frames ?? 0)} G${escapeHtml(item.timeline?.gps_frames ?? 0)}</small>
+      <small>${escapeHtml(formatShortDate(item.display_started_at || item.started_at || item.created_at))} · ${item.clock_quality === "gnss_estimated" ? "GPS 시각 보정 · " : ""}${escapeHtml(item.duration_s ? `${fmtNumber(item.duration_s, 1)}s` : item.state || "ready")} · L${escapeHtml(item.timeline?.lidar_frames ?? 0)} C${escapeHtml(item.timeline?.camera_frames ?? 0)} I${escapeHtml(item.timeline?.imu_frames ?? 0)} G${escapeHtml(item.timeline?.gps_frames ?? 0)}</small>
     `;
     button.addEventListener("click", () => selectRecording(item.id));
     target.append(button);
@@ -4481,7 +4481,7 @@ function renderRecordingDetail(detail) {
   setupArchivePlayback(payload, normalizedPreview);
   const rows = id ? [
     { title: "ID", sub: recordingSensorLabel(payload), ok: true, level: "ok", value: id },
-    { title: "Duration", sub: formatShortDate(metadata.started_at), ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
+    { title: "Duration", sub: `${formatShortDate(payload.display_started_at || metadata.started_at)}${payload.clock_quality === "gnss_estimated" ? ` · GPS 시각 보정 (원본 ${formatShortDate(metadata.started_at)})` : ""}`, ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
     { title: "Timeline", sub: `${payload?.timeline_summary?.lidar_frames || state.recordings.timeline?.lidar?.frames?.length || 0} lidar · ${payload?.timeline_summary?.camera_frames || state.recordings.timeline?.camera?.frames?.length || 0} camera · ${payload?.timeline_summary?.imu_frames || state.recordings.timeline?.imu?.frames?.length || 0} imu`, ok: Boolean(state.recordings.timeline), level: state.recordings.timeline ? "ok" : "warn", value: state.recordings.timeline ? "playable" : "preview only" },
   ] : [
     { title: "Archive", sub: "기록을 선택하세요", ok: false, level: "warn", value: "--" },
@@ -4491,6 +4491,35 @@ function renderRecordingDetail(detail) {
 }
 
 function configureArchiveNativeVideo(payload) {
+  const selector = $("roverArchiveCameraSource");
+  const alternatives = payload?.adaptive_video?.alternative_sources || [];
+  const archiveId = payload?.id || state.recordings.selectedId;
+  if (selector && !payload?.selected_camera_source) {
+    selector.innerHTML = ""; selector.hidden = !alternatives.length;
+    const primary = payload?.adaptive_video;
+    if (primary) {
+      for (const source of [{...primary,id:'primary',label:`${primary.source_height}p 고속 원본`},...alternatives]) {
+        const option = document.createElement('option');option.value=source.id;
+        option.textContent=`${source.label} · ${fmtNumber(source.fps,1)} fps`;
+        selector.append(option);
+      }
+      selector.value='primary';
+      selector.onchange=()=>{
+        if(archiveId!==state.recordings.selectedId)return;
+        const source=selector.value==='primary'?primary:alternatives.find(s=>s.id===selector.value);
+        if(!source)return;
+        const replacement={...payload,selected_camera_source:true,adaptive_video:source,
+          source_video:{width:source.source_width,height:source.source_height,fps:source.fps,timeline_offset_s:source.timeline_offset_s},
+          video_url:source.fallback_url};
+        state.archivePlayback.selectedSourceVideo=replacement.source_video;
+        state.archivePlayback.sourceSwitchTimeS=state.archivePlayback.timeS;
+        configureArchiveNativeVideo(replacement);
+        const video=$("roverArchiveCameraVideo");
+        if(state.archivePlayback.playing)video?.play().catch(()=>{});
+      };
+    }
+    state.archivePlayback.selectedSourceVideo=null;
+  }
   const video = $("roverArchiveCameraVideo");
   const frame = video?.closest(".archive-camera-frame");
   if (!video) return;
@@ -4513,6 +4542,12 @@ function configureArchiveNativeVideo(payload) {
   frame?.classList.toggle("native-video", Boolean(url));
   if (!url) return;
   video.onloadedmetadata = () => {
+    if (Number.isFinite(state.archivePlayback.sourceSwitchTimeS)) {
+      const cursor=state.archivePlayback.sourceSwitchTimeS;
+      state.archivePlayback.sourceSwitchTimeS=null;
+      state.archivePlayback.timeS=cursor;
+      video.currentTime=archiveVideoTime(cursor);
+    }
     if (url !== state.archivePlayback.nativeVideoUrl) return;
     state.archivePlayback.nativeVideoReady = true;
     state.archivePlayback.nativeVideoError = "";
@@ -4651,6 +4686,9 @@ function stopArchivePlayback(reset = false) {
 
 function archivePlaybackTick(now = performance.now()) {
   if (!state.archivePlayback.playing) return;
+  if (Number.isFinite(state.archivePlayback.sourceSwitchTimeS)) {
+    state.archivePlayback.raf=requestAnimationFrame(archivePlaybackTick);return;
+  }
   const video = archiveNativeVideo();
   const elapsed = (now - state.archivePlayback.startedAt) / 1000;
   const next = video ? Number(video.currentTime) + (state.archivePlayback.nativeVideoOffsetS || 0) : state.archivePlayback.startTimeS + elapsed;
@@ -4716,7 +4754,7 @@ function renderArchiveFrame() {
     image.removeAttribute("src");
     state.archivePlayback.lastCameraRenderKey = "";
   }
-  const sourceVideo = state.recordings.selected?.recording?.source_video || state.recordings.selected?.source_video || {};
+  const sourceVideo = state.archivePlayback.selectedSourceVideo || state.recordings.selected?.recording?.source_video || state.recordings.selected?.source_video || {};
   const cameraCaption = state.archivePlayback.nativeVideoError
     ? `video error · ${state.archivePlayback.nativeVideoError}`
     : nativeVideo
@@ -5307,3 +5345,17 @@ setInterval(() => {
   maybeRefreshRecordingStatus();
   if (routeSupportsCameraLive() && (state.cameraLive.enabled || state.cameraLive.lastDecodedAt !== null)) renderCameraLiveState();
 }, 1000);
+
+// Reuse the same widgets, playback clock and network streams in the overview.
+const overviewToggle = document.getElementById('roverArchiveOverviewToggle');
+if (overviewToggle) {
+  overviewToggle.checked = localStorage.getItem('ubts-archive-overview-v1') === '1';
+  const applyOverview = () => {
+    document.querySelector('.archive-preview')?.classList.toggle('sensor-overview', overviewToggle.checked);
+    localStorage.setItem('ubts-archive-overview-v1', overviewToggle.checked ? '1' : '0');
+    window.dispatchEvent(new Event('resize'));
+    window.LiveMap?.routeChanged();
+    window.RoverGps?.routeChanged();
+  };
+  overviewToggle.addEventListener('change', applyOverview); applyOverview();
+}

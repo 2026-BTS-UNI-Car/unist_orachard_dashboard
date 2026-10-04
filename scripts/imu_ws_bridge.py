@@ -160,7 +160,7 @@ async def serve(state: ImuBridgeState, args: argparse.Namespace, stop: threading
             await websocket.close(code=1008, reason="unsupported path")
             return
         profile = (parse_qs(urlparse(actual_path).query).get("profile") or ["auto"])[0]
-        hz = {"tiny": 1, "auto": 2, "slow": 2, "balanced": 5, "detail": 10}.get(profile, 2)
+        hz = {"tiny": 1, "auto": 2, "slow": 2, "balanced": 5, "detail": 10, "mapping": 20}.get(profile, 2)
         interval = 1.0 / max(1.0, min(hz, float(args.max_hz)))
         ack = (parse_qs(urlparse(actual_path).query).get("flow") or [""])[0] == "ack"
         sequence = 0

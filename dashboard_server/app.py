@@ -279,7 +279,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             elif path=='/api/autonomy/start' and action:
                 self._send_json({**self.autonomy_settings.status(),'ok':False},409);return
             elif path=='/api/live/map' and not action:
-                result=self.live_mapping.status(parse_qs(parsed.query).get('since',[None])[0])
+                query=parse_qs(parsed.query)
+                if query.get('transport',[None])[0]=='tiles':
+                    result=self.live_mapping.status(query.get('since',[None])[0],transport='tiles',
+                        tile_since=query.get('tile_since',[None])[0],tile_epoch=query.get('tile_epoch',[None])[0])
+                else:result=self.live_mapping.status(query.get('since',[None])[0])
             elif path.startswith('/api/live/map/') and action:
                 result=self.live_mapping.action(path.rsplit('/',1)[-1])
             elif path.startswith('/api/live/recordings/'):
@@ -288,7 +292,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 archive_id=unquote(parts[4])
                 if parts[5]=='map' and not action:
                     query=parse_qs(parsed.query)
-                    result=self.archive_mapping.status(archive_id,query.get('t_s',[None])[0],query.get('since',[None])[0])
+                    if query.get('transport',[None])[0]=='tiles':
+                        result=self.archive_mapping.status(archive_id,query.get('t_s',[None])[0],query.get('since',[None])[0],
+                            transport='tiles',tile_since=query.get('tile_since',[None])[0],tile_epoch=query.get('tile_epoch',[None])[0])
+                    else:result=self.archive_mapping.status(archive_id,query.get('t_s',[None])[0],query.get('since',[None])[0])
+                elif parts[5]=='map-window' and not action:
+                    query=parse_qs(parsed.query)
+                    result=self.archive_mapping.window(archive_id,query.get('start_s',['0'])[0],query.get('span_s',['12'])[0])
                 elif parts[5]=='regenerate' and action:result=self.archive_mapping.regenerate(archive_id)
                 else:self.send_error(404);return
             else:self.send_error(404);return
@@ -1072,7 +1082,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:
     DashboardHandler.provider = TelemetryProvider(config)
-    from dashboard_server.live_mapping import LiveMapping
+    from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.archive_mapping import ArchiveMapping
     from dashboard_server.autonomy_settings import AutonomySettings
     DashboardHandler.live_mapping=LiveMapping(ROOT/'runtime/live-map',start_worker=os.environ.get('DASHBOARD_LIVE_MAP_WORKER','1')=='1')

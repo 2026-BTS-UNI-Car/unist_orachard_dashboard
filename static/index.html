@@ -803,6 +803,7 @@
 <input checked="" id="roverArchiveSyncToggle" type="checkbox"/>
 <span>동시 재생</span>
 </label>
+<label class="switch-control"><input id="roverArchiveOverviewToggle" type="checkbox"/><span>모든 센서 한눈에</span></label>
 </div>
 <input class="archive-scrubber" id="roverArchiveScrubber" max="0" min="0" step="0.01" type="range" value="0"/>
 <div class="map-control compact archive-map-control">
@@ -823,6 +824,7 @@
 <canvas class="lidar-map" height="520" id="roverArchiveLidarCanvas" width="520"></canvas>
 </div>
 <figure class="archive-camera-frame">
+<select id="roverArchiveCameraSource" class="archive-camera-source" aria-label="녹화된 카메라 원본 선택" hidden=""></select>
 <select id="roverArchiveVideoQuality" class="archive-video-quality" aria-label="기록 영상 화질" hidden=""></select>
 <video id="roverArchiveCameraVideo" muted="" playsinline="" preload="metadata"></video>
 <img alt="Archived camera preview" id="roverArchiveCameraImage"/>

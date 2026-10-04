@@ -1,4 +1,5 @@
 import {worldBounds, occupiedCellsFromPixels, nearbyWorldBounds, fullWorldBounds, fittedView, worldToScreen, pathOpacity, archivePath, virtualGpsPoint, orchardLayout} from './sim-map-model.mjs';
+import {decodeTileCells, cellPixels, tileOccupiedIndices, nearbyTileBounds} from './grid-cell-codec.mjs';
 
 const $ = id => document.getElementById(id);
 export class MetricMap {
@@ -18,7 +19,42 @@ export class MetricMap {
     this.resize = new ResizeObserver(() => this.draw()); this.resize.observe(this.canvas);
   }
   get imageVersion() { return this.requestFullImage ? undefined : this.snapshot.version; }
+  async setTiles(snapshot) {
+    this.pendingImage = null;
+    const ticket = {}; this.pendingTiles = ticket;
+    const epoch = snapshot.tile_epoch || snapshot.map_epoch;
+    const decoded = [];
+    for (const tile of snapshot.tiles || []) {
+      if (tile.encoding) {
+        const states=decodeTileCells(tile,snapshot.tile_size || 64);
+        const image=document.createElement('canvas');image.width=64;image.height=64;
+        const context=image.getContext('2d'),pixels=context.createImageData(64,64);
+        pixels.data.set(cellPixels(states));context.putImageData(pixels,0,0);
+        decoded.push({...tile,image,occupied:tileOccupiedIndices(states)});
+      } else {
+        // Read-only compatibility for earlier generated archives. New source
+        // packets contain cells and never reach this image decoder.
+        const image=await new Promise((resolve,reject)=>{
+          const value=new Image();value.onload=()=>resolve(value);value.onerror=reject;
+          value.src=`data:image/png;base64,${tile.image_base64}`;
+        });
+        decoded.push({...tile,image});
+      }
+    }
+    if (this.pendingTiles !== ticket) return;
+    if (snapshot.tiles_reset || this.tileEpoch !== epoch) this.tileBitmaps = new Map();
+    this.tileBitmaps ||= new Map();
+    for (const tile of decoded) this.tileBitmaps.set(`${tile.x},${tile.y}`,tile);
+    this.tileEpoch = epoch; this.bitmap = null; this.occupiedCells = undefined;
+    this.pendingTiles = null;
+    const previousPath = this.snapshot.path || [];
+    const path = snapshot.path_append && !snapshot.tiles_reset ? [...previousPath,...(snapshot.path || [])] : snapshot.path;
+    this.commit({...snapshot,path,map_epoch:snapshot.view_epoch || snapshot.map_epoch || epoch});
+  }
   set(snapshot) {
+    if (Array.isArray(snapshot.tiles)) return this.setTiles(snapshot).catch(() => {this.tileEpoch = null;});
+    this.pendingTiles = null;
+    this.tileBitmaps = null; this.tileEpoch = null;
     snapshot = snapshot || {};
     const grid = snapshot.grid;
     // Empty/reset and schematic views do not wait for a grid decoder. Cancel
@@ -90,8 +126,8 @@ export class MetricMap {
     const newMap = !this.schematic && ((!historicalSeek && !snapshot.grid && !!previous.grid) ||
       (!historicalSeek && snapshot.scan_count === 0 && previous.scan_count > 0) ||
       (snapshot.map_epoch && previous.map_epoch && snapshot.map_epoch !== previous.map_epoch) ||
-      (!historicalSeek && Number.isFinite(snapshot.version) && Number.isFinite(previous.version) && snapshot.version < previous.version) ||
-      (snapshot.coordinate_frame && previous.coordinate_frame && snapshot.coordinate_frame !== previous.coordinate_frame));
+      (!historicalSeek && !snapshot.view_epoch && Number.isFinite(snapshot.version) && Number.isFinite(previous.version) && snapshot.version < previous.version) ||
+      (!snapshot.view_epoch && snapshot.coordinate_frame && previous.coordinate_frame && snapshot.coordinate_frame !== previous.coordinate_frame));
     if (newMap) {this.view = null; this.auto = true; this.fitMode = 'nearby';}
     this.snapshot = snapshot; this.requestFullImage = false;
     this.layout = this.schematic ? orchardLayout(this.snapshot.world) : null;
@@ -100,6 +136,10 @@ export class MetricMap {
   }
   fitBounds(pose = this.snapshot.pose) {
     const snapshot = {...this.snapshot, pose};
+    if (!this.schematic && this.fitMode==='nearby' && snapshot.grid?.encoding==='tiles-cells-v1' && this.tileBitmaps) {
+      const local=nearbyTileBounds(snapshot,this.tileBitmaps);
+      if(local) return local;
+    }
     const bounds = this.layout ? {...this.layout.bounds} : this.schematic ? worldBounds(snapshot) :
       this.fitMode === 'full' ? fullWorldBounds(snapshot) : nearbyWorldBounds(snapshot, this.occupiedCells);
     if(this.layout && Number.isFinite(pose?.x) && Number.isFinite(pose?.y)){
@@ -128,6 +168,16 @@ export class MetricMap {
     const xy=point=>worldToScreen(point,this.view,width,height), scale=this.view.scale;
     const grid=this.snapshot.grid;
     if(this.schematic) this.drawOrchard(ctx,xy);
+    else if(grid && this.tileBitmaps){
+      const extent = (this.snapshot.tile_size || 64)*grid.resolution;
+      ctx.imageSmoothingEnabled = false;
+      for (const tile of this.tileBitmaps.values()) {
+        const origin=xy({x:tile.x*extent,y:tile.y*extent});
+        if (origin.x>width || origin.x+extent*scale<0 || origin.y<0 || origin.y-extent*scale>height) continue;
+        ctx.save();ctx.translate(origin.x,origin.y);ctx.scale(1,-1);
+        ctx.drawImage(tile.image,0,0,extent*scale,extent*scale);ctx.restore();
+      }
+    }
     else if(grid&&this.bitmap){
       const origin=xy(grid.origin);
       ctx.save();ctx.translate(origin.x,origin.y);ctx.scale(1,-1);ctx.imageSmoothingEnabled=false;

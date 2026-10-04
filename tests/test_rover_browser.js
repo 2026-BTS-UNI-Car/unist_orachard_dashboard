@@ -11,7 +11,7 @@ function setup() {
   const slider = {id: 'roverSpeedSlider', type: 'range', tagName: 'INPUT', value: '30'};
   const context = {state: {roverControl: c}, document: {hidden: false, querySelector: () => null}, currentRoute: () => '/rover-control',
     $: id => id === 'roverSpeedSlider' ? slider : null, text() {}, localStorage: {setItem() {}}, ROVER_SPEED_KEY: 'speed',
-    setInterval: () => 1, clearInterval: () => {}, renderRoverButtons() {}, renderRoverMotionReadout() {}, setRoverCommandStatus() {},
+    setInterval: () => 1, clearInterval: () => {}, renderRoverButtons() {}, renderRoverMotionReadout() {}, setRoverCommandStatus() {}, resumeLiveCameraAfterArchive() {},
     postJson: async (path, payload) => { calls.push({path, payload}); return {ok: true, ticket: 'next', seq: (payload?.seq || 0), lease: 'lease'}; }};
   vm.createContext(context); vm.runInContext(code, context);
   return {context, c, calls, slider};

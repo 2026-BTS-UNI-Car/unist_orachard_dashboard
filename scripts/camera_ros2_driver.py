@@ -9,9 +9,13 @@ import math
 import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Iterable
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
 
 import cv2
 import rclpy
@@ -291,6 +295,9 @@ class UsbCameraDriver(Node):
         )
         self.image_pub = self.create_publisher(Image, args.image_topic, sensor_qos)
         self.compressed_pub = self.create_publisher(CompressedImage, args.compressed_topic, sensor_qos)
+        self.recording_pub = self.create_publisher(CompressedImage, args.recording_topic, sensor_qos)
+        from scripts.native_camera_encoder import NativeCameraEncoder
+        self.native_encoder = NativeCameraEncoder(self.publish_native, args.recording_jpeg_quality)
         self.info_pub = self.create_publisher(CameraInfo, args.camera_info_topic, sensor_qos)
         self.preview_info_pub = self.create_publisher(CameraInfo, args.preview_camera_info_topic, sensor_qos)
         self.cap: cv2.VideoCapture | None = None
@@ -383,6 +390,8 @@ class UsbCameraDriver(Node):
             "compressed_frame_count": self.compressed_frame_count,
             "raw_publish_fps": self.args.raw_publish_fps,
             "compressed_topic": self.args.compressed_topic,
+                "recording_topic": self.args.recording_topic,
+                "native_recording": self.native_encoder.status(),
             "preview_camera_info_topic": self.args.preview_camera_info_topic,
             "compressed_jpeg_quality": self.args.compressed_jpeg_quality,
             "compressed_preview_width": self.args.compressed_preview_width,
@@ -610,6 +619,10 @@ class UsbCameraDriver(Node):
         self.last_publish_at = time.time()
         stamp = self.get_clock().now().to_msg()
         height, width = frame.shape[:2]
+        # Encode original capture pixels only while a bag/recording subscriber
+        # exists. Preview quality/network policy cannot reduce recording size.
+        if self.recording_pub.get_subscription_count():
+            self.native_encoder.submit(frame, stamp)
         preview = frame
         preview_width = min(width, max(320, int(self.args.compressed_preview_width)))
         if preview_width < width:
@@ -636,7 +649,7 @@ class UsbCameraDriver(Node):
             preview_info.header.stamp = stamp
             self.preview_info_pub.publish(preview_info)
 
-        # Raw BGR remains available for source-native AI and archive previews,
+        # Raw BGR remains available for archive snapshots,
         # but is deliberately bounded. Live viewing consumes the high-rate
         # compressed ROS2 topic, avoiding roughly 6 MiB of DDS traffic per
         # 1080p frame.
@@ -659,7 +672,16 @@ class UsbCameraDriver(Node):
             self.last_raw_publish_at = self.last_publish_at
         self.frame_count += 1
 
+    def publish_native(self, data, stamp, width, height):
+        message = CompressedImage()
+        message.header.stamp = stamp
+        message.header.frame_id = self.frame_id
+        message.format = f"bgr8; jpeg compressed bgr8; width={width}; height={height}"
+        message.data = data
+        self.recording_pub.publish(message)
+
     def destroy_node(self):
+        self.native_encoder.close()
         self.write_status("shutdown", force=True)
         self.close_camera()
         super().destroy_node()
@@ -670,6 +692,8 @@ def main() -> int:
     parser.add_argument("--device", default=os.environ.get("CAMERA_DEVICE", "auto"))
     parser.add_argument("--image-topic", default=os.environ.get("CAMERA_IMAGE_TOPIC", "/camera/image_raw"))
     parser.add_argument("--compressed-topic", default=os.environ.get("CAMERA_COMPRESSED_TOPIC", "/camera/image_jpeg"))
+    parser.add_argument("--recording-topic", default=os.environ.get("CAMERA_RECORDING_TOPIC", "/camera/recording/jpeg"))
+    parser.add_argument("--recording-jpeg-quality", type=int, default=90)
     parser.add_argument("--camera-info-topic", default=os.environ.get("CAMERA_INFO_TOPIC", "/camera/camera_info"))
     parser.add_argument(
         "--preview-camera-info-topic",

@@ -39,7 +39,17 @@ class TiledOccupancyMap(OccupancyMap):
     def _update_raster(self, coordinates, x0, y0, delta):
         if not len(coordinates): return
         absolute = coordinates + np.array([x0,y0],dtype=np.int64)
-        keys, membership = np.unique(absolute//self.TILE,axis=0,return_inverse=True)
+        tile_coordinates = absolute//self.TILE
+        # Scalar integer keys avoid structured-row sorting on every free cell.
+        # Signed ordering and floor division remain identical across zero.
+        if np.all((tile_coordinates >= -2147483648) & (tile_coordinates <= 2147483647)):
+            encoded = ((tile_coordinates[:,0]+2147483648).astype(np.uint64)<<np.uint64(32)) | (tile_coordinates[:,1]+2147483648).astype(np.uint64)
+            unique, membership = np.unique(encoded,return_inverse=True)
+            keys = np.column_stack(((unique>>np.uint64(32)).astype(np.int64)-2147483648,
+                                    (unique & np.uint64(0xffffffff)).astype(np.int64)-2147483648))
+        else:
+            keys, membership = np.unique(tile_coordinates,axis=0,return_inverse=True)
+        self._last_updated_tiles = [tuple(int(v) for v in key) for key in keys]
         # Admission follows the original ray raster's global x/y order even
         # when a scan crosses tile boundaries. Updating existing cells remains
         # possible after reaching the memory cap.
@@ -52,8 +62,11 @@ class TiledOccupancyMap(OccupancyMap):
             allowed=existing | (np.cumsum(~existing)<=self.max_cells-self._cell_count)
             if not allowed.all():self.limited=True
             absolute,membership=absolute[allowed],membership[allowed]
+        order = np.argsort(membership, kind='stable')
+        sorted_groups = membership[order]
+        starts = np.searchsorted(sorted_groups, np.arange(len(keys)+1))
         for group, key in enumerate(keys):
-            cells = absolute[membership == group]
+            cells = absolute[order[starts[group]:starts[group+1]]]
             if not len(cells):continue
             local = cells % self.TILE
             tile_key = tuple(int(v) for v in key)

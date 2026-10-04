@@ -3054,3 +3054,17 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   padding: 5px 8px; border-radius: 6px; background: #111827dd; color: #fff;
   border: 1px solid #64748b; font-size: 12px;
 }
+
+/* Compact synchronized archive view. No duplicate sensor subscriptions. */
+.archive-camera-source{max-width:100%;margin:4px 8px 6px;z-index:4;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px}
+.archive-preview.sensor-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+.sensor-overview>.archive-player-toolbar,.sensor-overview>.archive-scrubber,.sensor-overview>.archive-map-control,.sensor-overview>.archive-download-actions{grid-column:1/-1}
+.sensor-overview>.archive-media-grid{display:contents}
+.sensor-overview>.status-list{grid-column:1/-1;order:8}
+.sensor-overview .rover-lidar-stage,.sensor-overview .archive-camera-frame,.sensor-overview .sim-map-stage,.sensor-overview .gps-archive-map{height:240px;min-height:0}
+.sensor-overview .archive-imu-grid{grid-template-columns:1fr}
+.sensor-overview .archive-imu-attitude-stage{height:160px}
+.sensor-overview .archive-camera-frame video,.sensor-overview .archive-camera-frame img{height:210px;object-fit:contain}
+.sensor-overview .gps-readouts{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(min-width:1500px){.archive-preview.sensor-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.archive-preview.sensor-overview{grid-template-columns:1fr}}
