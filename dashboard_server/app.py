@@ -303,7 +303,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     query=parse_qs(parsed.query)
                     result=self.archive_mapping.window(archive_id,query.get('start_s',['0'])[0],query.get('span_s',['12'])[0],query.get('codec',[None])[0])
                 elif parts[5]=='new-map' and action:result=self.archive_mapping.new_map(archive_id)
-                elif parts[5]=='map-playback' and action:result=self.archive_mapping.playback(archive_id,payload.get('t_s'),payload.get('playing'),payload.get('control'))
+                elif parts[5]=='map-playback' and action:
+                    result=self.archive_mapping.playback(archive_id,payload.get('t_s'),payload.get('playing'),payload.get('control'))
+                    # One round trip carries the ordered playback cursor and
+                    # its historical cell changes. Pure reads/older clients
+                    # retain the independent map endpoint and full snapshots.
+                    if (payload.get('transport')=='tiles' and result.get('playback_driven')
+                            and not result.get('stale_control_ignored')):
+                        snapshot=self.archive_mapping.status(archive_id,payload.get('t_s'),transport='tiles',
+                            tile_since=payload.get('tile_since'),tile_epoch=payload.get('tile_epoch'))
+                        if payload.get('codec')=='xor2-deflate-v1' and 'tiles' in snapshot:
+                            from dashboard_server.window_cells import compact_window
+                            snapshot=compact_window(dict(ok=True,map_frame=True,seed=snapshot,events=[]),'xor2-deflate-v1')
+                        result={**result,'map_snapshot':snapshot}
                 elif parts[5]=='regenerate' and action:result=self.archive_mapping.regenerate(archive_id)
                 else:self.send_error(404);return
             else:self.send_error(404);return
