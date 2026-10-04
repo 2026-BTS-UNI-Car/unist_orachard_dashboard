@@ -66,10 +66,6 @@ class PlaybackTests(unittest.TestCase):
             self.assertEqual(reader.status(archive,0)['scan_count'],0)
             manager.playback('record',.6,False)
             self.assertEqual(read_json(archive/'integrated_map_history.json')['events'],[])
-            status=manager.status('record',.3,transport='tiles')
-            self.assertIn('unverified',status['mapping_error'])
-            self.assertTrue(status['generation']['waiting_for_cursor'])
-            self.assertFalse(status['generation']['worker_active'])
             manager.playback('record',.25,True);history=self.wait(archive,.2)
             manager.playback('record',.25,False)
             time.sleep(.08)
@@ -110,6 +106,10 @@ class PlaybackTests(unittest.TestCase):
             self.assertIn('unverified',worker.error)
             self.assertEqual(file.read_bytes(),b'corrupt')
             self.assertEqual(read_json(archive/'integrated_map_history.json')['events'],[])
+            status=manager.status('record',.3,transport='tiles')
+            self.assertIn('unverified',status['mapping_error'])
+            self.assertTrue(status['generation']['waiting_for_cursor'])
+            self.assertFalse(status['generation']['worker_active'])
 
 
 if __name__=='__main__':unittest.main()
