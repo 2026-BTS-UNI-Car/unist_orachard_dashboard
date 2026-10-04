@@ -61,4 +61,18 @@ assert.equal(run("archiveReady('slow',5)"),false,'exhausted cached cells hold th
 run('bufferedCursorMap=false;availableCursorPrefix=5;archive.snapshot.frame_t_s=1');
 assert.equal(run("archiveReady('slow',5.2)"),true,'a processed geometry rejection must not deadlock playback');
 assert.equal(run("archiveReady('slow',6)"),false,'new-map processing cannot grow an unbounded clock backlog');
+run(`bufferedCursorMap=true;archivePlaying=false;archiveTimeS=11.9;windowSupported=true;
+  mapBuffer=new ArchiveMapBuffer({start_s:0,end_s:12,duration_s:12,
+    seed:{tile_epoch:'same',tile_version:100,version:100,tiles:[],path:[]},
+    events:[{tile_epoch:'same',tile_version:119,version:119,frame_t_s:11.9,tiles:[],path:[]}]});
+  nextMapBuffer=new ArchiveMapBuffer({start_s:10,end_s:22,duration_s:22,
+    seed:{tile_epoch:'same',tile_version:100,version:100,tiles:[],path:[]},
+    events:[{tile_epoch:'same',tile_version:120,version:120,frame_t_s:12,tiles:[],path:[]},
+      {tile_epoch:'same',tile_version:121,version:121,frame_t_s:12.1,tiles:[],path:[]}]});
+  archive.snapshot={version:118,tile_version:118};archive.tileEpoch='same';`);
+await run("pollArchive('slow',archiveEpoch)");
+assert.equal(run('mapBuffer.start_s'),0,'overlapping next window does not replace a still-valid current window early');
+run('archiveTimeS=12.1');await run("pollArchive('slow',archiveEpoch)");
+assert.equal(run('mapBuffer.start_s'),10);assert.equal(run('archive.snapshot.version'),121);
+assert.equal(run('archive.snapshot.tiles_reset'),false,'late boundary transition retains the same map without clearing tiles');
 console.log('Complete causal maps use locally timed cells; new/unfinished maps retain causal worker control');
