@@ -29,6 +29,12 @@ class GpsMapView {
     this.model = new FollowModel(); this.map = null; this.marker = null;
     this.sample = {}; this.frames = []; this.until = Infinity; this.lastTrackKey = '';
     this.initializing = null; this.lastCentered = '';
+    // Stop following before MapLibre's drag threshold. A new GPS frame can
+    // otherwise jumpTo() and cancel the gesture before dragstart ever fires.
+    const container = byId(`${prefix}Map`);
+    const releaseFollow = () => { this.model.userPan(); this.renderFollow(); };
+    for (const event of ['pointerdown', 'wheel', 'touchstart', 'keydown'])
+      container?.addEventListener(event, releaseFollow, {capture:true, passive:true});
     byId(`${prefix}Follow`)?.addEventListener('click', () => {
       const center = this.model.recenter();
       if (center && this.map) this.map.jumpTo({center});
@@ -44,7 +50,7 @@ class GpsMapView {
     button.textContent = this.model.follow ? '로버 중심 추적 중' : '로버 중심으로';
   }
   async init() {
-    if (this.map) { this.map.resize(); return; }
+    if (this.map) return; // ResizeObserver handles layout changes, not each GPS frame.
     if (this.initializing) return this.initializing;
     this.initializing = this.create().catch(error => {
       text(`${this.prefix}MapStatus`, `지도를 불러오지 못했습니다 · ${error.message}`);

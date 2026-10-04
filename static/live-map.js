@@ -1,5 +1,6 @@
 import {MetricMap} from './metric-map.mjs';
 import {ArchiveMapBuffer} from './archive-map-buffer.mjs';
+import {ArchiveSegmentGallery} from './archive-segments.mjs';
 const $=id=>document.getElementById(id),text=(id,value)=>{if($(id))$(id).textContent=value;};
 // Correct the real-rover front marker as requested, without modifying any
 // retained scan coordinates, localization yaw or simulation body-frame heading.
@@ -9,9 +10,22 @@ let polling=false,timer=null,selected='',archiveEpoch=0,speedBusy=false,lastAuto
 let mapBuffer=null,nextMapBuffer=null,mapWindowPending=null,bufferPaintPending=false,windowSupported=null;
 let archiveTimer=null,archivePending=null,archiveTimeS=0,archivePlaying=false,followGeneration=false,archiveGenerating=false;
 let archiveRetryMs=75;
+const segments=new ArchiveSegmentGallery(archive,time=>window.setArchiveTime?.(time,{pause:true}));
+archive.beforeCommit=(previous,next)=>segments.beforeCommit(previous,next);
+archive.afterDraw=()=>{segments.update(archive.snapshot,archiveTimeS);mapControls('archive',archive);};
+live.afterDraw=()=>mapControls('live',live);
+function mapControls(kind,map){
+  for(const button of document.querySelectorAll(`[data-${kind}-zoom]`)){
+    const mode=button.dataset[kind+'Zoom'];
+    if(mode==='fit'||mode==='full'){
+      const active=map.auto && map.fitMode===(mode==='fit'?'nearby':'full');
+      button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
+    }
+  }
+}
 function archiveQuality(value){
   if(value.needs_regeneration)return ' · 이전 지도 · 재생성 필요';
-  return Number(value.segments)>1?` · 위치 추정 ${value.segments}개 구간 · 전체 지형 연결 미검증`:'';
+  return Number(value.segments)>1?` · 구간 ${(value.segment??0)+1} · 이전 지도 보존 · 구간 연결 미확정`:'';
 }
 async function request(path,body,signal){
   const timeout=path.includes('/map-window')||path.includes('/map?')?30000:8000;
@@ -34,7 +48,7 @@ async function selectArchive(id){
   if(id===selected)return;selected=id;const epoch=++archiveEpoch;
   clearTimeout(archiveTimer);archiveTimer=null;archivePending?.controller.abort();
   mapBuffer=null;nextMapBuffer=null;windowSupported=null;mapWindowPending?.controller.abort();mapWindowPending=null;
-  archiveTimeS=0;archivePlaying=false;followGeneration=false;archiveGenerating=false;archive.set({});$('liveArchiveRegenerate').disabled=!id;
+  archiveTimeS=0;archivePlaying=false;followGeneration=false;archiveGenerating=false;segments.reset();archive.set({});$('liveArchiveRegenerate').disabled=!id;
   if(!id){text('liveArchiveStatus','기록을 선택하세요.');return;}
   try{await pollArchive(id,epoch);}catch(error){if(epoch===archiveEpoch&&error.name!=='AbortError'){text('liveArchiveStatus',error.message);scheduleArchive(500);}}
 }

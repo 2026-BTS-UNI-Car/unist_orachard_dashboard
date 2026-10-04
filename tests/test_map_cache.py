@@ -4,12 +4,23 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import numpy as np
 from dashboard_server.integrated_archive import (prepare_trajectory,build,IndexedTileHistory,
-    localization_fingerprint,raster_fingerprint)
+    localization_fingerprint,raster_fingerprint,segment_catalog)
 from dashboard_server.integrated_mapping import integrate
 from tests.test_integrated_mapping import scan
 
 
 class MapCacheTests(unittest.TestCase):
+    def test_retained_segment_catalog_is_cursor_limited_and_indexed(self):
+        history=dict(events=[dict(segment=s,t_s=t) for s,t in ((0,0.),(0,1.),(1,3.),(1,4.),(2,6.))])
+        self.assertEqual(segment_catalog(history,-1),[])
+        self.assertEqual(segment_catalog(history,3.5),[
+            dict(segment=0,start_s=0.,end_s=1.,scan_count=2),
+            dict(segment=1,start_s=3.,end_s=3.,scan_count=1)])
+        index=history['_segment_index']
+        self.assertEqual(segment_catalog(history,.5),[dict(segment=0,start_s=0.,end_s=0.,scan_count=1)])
+        self.assertIs(history['_segment_index'],index)
+        self.assertEqual(len(segment_catalog(history,99)),3)
+
     def fixture(self,root):
         archive=Path(root);source=archive/'mapping_source';source.mkdir()
         (archive/'metadata.json').write_text(json.dumps(dict(started_at='1970-01-01T00:16:40Z',duration_s=1.)))
@@ -44,6 +55,10 @@ class MapCacheTests(unittest.TestCase):
             archive,_=self.fixture(d);build(archive,{},lambda *a:None)
             reader=IndexedTileHistory();value=reader.status(archive,.5)
             self.assertFalse(value['needs_regeneration']);self.assertTrue(value['tiles'])
+            self.assertEqual(len(value['segment_catalog']),1)
+            self.assertLessEqual(value['segment_catalog'][0]['end_s'],.5)
+            window=reader.window(archive,0,1,codec='xor2-v1')
+            self.assertEqual(window['segment_catalog'],value['segment_catalog'])
             with patch('dashboard_server.integrated_archive.raster_fingerprint',return_value='changed'):
                 value=reader.status(archive,.5)
             self.assertTrue(value['needs_regeneration']);self.assertEqual(value['state'],'outdated');self.assertTrue(value['tiles'])

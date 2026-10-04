@@ -122,6 +122,7 @@ export class MetricMap {
     // Grid pixels, geometry, pose and path become visible in one draw. Bounds
     // and automatic zoom change only when that same complete view is accepted.
     const previous = this.snapshot;
+    this.beforeCommit?.(previous, snapshot);
     const historicalSeek = snapshot.preserve_view_on_seek === true &&
       snapshot.map_epoch && snapshot.map_epoch === previous.map_epoch;
     const frameChanged = snapshot.coordinate_frame && previous.coordinate_frame &&
@@ -210,6 +211,7 @@ export class MetricMap {
     ctx.fillStyle='rgba(10,18,27,.78)';ctx.fillRect(8,height-39,meters*scale+24,31);
     ctx.strokeStyle='#eef5fa';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(20,height-15);ctx.lineTo(20+meters*scale,height-15);ctx.stroke();
     ctx.fillStyle='#eef5fa';ctx.font='11px sans-serif';ctx.textAlign='left';ctx.fillText(`${meters} m`,20,height-23);
+    this.afterDraw?.();
   }
   drawOrchard(ctx,xy) {
     if(!this.layout){ctx.fillStyle='#b6c5d1';ctx.font='12px sans-serif';ctx.textAlign='left';ctx.fillText('가상 과수원 배치 정보 수신 대기',12,24);return;}

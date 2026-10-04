@@ -25,3 +25,14 @@
 .sim-archive-grid .sim-map-stage canvas { height: 420px; }
 .archive-imu-stale canvas, .archive-imu-stale .chart-readout { opacity: .55; }
 @media(max-width:600px) { .sim-map-stage canvas, .sim-archive-grid .sim-map-stage canvas { height: 300px; }.sim-map-actions .action-button { flex: 1 1 auto; } }
+
+
+.map-view-toolbar{display:flex;justify-content:flex-end;margin:8px 0}
+.map-view-toolbar .sim-map-zoom{position:static;display:flex;flex-wrap:wrap;gap:5px}
+.map-view-toolbar button{font-size:12px;font-weight:600}
+.map-segment-gallery{display:flex;gap:7px;overflow-x:auto;padding:8px 0;max-width:100%}
+.map-segment-gallery[hidden]{display:none}
+.map-segment-card{flex:0 0 160px;min-width:0;padding:5px;border:1px solid var(--line);border-radius:7px;color:var(--text);background:var(--surface);cursor:pointer;text-align:left}
+.map-segment-card[aria-pressed="true"]{border-color:#ef4452}
+.map-segment-card img{display:block;width:100%;height:96px;object-fit:contain;background:#14202b}
+.map-segment-card span{display:block;font-size:11px;line-height:1.5;overflow-wrap:anywhere}

@@ -41,6 +41,28 @@ def digest(path):
     return sha.hexdigest()
 
 
+def segment_catalog(history, target):
+    """Retained local maps available at the cursor; never expose future frames."""
+    events = history.get('events', [])
+    if '_segment_index' not in history:
+        groups = []
+        for i, event in enumerate(events):
+            if not groups or groups[-1]['segment'] != event['segment']:
+                groups.append(dict(segment=event['segment'], first=i, last=i))
+            groups[-1]['last'] = i
+        history['_segment_index'] = groups
+        history['_event_times'] = [e['t_s'] for e in events]
+    end = bisect.bisect_right(history['_event_times'], target) - 1
+    result = []
+    for group in history['_segment_index']:
+        if group['first'] > end:
+            break
+        last = min(group['last'], end)
+        result.append(dict(segment=group['segment'], start_s=events[group['first']]['t_s'],
+                           end_s=events[last]['t_s'], scan_count=last-group['first']+1))
+    return result
+
+
 def rows(path):
     with gzip.open(path,'rt',encoding='utf-8') as stream:
         for line in stream:yield json.loads(line)
@@ -175,7 +197,8 @@ class IndexedTileHistory:
                 stream.seek(event['offset']);values.append(json.loads(stream.read(event['bytes'])))
         coverage=end if history.get('complete') else min(end,history.get('processed_t_s',0))
         result=dict(ok=True,available=True,start_s=start,end_s=coverage,seed=seed,events=values,
-                    complete=history.get('complete',False),duration_s=history['duration_s'])
+                    complete=history.get('complete',False),duration_s=history['duration_s'],
+                    segment_catalog=segment_catalog(history, coverage))
         if codec=='xor2-v1':
             from dashboard_server.window_cells import compact_window
             result=compact_window(result)
@@ -224,6 +247,7 @@ class IndexedTileHistory:
         return {**packet,'tiles':list(tiles.values()),'tiles_reset':not incremental,
                 'path':path,'path_append':incremental,'tile_version':events[index]['version'],
                 'map_epoch':history['epoch'],'tile_epoch':epoch,'segments':history.get('segments'),
+                'segment_catalog':segment_catalog(history, target),
                 'state':'outdated' if outdated else 'saved' if history.get('complete') else 'regenerating',
                 'generation':dict(stage='complete' if history.get('complete') else 'drawing',
                     progress=history.get('progress',0),processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s']),

@@ -3068,3 +3068,26 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 .sensor-overview .gps-readouts{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media(min-width:1500px){.archive-preview.sensor-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:700px){.archive-preview.sensor-overview{grid-template-columns:1fr}}
+
+/* Replay cards use their container width; canvas height matches its stage. */
+.archive-layout{container-type:inline-size}
+.archive-preview.sensor-overview{grid-template-columns:minmax(0,1fr)}
+.sensor-overview > section,.sensor-overview .archive-media-grid > *{min-width:0;align-self:start;overflow-wrap:anywhere}
+.sensor-overview .panel-head{gap:8px;flex-wrap:wrap}
+.sensor-overview [hidden]{display:none!important}
+.sensor-overview .sim-map-stage{height:260px}
+.sensor-overview .sim-map-stage canvas{height:100%;min-height:0}
+.sensor-overview .rover-lidar-stage{height:260px}
+.sensor-overview .rover-lidar-stage canvas{height:100%;min-height:0;width:100%}
+.sensor-overview .archive-camera-frame{height:260px;min-height:0}
+.sensor-overview .archive-camera-frame video,.sensor-overview .archive-camera-frame img{height:100%;min-height:0}
+.sensor-overview .archive-imu-attitude-stage,.sensor-overview .archive-imu-attitude-stage canvas{height:190px;min-height:0;width:100%}
+.sensor-overview .archive-imu-grid{grid-template-columns:minmax(0,1fr)}
+.sensor-overview .chart-readout,.sensor-overview .gps-readouts{grid-template-columns:repeat(2,minmax(0,1fr))}
+.sensor-overview .chart-readout > *,.sensor-overview .gps-readouts > *{min-width:0;overflow-wrap:anywhere}
+.sensor-overview .archive-video-quality{top:44px;max-width:calc(100% - 20px)}
+.sensor-overview .archive-camera-source{position:absolute;top:4px;left:4px;max-width:calc(100% - 16px);margin:0}
+.sensor-overview .archive-camera-frame figcaption{font-size:10px;padding:4px 6px}
+.sensor-overview .archive-motor-table-wrap{max-width:100%;overflow-x:auto}
+@container(min-width:1120px){.archive-preview.sensor-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container(min-width:1990px){.archive-preview.sensor-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}

@@ -1,3 +1,4 @@
+import {visibleSegments} from './archive-segments.mjs';
 // Immutable ahead-of-time maps are applied only up to the media playback clock.
 export class ArchiveMapBuffer {
   constructor(window){
@@ -19,6 +20,7 @@ export class ArchiveMapBuffer {
       path.push(...(row.path||[]));packet=row;
     }
     return {...latest,segments:latest.segments??this.seed.segments,
+      segment_catalog:visibleSegments(this.segment_catalog || this.seed.segment_catalog,time),
       needs_regeneration:latest.needs_regeneration??this.seed.needs_regeneration,
       tiles:[...tiles.values()],path,tiles_reset:reset,path_append:!reset};
   }
