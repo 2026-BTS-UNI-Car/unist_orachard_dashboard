@@ -296,9 +296,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         result=self.archive_mapping.status(archive_id,query.get('t_s',[None])[0],query.get('since',[None])[0],
                             transport='tiles',tile_since=query.get('tile_since',[None])[0],tile_epoch=query.get('tile_epoch',[None])[0])
                     else:result=self.archive_mapping.status(archive_id,query.get('t_s',[None])[0],query.get('since',[None])[0])
+                    if query.get('codec',[None])[0]=='xor2-deflate-v1' and 'tiles' in result:
+                        from dashboard_server.window_cells import compact_window
+                        result=compact_window(dict(ok=True,map_frame=True,seed=result,events=[]),'xor2-deflate-v1')
                 elif parts[5]=='map-window' and not action:
                     query=parse_qs(parsed.query)
                     result=self.archive_mapping.window(archive_id,query.get('start_s',['0'])[0],query.get('span_s',['12'])[0],query.get('codec',[None])[0])
+                elif parts[5]=='new-map' and action:result=self.archive_mapping.new_map(archive_id)
+                elif parts[5]=='map-playback' and action:result=self.archive_mapping.playback(archive_id,payload.get('t_s'),payload.get('playing'))
                 elif parts[5]=='regenerate' and action:result=self.archive_mapping.regenerate(archive_id)
                 else:self.send_error(404);return
             else:self.send_error(404);return

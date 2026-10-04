@@ -26,7 +26,8 @@ def _code_fingerprint(files):
 def localization_fingerprint():
     """Derived poses are reusable only with the exact localization algorithm."""
     return _code_fingerprint(('integrated_mapping.py','raw_mapping/raw_localization.py',
-        'raw_mapping/raw_point_support.py','raw_mapping/fit_workers.py','raw_mapping/gnss_constraints.py'))
+        'raw_mapping/raw_point_support.py','raw_mapping/fit_workers.py','raw_mapping/gnss_constraints.py',
+        'raw_mapping/continuous_localization.py'))
 
 
 @lru_cache(maxsize=1)
@@ -225,7 +226,9 @@ class IndexedTileHistory:
         index=bisect.bisect_right(times,target)-1
         if index<0:return dict(ok=True,version=0,scan_count=0,map_epoch=history['epoch'],
                                preserve_view_on_seek=True,frame_t_s=0,tiles=[],tiles_reset=True,
-                               needs_regeneration=outdated)
+                               needs_regeneration=outdated,playback_driven=history.get('playback_driven',False),
+                               history_available=True,tracking=history.get('tracking'),
+                               generation=dict(processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s']))
         segment=events[index]['segment'];epoch=f'{history["epoch"]}:{segment}'
         folder=Path(archive)/'integrated_map'/history['epoch']
         try:since=int(since)
@@ -255,4 +258,7 @@ class IndexedTileHistory:
                 'hit_endpoints':history.get('hit_endpoints','sampled_returns'),
                 'free_rays':history.get('free_rays','sampled_scan_beams'),
                 'localization_fingerprint':history.get('localization_fingerprint'),
-                'raster_fingerprint':history.get('raster_fingerprint')}
+                'raster_fingerprint':history.get('raster_fingerprint'),
+                'playback_driven':history.get('playback_driven',False),
+                'tracking':history.get('tracking',packet.get('tracking')) if target>=history.get('processed_t_s',0) else packet.get('tracking'),
+                'mapping_error':history.get('mapping_error')}

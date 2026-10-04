@@ -47,6 +47,42 @@ class ArchiveMapping:
         self.lock=threading.Lock();self.running=set();self.errors={};self.progress={}
         from dashboard_server.integrated_archive import IndexedTileHistory
         self.tile_history=IndexedTileHistory()
+        self.playback_mappers={}
+
+    def new_map(self,archive_id):
+        path=self.directory(archive_id)
+        from dashboard_server.playback_mapping import new_history,PlaybackMapper
+        with self.lock:
+            if self.running:raise ValueError('기존 지도 작업 완료 후 다시 시도하세요.')
+            if len(self.playback_mappers)>=2 and archive_id not in self.playback_mappers:
+                for other in self.playback_mappers.values():other.close()
+                self.playback_mappers.clear()
+            previous=self.playback_mappers.pop(archive_id,None)
+            if previous:previous.close()
+            history=new_history(path,self.signature(path))
+            self.playback_mappers[archive_id]=PlaybackMapper(path,history)
+            self.errors.pop(archive_id,None);self.progress.pop(archive_id,None)
+        return dict(ok=True,state='waiting_for_play',map_epoch=history['epoch'],playback_driven=True)
+
+    def playback(self,archive_id,t_s,playing):
+        path=self.directory(archive_id)
+        from dashboard_server.playback_mapping import PlaybackMapper
+        with self.lock:
+            mapper=self.playback_mappers.get(archive_id)
+            history=mapper.history if mapper and not mapper.closed else read_json(path/'integrated_map_history.json')
+            if not history.get('playback_driven'):return dict(ok=True,playback_driven=False)
+            if mapper and mapper.closed:
+                if mapper.thread:mapper.thread.join(timeout=2)
+                if mapper.running:raise ValueError('이전 지도 작업 정리 중입니다. 잠시 후 다시 시도하세요.')
+                mapper=None
+            if mapper is None:
+                if len(self.playback_mappers)>=2:
+                    for other in self.playback_mappers.values():other.close()
+                    self.playback_mappers.clear()
+                mapper=PlaybackMapper(path,history);self.playback_mappers[archive_id]=mapper
+            for name,other in self.playback_mappers.items():
+                if name!=archive_id and other.running:other.close()
+            return mapper.advance(t_s,playing)
 
     def directory(self, archive_id):
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',archive_id) or archive_id in ('.','..'):
@@ -78,6 +114,10 @@ class ArchiveMapping:
             if indexed is not None:
                 return {**indexed,'regeneration_error':error,'state':'regenerating' if running else indexed.get('state','saved'),
                         'generation':progress or indexed.get('generation',{})}
+        if read_json(path/'integrated_map_history.json').get('playback_driven'):
+            # A stale legacy final PNG must not reappear after a new-map reset.
+            indexed=self.tile_history.status(path,target,tile_since,tile_epoch)
+            if indexed is not None:return indexed
         history=read_json(path/'dashboard_occupancy_grid_history.json')
         value={};needs_regeneration=False
         if history:

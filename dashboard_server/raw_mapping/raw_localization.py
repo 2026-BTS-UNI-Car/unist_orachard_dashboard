@@ -75,7 +75,7 @@ def surfaces(dense,maximum=480):
     return Surfaces(p,normals,cKDTree(p),len(anchors),dense,tree)
 
 
-def fit_surfaces(target,current,theta,initial_xy,max_translation,max_yaw,failures=None):
+def fit_surfaces(target,current,theta,initial_xy,max_translation,max_yaw,failures=None,yaw_prior=None):
     def failed(reason):
         if failures is not None:failures[reason]+=1
         return None
@@ -91,7 +91,11 @@ def fit_surfaces(target,current,theta,initial_xy,max_translation,max_yaw,failure
         p=moved[good];n=normals[good];r=residual[good]
         jac=np.column_stack((n[:,0],n[:,1],-n[:,0]*p[:,1]+n[:,1]*p[:,0]))
         weight=np.minimum(1.,.04/np.maximum(np.abs(r),1e-9))
-        delta=np.linalg.lstsq(jac*np.sqrt(weight[:,None]),r*np.sqrt(weight),rcond=1e-6)[0]
+        matrix=jac*np.sqrt(weight[:,None]);rhs=r*np.sqrt(weight)
+        if yaw_prior is not None:
+            expected,sigma=yaw_prior
+            matrix=np.vstack((matrix,[0.,0.,1/sigma]));rhs=np.r_[rhs,(expected-theta)/sigma]
+        delta=np.linalg.lstsq(matrix,rhs,rcond=1e-6)[0]
         # Each step applies a left SE(2) correction, including the translated
         # scan's rotational lever arm, rather than independently adding yaw.
         theta+=float(delta[2]);xy=rotate(float(delta[2]))@xy+delta[:2]

@@ -196,6 +196,7 @@ export class MetricMap {
     const now=Number.isFinite(this.until)?this.until:Number(this.snapshot.pose?.stamp||this.snapshot.stamp||path.at(-1)?.stamp||0);
     ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=2.5;
     for(let i=1;i<path.length;i++){
+      if(path[i].break_before)continue;
       const a=xy(path[i-1]),b=xy(path[i]);
       const ageStamp=Number.isFinite(this.until)?Number(path[i].t_s??(path[i].stamp-(this.snapshot.recording_start_stamp||0))):Number(path[i].stamp);
       ctx.strokeStyle=`rgba(240,50,67,${pathOpacity(Number.isFinite(ageStamp)?ageStamp:now,now)})`;

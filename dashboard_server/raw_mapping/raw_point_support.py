@@ -11,7 +11,8 @@ from .raw_localization import rotate
 from .fit_workers import evaluate
 
 
-def proposal(target,current,theta,initial_xy,translation_bound,rotation_bound):
+def proposal(target,current,theta,initial_xy,translation_bound,rotation_bound,
+             min_coverage=.7,max_rmse=.11,min_normal_support=60,min_normal_eigen=.06,max_distance=.2):
     source=current.dense[np.linspace(0,len(current.dense)-1,min(480,len(current.dense)),dtype=int)]
     xy=np.asarray(initial_xy).copy()
     for _ in range(15):
@@ -30,10 +31,10 @@ def proposal(target,current,theta,initial_xy,translation_bound,rotation_bound):
         if np.linalg.norm(xy)>translation_bound or abs(theta)>rotation_bound:return None
         if np.linalg.norm(shift)<.0005 and abs(correction)<.0001:break
     moved=source@rotate(theta).T+xy;distance,index=target.dense_tree.query(moved,workers=1)
-    good=distance<.2;coverage=float(good.mean())
-    if coverage<.7:return None
+    good=distance<max_distance;coverage=float(good.mean())
+    if coverage<min_coverage:return None
     rmse=float(np.sqrt(np.mean(distance[good]**2)))
-    if rmse>.11:return None
+    if rmse>max_rmse:return None
     # Full-density point fits alone can invent translation along a single wall.
     # Validate a separate normal-supported subset at this candidate transform.
     support=current.points@rotate(theta).T+xy
@@ -41,12 +42,12 @@ def proposal(target,current,theta,initial_xy,translation_bound,rotation_bound):
     normals=target.normals[indices]
     aligned=np.abs(np.einsum('ni,ni->n',current.normals@rotate(theta).T,normals))>.7
     accepted=(distance<.25)&aligned
-    if accepted.sum()<60:return None
+    if accepted.sum()<min_normal_support:return None
     n=normals[accepted];p=support[accepted]
     residual=np.einsum('ni,ni->n',target.points[indices[accepted]]-p,n)
     if float(np.sqrt(np.mean(residual**2)))>.08:return None
     eigen=np.linalg.eigvalsh(n.T@n/len(n))
-    if eigen[0]<.06:return None
+    if eigen[0]<min_normal_eigen:return None
     radius=max(1.,float(np.median(np.linalg.norm(p,axis=1))))
     jac=np.column_stack((n[:,0],n[:,1],(-n[:,0]*p[:,1]+n[:,1]*p[:,0])/radius))
     information=np.linalg.eigvalsh(jac.T@jac/len(n))
