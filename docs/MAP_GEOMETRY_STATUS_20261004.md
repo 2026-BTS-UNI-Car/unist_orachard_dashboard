@@ -2,7 +2,9 @@
 
 사용자가 지적한 대상은 저장된 과수원 기록의 재생 지도다. 실제 대시보드의 live/archive 차량 화살표만 180도 돌렸다. 원시 LaserScan·IMU·추정 pose·이동경로·점유 셀 좌표는 변경하지 않았다. SIM 차체 좌표계의 화살표는 기본 회전값 0을 유지한다.
 
-기존 raster는 450개 이하로 빈 공간의 광선을 샘플링하면서 물체의 반사점도 함께 버렸다. 과수원 080351/080909의 각 100개 균등 선택 원시 스캔에서 관측된 endpoint 셀 83,281/92,523개 중 기존 방식은 44.4%/40.4%만 occupied로 남겼다. 새 방식은 실제 finite hit endpoint 전체를 셀에 넣고 교차하는 free ray보다 우선한다. 같은 셀을 한 scan에서 여러 번 가중하지 않는다. 빈 공간 ray 계산량은 종전처럼 제한한다. 이 검사는 점 유실 수정의 근거이며 전체 지형 정확도 검증은 아니다.
+기존 raster는 450개 이하로 빈 공간의 광선을 샘플링하면서 물체의 반사점도 함께 버렸다. 과수원 080351/080909의 각 100개 균등 선택 원시 스캔에서 관측된 endpoint 셀 83,281/92,523개 중 기존 방식은 44.4%/40.4%만 occupied로 남겼다. 첫 수정은 실제 finite hit endpoint 전체를 셀에 넣고 교차하는 free ray보다 우선한다. 같은 셀을 한 scan에서 여러 번 가중하지 않는다. 이 검사는 점 유실 수정의 근거이며 전체 지형 정확도 검증은 아니다.
+
+화면에 남은 방사형 unknown 빈틈은 관측된 free ray까지 샘플링하는 영향도 있었다. 후속 수정에서는 source-native map의 finite beam 전체를 사용한다. Endpoint를 NumPy로 변환하고 256개 ray씩 bounded bitmap으로 union하여 큰 임시 배열/전체 ray 정렬을 줄인다. 기존 정수 Bresenham/교차 hit 우선/사전순 cap admission을 유지한다. 모든 octant·zero-length·hit/free 교차의 셀 일치도를 reference 방식과 비교했다. 과수원별 100개 scan의 Windows raster p95는 약 45/51ms였고, 중앙 free-cell 수는 14,262→21,465 / 17,161→27,137으로 늘었다. 같은 scan의 hit-cell 수는 유지됐다. 이는 관측된 빈 공간의 복원이지 관측하지 않은 영역의 보간이 아니다. 실차 ARM 성능 및 후속 배포/재생성 여부는 최종 체크포인트를 따른다.
 
 원시 센서 SHA만 확인하던 trajectory 캐시에 localization 코드 지문을 추가했다. raster 코드 지문도 history에 기록한다. 이전 방식의 지도는 표시를 유지하며 재생성이 필요한 상태로 구분한다. 재생성 전 trajectory/history pointer를 별도 파일로 보존하고, 재생성 실패 시 기존 history pointer를 정확히 복구한다. 원본 bag·sensor extract·GPS·PWM·metadata는 수정하지 않는다.
 

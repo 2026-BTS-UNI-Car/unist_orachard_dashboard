@@ -56,7 +56,7 @@ def line_cells(x0, y0, x1, y1):
             y0 += sy
 
 
-def raster_cells(endpoints):
+def _raster_cells_sorted(endpoints):
     """Exact Bresenham cells for rays from (0,0), in deterministic x/y order.
 
     Array arithmetic avoids building/sorting tens of thousands of Python
@@ -84,6 +84,40 @@ def raster_cells(endpoints):
     def coordinates(codes):
         return np.column_stack((codes//height+xmin, codes % height+ymin))
     return coordinates(free), coordinates(occupied)
+
+
+def raster_cells(endpoints):
+    """Exact ray union with bounded bitmap/chunks instead of sorting all rays.
+
+    Keep the reference rounding and lexicographic admission order. Chunking
+    bounds scratch arrays even when every S2 beam is integrated.
+    """
+    if not endpoints:
+        return np.empty((0,2),dtype=np.int64),np.empty((0,2),dtype=np.int64)
+    rays=np.asarray(endpoints,dtype=np.int64);ends_x,ends_y,hits=rays.T
+    xmin,ymin=min(0,int(ends_x.min())),min(0,int(ends_y.min()))
+    width=max(0,int(ends_x.max()))-xmin+1
+    height=max(0,int(ends_y.max()))-ymin+1
+    if width*height>4_194_304:
+        return _raster_cells_sorted(endpoints)
+    seen=np.zeros(width*height,dtype=bool)
+    for first in range(0,len(rays),256):
+        x,y,hit=rays[first:first+256].T;dx,dy=np.abs(x),np.abs(y)
+        major=np.maximum(dx,dy)
+        n=np.arange(int(major.max())+1,dtype=np.int64)[None,:]
+        x_major=(dx>=dy)[:,None]
+        xx=np.sign(x)[:,None]*np.where(x_major,n,
+            (2*n*dx[:,None]+dy[:,None])//(2*np.maximum(dy[:,None],1)))
+        yy=np.sign(y)[:,None]*np.where(x_major,
+            (2*n*dy[:,None]+dx[:,None])//(2*np.maximum(dx[:,None],1)),n)
+        allowed=n<=(major-hit)[:,None]
+        seen[(xx[allowed]-xmin)*height+yy[allowed]-ymin]=True
+    occupied=np.unique((ends_x[hits!=0]-xmin)*height+ends_y[hits!=0]-ymin)
+    seen[occupied]=False
+    free=np.flatnonzero(seen)
+    def coordinates(codes):
+        return np.column_stack((codes//height+xmin,codes%height+ymin))
+    return coordinates(free),coordinates(occupied)
 
 
 def grayscale_png(width, height, data):
@@ -243,7 +277,22 @@ class OccupancyMap:
         x0, y0 = math.floor(sx / self.resolution), math.floor(sy / self.resolution)
         stride = max(1, math.ceil(len(ranges) / self.max_beams))
         endpoints = []
-        for i in range(0, len(ranges), stride):
+        if sample.get('preserve_hit_endpoints') is True:
+            # Source-native mapping retains every observed ray, including its
+            # free cells. Vector endpoint conversion avoids a Python trig loop.
+            values=np.asarray(ranges,dtype=float)
+            missing=np.asarray([value is None for value in ranges])
+            valid=missing | (np.isfinite(values)&(values>=rmin))
+            explicit=scan.get('angles')
+            angles=np.asarray(explicit,dtype=float) if isinstance(explicit,list) and len(explicit)==len(ranges) else amin+np.arange(len(ranges))*step
+            valid&=np.isfinite(angles)
+            distances=np.where(missing,rmax,np.minimum(values,rmax))[valid]
+            angles=angles[valid]+yaw
+            hit=(~missing[valid])&(values[valid]<rmax)
+            xx=np.floor((sx+distances*np.cos(angles))/self.resolution).astype(np.int64)-x0
+            yy=np.floor((sy+distances*np.sin(angles))/self.resolution).astype(np.int64)-y0
+            endpoints=np.column_stack((xx,yy,hit.astype(np.int64))).tolist()
+        for i in (() if sample.get('preserve_hit_endpoints') is True else range(0,len(ranges),stride)):
             value = ranges[i]
             # Null is the publisher's explicit no-return (+infinity), not a hit.
             if value is None:
@@ -266,22 +315,6 @@ class OccupancyMap:
         else:
             free, occupied = raster_cells(endpoints)
             self._raster_cache = (endpoints, free, occupied)
-        if sample.get('preserve_hit_endpoints') is True:
-            # Limit free-space ray work, not the observed object geometry.
-            # Sparse ray sampling otherwise drops narrow trunks entirely.
-            values=np.asarray(ranges,dtype=float)
-            valid=np.isfinite(values)&(values>=rmin)&(values<rmax)
-            explicit=scan.get('angles')
-            angles=np.asarray(explicit,dtype=float) if isinstance(explicit,list) and len(explicit)==len(ranges) else amin+np.arange(len(ranges))*step
-            valid&=np.isfinite(angles)
-            angles=angles[valid]+yaw;values=values[valid]
-            occupied=np.unique(np.column_stack((np.floor((sx+values*np.cos(angles))/self.resolution).astype(np.int64)-x0,
-                                                  np.floor((sy+values*np.sin(angles))/self.resolution).astype(np.int64)-y0)),axis=0)
-            if len(free) and len(occupied):
-                minimum=np.minimum(free.min(axis=0),occupied.min(axis=0))
-                height=max(free[:,1].max(),occupied[:,1].max())-minimum[1]+1
-                encode=lambda cells:(cells[:,0]-minimum[0])*height+cells[:,1]-minimum[1]
-                free=free[~np.isin(encode(free),encode(occupied))]
         self._update_raster(free, x0, y0, -4)
         self._update_raster(occupied, x0, y0, 9)
         self._cells_cache = None

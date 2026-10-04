@@ -112,6 +112,7 @@ def _build(archive, signature, progress):
                  cell_transport='tiles-cells-v1',
                  localization_fingerprint=trajectory['localization_fingerprint'],
                  raster_fingerprint=raster_fingerprint(),hit_endpoints='all_finite_returns',
+                 free_rays='all_observed_scan_beams',
                  complete=False,events=events,checkpoints=checkpoints,duration_s=duration)
     target=archive/'integrated_map_history.json'
     if target.is_file():
@@ -228,5 +229,6 @@ class IndexedTileHistory:
                     progress=history.get('progress',0),processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s']),
                 'history_available':True,'needs_regeneration':outdated,
                 'hit_endpoints':history.get('hit_endpoints','sampled_returns'),
+                'free_rays':history.get('free_rays','sampled_scan_beams'),
                 'localization_fingerprint':history.get('localization_fingerprint'),
                 'raster_fingerprint':history.get('raster_fingerprint')}
