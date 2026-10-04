@@ -23,16 +23,33 @@ fingerprints must match. Raw bags, camera frames, GPS, IMU and motor logs remain
 unchanged. The existing API/session/origin checks protect both new actions.
 
 Local lifecycle, future-cell isolation, source-integrity, shock recovery,
-short-prior exclusion and browser cursor-flow tests pass. The two user-selected
-archives and five other recordings are being evaluated offline with unique
-GNSS epochs. New algorithm deployment and absolute map accuracy remain pending
-that evaluation and actual browser replay checks. Do not label this checkpoint
-as a complete mapping accuracy validation or a real autonomous controller.
+short-prior exclusion and browser cursor-flow tests pass. The two selected
+archives and five other recordings completed offline evaluation with unique
+GNSS epochs. All use one fixed frame. Low net rotation windows in 072530 show
+median disagreement with native projected gyro falling from 2.084 to 0.971
+degrees. Gyro is a consistency reference, not independent ground truth;
+far-point thickness, mounting tilt and absolute accuracy need further validation.
+This is not a validated real autonomous controller.
 
-The currently deployed web commit is `5138fc1`, with lossless cell compression
-and a bounded three-second initial seek window. The new cursor-driven mapper
-is not deployed at this checkpoint. CI quota is exhausted; release tests run
-directly on the Jetson ARM image. No motor commands are sent by these tests.
+The first cursor-driven web release, `467e0a1`, was applied through SSH. Both
+complete selected recordings passed CPU-only ARM validation: one frame, zero
+intermediate resets, unchanged source hashes, pause and backward seek. An actual
+080351 browser replay retained its cells and had no future frames.
+
+The `608387c` candidate pipelines ordered localization in a spawned CPU process
+with raster/storage work. At most two scans from the requested prefix are in
+flight. Duplicate raster rays are eliminated without eliminating observed
+cells. Serial and pipeline pose/path/tile payloads match exactly in regression
+tests and a native 19-second real-source comparison. A roughly 20-second ARM
+profile improved from 24.32 to 20.32 seconds. This is a processing measurement,
+not a guarantee of end-to-end real-time performance on every scene/network.
+
+The candidate also converts segmented maps on first Play, keeping the previous
+derived pointer recoverable. New map remains available during causal processing.
+Its 36 ARM tests pass; full pipeline validation includes 080351, 072530 and newly
+requested 080909 before deployment. Follow the latest UBTS TODO checkpoint for
+current deployed image and browser evidence. CI quota is exhausted; release
+tests run directly on Jetson. No motor commands are sent by these tests.
 
 Private raw trajectories, coordinates, sensor files and numerical comparisons
 are kept outside this repository in the field-data audit workspace.
