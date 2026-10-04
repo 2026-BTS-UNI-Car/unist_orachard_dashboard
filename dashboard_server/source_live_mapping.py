@@ -7,7 +7,7 @@ import os
 import threading
 import time
 from dashboard_server.live_mapping import LiveMapping
-from dashboard_server.integrated_mapping import IntegratedMapping
+from dashboard_server.continuous_mapping import ContinuousMapping
 from dashboard_server.tile_transport import StreamingOccupancyMap
 
 
@@ -15,7 +15,7 @@ class SourceLiveMapping(LiveMapping):
     def __init__(self, state_dir, start_worker=True):
         self.engine=None
         super().__init__(state_dir,start_worker=False)
-        self.engine=IntegratedMapping()
+        self.engine=ContinuousMapping()
         if not self.version:self.map=self.engine.map
         elif self.restored_snapshot is None:
             # A validated native checkpoint can be displayed as cells, even
@@ -86,24 +86,34 @@ class SourceLiveMapping(LiveMapping):
         raw_scan=frame.get('raw_scan')
         if not raw_scan:raise ValueError('waiting_for_original_LaserScan_bridge')
         if not 0<=now-received<=1.5:raise ValueError('stale_original_LaserScan')
-        raw=imu[0].get('raw',{}) if imu else None
-        if raw:
-            raw={**raw,'header':dict(stamp=raw['stamp'],frame_id=raw.get('frame_id','imu_link')),
-                 'orientation_covariance':raw.get('covariance',{}).get('orientation',[0]*9)}
-            if (raw.get('availability',{}).get('linear_acceleration') or {}).get('available') is False:raw=None
+        raw=self.native_imu(imu[0]) if imu else None
+        with self.inbox_lock:history=list(self.imu_history)
         with self.lock:
             if not self.tracking:return False
             draw=self.active
-        result=self.engine.add(raw_scan,raw,draw=draw)
+            engine=self.engine
+        for packet,_ in history:
+            native=self.native_imu(packet)
+            if native:engine.imu(native)
+        result=engine.add(raw_scan,raw,draw=draw)
         with self.lock:
+            if self.engine is not engine:return False
             self.map=self.engine.map;self.pose=self.engine.localizer.pose.copy()
             self.version+=1
-            self.state=('drawing' if draw else 'paused') if result['accepted'] else 'waiting_for_geometry'
+            self.state=('drawing' if draw else 'paused') if result['accepted'] and result.get('map_eligible',True) else 'waiting_for_geometry'
             self.reason=None if result['accepted'] else result['reason']
             self.diagnostic={**self.engine.diagnostic,'source_queue_dropped':self.dropped_source_scans,
                              'receipt_to_map_ms':round((time.monotonic()-received)*1000,2)}
             self._publish()
         return result['accepted']
+
+    @staticmethod
+    def native_imu(packet):
+        raw=packet.get('raw',{})
+        if not raw or (raw.get('availability',{}).get('linear_acceleration') or {}).get('available') is False:return None
+        return {**raw,'header':dict(stamp=raw['stamp'],frame_id=raw.get('frame_id','imu_link')),
+            **{name+'_covariance':raw.get('covariance',{}).get(name,[0]*9)
+               for name in ('orientation','angular_velocity','linear_acceleration')}}
 
     def _publish(self):
         if self.engine is None or self.restored_snapshot is not None or (self.state=='needs_reset' and not self.engine.records):
@@ -146,7 +156,7 @@ class SourceLiveMapping(LiveMapping):
         if operation=='reset':
             with self.lock:
                 self.engine.closed=True
-                self.engine=IntegratedMapping();self.map=self.engine.map
+                self.engine=ContinuousMapping();self.map=self.engine.map
             value=super().action(operation)
             with self.lock:self.map=self.engine.map;self._publish()
             return self.status(transport='tiles')
