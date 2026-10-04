@@ -4721,6 +4721,8 @@ function queueArchivePlaybackTick() {
 
 function stopArchivePlayback(reset = false) {
   state.archivePlayback.playing = false;
+  state.archivePlayback.mapBuffering = false;
+  state.archivePlayback.mapResumeRevision=(state.archivePlayback.mapResumeRevision||0)+1;
   resumeLiveCameraAfterArchive();
   const video = archiveNativeVideo();
   if (video && !video.paused) video.pause();
@@ -4739,6 +4741,28 @@ function stopArchivePlayback(reset = false) {
   renderArchiveFrame();
 }
 
+function syncArchiveMapClock(next,now,video){
+  const playback=state.archivePlayback;
+  if(window.LiveMap?.archiveReady(state.recordings.selectedId,next)===false){
+    playback.mapBuffering=true;
+    if(video){if(!video.paused)video.pause();}
+    else{playback.startTimeS=next;playback.startedAt=now;}
+    return;
+  }
+  if(!playback.mapBuffering)return;
+  playback.mapBuffering=false;
+  if(video?.paused){
+    const revision=(playback.mapResumeRevision||0)+1;playback.mapResumeRevision=revision;
+    Promise.resolve(video.play()).then(()=>{
+      if(!playback.playing||revision!==playback.mapResumeRevision)video.pause();
+    }).catch(error=>{
+      if(playback.playing&&revision===playback.mapResumeRevision){
+        playback.mapBuffering=true;playback.nativeVideoError=error?.message||'video resume failed';
+      }
+    });
+  }
+}
+
 function archivePlaybackTick(now = performance.now()) {
   if (!state.archivePlayback.playing) return;
   if (Number.isFinite(state.archivePlayback.sourceSwitchTimeS)) {
@@ -4746,13 +4770,15 @@ function archivePlaybackTick(now = performance.now()) {
   }
   const video = archiveNativeVideo();
   const elapsed = (now - state.archivePlayback.startedAt) / 1000;
-  const next = video ? Number(video.currentTime) + (state.archivePlayback.nativeVideoOffsetS || 0) : state.archivePlayback.startTimeS + elapsed;
+  const next = video ? Number(video.currentTime) + (state.archivePlayback.nativeVideoOffsetS || 0) :
+    state.archivePlayback.mapBuffering?state.archivePlayback.timeS:state.archivePlayback.startTimeS + elapsed;
   if (next >= state.archivePlayback.durationS) {
     state.archivePlayback.timeS = state.archivePlayback.durationS;
     stopArchivePlayback(false);
     return;
   }
   state.archivePlayback.timeS = next;
+  syncArchiveMapClock(next,now,video);
   scheduleArchiveSegmentsForTime(next).catch((err) => debugLog("archive", "playback segment load failed", err));
   if (now - (state.archivePlayback.lastPlaybackRenderAt || 0) >= 50) {
     state.archivePlayback.lastPlaybackRenderAt = now;
@@ -4850,7 +4876,7 @@ function renderArchiveFrame() {
   text("roverArchiveImuTime", imuFrame ? `IMU ${fmtNumber(imuFrame.t_s, 3)}s / Δ ${fmtNumber(imuSyncDeltaS, 3)}s` : "IMU -- / Δ --");
   text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data · base_link corrected" : "/imu/data_raw · sensor-native"} · playback ${fmtNumber(timeS, 3)}s` : waitingForImu?"IMU 버퍼 수신 중 · 재생 시각 동기화 대기":"동기 IMU sample 대기");
   drawImuAttitude($("roverArchiveImuCanvas"), Number(imuEuler.roll), Number(imuEuler.pitch), Number(imuEuler.yaw));
-  text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
+  text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}${state.archivePlayback.mapBuffering?' · 지도 버퍼링':''}`);
   text("roverOrchardMapTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   const scrubber = $("roverArchiveScrubber");
   if (scrubber && document.activeElement !== scrubber) scrubber.value = String(timeS);

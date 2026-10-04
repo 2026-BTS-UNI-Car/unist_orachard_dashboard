@@ -206,6 +206,17 @@ function archiveTime(id,timeS,playing,seekRequested=false){
   if(changed && !archivePlaying && archivePending){archivePending.controller.abort();archivePending=null;}
   if(changed&&(!inlinePlaybackMap||bufferedCursorMap))scheduleArchive();
 }
+function archiveReady(id,timeS){
+  if(id!==selected||!cursorMapping||archive.snapshot.needs_regeneration||archive.snapshot.mapping_error)return true;
+  const time=Math.max(0,Number(timeS)||0);
+  if(bufferedCursorMap && windowSupported!==false){
+    return mapBuffer?.contains(time)===true||nextMapBuffer?.contains(time)===true||
+      time<=Number(archive.snapshot.frame_t_s||0)+.35;
+  }
+  // Rejected geometry still advances the processed source prefix. It must not
+  // deadlock playback by demanding an invented new map pose in a sensor gap.
+  return time<=Math.max(availableCursorPrefix,Number(archive.snapshot.frame_t_s)||0)+.35;
+}
 async function pushPlayback(force=false){
   // Complete causal histories are immutable. Timed cell windows can render
   // every retained scan locally; there is no remaining localization to drive.
@@ -290,7 +301,7 @@ async function poll(){
   polling=false;if(active())timer=setTimeout(poll,Math.max(0,(live.snapshot.active?100:1000)-(performance.now()-started)));
 }
 function routeChanged(){live.draw();archive.draw();if(active()){poll();if(selected)scheduleArchive();}}
-window.LiveMap={selectArchive,archiveTime,routeChanged};
+window.LiveMap={selectArchive,archiveTime,archiveReady,routeChanged};
 document.addEventListener('visibilitychange',routeChanged);window.addEventListener('popstate',routeChanged);
 // The main application exposes route changes through the GPS hook.
 const gps=window.RoverGps;if(gps){const original=gps.routeChanged;gps.routeChanged=(...args)=>{original?.(...args);routeChanged();};}
