@@ -68,10 +68,30 @@ WebSocket까지 동일하게 제한됐다는 증거는 아니다.
 원시 위치·궤적·영상·브라우저 캡처는 public repository에 넣지 않는다.
 
 지연이 큰 072530 145–205초 구간 계측에서는 600스캔에 정합 3,635회를
-시도했다. 좋은 정합의 coverage 기준을 0.8에서 0.7로 바꾸는 private
-후보를 비교 중이다. 잔차·관측수·정보량·gyro 제약은 유지한다. 실제
-runtime은 `33b7833`이고 이 후보는 배포하지 않았다. 전체 holdout 및
-ARM 검증 전에 기준 완화를 실차 dashboard에 반영하지 않는다.
+시도했다. 추가 private 실험은 모두 종료됐으며 실제 runtime은
+`33b7833`으로 유지했다.
+
+- coverage 0.7 후보는 7개 기록을 완료했다. 일부 점 겹침이 더 좋아졌지만
+  저회전 구간의 gyro와 방향 차이는 1.050° → 1.445°로 증가했다. 독립
+  측량 기준이 없으므로 전반적으로 더 정확한 기본값으로 채택하지 않았다.
+- 마지막 관측 위치·속도와 최신 gyro 증분을 첫 탐색 seed로 쓰는 후보는
+  3개 기록을 완료했다. 개선이 작거나 혼재됐고, 20초 계측 prefix의
+  정합 호출은 943 → 1,179회로 증가했다. 호스트 부하 차이로 wall time을
+  직접 속도 개선으로 해석하지 않았다. 이 후보도 배포하지 않았다.
+
+실제 드라이버의 `inverted=false`, `angle_compensate=true`를 읽기 전용
+ROS parameter 조회로 확인했다. 설치된 고정 버전은 빔을 각도순으로
+정렬하고 node를 여러 각도 bin에 복제한 뒤 배열을 반전한다. 그 배열의
+`time_increment`만으로 개별 측정의 실제 수집 시각을 단정할 수 없다.
+원본의 반복 range/quality가 모두 가짜 측정이라는 뜻도 아니다.
+근거는 [SLAMTEC 고정 버전의 driver source](https://github.com/Slamtec/sllidar_ros2/blob/34300099fadfc772965962dec837bf436706188f/src/sllidar_node.cpp)다.
+드라이버·장착·센서 설정을 변경하지 않았다.
+
+다음 정확도 작업은 SDK 수집 순서·동기 flag·host timestamp 지연 확인,
+향후 native 측정 metadata 보존, 관측 가능한 gyro bias, 지속적인 local
+geometry 및 전역 drift 검증이다. 정지 강제나 반복된 원시 포인트 삭제로
+더 좋은 수치가 나오게 만들지 않는다. live/SIM의 adapter 이식과 느린
+회선 pacing도 미완료로 유지한다.
 
 검증·실제 배포·7개 원시 기록 비교 결과와 다음 재개 위치는
 UBTS `todo.md` 및 private `speed-accuracy-checkpoint.json`에 갱신한다.
