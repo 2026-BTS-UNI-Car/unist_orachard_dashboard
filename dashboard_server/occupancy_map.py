@@ -266,6 +266,22 @@ class OccupancyMap:
         else:
             free, occupied = raster_cells(endpoints)
             self._raster_cache = (endpoints, free, occupied)
+        if sample.get('preserve_hit_endpoints') is True:
+            # Limit free-space ray work, not the observed object geometry.
+            # Sparse ray sampling otherwise drops narrow trunks entirely.
+            values=np.asarray(ranges,dtype=float)
+            valid=np.isfinite(values)&(values>=rmin)&(values<rmax)
+            explicit=scan.get('angles')
+            angles=np.asarray(explicit,dtype=float) if isinstance(explicit,list) and len(explicit)==len(ranges) else amin+np.arange(len(ranges))*step
+            valid&=np.isfinite(angles)
+            angles=angles[valid]+yaw;values=values[valid]
+            occupied=np.unique(np.column_stack((np.floor((sx+values*np.cos(angles))/self.resolution).astype(np.int64)-x0,
+                                                  np.floor((sy+values*np.sin(angles))/self.resolution).astype(np.int64)-y0)),axis=0)
+            if len(free) and len(occupied):
+                minimum=np.minimum(free.min(axis=0),occupied.min(axis=0))
+                height=max(free[:,1].max(),occupied[:,1].max())-minimum[1]+1
+                encode=lambda cells:(cells[:,0]-minimum[0])*height+cells[:,1]-minimum[1]
+                free=free[~np.isin(encode(free),encode(occupied))]
         self._update_raster(free, x0, y0, -4)
         self._update_raster(occupied, x0, y0, 9)
         self._cells_cache = None

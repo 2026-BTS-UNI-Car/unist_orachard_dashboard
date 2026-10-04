@@ -3,8 +3,9 @@ import {decodeTileCells, cellPixels, tileOccupiedIndices, nearbyTileBounds} from
 
 const $ = id => document.getElementById(id);
 export class MetricMap {
-  constructor(id, schematic=false) {
+  constructor(id, schematic=false, headingOffset=0) {
     this.canvas = $(id); this.schematic = schematic; this.snapshot = {}; this.bitmap = null;
+    this.headingOffset = headingOffset;
     this.view = null; this.bounds = null; this.auto = true; this.until = Infinity; this.imageKey = '';
     this.imageData = ''; this.pendingImage = null; this.requestFullImage = false; this.occupiedCells = undefined; this.fitMode = 'nearby';
     this.canvas.addEventListener('wheel', event => {event.preventDefault(); this.zoom(event.deltaY < 0 ? 'in' : 'out');}, {passive:false});
@@ -192,7 +193,7 @@ export class MetricMap {
       ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
     }
     if(pose&&Number.isFinite(pose.x)&&Number.isFinite(pose.y)){
-      const p=xy(pose);ctx.save();ctx.translate(p.x,p.y);ctx.rotate(-Number(pose.yaw||0));
+      const p=xy(pose);ctx.save();ctx.translate(p.x,p.y);ctx.rotate(-(Number(pose.yaw||0)+this.headingOffset));
       ctx.fillStyle='#ef3447';ctx.strokeStyle='#fff';ctx.lineWidth=1.5;
       ctx.beginPath();ctx.moveTo(11,0);ctx.lineTo(-7,-6);ctx.lineTo(-4,0);ctx.lineTo(-7,6);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
     }

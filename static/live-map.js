@@ -1,12 +1,18 @@
 import {MetricMap} from './metric-map.mjs';
 import {ArchiveMapBuffer} from './archive-map-buffer.mjs';
 const $=id=>document.getElementById(id),text=(id,value)=>{if($(id))$(id).textContent=value;};
-const live=new MetricMap('liveMapCanvas'),archive=new MetricMap('liveArchiveCanvas');
+// Correct the real-rover front marker as requested, without modifying any
+// retained scan coordinates, localization yaw or simulation body-frame heading.
+const live=new MetricMap('liveMapCanvas',false,Math.PI),archive=new MetricMap('liveArchiveCanvas',false,Math.PI);
 const active=()=>location.pathname.replace(/\/$/,'')==='/rover-control'&&!document.hidden;
 let polling=false,timer=null,selected='',archiveEpoch=0,speedBusy=false,lastAutonomyPoll=0;
 let mapBuffer=null,nextMapBuffer=null,mapWindowPending=null,bufferPaintPending=false,windowSupported=null;
 let archiveTimer=null,archivePending=null,archiveTimeS=0,archivePlaying=false,followGeneration=false,archiveGenerating=false;
 let archiveRetryMs=75;
+function archiveQuality(value){
+  if(value.needs_regeneration)return ' · 이전 지도 · 재생성 필요';
+  return Number(value.segments)>1?` · 위치 추정 ${value.segments}개 구간 · 전체 지형 연결 미검증`:'';
+}
 async function request(path,body,signal){
   const timeout=path.includes('/map-window')||path.includes('/map?')?30000:8000;
   const response=await fetch(path,{cache:'no-store',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(timeout)]):AbortSignal.timeout(timeout),...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
@@ -43,7 +49,7 @@ async function pollArchive(id,epoch){
           bufferPaintPending=true;
           try{await archive.set(value);}finally{bufferPaintPending=false;}
         }
-        text('liveArchiveStatus',`GPS·IMU·LiDAR 통합 지도 · ${(archive.snapshot.frame_t_s||0).toFixed(1)}초 · 센서 시각 동기 재생`);
+        text('liveArchiveStatus',`GPS·IMU·LiDAR 통합 지도 · ${(archive.snapshot.frame_t_s||0).toFixed(1)}초 · 센서 시각 동기 재생${archiveQuality(archive.snapshot)}`);
       }
       if(!nextMapBuffer && !mapWindowPending && mapBuffer.end_s<mapBuffer.duration_s && mapBuffer.end_s-archiveTimeS<10){
         loadMapWindow(id,epoch,mapBuffer.end_s,12,true).catch(()=>{});
@@ -73,9 +79,9 @@ async function pollArchive(id,epoch){
     archiveGenerating=value.state==='regenerating';$('liveArchiveRegenerate').disabled=archiveGenerating;
     text('liveArchiveStatus',value.regeneration_error?`재생성 실패 · ${value.regeneration_error}`:
       value.state==='regenerating'?(generation.stage==='localizing'?'LiDAR·IMU 위치 추정 계산 중…':`지도 생성 ${Math.round((generation.progress||0)*100)}% · ${(generation.processed_t_s||0).toFixed(1)} / ${duration.toFixed(1)}초`):
-      value.needs_regeneration?'시각별 지도 재생성이 필요합니다. 기록으로 재생성을 누르세요.':
+      value.needs_regeneration?'이전 방식으로 만든 지도입니다. 기록으로 재생성을 누르세요.':
       value.state==='interrupted'?'중단된 지도 생성 · 부분 결과 유지 · 다시 재생성할 수 있습니다.':
-      value.grid?`${followGeneration?'생성된 전체 지도':'재생 시각의 지도'} · ${(value.frame_t_s||0).toFixed(1)}초 · 표시용 위치 추정`:
+      value.grid?`${followGeneration?'생성된 전체 지도':'재생 시각의 지도'} · ${(value.frame_t_s||0).toFixed(1)}초${archiveQuality(value)}`:
       value.history_available?'첫 지도 관측 전 · 재생하면 지도가 쌓입니다.':'저장된 지도 없음 · 기록으로 재생성을 누르세요.');
   }finally{
     if(archivePending===pending)archivePending=null;

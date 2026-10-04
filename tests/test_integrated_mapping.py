@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from dashboard_server.recording_clock import display_clock, sort_key
-from dashboard_server.integrated_archive import build, IndexedTileHistory
+from dashboard_server.integrated_archive import build, IndexedTileHistory,localization_fingerprint
 from dashboard_server.tile_transport import StreamingOccupancyMap
 from dashboard_server.tiled_occupancy import TiledOccupancyMap
 from dashboard_server.integrated_mapping import integrate
@@ -83,7 +83,7 @@ class IntegratedTests(unittest.TestCase):
                     stream.write(json.dumps(dict(topic='/scan',message=m,bag_time_ns=round((1000+i*.1)*1e9)))+'\n')
             sha=hashlib.sha256((source/'sensors.jsonl.gz').read_bytes()).hexdigest()
             (source/'manifest.json').write_text(json.dumps(dict(complete=True,archive_id='example',output_sha256={'sensors.jsonl.gz':sha})))
-            (source/'trajectory.json').write_text(json.dumps(dict(corrected=corrected,source_sensor_sha256=sha)))
+            (source/'trajectory.json').write_text(json.dumps(dict(corrected=corrected,source_sensor_sha256=sha,localization_fingerprint=localization_fingerprint())))
             history=build(archive,{},lambda *args:None);reader=IndexedTileHistory()
             early=reader.status(archive,.25);later=reader.status(archive,.45,early['tile_version'],early['tile_epoch'])
             self.assertEqual(early['grid']['encoding'],'tiles-cells-v1')

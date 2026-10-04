@@ -14,6 +14,7 @@ def integrate(grid, scan, pose, t_s=None):
         if value is not None and math.isfinite(value) and scan['range_min'] <= value < scan['range_max']:
             ranges.append(value); angles.append(scan['angle_min'] + index*scan['angle_increment'])
     return grid.update(dict(stamp=source_stamp(scan),recording_t_s=t_s,
+        preserve_hit_endpoints=True,
         pose=dict(x=float(pose[0]), y=float(pose[1]), yaw=float(pose[2])),
         localization='source_native_lidar_IMU_soft_GNSS',pose_source='encoderless_scan_registration',
         scan=dict(ranges=ranges,angles=angles,angle_min=0.,angle_increment=1.,

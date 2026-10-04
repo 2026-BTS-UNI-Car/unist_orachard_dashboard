@@ -4,6 +4,7 @@ from datetime import datetime
 import gzip
 import hashlib
 import json
+from functools import lru_cache
 from pathlib import Path
 import threading
 import uuid
@@ -12,6 +13,25 @@ from dashboard_server.integrated_mapping import IntegratedMapping, corrected_pos
 from dashboard_server.raw_mapping.raw_localization import source_stamp
 from dashboard_server.tile_transport import StreamingOccupancyMap
 from dashboard_server.occupancy_map import atomic_json, read_json
+
+
+def _code_fingerprint(files):
+    base=Path(__file__).parent;sha=hashlib.sha256()
+    for relative in files:
+        sha.update(relative.encode());sha.update((base/relative).read_bytes())
+    return sha.hexdigest()
+
+
+@lru_cache(maxsize=1)
+def localization_fingerprint():
+    """Derived poses are reusable only with the exact localization algorithm."""
+    return _code_fingerprint(('integrated_mapping.py','raw_mapping/raw_localization.py',
+        'raw_mapping/raw_point_support.py','raw_mapping/fit_workers.py','raw_mapping/gnss_constraints.py'))
+
+
+@lru_cache(maxsize=1)
+def raster_fingerprint():
+    return _code_fingerprint(('integrated_mapping.py','occupancy_map.py','tile_transport.py','tiled_occupancy.py'))
 
 
 def digest(path):
@@ -32,7 +52,9 @@ def prepare_trajectory(source, progress):
     if not manifest.get('complete') or signature!=(manifest.get('output_sha256') or {}).get('sensors.jsonl.gz'):
         raise ValueError('unverified_mapping_sensor_source')
     trajectory=read_json(source/'trajectory.json')
-    if trajectory and trajectory.get('source_sensor_sha256')==signature:
+    fingerprint=localization_fingerprint()
+    if (trajectory and trajectory.get('source_sensor_sha256')==signature
+            and trajectory.get('localization_fingerprint')==fingerprint):
         return trajectory
     imus=[];gps=[]
     for row in rows(path):
@@ -57,13 +79,30 @@ def prepare_trajectory(source, progress):
         frame='fixed_archive_ENU_unqualified' if proof['state']=='GNSS_position_constrained' else f'isolated_local_segment_{segment["segment"]}'
         for row,pose in zip(records,poses):corrected[str(row['stamp'])]=dict(segment=segment['segment'],pose=pose.tolist(),frame=frame)
         diagnostics.append(dict(segment=segment['segment'],gnss=proof,accepted_scans=len(records)))
-    result=dict(archive_id=manifest['archive_id'],source_sensor_sha256=signature,corrected=corrected,
+    result=dict(archive_id=manifest['archive_id'],source_sensor_sha256=signature,localization_fingerprint=fingerprint,corrected=corrected,
                 segments=diagnostics,autonomy_eligible=False)
+    previous=source/'trajectory.json'
+    if previous.is_file():
+        backup=source/('trajectory-previous-'+digest(previous)[:16]+'.json')
+        if not backup.exists():backup.write_bytes(previous.read_bytes())
     atomic_json(source/'trajectory.json',result)
     return result
 
 
 def build(archive, signature, progress):
+    # A failed rebuild must not replace a usable saved map with partial data.
+    target=Path(archive)/'integrated_map_history.json'
+    original=target.read_bytes() if target.is_file() else None
+    try:
+        return _build(archive,signature,progress)
+    except Exception:
+        if original is not None:
+            temporary=target.with_suffix('.restore.tmp');temporary.write_bytes(original);temporary.replace(target)
+        elif target.is_file():target.unlink()
+        raise
+
+
+def _build(archive, signature, progress):
     archive=Path(archive);source=archive/'mapping_source';trajectory=prepare_trajectory(source,progress)
     epoch=uuid.uuid4().hex;folder=archive/'integrated_map'/epoch;folder.mkdir(parents=True)
     metadata=read_json(archive/'metadata.json');start=datetime.fromisoformat(metadata['started_at']).timestamp()
@@ -71,8 +110,13 @@ def build(archive, signature, progress):
     grid=None;segment=None;next_checkpoint=-float('inf');version=0;grids={}
     history=dict(schema='ubts.integrated_archive.v1',epoch=epoch,source_signature=signature,
                  cell_transport='tiles-cells-v1',
+                 localization_fingerprint=trajectory['localization_fingerprint'],
+                 raster_fingerprint=raster_fingerprint(),hit_endpoints='all_finite_returns',
                  complete=False,events=events,checkpoints=checkpoints,duration_s=duration)
     target=archive/'integrated_map_history.json'
+    if target.is_file():
+        previous=archive/('integrated_map_history-previous-'+digest(target)[:16]+'.json')
+        if not previous.exists():previous.write_bytes(target.read_bytes())
     file=folder/'events.jsonl'
     with file.open('wb') as log:
         for row in rows(source/'sensors.jsonl.gz'):
@@ -148,13 +192,16 @@ class IndexedTileHistory:
                 history=read_json(file);self.cache[str(file)]=(stamp,history)
                 if len(self.cache)>16:self.cache.pop(next(iter(self.cache)))
         if history.get('schema')!='ubts.integrated_archive.v1':return None
+        outdated=(history.get('localization_fingerprint')!=localization_fingerprint()
+                  or history.get('raster_fingerprint')!=raster_fingerprint())
         import re
         if not re.fullmatch(r'[0-9a-f]{32}',str(history.get('epoch'))):raise ValueError('invalid_integrated_epoch')
         events=history.get('events',[]);times=[e['t_s'] for e in events]
         target=float(t_s) if t_s is not None else float('inf')
         index=bisect.bisect_right(times,target)-1
         if index<0:return dict(ok=True,version=0,scan_count=0,map_epoch=history['epoch'],
-                               preserve_view_on_seek=True,frame_t_s=0,tiles=[],tiles_reset=True)
+                               preserve_view_on_seek=True,frame_t_s=0,tiles=[],tiles_reset=True,
+                               needs_regeneration=outdated)
         segment=events[index]['segment'];epoch=f'{history["epoch"]}:{segment}'
         folder=Path(archive)/'integrated_map'/history['epoch']
         try:since=int(since)
@@ -176,7 +223,10 @@ class IndexedTileHistory:
         return {**packet,'tiles':list(tiles.values()),'tiles_reset':not incremental,
                 'path':path,'path_append':incremental,'tile_version':events[index]['version'],
                 'map_epoch':history['epoch'],'tile_epoch':epoch,'segments':history.get('segments'),
-                'state':'saved' if history.get('complete') else 'regenerating',
+                'state':'outdated' if outdated else 'saved' if history.get('complete') else 'regenerating',
                 'generation':dict(stage='complete' if history.get('complete') else 'drawing',
                     progress=history.get('progress',0),processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s']),
-                'history_available':True,'needs_regeneration':False}
+                'history_available':True,'needs_regeneration':outdated,
+                'hit_endpoints':history.get('hit_endpoints','sampled_returns'),
+                'localization_fingerprint':history.get('localization_fingerprint'),
+                'raster_fingerprint':history.get('raster_fingerprint')}

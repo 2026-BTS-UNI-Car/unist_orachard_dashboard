@@ -7,7 +7,7 @@ import * as model from '../static/sim-map-model.mjs';
 // completion order. No browser, network, simulation or timers are started.
 const source = fs.readFileSync(new URL('../static/metric-map.mjs', import.meta.url), 'utf8');
 const classSource = source.slice(source.indexOf('export class MetricMap {')).replace('export class','class');
-function fixture(schematic = false) {
+function fixture(schematic = false, headingOffset = 0) {
   const images = [], observers = [], commands = [], events = {}, reads = [];
   const rect = {width:720, height:400};
   const ctx = new Proxy({}, {get(target, key) {
@@ -35,7 +35,7 @@ function fixture(schematic = false) {
     }},
     ResizeObserver:class {constructor(fn) {this.notify = fn; observers.push(this);} observe() {}}});
   vm.runInContext(`${classSource}\nglobalThis.MetricMap = MetricMap;`, context);
-  const map = new context.MetricMap('test', schematic), draws = [], original = map.draw;
+  const map = new context.MetricMap('test', schematic, headingOffset), draws = [], original = map.draw;
   map.draw = function() {draws.push({snapshot:this.snapshot, bitmap:this.bitmap}); return original.call(this);};
   return {map, images, draws, observers, events, commands, rect, reads};
 }
@@ -52,6 +52,19 @@ function withoutPng(value) {
   return {...value, grid};
 }
 const values = value => JSON.parse(JSON.stringify(value));
+
+// The real vehicle marker has a half-turn mounting/display offset. Its tip
+// changes direction while world cells, path, pose and metric view stay native.
+{
+  const {map,images,commands}=fixture(false,Math.PI);
+  const value=snapshot(1,'AAAA',{pose:{x:2,y:3,yaw:Math.PI/2,stamp:1}});
+  map.set(value);images[0].onload();
+  const angle=commands.filter(([name])=>name==='rotate').at(-1)[1];
+  assert.ok(Math.abs(Math.cos(angle))<1e-12);
+  assert.ok(Math.sin(angle)>0,'marker tip must face screen-down for sensor yaw +90 degrees');
+  assert.equal(map.snapshot.pose.yaw,Math.PI/2);
+  assert.equal(map.snapshot.grid,value.grid);assert.equal(map.snapshot.path,value.path);
+}
 
 // One complete draw per decoded generation, with no blank/path-only draw and
 // no early bounds/autozoom update while a new image is still pending.
