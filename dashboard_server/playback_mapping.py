@@ -126,7 +126,10 @@ class PlaybackMapper:
                                 if fit['accepted']:basis=fit
                             if basis:
                                 local=(np_array(factor.xy)-basis['translation'])@basis['rotation']
-                                engine.gps_prior(factor.stamp,local,factor.scale_m)
+                                # Position uncertainty includes the uncalibrated
+                                # rigid-frame heading over the distance travelled.
+                                scale=math.hypot(factor.scale_m,2*float(np_array(local).dot(np_array(local)))**.5*basis['heading_uncertainty_lower_bound_rad'])
+                                engine.gps_prior(factor.stamp,local,scale)
                             gnss_note=dict(state='position_consistency_validation' if basis else 'waiting_for_motion_baseline',epochs=len(gnss.accepted),reported_hacc_m=factor.reported_hacc_m)
                         continue
                     if topic!='/scan':continue

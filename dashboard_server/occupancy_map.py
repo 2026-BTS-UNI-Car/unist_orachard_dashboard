@@ -31,11 +31,16 @@ def atomic_json(path, value):
 
 
 def read_json(path):
-    try:
-        value = json.loads(Path(path).read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else {}
-    except (OSError, ValueError):
-        return {}
+    for attempt in range(8):
+        try:
+            value = json.loads(Path(path).read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else {}
+        except PermissionError:
+            # Concurrent atomic replacement/virus scanning can briefly lock
+            # the existing file on Windows. A lock is not an empty map.
+            if os.name!='nt' or attempt==7:return {}
+            time.sleep(.01*(attempt+1))
+        except (OSError, ValueError):return {}
 
 
 def line_cells(x0, y0, x1, y1):

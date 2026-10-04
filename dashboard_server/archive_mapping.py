@@ -49,6 +49,12 @@ class ArchiveMapping:
         self.tile_history=IndexedTileHistory()
         self.playback_mappers={}
 
+    def close(self):
+        with self.lock:workers=list(self.playback_mappers.values())
+        for worker in workers:worker.close()
+        for worker in workers:
+            if worker.thread:worker.thread.join(timeout=5)
+
     def new_map(self,archive_id):
         path=self.directory(archive_id)
         from dashboard_server.playback_mapping import new_history,PlaybackMapper

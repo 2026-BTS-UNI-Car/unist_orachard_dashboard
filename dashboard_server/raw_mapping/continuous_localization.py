@@ -51,7 +51,7 @@ class ContinuousLocalization:
         quaternion_yaw=float(np.dot(rotation.as_rotvec(),gravity))
         radius=min(10.,max(1.5,dt*1.5));step=.5 if radius<=4 else 1.
         center=np.zeros(2)
-        if self.position_prior and abs(self.position_prior[0]-stamp)<1.5:
+        if self.position_prior and self.position_prior[2]<=5 and abs(self.position_prior[0]-stamp)<1.5:
             center=rotate(-reference['pose'][2])@(self.position_prior[1]-reference['pose'][:2])
             radius=min(10.,max(2.,3*self.position_prior[2]));step=1.
         xy=center+np.array([(x,y) for x in np.arange(-radius,radius+.01,step) for y in np.arange(-radius,radius+.01,step)])
@@ -102,7 +102,7 @@ class ContinuousLocalization:
         if dt>0 and coverage>=dt*.8:
             # Noise/bias floor grows with keyframe age. A prior is not a zero
             # rotation rule and never overrides the scan observability gates.
-            prior=(gyro,math.radians(1.+.3*min(dt,10)))
+            prior=(gyro,math.radians(.35+.3*min(dt,10)))
         max_xy=min(3.,max(.35,.12+3*min(dt,1.)))
         max_yaw=min(math.radians(70),angle+math.radians(5))
         seeds=[(gyro if prior else delta_yaw,predicted),(delta_yaw,predicted)]
@@ -134,6 +134,10 @@ class ContinuousLocalization:
             reference=self.previous;dt=stamp-reference['stamp']
             candidate=registration(reference['surfaces'],current,angular_change(reference['q'],q),dt,self.velocity)
             if candidate['accepted']:fit=candidate;used='adjacent_surface_fit'
+            weighted=self._fit(reference,current,q,stamp)
+            if weighted and (fit is None or (weighted['coverage']>=fit['coverage']-.03
+                    and weighted['rmse_m']<=max(.015,fit['rmse_m']*1.15))):
+                fit=weighted;used='adjacent_signed_IMU_fit'
             # A keyframe must explain the scan at least as well as the adjacent
             # observation. Long/noisy gyro integration cannot veto a good fit.
             if stamp-self.anchor['stamp']<5:

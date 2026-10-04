@@ -1,4 +1,5 @@
 import gzip,hashlib,json,tempfile,time,unittest
+from contextlib import ExitStack
 from pathlib import Path
 from dashboard_server.archive_mapping import ArchiveMapping
 from dashboard_server.integrated_archive import IndexedTileHistory
@@ -25,13 +26,14 @@ class PlaybackTests(unittest.TestCase):
         while time.monotonic()<end:
             value=read_json(archive/'integrated_map_history.json')
             if value.get('mapping_error'):self.fail(value['mapping_error'])
-            if value['processed_t_s']>=target-1e-5:return value
+            if value and value.get('processed_t_s',-1)>=target-1e-5:return value
             time.sleep(.02)
         self.fail('mapping did not reach requested prefix')
 
     def test_new_map_play_pause_seek_restart_and_raw_preservation(self):
-        with tempfile.TemporaryDirectory() as root:
+        with tempfile.TemporaryDirectory() as root, ExitStack() as cleanup:
             archive,digest=self.fixture(root);manager=ArchiveMapping(root)
+            cleanup.callback(manager.close)
             first=manager.new_map('record');reader=IndexedTileHistory()
             self.assertEqual(reader.status(archive,0)['scan_count'],0)
             manager.playback('record',.6,False)
@@ -47,7 +49,8 @@ class PlaybackTests(unittest.TestCase):
             manager.playback('record',0,False)
             self.assertEqual(reader.status(archive,0)['scan_count'],1)
             mapper=manager.playback_mappers['record'];mapper.close();mapper.thread.join(timeout=2)
-            restored=ArchiveMapping(root);restored.playback('record',.55,True);history=self.wait(archive,.5)
+            restored=ArchiveMapping(root);cleanup.callback(restored.close)
+            restored.playback('record',.55,True);history=self.wait(archive,.5)
             self.assertEqual(history['epoch'],first['map_epoch'])
             self.assertEqual(history['segments'],1)
             self.assertEqual([e['version'] for e in history['events']],list(range(1,len(history['events'])+1)))
@@ -66,8 +69,9 @@ class PlaybackTests(unittest.TestCase):
             for worker in restored.playback_mappers.values():worker.close()
 
     def test_corrupt_source_fails_without_replacing_raw_or_display_data(self):
-        with tempfile.TemporaryDirectory() as root:
+        with tempfile.TemporaryDirectory() as root, ExitStack() as cleanup:
             archive,_=self.fixture(root);manager=ArchiveMapping(root);manager.new_map('record')
+            cleanup.callback(manager.close)
             file=archive/'mapping_source/sensors.jsonl.gz';file.write_bytes(b'corrupt')
             manager.playback('record',.3,True)
             worker=manager.playback_mappers['record'];worker.thread.join(timeout=2)
