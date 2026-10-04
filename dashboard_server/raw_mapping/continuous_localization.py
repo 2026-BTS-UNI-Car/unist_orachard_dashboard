@@ -10,6 +10,7 @@ from scipy.spatial.transform import Rotation
 from .raw_localization import (source_stamp,quaternion,scan_points,surfaces,
     rotate,registration,fit_surfaces,angular_change)
 from .raw_point_support import point_support_registration,proposal
+from .fit_workers import evaluate
 
 
 class ContinuousLocalization:
@@ -107,8 +108,10 @@ class ContinuousLocalization:
         max_yaw=min(math.radians(70),angle+math.radians(5))
         seeds=[(gyro if prior else delta_yaw,predicted),(delta_yaw,predicted)]
         candidates=[]
-        for theta,xy in seeds:
-            result=fit_surfaces(reference['surfaces'],current,theta,xy,max_xy,max_yaw,yaw_prior=prior)
+        def solve(seed):
+            theta,xy=seed
+            return fit_surfaces(reference['surfaces'],current,theta,xy,max_xy,max_yaw,yaw_prior=prior)
+        for result in evaluate(solve,seeds):
             if result and (prior is None or abs(result['yaw']-gyro)<=max(math.radians(2),3*prior[1])):
                 candidates.append(result)
         if not candidates:return None

@@ -1,6 +1,8 @@
 import math,unittest
 import numpy as np
 from unittest.mock import patch
+from concurrent.futures import ThreadPoolExecutor
+from dashboard_server.raw_mapping import fit_workers
 from dashboard_server.raw_mapping.continuous_localization import ContinuousLocalization
 from test_integrated_mapping import scan
 
@@ -12,6 +14,19 @@ def imu(stamp):
 
 
 class ContinuousTests(unittest.TestCase):
+    def test_parallel_fit_hypotheses_preserve_numeric_tracking(self):
+        def run(pool):
+            tracker=ContinuousLocalization();poses=[]
+            with patch.object(fit_workers,'POOL',pool):
+                for i in range(16):
+                    m=imu(1000+i*.1);tracker.imu(m)
+                    result=tracker.add(scan(1000+i*.1,i*.035),m)
+                    self.assertTrue(result['accepted']);poses.append(result['pose'])
+            return np.array(poses)
+        serial=run(None)
+        with ThreadPoolExecutor(max_workers=3) as pool:parallel=run(pool)
+        np.testing.assert_array_equal(serial,parallel)
+
     def test_shock_and_long_loss_keep_origin_then_room_relocalizes(self):
         tracker=ContinuousLocalization()
         for i in range(3):

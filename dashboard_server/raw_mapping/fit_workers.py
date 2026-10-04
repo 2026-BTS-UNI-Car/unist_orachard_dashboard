@@ -6,5 +6,5 @@ POOL=ThreadPoolExecutor(max_workers=WORKERS,thread_name_prefix='scan-fit') if WO
 
 
 def evaluate(function, values):
-    if POOL and len(values)>2:return list(POOL.map(function,values))
+    if POOL and len(values)>1:return list(POOL.map(function,values))
     return [function(value) for value in values]
