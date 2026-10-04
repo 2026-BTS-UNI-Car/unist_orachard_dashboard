@@ -38,3 +38,14 @@ await new Promise(resolve=>setImmediate(resolve));
 assert.equal(vm.runInContext('archive.snapshot.frame_t_s',context),15);
 assert.ok(timers.at(-1).delay>=500);assert.match(element('liveArchiveStatus').textContent,/재시도/);
 console.log('Current frame precedes prefetch, stale seek requests abort, paused failures retry while retaining the last map');
+// Slow downloads must survive normal clock ticks before a future window.
+vm.runInContext('mapWindowPending?.controller.abort();mapWindowPending=null;archiveTimeS=20;archivePlaying=true;',context);
+vm.runInContext("loadMapWindow('example',archiveEpoch,23,12,true)",context).catch(()=>{});
+const future=calls.at(-1);
+vm.runInContext("archiveTime('example',20.1,true);archiveTime('example',20.2,true)",context);
+assert.equal(future.signal.aborted,false,'future prefetch aborted by a normal media tick');
+vm.runInContext("archiveTime('example',21.8,true)",context);
+assert.equal(future.signal.aborted,false,'buffering/main-thread catch-up must not cancel a future window');
+vm.runInContext("archiveTime('example',10,false)",context);
+assert.equal(future.signal.aborted,true,'explicit backward seek must discard a stale prefetch');
+console.log('Slow future map prefetch survives playback; explicit backward seek cancels it');

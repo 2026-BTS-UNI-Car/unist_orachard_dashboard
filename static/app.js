@@ -179,6 +179,7 @@ const state = {
 	    startedAt: 0,
 	    startTimeS: 0,
 	    raf: null,
+	    tickTimer: null,
 	    overlayMode: "both",
 	    overlayVisible: true,
 	    sync: true,
@@ -188,6 +189,8 @@ const state = {
 	    segmentDurationS: ARCHIVE_SEGMENT_SECONDS,
 	    segmentCache: new Map(),
 	    loadingSegments: new Map(),
+	    telemetrySegments: new Map(),
+	    loadingTelemetry: new Map(),
 	    lastSegmentWindowKey: "",
 	    seekTimer: null,
 	    lastPlaybackRenderAt: 0,
@@ -1686,7 +1689,7 @@ function toggleImuLive() {
 }
 
 function imuWebSocketUrl() {
-  const params = new URLSearchParams({profile: liveNetworkProfile(), flow: "ack"});
+  const params = new URLSearchParams({profile: liveNetworkProfile(), flow: "latest"});
   if (window.UBTS_IMU_WS_URL) return `${window.UBTS_IMU_WS_URL}${String(window.UBTS_IMU_WS_URL).includes("?") ? "&" : "?"}${params}`;
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   return `${scheme}://${location.host}/ws/imu?${params}`;
@@ -1766,7 +1769,7 @@ function handleImuLiveMessage(raw) {
   }
   if (payload.type === "socket") return;
   if (payload.type !== "imu") return;
-  if (payload.sequence && state.imuLive.socket?.readyState === WebSocket.OPEN) state.imuLive.socket.send(JSON.stringify({type: "imu_ack", sequence: payload.sequence}));
+  if (payload.ack_required!==false && payload.sequence && state.imuLive.socket?.readyState === WebSocket.OPEN) state.imuLive.socket.send(JSON.stringify({type: "imu_ack", sequence: payload.sequence}));
   state.imuLive.topicAlive = Boolean(payload.imu_topic_alive);
   state.imuLive.raw = payload.raw || {};
   state.imuLive.magnetic = payload.magnetic || {};
@@ -4127,7 +4130,11 @@ function clearArchiveFrameCache() {
     objectUrls: new Map(),
     imageElements: new Map(),
   };
+  for(const task of state.archivePlayback.loadingTelemetry?.values()||[])task.controller.abort();
+  state.archivePlayback.telemetrySegments = new Map();
+  state.archivePlayback.loadingTelemetry = new Map();
   state.archivePlayback.segmentCache = new Map();
+  for(const task of state.archivePlayback.loadingSegments?.values()||[])task.controller?.abort();
   state.archivePlayback.loadingSegments = new Map();
   state.archivePlayback.lastSegmentWindowKey = "";
   state.archivePlayback.lastPlaybackRenderAt = 0;
@@ -4250,7 +4257,8 @@ function trimArchiveTimelineCache() {
   const first = Math.max(0, center - 2 * duration), last = center + 4 * duration;
   for (const kind of ["lidar", "camera", "imu"]) {
     const name = `${kind}Frames`, keys = `${kind}Keys`;
-    cache[name] = (cache[name] || []).filter(frame => frame.t_s >= first && frame.t_s < last);
+    const lower=kind==='imu'?Math.max(0,center-24):first,upper=kind==='imu'?center+48:last;
+    cache[name] = (cache[name] || []).filter(frame => frame.t_s >= lower && frame.t_s < upper);
     cache[keys] = new Set(cache[name].map(frame => frame.cacheKey));
     cache[name].forEach((frame, index) => { frame.cacheIndex = index; });
   }
@@ -4278,6 +4286,7 @@ async function ensureArchiveSegmentForTime(timeS, options = {}) {
   const id = state.recordings.selectedId;
   const timeline = state.recordings.timeline;
   if (!id || !timeline) return;
+  ensureArchiveTelemetryForTime(timeS).catch(err=>debugLog('archive','telemetry load failed',err));
   const segmentDuration = Math.max(1, Number(state.archivePlayback.segmentDurationS) || ARCHIVE_SEGMENT_SECONDS);
   const startS = Math.max(0, Math.floor((Number(timeS) || 0) / segmentDuration) * segmentDuration);
   await loadArchiveTimelineSegment(id, startS, segmentDuration, options);
@@ -4291,10 +4300,34 @@ async function ensureArchiveSegmentForTime(timeS, options = {}) {
   if ((state.archivePlayback.playing || nearSegmentEnd) && nextStart < state.archivePlayback.durationS + 0.25) {
     loadArchiveTimelineSegment(id, nextStart, segmentDuration).catch((err) => debugLog("archive", "segment prefetch failed", err));
   }
-  const secondNextStart = nextStart + segmentDuration;
-  if (state.archivePlayback.playing && secondNextStart < state.archivePlayback.durationS + 0.25) {
-    loadArchiveTimelineSegment(id, secondNextStart, segmentDuration).catch((err) => debugLog("archive", "segment prefetch failed", err));
-  }
+  // One LiDAR look-ahead leaves bandwidth for the priority IMU/map/video paths.
+}
+
+async function ensureArchiveTelemetryForTime(timeS) {
+  const id=state.recordings.selectedId;if(!id||!state.recordings.timeline)return;
+  const start=Math.max(0,Math.floor(Number(timeS)/24)*24);
+  const current=loadArchiveTelemetrySegment(id,start);
+  if(Number(timeS)>=start+16 && start+24<state.archivePlayback.durationS)
+    current.then(()=>loadArchiveTelemetrySegment(id,start+24)).catch(err=>debugLog('archive','telemetry prefetch failed',err));
+  return current;
+}
+
+async function loadArchiveTelemetrySegment(id,start) {
+  const key=`${id}:${start}`;
+  const playback=state.archivePlayback;
+  if(playback.telemetrySegments.has(key))return;
+  if(playback.loadingTelemetry.has(key))return playback.loadingTelemetry.get(key).promise;
+  for(const [other,task] of playback.loadingTelemetry){if(other!==key&&Math.abs(task.start-start)>24){task.controller.abort();playback.loadingTelemetry.delete(other);}}
+  const controller=new AbortController();
+  const promise=getJson(`/api/recordings/${encodeURIComponent(id)}/timeline?start_s=${start}&duration_s=24&profile=dashboard-telemetry-v1`,{signal:controller.signal})
+    .then(payload=>{
+      if(controller.signal.aborted||id!==state.recordings.selectedId)return;
+      if(!payload.ok||!payload.timeline)throw new Error(payload.error||'telemetry unavailable');
+      mergeArchiveTimelineSegment(payload.timeline);playback.telemetrySegments.set(key,start);
+      for(const [old,t] of playback.telemetrySegments)if(Math.abs(t-start)>24)playback.telemetrySegments.delete(old);
+      renderArchiveFrame();
+    }).finally(()=>{if(playback.loadingTelemetry.get(key)?.controller===controller)playback.loadingTelemetry.delete(key);});
+  playback.loadingTelemetry.set(key,{controller,promise,start});return promise;
 }
 
 function archiveSegmentWindowKey(timeS) {
@@ -4318,6 +4351,10 @@ function scheduleArchiveSegmentsForTime(timeS, options = {}) {
 }
 
 function scheduleArchiveSeek(timeS) {
+  const duration=state.archivePlayback.segmentDurationS||ARCHIVE_SEGMENT_SECONDS;
+  const start=Math.floor(Number(timeS)/duration)*duration;
+  for(const task of state.archivePlayback.loadingSegments.values())if(task.start<start-duration||task.start>start+duration)task.controller.abort();
+  ensureArchiveTelemetryForTime(timeS).catch(err=>debugLog('archive','seek telemetry load failed',err));
   if (state.archivePlayback.seekTimer) clearTimeout(state.archivePlayback.seekTimer);
   state.archivePlayback.seekTimer = setTimeout(() => {
     state.archivePlayback.seekTimer = null;
@@ -4332,15 +4369,16 @@ async function loadArchiveTimelineSegment(id, startS, durationS, options = {}) {
   const duration = Math.max(1, Number(durationS) || ARCHIVE_SEGMENT_SECONDS);
   const key = `${id}:${start.toFixed(3)}:${duration.toFixed(3)}`;
   if (!options.force && state.archivePlayback.segmentCache.has(key)) return state.archivePlayback.segmentCache.get(key);
-  if (state.archivePlayback.loadingSegments.has(key)) return state.archivePlayback.loadingSegments.get(key);
+  if (state.archivePlayback.loadingSegments.has(key)) return state.archivePlayback.loadingSegments.get(key).promise;
   const params = new URLSearchParams({
     start_s: start.toFixed(3),
     duration_s: duration.toFixed(3),
     profile: ARCHIVE_PLAYBACK_PROFILE,
   });
-  const promise = getJson(`/api/recordings/${encodeURIComponent(id)}/timeline?${params.toString()}`)
+  const controller=new AbortController();
+  const promise = getJson(`/api/recordings/${encodeURIComponent(id)}/timeline?${params.toString()}`,{signal:controller.signal})
     .then((payload) => {
-      if (id !== state.recordings.selectedId) return payload;
+      if (controller.signal.aborted || id !== state.recordings.selectedId) return payload;
       if (payload?.ok && payload.timeline) {
         if (!state.recordings.timeline) state.recordings.timeline = payload.timeline;
         if (payload.timeline.coordinate_frame && !state.recordings.timeline.coordinate_frame) {
@@ -4359,9 +4397,9 @@ async function loadArchiveTimelineSegment(id, startS, durationS, options = {}) {
       return payload;
     })
     .finally(() => {
-      state.archivePlayback.loadingSegments.delete(key);
+      if(state.archivePlayback.loadingSegments.get(key)?.controller===controller)state.archivePlayback.loadingSegments.delete(key);
     });
-  state.archivePlayback.loadingSegments.set(key, promise);
+  state.archivePlayback.loadingSegments.set(key, {promise,controller,start});
   return promise;
 }
 
@@ -4666,6 +4704,21 @@ async function toggleArchivePlayback() {
   archivePlaybackTick();
 }
 
+function queueArchivePlaybackTick() {
+  // Visible/occluded windows can throttle rAF to one second. Keep the sensor
+  // playback clock at media rate; the first callback cancels its partner.
+  let completed=false;
+  const run=()=>{
+    if(completed)return;completed=true;
+    clearTimeout(state.archivePlayback.tickTimer);
+    if(state.archivePlayback.raf)cancelAnimationFrame(state.archivePlayback.raf);
+    state.archivePlayback.tickTimer=null;state.archivePlayback.raf=null;
+    archivePlaybackTick(performance.now());
+  };
+  state.archivePlayback.raf=requestAnimationFrame(run);
+  state.archivePlayback.tickTimer=setTimeout(run,80);
+}
+
 function stopArchivePlayback(reset = false) {
   state.archivePlayback.playing = false;
   resumeLiveCameraAfterArchive();
@@ -4675,6 +4728,8 @@ function stopArchivePlayback(reset = false) {
     cancelAnimationFrame(state.archivePlayback.raf);
     state.archivePlayback.raf = null;
   }
+  clearTimeout(state.archivePlayback.tickTimer);
+  state.archivePlayback.tickTimer=null;
   if (reset) {
     state.archivePlayback.timeS = 0;
     if (video) {
@@ -4687,7 +4742,7 @@ function stopArchivePlayback(reset = false) {
 function archivePlaybackTick(now = performance.now()) {
   if (!state.archivePlayback.playing) return;
   if (Number.isFinite(state.archivePlayback.sourceSwitchTimeS)) {
-    state.archivePlayback.raf=requestAnimationFrame(archivePlaybackTick);return;
+    queueArchivePlaybackTick();return;
   }
   const video = archiveNativeVideo();
   const elapsed = (now - state.archivePlayback.startedAt) / 1000;
@@ -4703,12 +4758,13 @@ function archivePlaybackTick(now = performance.now()) {
     state.archivePlayback.lastPlaybackRenderAt = now;
     renderArchiveFrame();
   }
-  state.archivePlayback.raf = requestAnimationFrame(archivePlaybackTick);
+  queueArchivePlaybackTick();
 }
 
 function setArchiveTime(value, options = {}) {
   if (options.pause) stopArchivePlayback(false);
   state.archivePlayback.timeS = Math.max(0, Math.min(state.archivePlayback.durationS, Number(value) || 0));
+  window.LiveMap?.archiveTime(state.recordings.selectedId,state.archivePlayback.timeS,state.archivePlayback.playing,true);
   const video = archiveNativeVideo();
   if (video && Math.abs(Number(video.currentTime || 0) - archiveVideoTime(state.archivePlayback.timeS)) > 0.04) {
     try { video.currentTime = archiveVideoTime(state.archivePlayback.timeS); } catch (_) { /* metadata is not ready yet */ }
@@ -4776,6 +4832,7 @@ function renderArchiveFrame() {
     cache.imuFrames?.length || 0,
   );
   const hasArchivedImu = imuFrameCount > 0;
+  const waitingForImu=hasArchivedImu && !imuFrame && state.archivePlayback.loadingTelemetry.size>0;
   const imuPanel = $("roverArchiveImuPanel");
   if (imuPanel) imuPanel.hidden = !hasArchivedImu;
   const colors = chartColors();
@@ -4783,7 +4840,7 @@ function renderArchiveFrame() {
     {
       label: "Roll / Pitch / Yaw",
       value: imuFrame ? `${fmtNumber(imuEuler.roll, 1)}° / ${fmtNumber(imuEuler.pitch, 1)}° / ${fmtNumber(imuEuler.yaw, 1)}°` : "--",
-      sub: imuFrame ? `${imuFrame.corrected ? "start-corrected" : "raw"} · calibration ${imuCalibrationState}` : "현재 재생 시각 안에 IMU frame 없음",
+      sub: imuFrame ? `${imuFrame.corrected ? "start-corrected" : "raw"} · calibration ${imuCalibrationState}` : waitingForImu?"IMU 버퍼 수신 중":"현재 재생 시각 안에 IMU frame 없음",
       color: imuFrame?.corrected ? colors.good : colors.amber,
     },
     { label: "Acceleration", value: imuFrame && vectorNorm(imuAcceleration) !== null ? `${fmtNumber(vectorNorm(imuAcceleration), 3)} m/s²` : "--", sub: `x ${fmtNumber(imuAcceleration.x, 3)} · y ${fmtNumber(imuAcceleration.y, 3)} · z ${fmtNumber(imuAcceleration.z, 3)}`, color: colors.good },
@@ -4791,7 +4848,7 @@ function renderArchiveFrame() {
     { label: "Magnetic field", value: imuFrame && vectorNorm(imuMagnetic) !== null ? `${fmtNumber(vectorNorm(imuMagnetic), 2)} µT` : "--", sub: imuFrame?.calibration_reference_id ? `reference ${imuFrame.calibration_reference_id}` : "magnetometer unavailable", color: colors.blue },
   ]);
   text("roverArchiveImuTime", imuFrame ? `IMU ${fmtNumber(imuFrame.t_s, 3)}s / Δ ${fmtNumber(imuSyncDeltaS, 3)}s` : "IMU -- / Δ --");
-  text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data · base_link corrected" : "/imu/data_raw · sensor-native"} · playback ${fmtNumber(timeS, 3)}s` : "동기 IMU sample 대기");
+  text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data · base_link corrected" : "/imu/data_raw · sensor-native"} · playback ${fmtNumber(timeS, 3)}s` : waitingForImu?"IMU 버퍼 수신 중 · 재생 시각 동기화 대기":"동기 IMU sample 대기");
   drawImuAttitude($("roverArchiveImuCanvas"), Number(imuEuler.roll), Number(imuEuler.pitch), Number(imuEuler.yaw));
   text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   text("roverOrchardMapTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);

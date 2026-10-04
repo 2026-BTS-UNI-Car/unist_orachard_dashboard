@@ -108,6 +108,16 @@ def write_status(path: Path, state: ImuBridgeState) -> None:
         pass
 
 
+def display_snapshot(snapshot):
+    """Compact display only; native mapping/ROS/status payloads remain intact."""
+    result={key:snapshot[key] for key in ('imu_topic_alive','last_imu_age_s','updated_at','raw_count','error') if key in snapshot}
+    result['raw']={key:value for key,value in snapshot.get('raw',{}).items() if key in
+                   ('frame_id','stamp','euler_deg','angular_velocity','linear_acceleration')}
+    result['magnetic']={key:value for key,value in snapshot.get('magnetic',{}).items() if key in ('frame_id','stamp','magnetic_field_uT')}
+    result['ack_required']=False
+    return result
+
+
 def ros_thread(state: ImuBridgeState, args: argparse.Namespace, ready: threading.Event, stop: threading.Event) -> None:
     try:
         import rclpy
@@ -160,16 +170,24 @@ async def serve(state: ImuBridgeState, args: argparse.Namespace, stop: threading
             await websocket.close(code=1008, reason="unsupported path")
             return
         profile = (parse_qs(urlparse(actual_path).query).get("profile") or ["auto"])[0]
-        hz = {"tiny": 1, "auto": 2, "slow": 2, "balanced": 5, "detail": 10, "mapping": 20}.get(profile, 2)
+        flow=(parse_qs(urlparse(actual_path).query).get('flow') or [''])[0]
+        latest=flow=='latest'
+        hz = ({"tiny": 2, "auto": 8, "slow": 5, "balanced": 10, "detail": 20} if latest else
+              {"tiny": 1, "auto": 2, "slow": 2, "balanced": 5, "detail": 10, "mapping": 20}).get(profile, 2)
         interval = 1.0 / max(1.0, min(hz, float(args.max_hz)))
-        ack = (parse_qs(urlparse(actual_path).query).get("flow") or [""])[0] == "ack"
+        ack = flow == "ack"
         sequence = 0
         await websocket.send(json.dumps({"type": "socket", "ok": True, "schema": BRIDGE_SCHEMA}, separators=(",", ":")))
         try:
             while True:
                 started = time.monotonic()
+                transport=getattr(websocket,'transport',None)
+                if latest and transport is not None and transport.get_write_buffer_size()>4096:
+                    await pace_stream(interval,started);continue
                 sequence += 1
-                await asyncio.wait_for(websocket.send(json.dumps({"type": "imu", **state.snapshot(), "sequence": sequence}, separators=(",", ":"))), timeout=2)
+                snapshot=state.snapshot()
+                if latest:snapshot=display_snapshot(snapshot)
+                await asyncio.wait_for(websocket.send(json.dumps({"type": "imu", **snapshot, "sequence": sequence}, separators=(",", ":"))), timeout=2)
                 if ack:
                     await wait_for_ack(websocket, lambda reply:
                                        reply.get("type") == "imu_ack" and reply.get("sequence") == sequence)

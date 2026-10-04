@@ -13,8 +13,9 @@ const state={archivePlayback:{timeS:500,segmentDurationS:4,cache,segmentCache:ne
 const context=vm.createContext({state,ARCHIVE_SEGMENT_SECONDS:4,URL:{revokeObjectURL:v=>revoked.push(v)}});
 vm.runInContext(functionSource,context);vm.runInContext('trimArchiveTimelineCache()',context);
 for(const kind of ['lidar','camera','imu']) {
-  assert.equal(cache[`${kind}Frames`].length,24);assert.equal(cache[`${kind}Keys`].size,24);
-  assert.equal(cache[`${kind}Frames`][0].t_s,492);assert.equal(cache[`${kind}Frames`].at(-1).t_s,515);
+  const expected=kind==='imu'?72:24;
+  assert.equal(cache[`${kind}Frames`].length,expected);assert.equal(cache[`${kind}Keys`].size,expected);
+  assert.equal(cache[`${kind}Frames`][0].t_s,kind==='imu'?476:492);assert.equal(cache[`${kind}Frames`].at(-1).t_s,kind==='imu'?547:515);
 }
 assert.equal(state.archivePlayback.segmentCache.size,6);assert.deepEqual(revoked,['blob:old']);
 assert.equal(cache.gpsFrames.length,2);assert.equal(cache.motorFrames.length,1);

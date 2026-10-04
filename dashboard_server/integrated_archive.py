@@ -115,7 +115,7 @@ class IndexedTileHistory:
     def __init__(self):
         self.lock=threading.Lock();self.cache={}
 
-    def window(self,archive,start_s,span_s=12):
+    def window(self,archive,start_s,span_s=12,codec=None):
         start=float(start_s);span=float(span_s)
         if not np.isfinite(start) or not np.isfinite(span) or not 0<=start<=86400 or not 1<=span<=24:
             raise ValueError('invalid_map_window')
@@ -129,8 +129,12 @@ class IndexedTileHistory:
             for event in selected:
                 stream.seek(event['offset']);values.append(json.loads(stream.read(event['bytes'])))
         coverage=end if history.get('complete') else min(end,history.get('processed_t_s',0))
-        return dict(ok=True,available=True,start_s=start,end_s=coverage,seed=seed,events=values,
+        result=dict(ok=True,available=True,start_s=start,end_s=coverage,seed=seed,events=values,
                     complete=history.get('complete',False),duration_s=history['duration_s'])
+        if codec=='xor2-v1':
+            from dashboard_server.window_cells import compact_window
+            result=compact_window(result)
+        return result
 
     def status(self,archive,t_s,since=None,tile_epoch=None):
         file=Path(archive)/'integrated_map_history.json'

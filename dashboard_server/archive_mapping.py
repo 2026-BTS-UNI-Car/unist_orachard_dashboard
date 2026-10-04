@@ -121,8 +121,8 @@ class ArchiveMapping:
         threading.Thread(target=self._render,args=(archive_id,),daemon=True,name='archive-map').start()
         return {'ok':True,'state':'regenerating'}
 
-    def window(self,archive_id,start_s,span_s=12):
-        return self.tile_history.window(self.directory(archive_id),start_s,span_s)
+    def window(self,archive_id,start_s,span_s=12,codec=None):
+        return self.tile_history.window(self.directory(archive_id),start_s,span_s,codec)
 
     def _render(self, archive_id):
         session_id=None

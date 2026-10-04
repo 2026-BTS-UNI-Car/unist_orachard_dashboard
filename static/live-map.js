@@ -88,9 +88,9 @@ async function pollArchive(id,epoch){
 }
 async function loadMapWindow(id,epoch,start,span,next){
   if(mapWindowPending)return;
-  const pending={controller:new AbortController(),epoch,start,end:start+span};mapWindowPending=pending;
+  const pending={controller:new AbortController(),epoch,start,end:start+span,next};mapWindowPending=pending;
   try{
-    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-window?start_s=${start.toFixed(3)}&span_s=${span}`,undefined,pending.controller.signal);
+    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-window?start_s=${start.toFixed(3)}&span_s=${span}&codec=xor2-v1`,undefined,pending.controller.signal);
     if(epoch!==archiveEpoch)return;
     windowSupported=value.available===true;
     if(windowSupported){const window=new ArchiveMapBuffer(value);if(next)nextMapBuffer=window;else mapBuffer=window;}
@@ -106,7 +106,7 @@ function scheduleArchive(delay=75){
     }
   });},delay);
 }
-function archiveTime(id,timeS,playing){
+function archiveTime(id,timeS,playing,seekRequested=false){
   if(id!==selected)return;
   if(playing||Math.abs(timeS-archiveTimeS)>.05)followGeneration=false;
   if(!followGeneration&&Math.max(Number(archive.snapshot.frame_t_s)||0,Number(archive.pendingImage?.snapshot.frame_t_s)||0)>timeS){
@@ -114,9 +114,15 @@ function archiveTime(id,timeS,playing){
     // The same epoch keeps the user's metric zoom/pan while an earlier frame loads.
     archive.set({map_epoch:archive.snapshot.map_epoch,preserve_view_on_seek:true,scan_count:0,version:0});
   }
-  const changed=Math.abs(timeS-archiveTimeS)>.05||Boolean(playing)!==archivePlaying;
+  const jump=Number(timeS)-archiveTimeS;
+  // Media clocks can jump after buffering or a busy render frame. Only an
+  // explicit seek (or backward/paused change) invalidates a future download.
+  const seek=seekRequested || jump<-.05 || (!playing && Math.abs(jump)>.05);
+  const changed=Math.abs(jump)>.05||Boolean(playing)!==archivePlaying;
   archiveTimeS=Math.max(0,Number(timeS)||0);archivePlaying=Boolean(playing);
-  if(mapWindowPending && (archiveTimeS<mapWindowPending.start || archiveTimeS>mapWindowPending.end)){
+  // A future window is intentionally ahead of the clock. Normal playback must
+  // not abort it simply because the current cursor precedes its start.
+  if(mapWindowPending && seek && (archiveTimeS<mapWindowPending.start || archiveTimeS>mapWindowPending.end)){
     mapWindowPending.controller.abort();mapWindowPending=null;
   }
   if(changed && !archivePlaying && archivePending){archivePending.controller.abort();archivePending=null;}

@@ -1134,6 +1134,7 @@ class TelemetryProvider:
         ) and summary["imu_frames"] is not None:
             return summary
         timeline_path = path / "timeline.json"
+
         if not timeline_path.exists():
             summary.update({"ok": False, "source": "missing"})
             return summary
@@ -1266,6 +1267,9 @@ class TelemetryProvider:
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
         timeline_path = path / "timeline.json"
 
+        if profile == 'dashboard-telemetry-v1':
+            return self._recording_light_telemetry(path,timeline_path,start_s,duration_s)
+
         def response(timeline):
             timeline = self._with_recorded_gps(path, timeline, start_s, duration_s)
             timeline = with_recorded_motor(path, timeline, start_s, duration_s)
@@ -1297,6 +1301,48 @@ class TelemetryProvider:
             segment = self._recording_timeline_segment(timeline, start_s, duration_s)
             return response(segment)
         return response(timeline)
+
+    def _recording_light_telemetry(self,path,timeline_path,start_s,duration_s):
+        from dashboard_server.telemetry_cache import light_segment
+        try:
+            start=float(start_s or 0);duration=float(duration_s or 24)
+            if not math.isfinite(start) or not math.isfinite(duration):raise ValueError()
+            start=max(0.0,start);duration=min(24.0,max(.5,duration))
+        except (ValueError,TypeError):return dict(ok=False,error='invalid_telemetry_window')
+        cache_dir=self._playback_cache_path(path,timeline_path)
+        if cache_dir is None:return dict(ok=False,error='timeline_not_found')
+        if self._valid_playback_manifest(cache_dir,timeline_path) is None:
+            timeline=self._load_recording_timeline(timeline_path)
+            if not timeline:
+                from dashboard_server.telemetry_cache import raw_telemetry
+                timeline=raw_telemetry(path,self.recording_playback_cache_dir)
+                if not timeline:return dict(ok=False,error='timeline_not_found')
+                result=self._recording_timeline_segment(timeline,start,duration)
+                result=self._with_recorded_gps(path,result,start,duration)
+                result=with_recorded_motor(path,result,start,duration)
+                result=self._playback_response_profile(result,POLAR_PROFILE)
+                result['playback']['profile']='dashboard-telemetry-v1'
+                return dict(ok=True,timeline=result)
+            self._build_playback_cache(path,timeline_path,timeline,(0.0,0))
+            self._drop_timeline_cache(timeline_path)
+        first=max(0,int(start//PLAYBACK_SEGMENT_SECONDS)-1)
+        last=int((start+duration)//PLAYBACK_SEGMENT_SECONDS)
+        combined={};frames={key:{} for key in ('imu','gps','motor')}
+        for index in range(first,last+1):
+            part=light_segment(cache_dir,index)
+            if not part:continue
+            combined.update({k:v for k,v in part.items() if k not in frames})
+            for kind in frames:
+                section=part.get(kind) or {}
+                combined[kind]={k:v for k,v in section.items() if k!='frames'}
+                for frame in section.get('frames',[]):frames[kind][json.dumps([frame.get('t_s'),frame.get('stamp')],sort_keys=True)]=frame
+        for kind,rows in frames.items():combined.setdefault(kind,{})['frames']=sorted(rows.values(),key=lambda f:float(f.get('t_s',0)))
+        result=self._recording_timeline_segment(combined,start,duration)
+        result=self._with_recorded_gps(path,result,start,duration)
+        result=with_recorded_motor(path,result,start,duration)
+        result=self._playback_response_profile(result,POLAR_PROFILE)
+        result['playback']['profile']='dashboard-telemetry-v1'
+        return dict(ok=True,timeline=result)
 
     def _with_recorded_gps(self, path, timeline, start_s, duration_s):
         """Read the full GPS sidecar by time window, including old samples past the RAM tail."""

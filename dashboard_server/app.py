@@ -298,7 +298,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     else:result=self.archive_mapping.status(archive_id,query.get('t_s',[None])[0],query.get('since',[None])[0])
                 elif parts[5]=='map-window' and not action:
                     query=parse_qs(parsed.query)
-                    result=self.archive_mapping.window(archive_id,query.get('start_s',['0'])[0],query.get('span_s',['12'])[0])
+                    result=self.archive_mapping.window(archive_id,query.get('start_s',['0'])[0],query.get('span_s',['12'])[0],query.get('codec',[None])[0])
                 elif parts[5]=='regenerate' and action:result=self.archive_mapping.regenerate(archive_id)
                 else:self.send_error(404);return
             else:self.send_error(404);return

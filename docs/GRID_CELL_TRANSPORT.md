@@ -32,3 +32,13 @@ up to the media clock, and reload a checkpoint when seeking backward or changing
 isolated submaps. Earlier PNG archives and saved maps without native cells remain
 read-only compatible; they are not advertised as recovered numeric cells. PNG
 exports may still be produced for downloads, independently of the live renderer.
+
+Archive clients may negotiate `codec=xor2-v1` on map-window requests. Each window
+keeps a complete independent seed. Later events send the XOR of the previous
+packed two-bit tile as `xor2-v1`, omit unchanged cells, and retain every accepted
+scan's timestamp, pose and reset. New tiles are complete; submap resets clear
+the patch base. The browser expands the sequence once before playback, so a
+backward seek restores the seed and never applies future observations. Dropped
+windows do not share patch state. Clients that omit the codec receive the
+original complete tile events. Live snapshots continue using full replacement
+tiles rather than this archive-only patch chain.
