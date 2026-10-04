@@ -71,7 +71,7 @@ def export_localizer(source):
             seen=sorted(gnss.seen),accepted=[asdict(f) for f in gnss.accepted],rejected=gnss.rejected)))
 
 def restore_localizer(value):
-    if value.get('schema')!=SCHEMA or value.get('libraries')!=dict(numpy=np.__version__,scipy=scipy.__version__):
+    if not isinstance(value,dict) or value.get('schema')!=SCHEMA or value.get('libraries')!=dict(numpy=np.__version__,scipy=scipy.__version__):
         raise ValueError('incompatible_resume_schema')
     # Parsed input is bounded before this function; only allow finite JSON data.
     def finite_tree(v):
@@ -133,14 +133,47 @@ def save_state(folder,history,state,grid,offset,t_s):
         localization_fingerprint=localization_fingerprint(),raster_fingerprint=raster_fingerprint(),state=blob.name,state_sha256=digest(blob),
         native=native.name,native_sha256=proof['manifest_sha256'],raw_offset=offset,t_s=t_s,
         drawn_scans=grid.scan_count,input_scans=state['input_scans'],runtime_authority=False)
-    persist_json(folder/'resume.json',meta)
+    previous={}
+    pointer=folder/'resume.json'
+    if pointer.is_file() and not pointer.is_symlink() and pointer.stat().st_size<=65536:
+        try:previous=json.loads(pointer.read_text(encoding='utf-8'))
+        except (OSError,ValueError):pass
+    if not isinstance(previous,dict):previous={}
+    if all(previous.get(k)==meta[k] for k in ('schema','epoch','source_sensor_sha256','localization_fingerprint','raster_fingerprint')):
+        meta['previous']={k:v for k,v in previous.items() if k!='previous'}
+    persist_json(pointer,meta)
+    # Keep the new and previous immutable resume bundles. Derived display
+    # history checkpoints, old map epochs, and original sensors are untouched.
+    # Cleanup occurs only after the atomic pointer switch; failure is harmless.
+    stale=previous.get('previous') if meta.get('previous') else None
+    if isinstance(stale,dict):
+        try:
+            if not isinstance(stale.get('state'),str):return
+            stem=stale['state'].removesuffix('.json.gz')
+            if not re.fullmatch(r'resume-[0-9]{7}-[0-9a-f]{32}',stem) or stale.get('native')!=stem+'-grid.json':return
+            native=folder/stale['native'];files=[folder/stale['state'],native]
+            if native.is_file() and not native.is_symlink() and native.stat().st_size<=4*1024*1024:
+                saved=json.loads(native.read_text(encoding='utf-8'));blob=saved.get('blob','')
+                if re.fullmatch(re.escape(native.stem)+r'-[0-9a-f]{32}\.tiles\.gz',blob):files.append(folder/blob)
+            for path in files:
+                if path.resolve().parent==folder.resolve() and path.is_file() and not path.is_symlink():path.unlink()
+        except (OSError,ValueError,TypeError):pass
 
 def load_state(folder,history):
     pointer=folder/'resume.json'
     if not pointer.is_file():return None
     try:
         if pointer.is_symlink() or pointer.stat().st_size>65536:raise ValueError('invalid_resume_pointer')
-        meta=json.loads(pointer.read_text())
+        meta=json.loads(pointer.read_text(encoding='utf-8'))
+        if not isinstance(meta,dict):return None
+        current=load_entry(folder,history,meta)
+        if current:return current
+        return load_entry(folder,history,meta.get('previous',{}))
+    except (OSError,ValueError,KeyError,TypeError,IndexError,EOFError,RecursionError,zlib.error):return None
+
+def load_entry(folder,history,meta):
+    try:
+        if not isinstance(meta,dict):return None
         if (meta.get('schema')!=SCHEMA or meta.get('epoch')!=history['epoch'] or
             meta.get('source_sensor_sha256')!=history['source_sensor_sha256'] or
             meta.get('localization_fingerprint')!=history.get('localization_fingerprint') or

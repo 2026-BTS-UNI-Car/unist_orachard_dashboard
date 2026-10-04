@@ -56,6 +56,7 @@ class StateTests(unittest.TestCase):
         with self.assertRaises(ValueError):restore_localizer(bad)
         bad=copy.deepcopy(state);bad['libraries']['scipy']='other'
         with self.assertRaises(ValueError):restore_localizer(bad)
+        with self.assertRaises(ValueError):restore_localizer([])
 
     def test_rejected_shock_retains_reference_and_recovers_after_state_restore(self):
         source=SourceCursorLocalizer()
@@ -81,7 +82,7 @@ class ResumeTests(unittest.TestCase):
         view=IndexedTileHistory().status(archive,.8)
         return final.cells,final.pose,final.path,{k:view[k] for k in ('pose','path','tiles','cell_count','scan_count','grid')}
 
-    def run_record(self,pipeline,restart=False,corrupt=False,storage_fail=False):
+    def run_record(self,pipeline,restart=False,corrupt=False,storage_fail=False,previous_fallback=False):
         with tempfile.TemporaryDirectory() as root,ExitStack() as cleanup,patch.dict('os.environ',{'UBTS_MAP_PIPELINE':str(pipeline),'UBTS_MAP_STATE_INTERVAL_S':'.1'}):
             archive,raw_hash=self.fixture(root);manager=ArchiveMapping(root);cleanup.callback(manager.close)
             initial=manager.new_map('record')
@@ -91,12 +92,18 @@ class ResumeTests(unittest.TestCase):
             worker=manager.playback_mappers['record'];worker.close();worker.thread.join(timeout=8)
             history=read_json(archive/'integrated_map_history.json');folder=archive/'integrated_map'/history['epoch']
             meta=read_json(folder/'resume.json');self.assertGreater(meta['raw_offset'],0)
+            self.assertLessEqual(len(list(folder.glob('resume-*-grid.json'))),2,'resume storage remains bounded while display history is retained')
             self.assertLessEqual(meta['t_s'],.45);self.assertGreaterEqual(meta['drawn_scans'],3)
             self.assertIsNotNone(load_state(folder,history))
             self.assertGreater(next(source_rows(archive/'mapping_source/sensors.jsonl.gz',meta['raw_offset']))[0]['bag_time_ns'],round((1000+meta['t_s'])*1e9))
             if corrupt:
                 (folder/meta['state']).write_bytes(b'corrupt')
-                self.assertIsNone(load_state(folder,history))
+                if previous_fallback:
+                    restored=load_state(folder,history);self.assertTrue(restored is not None)
+                    meta=restored[0]
+                else:
+                    (folder/meta['previous']['state']).write_bytes(b'corrupt')
+                    self.assertTrue(load_state(folder,history) is None)
             else:
                 for field,value in [('epoch','other'),('source_sensor_sha256','0'*64),('localization_fingerprint','other'),('raster_fingerprint','other')]:
                     bad={**history,field:value}
@@ -110,7 +117,7 @@ class ResumeTests(unittest.TestCase):
                 resumed.playback('record',.65,True,dict(client='fixture',sequence=4));self.wait(archive,.6)
                 resumed.playback('record',.65,False,dict(client='fixture',sequence=6))
                 h=read_json(archive/'integrated_map_history.json');n=len(h['events'])
-                self.assertEqual(h['restart_state']['restored'],not corrupt)
+                self.assertEqual(h['restart_state']['restored'],not corrupt or previous_fallback)
                 stale=resumed.playback('record',.8,True,dict(client='fixture',sequence=5))
                 self.assertTrue(stale['stale_control_ignored']);time.sleep(.08)
                 self.assertEqual(len(read_json(archive/'integrated_map_history.json')['events']),n)
@@ -121,7 +128,7 @@ class ResumeTests(unittest.TestCase):
                     self.assertIn('fixture_disk_failure',read_json(archive/'integrated_map_history.json')['restart_state_warning'])
                 else:result=self.finish(resumed,archive)
             if not pipeline:
-                self.assertEqual(len(calls),9 if corrupt else 9-meta['input_scans'])
+                self.assertEqual(len(calls),9 if corrupt and not previous_fallback else 9-meta['input_scans'])
             final=read_json(archive/'integrated_map_history.json')
             self.assertEqual(final['epoch'],initial['map_epoch'])
             self.assertEqual([e['version'] for e in final['events']],list(range(1,10)))
@@ -135,6 +142,9 @@ class ResumeTests(unittest.TestCase):
 
     def test_corrupt_checkpoint_falls_back_without_changing_cells_or_source(self):
         self.assertEqual(self.run_record(0),self.run_record(0,restart=True,corrupt=True))
+
+    def test_last_good_checkpoint_survives_corrupt_latest_bundle(self):
+        self.assertEqual(self.run_record(0),self.run_record(0,restart=True,corrupt=True,previous_fallback=True))
 
     def test_checkpoint_storage_failure_keeps_mapping_and_previous_pointer(self):
         self.assertEqual(self.run_record(0),self.run_record(0,restart=True,storage_fail=True))

@@ -34,7 +34,7 @@ def source_rows(path,offset):
 class ResumablePlaybackMapper(PlaybackMapper):
     def __init__(self,archive,history):
         super().__init__(archive,history)
-        self.state_interval=max(.1,min(30.,float(os.environ.get('UBTS_MAP_STATE_INTERVAL_S','10'))))
+        self.state_interval=max(.1,min(30.,float(os.environ.get('UBTS_MAP_STATE_INTERVAL_S','2'))))
 
     def _run(self):
         try:
