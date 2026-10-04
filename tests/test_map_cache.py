@@ -21,16 +21,36 @@ class MapCacheTests(unittest.TestCase):
         self.assertIs(history['_segment_index'],index)
         self.assertEqual(len(segment_catalog(history,99)),3)
 
-    def fixture(self,root):
+    def fixture(self,root,start_offset=0.):
         archive=Path(root);source=archive/'mapping_source';source.mkdir()
         (archive/'metadata.json').write_text(json.dumps(dict(started_at='1970-01-01T00:16:40Z',duration_s=1.)))
         with gzip.open(source/'sensors.jsonl.gz','wt') as stream:
-            for i in range(2):stream.write(json.dumps(dict(topic='/scan',message=scan(1000.+i*.1),bag_time_ns=round((1000.+i*.1)*1e9)))+'\n')
+            for i in range(2):stream.write(json.dumps(dict(topic='/scan',message=scan(1000.+start_offset+i*.1),bag_time_ns=round((1000.+start_offset+i*.1)*1e9)))+'\n')
         sha=hashlib.sha256((source/'sensors.jsonl.gz').read_bytes()).hexdigest()
         (source/'manifest.json').write_text(json.dumps(dict(complete=True,archive_id='test',output_sha256={'sensors.jsonl.gz':sha},topic_counts={'/scan':2})))
-        corrected={str(1000.+i*.1):dict(segment=0,frame='isolated',pose=[0,0,0]) for i in range(2)}
+        corrected={str(1000.+start_offset+i*.1):dict(segment=0,frame='isolated',pose=[0,0,0]) for i in range(2)}
         (source/'trajectory.json').write_text(json.dumps(dict(source_sensor_sha256=sha,localization_fingerprint=localization_fingerprint(),corrected=corrected)))
         return archive,source
+
+    def test_empty_seed_reports_complete_or_committed_prefix_without_advancing_history(self):
+        with tempfile.TemporaryDirectory() as d:
+            archive,_=self.fixture(d,start_offset=.1);build(archive,{},lambda *a:None)
+            file=archive/'integrated_map_history.json';history=json.loads(file.read_text())
+            history['playback_driven']=True;file.write_text(json.dumps(history))
+            seed=IndexedTileHistory().status(archive,0)
+            self.assertEqual(seed['scan_count'],0)
+            self.assertEqual(seed['state'],'saved')
+            self.assertEqual(seed['generation']['stage'],'complete')
+            history.update(complete=False,processed_t_s=.2,waiting_for_cursor=True)
+            file.write_text(json.dumps(history));before=file.read_bytes()
+            reader=IndexedTileHistory();seed=reader.status(archive,0)
+            self.assertEqual(seed['state'],'regenerating')
+            self.assertEqual(seed['generation']['processed_t_s'],.2)
+            window=reader.window(archive,0,1)
+            self.assertEqual(window['end_s'],.2)
+            self.assertFalse(window['complete'])
+            self.assertEqual(len(window['events']),2)
+            self.assertEqual(file.read_bytes(),before,'read windows must never advance a causal worker')
 
     def test_changed_algorithm_recomputes_and_preserves_old_pose_cache(self):
         class Engine:

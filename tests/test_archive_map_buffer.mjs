@@ -14,4 +14,17 @@ const disconnected=buffer.at(.25,2,'a');assert.equal(disconnected.tiles_reset,tr
 const back=buffer.at(.05,3,'b');assert.equal(back.tiles_reset,true);assert.equal(back.version,1);assert.equal(back.tiles[0].x,0);
 assert.equal(back.segment_catalog.length,1,'buffered navigation hides future segments');
 assert.equal(buffer.at(2),null);
+const retained=buffer.at(.25,3,'b');
+assert.equal(retained.tiles_reset,false,'already displayed segment must not clear again inside the same window');
+assert.deepEqual(retained.tiles,[]);assert.deepEqual(retained.path,[]);
+const cold=new ArchiveMapBuffer({start_s:0,end_s:2,
+ seed:{version:0,scan_count:0,tiles:[],tiles_reset:true},events:[
+  {tile_epoch:'continuous',tile_version:1,version:1,frame_t_s:.1,tiles_reset:true,tiles:[tile(0,'first')],path:[{stamp:.1}]},
+  {tile_epoch:'continuous',tile_version:2,version:2,frame_t_s:.2,tiles_reset:false,tiles:[tile(1,'second')],path:[{stamp:.2}]}]});
+assert.equal(cold.at(.1).tiles_reset,true);
+const next=cold.at(.2,1,'continuous');
+assert.equal(next.tiles_reset,false,'a seed before the first scan must not erase established tiles');
+assert.deepEqual(next.tiles,[tile(1,'second')]);assert.deepEqual(next.path,[{stamp:.2}]);
+assert.equal(cold.at(.2,2,'continuous').tiles_reset,false);
+assert.equal(cold.at(0,2,'continuous').scan_count,0,'backward seek still clears future cells');
 console.log('Map cache playback cursor, backward seek and disconnected submaps passed');

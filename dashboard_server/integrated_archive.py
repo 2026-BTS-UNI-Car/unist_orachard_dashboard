@@ -229,7 +229,9 @@ class IndexedTileHistory:
                                needs_regeneration=outdated,playback_driven=history.get('playback_driven',False),
                                history_available=True,tracking=history.get('tracking'),
                                mapping_error=history.get('mapping_error'),
-                               generation=dict(processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s'],waiting_for_cursor=history.get('waiting_for_cursor')))
+                               state='outdated' if outdated else 'saved' if history.get('complete') else 'regenerating',
+                               generation=dict(stage='complete' if history.get('complete') else 'drawing',
+                                   processed_t_s=history.get('processed_t_s',0),duration_s=history['duration_s'],waiting_for_cursor=history.get('waiting_for_cursor')))
         segment=events[index]['segment'];epoch=f'{history["epoch"]}:{segment}'
         folder=Path(archive)/'integrated_map'/history['epoch']
         try:since=int(since)

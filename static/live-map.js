@@ -13,7 +13,7 @@ let archiveTimer=null,archivePending=null,archiveTimeS=0,archivePlaying=false,fo
 let archiveRetryMs=75;
 let cursorMapping=false,playbackPending=null,lastPlaybackPush=-Infinity;
 let triedCausalMap=false;
-let inlinePlaybackMap=false;
+let inlinePlaybackMap=false,immutableCursorMap=false,bufferedCursorMap=false,availableCursorPrefix=0;
 const playbackClient=globalThis.crypto?.randomUUID?.()||`map-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;let playbackSequence=0;
 const segments=new ArchiveSegmentGallery(archive,time=>window.setArchiveTime?.(time,{pause:true}));
 archive.beforeCommit=(previous,next)=>segments.beforeCommit(previous,next);
@@ -43,7 +43,7 @@ function archiveQuality(value){
   return Number(value.segments)>1?` · 구간 ${(value.segment??0)+1} · 이전 지도 보존 · 구간 연결 미확정`:'';
 }
 async function request(path,body,signal){
-  const timeout=path.includes('/map-window')||path.includes('/map?')?30000:8000;
+  const timeout=path.includes('/map-window')||path.includes('/map?')||path.endsWith('/map-playback')?30000:8000;
   const response=await fetch(path,{cache:'no-store',priority:path.includes('/map')?'high':'auto',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(timeout)]):AbortSignal.timeout(timeout),...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
   const value=await response.json();if(!response.ok||value.ok===false)throw new Error(value.error||value.message||`HTTP ${response.status}`);return value;
 }
@@ -64,15 +64,15 @@ async function selectArchive(id){
   clearTimeout(archiveTimer);archiveTimer=null;archivePending?.controller.abort();
   mapBuffer=null;nextMapBuffer=null;windowSupported=null;mapWindowPending?.controller.abort();mapWindowPending=null;
   archiveTimeS=0;archivePlaying=false;followGeneration=false;archiveGenerating=false;cursorMapping=false;lastPlaybackPush=-Infinity;
-  triedCausalMap=false;inlinePlaybackMap=false;
+  triedCausalMap=false;inlinePlaybackMap=false;immutableCursorMap=false;bufferedCursorMap=false;availableCursorPrefix=0;
   playbackPending?.controller.abort();playbackPending=null;segments.reset();archive.set({});$('liveArchiveRegenerate').disabled=!id;
   if(!id){text('liveArchiveStatus','기록을 선택하세요.');return;}
   try{await pollArchive(id,epoch);}catch(error){if(epoch===archiveEpoch&&error.name!=='AbortError'){text('liveArchiveStatus',error.message);scheduleArchive(500);}}
 }
 async function pollArchive(id,epoch){
   if(epoch!==archiveEpoch||archivePending?.epoch===epoch)return;
-  if(cursorMapping && inlinePlaybackMap && archivePlaying){await pushPlayback();return;}
-  if(!cursorMapping && !followGeneration && windowSupported!==false){
+  if(cursorMapping && !bufferedCursorMap && inlinePlaybackMap && archivePlaying){await pushPlayback();return;}
+  if((!cursorMapping||bufferedCursorMap) && !followGeneration && windowSupported!==false){
     if(nextMapBuffer?.contains(archiveTimeS)){mapBuffer=nextMapBuffer;nextMapBuffer=null;}
     if(mapBuffer?.contains(archiveTimeS)){
       if(!bufferPaintPending){
@@ -83,7 +83,7 @@ async function pollArchive(id,epoch){
         }
         text('liveArchiveStatus',`GPS·IMU·LiDAR 통합 지도 · ${(archive.snapshot.frame_t_s||0).toFixed(1)}초 · 센서 시각 동기 재생${archiveQuality(archive.snapshot)}`);
       }
-      if(!nextMapBuffer && !mapWindowPending && mapBuffer.end_s<mapBuffer.duration_s && mapBuffer.end_s-archiveTimeS<10){
+      if(archivePlaying && !nextMapBuffer && !mapWindowPending && mapBuffer.end_s<mapBuffer.duration_s && mapBuffer.end_s-archiveTimeS<10){
         loadMapWindow(id,epoch,mapBuffer.end_s,12,true).catch(()=>{});
       }
       if(archivePlaying)scheduleArchive();return;
@@ -101,10 +101,10 @@ async function pollArchive(id,epoch){
     value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map?${query}`,undefined,pending.controller.signal);
     if(value.map_frame)value=(await decodeArchiveWindow(value)).seed;
     if(epoch!==archiveEpoch||(!followGeneration&&(target===null||target>archiveTimeS+.001)))return;
-    if(inlinePlaybackMap&&archivePlaying)return;
+    if(inlinePlaybackMap&&!bufferedCursorMap&&archivePlaying)return;
     await acceptArchiveMap(value);
     archiveRetryMs=75;
-    if(!cursorMapping && !followGeneration && windowSupported!==false && !mapWindowPending){
+    if(archivePlaying && (!cursorMapping||bufferedCursorMap) && !followGeneration && windowSupported!==false && !mapWindowPending){
       loadMapWindow(id,epoch,Math.max(0,archiveTimeS),3,false).then(()=>scheduleArchive()).catch(error=>{
         if(epoch===archiveEpoch&&error.name!=='AbortError')scheduleArchive(500);
       });
@@ -117,13 +117,19 @@ async function pollArchive(id,epoch){
     const cursorChanged=!followGeneration&&(target===null||Math.abs(target-archiveTimeS)>.05);
     const legacyGenerating=!cursorMapping&&value?.state==='regenerating';
     const catchingUp=cursorMapping&&archivePlaying&&!value?.mapping_error&&value?.generation?.waiting_for_cursor!==true;
-    if(epoch===archiveEpoch&&!inlinePlaybackMap&&(legacyGenerating||archivePlaying||cursorChanged||catchingUp))scheduleArchive();
+    if(epoch===archiveEpoch&&(!inlinePlaybackMap||bufferedCursorMap)&&(legacyGenerating||archivePlaying||cursorChanged||catchingUp))scheduleArchive();
   }
 }
 async function acceptArchiveMap(value){
     if(archivePlaying && value.tile_epoch===archive.tileEpoch &&
        Number(value.tile_version)<Number(archive.snapshot.tile_version))return;
     cursorMapping=value.playback_driven===true;
+    immutableCursorMap=cursorMapping && value.state==='saved' && value.generation?.stage==='complete' && !value.needs_regeneration;
+    availableCursorPrefix=cursorMapping?Number(value.generation?.processed_t_s)||0:0;
+    // Previously committed events remain immutable when seeking back into an
+    // unfinished causal history. Read windows never advance the localizer.
+    bufferedCursorMap=cursorMapping && !value.needs_regeneration &&
+      (immutableCursorMap || availableCursorPrefix>=archiveTimeS+3);
     if(value.grid||value.scan_count===0)await archive.set(value);
     const generation=value.generation||{},duration=Number(generation.duration_s)||0;
     // A causal worker can be interrupted by New map. Only the legacy bulk
@@ -178,11 +184,14 @@ function archiveTime(id,timeS,playing,seekRequested=false){
   const playChanged=Boolean(playing)!==archivePlaying;
   const changed=Math.abs(jump)>.05||playChanged;
   archiveTimeS=Math.max(0,Number(timeS)||0);archivePlaying=Boolean(playing);
+  if(cursorMapping)bufferedCursorMap=!archive.snapshot.needs_regeneration&&
+    (immutableCursorMap||availableCursorPrefix>=archiveTimeS+3);
   if(playChanged&&!archivePlaying){
     clearTimeout(archiveTimer);archiveTimer=null;
     // Supersede an old Play immediately. Server sequence checks prevent a
     // delayed request from reviving processing after this newer Pause.
     playbackPending?.controller.abort();playbackPending=null;
+    mapWindowPending?.controller.abort();mapWindowPending=null;
   }
   if((cursorMapping || (!triedCausalMap && archivePlaying)) && (changed || archivePlaying))pushPlayback(playChanged||seekRequested);
   // A future window is intentionally ahead of the clock. Normal playback must
@@ -191,16 +200,21 @@ function archiveTime(id,timeS,playing,seekRequested=false){
     mapWindowPending.controller.abort();mapWindowPending=null;
   }
   if(changed && !archivePlaying && archivePending){archivePending.controller.abort();archivePending=null;}
-  if(changed&&!inlinePlaybackMap)scheduleArchive();
+  if(changed&&(!inlinePlaybackMap||bufferedCursorMap))scheduleArchive();
 }
 async function pushPlayback(force=false){
+  // Complete causal histories are immutable. Timed cell windows can render
+  // every retained scan locally; there is no remaining localization to drive.
+  if(immutableCursorMap)return;
   if((!cursorMapping && (triedCausalMap||!archivePlaying))||!selected||playbackPending||(!force&&performance.now()-lastPlaybackPush<250))return;
   const id=selected,epoch=archiveEpoch,time=archiveTimeS,playing=archivePlaying;
   const pending={controller:new AbortController(),epoch};playbackPending=pending;lastPlaybackPush=performance.now();
   try{
     const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-playback`,{
       t_s:time,playing,control:{client:playbackClient,sequence:++playbackSequence},
-      transport:'tiles',codec:'xor2-deflate-v1',tile_epoch:archive.tileEpoch,tile_since:archive.snapshot.tile_version||0
+      // Cached cells render locally while light ordered control still freezes
+      // the unfinished worker. Live generation uses inline cells.
+      ...(bufferedCursorMap?{}:{transport:'tiles',codec:'xor2-deflate-v1',tile_epoch:archive.tileEpoch,tile_since:archive.snapshot.tile_version||0})
     },pending.controller.signal);
     if(epoch===archiveEpoch){
       triedCausalMap=true;
@@ -241,7 +255,8 @@ $('liveArchiveRegenerate').addEventListener('click',async()=>{
   try{
     const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/new-map`,{});
     if(epoch!==archiveEpoch)return;
-    cursorMapping=true;triedCausalMap=true;archiveTimeS=0;archivePlaying=false;archiveGenerating=false;followGeneration=false;
+    cursorMapping=true;triedCausalMap=true;inlinePlaybackMap=false;immutableCursorMap=false;bufferedCursorMap=false;availableCursorPrefix=0;
+    archiveTimeS=0;archivePlaying=false;archiveGenerating=false;followGeneration=false;
     segments.reset();archive.set({map_epoch:value.map_epoch,preserve_view_on_seek:true,version:0,scan_count:0,tiles:[],tiles_reset:true,playback_driven:true});
     text('liveArchiveStatus','새 지도 준비됨 · 재생을 누르면 지도가 쌓이고 저장됩니다.');
   }
