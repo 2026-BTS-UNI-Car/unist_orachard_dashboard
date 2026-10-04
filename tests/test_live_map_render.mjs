@@ -317,4 +317,18 @@ const values = value => JSON.parse(JSON.stringify(value));
   assert.ok(map.bounds.maxX>=206&&map.bounds.maxY>=102);
 }
 
+// Archive submaps have unrelated local origins. Crossing an uncertain gap
+// keeps the selected pixels/metre while recentering in the new local frame.
+{
+  const {map,images}=fixture();
+  map.set(snapshot(1,'AAAA',{map_epoch:'archive',coordinate_frame:'isolated_0',pose:{x:4,y:2,yaw:0}}));images[0].onload();
+  map.zoom('in');const scale=map.view.scale;
+  map.commit(snapshot(20,'AAAA',{map_epoch:'archive',coordinate_frame:'isolated_1',pose:{x:0,y:0,yaw:0},preserve_view_on_seek:true}));
+  assert.equal(map.auto,false);assert.equal(map.view.scale,scale);assert.equal(map.view.x,0);assert.equal(map.view.y,0);
+  map.commit(snapshot(5,'AAAA',{map_epoch:'archive',coordinate_frame:'isolated_0',pose:{x:2,y:1,yaw:0},preserve_view_on_seek:true}));
+  assert.equal(map.auto,false);assert.equal(map.view.scale,scale);
+  map.commit(snapshot(1,'AAAA',{map_epoch:'different-recording',coordinate_frame:'isolated_0',preserve_view_on_seek:true}));
+  assert.equal(map.auto,true,'a different recording still gets its own initial view');
+}
+
 console.log('PASS: hardware metric map coherent pixels, zoom preservation, nearby fit and fading path');

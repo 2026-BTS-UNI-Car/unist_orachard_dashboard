@@ -124,11 +124,19 @@ export class MetricMap {
     const previous = this.snapshot;
     const historicalSeek = snapshot.preserve_view_on_seek === true &&
       snapshot.map_epoch && snapshot.map_epoch === previous.map_epoch;
+    const frameChanged = snapshot.coordinate_frame && previous.coordinate_frame &&
+      snapshot.coordinate_frame !== previous.coordinate_frame;
+    if (historicalSeek && frameChanged && this.view && !this.auto) {
+      // Isolated archive segments have unrelated origins. Keep the user's
+      // pixels/metre, but recenter once because the old pan coordinates cannot
+      // identify a location in the new local frame.
+      this.view = {...this.view,x:Number(snapshot.pose?.x||0),y:Number(snapshot.pose?.y||0)};
+    }
     const newMap = !this.schematic && ((!historicalSeek && !snapshot.grid && !!previous.grid) ||
       (!historicalSeek && snapshot.scan_count === 0 && previous.scan_count > 0) ||
       (snapshot.map_epoch && previous.map_epoch && snapshot.map_epoch !== previous.map_epoch) ||
       (!historicalSeek && !snapshot.view_epoch && Number.isFinite(snapshot.version) && Number.isFinite(previous.version) && snapshot.version < previous.version) ||
-      (!snapshot.view_epoch && snapshot.coordinate_frame && previous.coordinate_frame && snapshot.coordinate_frame !== previous.coordinate_frame));
+      (!historicalSeek && !snapshot.view_epoch && frameChanged));
     if (newMap) {this.view = null; this.auto = true; this.fitMode = 'nearby';}
     this.snapshot = snapshot; this.requestFullImage = false;
     this.layout = this.schematic ? orchardLayout(this.snapshot.world) : null;
