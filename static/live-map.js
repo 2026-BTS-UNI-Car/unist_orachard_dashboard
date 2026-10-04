@@ -150,7 +150,7 @@ function archiveTime(id,timeS,playing,seekRequested=false){
   const playChanged=Boolean(playing)!==archivePlaying;
   const changed=Math.abs(jump)>.05||playChanged;
   archiveTimeS=Math.max(0,Number(timeS)||0);archivePlaying=Boolean(playing);
-  if(cursorMapping && (changed || archivePlaying))pushPlayback(playChanged);
+  if(cursorMapping && (changed || archivePlaying))pushPlayback(playChanged||seekRequested);
   // A future window is intentionally ahead of the clock. Normal playback must
   // not abort it simply because the current cursor precedes its start.
   if(mapWindowPending && seek && (archiveTimeS<mapWindowPending.start || archiveTimeS>mapWindowPending.end)){
