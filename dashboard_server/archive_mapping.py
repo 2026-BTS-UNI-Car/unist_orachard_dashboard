@@ -57,7 +57,8 @@ class ArchiveMapping:
 
     def new_map(self,archive_id):
         path=self.directory(archive_id)
-        from dashboard_server.playback_mapping import new_history,PlaybackMapper
+        from dashboard_server.playback_mapping import new_history
+        from dashboard_server.resumable_playback import ResumablePlaybackMapper as PlaybackMapper
         with self.lock:
             if self.running:raise ValueError('기존 지도 작업 완료 후 다시 시도하세요.')
             if len(self.playback_mappers)>=2 and archive_id not in self.playback_mappers:
@@ -72,7 +73,7 @@ class ArchiveMapping:
 
     def playback(self,archive_id,t_s,playing,control=None):
         path=self.directory(archive_id)
-        from dashboard_server.playback_mapping import PlaybackMapper
+        from dashboard_server.resumable_playback import ResumablePlaybackMapper as PlaybackMapper
         history=read_json(path/'integrated_map_history.json')
         # Old segmented recordings convert once, on Play. Keep their previous
         # pointer/epochs recoverable and never open a new frame during tracking.
