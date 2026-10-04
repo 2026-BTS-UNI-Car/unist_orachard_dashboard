@@ -3071,15 +3071,20 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 
 /* Replay cards use their container width; canvas height matches its stage. */
 .archive-layout{container-type:inline-size}
+.archive-layout:has(.sensor-overview){grid-template-columns:minmax(0,1fr)}
+.archive-layout:has(.sensor-overview)>.archive-list{display:flex;gap:8px;overflow-x:auto;max-height:104px;min-width:0;padding-bottom:4px}
+.archive-layout:has(.sensor-overview)>.archive-list button{flex:0 0 220px;padding:8px;gap:4px}
+.archive-layout:has(.sensor-overview)>.archive-list strong{font-size:12px}
+.archive-layout:has(.sensor-overview)>.archive-list small{font-size:10px}
 .archive-preview.sensor-overview{grid-template-columns:minmax(0,1fr)}
 .sensor-overview > section,.sensor-overview .archive-media-grid > *{min-width:0;align-self:start;overflow-wrap:anywhere}
 .sensor-overview .panel-head{gap:8px;flex-wrap:wrap}
 .sensor-overview [hidden]{display:none!important}
-.sensor-overview .sim-map-stage{height:260px}
-.sensor-overview .sim-map-stage canvas{height:100%;min-height:0}
-.sensor-overview .rover-lidar-stage{height:260px}
+.sensor-overview .sim-map-stage{height:220px}
+.archive-preview.sensor-overview .sim-map-stage canvas{height:100%;min-height:0}
+.sensor-overview .rover-lidar-stage{height:220px}
 .sensor-overview .rover-lidar-stage canvas{height:100%;min-height:0;width:100%}
-.sensor-overview .archive-camera-frame{height:260px;min-height:0}
+.sensor-overview .archive-camera-frame{height:220px;min-height:0}
 .sensor-overview .archive-camera-frame video,.sensor-overview .archive-camera-frame img{height:100%;min-height:0}
 .sensor-overview .archive-imu-attitude-stage,.sensor-overview .archive-imu-attitude-stage canvas{height:190px;min-height:0;width:100%}
 .sensor-overview .archive-imu-grid{grid-template-columns:minmax(0,1fr)}
@@ -3089,5 +3094,13 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 .sensor-overview .archive-camera-source{position:absolute;top:4px;left:4px;max-width:calc(100% - 16px);margin:0}
 .sensor-overview .archive-camera-frame figcaption{font-size:10px;padding:4px 6px}
 .sensor-overview .archive-motor-table-wrap{max-width:100%;overflow-x:auto}
-@container(min-width:1120px){.archive-preview.sensor-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@container(min-width:1990px){.archive-preview.sensor-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.sensor-overview .gps-archive-map{height:220px}
+.sensor-overview .gps-readouts{gap:6px;margin-top:6px}
+.sensor-overview .gps-readouts>div{padding:6px}
+.sensor-overview .gps-readouts strong{font-size:11px}
+.sensor-overview .gps-map-footer,.sensor-overview .gps-caption{font-size:10px}
+.sensor-overview .map-segment-card img{height:52px}
+.sensor-overview .map-segment-card{flex-basis:132px}
+.sensor-overview .sim-map-note{margin:5px 0}
+@container(min-width:760px){.archive-preview.sensor-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container(min-width:1300px){.archive-preview.sensor-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}
