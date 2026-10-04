@@ -9,6 +9,8 @@ GPS USB/UART driver, offline Korea maps and synchronized GPS recording: [GPS set
 
 녹화별 모터 핀 신호 저장·재생: [PWM 기록 형식과 한계](docs/motor_pwm_recording.md)
 
+최신 지도 처리·느린 망 재생·서버 재시작 이어가기: [2026-10-05 실제 배포 및 검증 상태](docs/MAP_DELIVERY_STATUS_20261005.md)
+
 Jetson Orin Nano Super에서 실행하는 과수원 자율주행 연구용 웹 대시보드입니다. Jetson의 실제 시스템·네트워크·Docker 상태와 ROS2 센서 브리지가 제공하는 데이터를 표시합니다.
 
 실차 센서는 RPLIDAR S2 2D LiDAR, BNO085 IMU, UVC USB 카메라, ZED-F9P GPS이며 휠 엔코더는 없습니다. 2026-09-30 Jetson USB 진단 후 Windows PC 창가 관측에서 GNSS 신호 추적을 확인했습니다. 같은 PC·케이블로 보드와 안테나를 다시 실내에 옮긴 최신 관측에서는 추적 잠금이 없었고, 창가와 실내 모두 위치 fix는 미완료입니다. 배치에 따른 차이는 확인했지만 실내 차폐를 유일한 원인이나 Jetson/케이블 고장으로 단정하지 않습니다. [실내 비교](docs/windows_gps_placement_comparison.json) · [앞선 PC 관측](docs/windows_gps_reception_diagnosis.json) · [Jetson 안테나 진단](docs/jetson_gps_antenna_diagnosis.json). 카메라와 LiDAR는 원시 센서 화면으로 표시합니다. 시뮬레이션 지도·자율주행 개발은 별도 orchard-rover-clone 저장소에서 진행합니다.
