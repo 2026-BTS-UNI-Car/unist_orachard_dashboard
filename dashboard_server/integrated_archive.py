@@ -27,7 +27,7 @@ def localization_fingerprint():
     """Derived poses are reusable only with the exact localization algorithm."""
     return _code_fingerprint(('integrated_mapping.py','raw_mapping/raw_localization.py',
         'raw_mapping/raw_point_support.py','raw_mapping/fit_workers.py','raw_mapping/gnss_constraints.py',
-        'raw_mapping/continuous_localization.py'))
+        'raw_mapping/continuous_localization.py','playback_mapping.py'))
 
 
 @lru_cache(maxsize=1)
