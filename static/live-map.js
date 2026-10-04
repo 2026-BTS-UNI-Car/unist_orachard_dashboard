@@ -146,8 +146,13 @@ function scheduleArchive(delay=75){
 }
 function archiveTime(id,timeS,playing,seekRequested=false){
   if(id!==selected)return;
+  // Video quality changes/buffering can report a slightly older media clock.
+  // Only an explicit user seek or a paused change may rewind a running map.
+  // Keep both the requested raw prefix and rendered cells monotonic otherwise.
+  timeS=Math.max(0,Number(timeS)||0);
+  if(playing && archivePlaying && !seekRequested)timeS=Math.max(timeS,archiveTimeS);
   if(playing||Math.abs(timeS-archiveTimeS)>.05)followGeneration=false;
-  if(!followGeneration&&Math.max(Number(archive.snapshot.frame_t_s)||0,Number(archive.pendingImage?.snapshot.frame_t_s)||0)>timeS){
+  if(!followGeneration&&(seekRequested||!playing)&&Math.max(Number(archive.snapshot.frame_t_s)||0,Number(archive.pendingImage?.snapshot.frame_t_s)||0)>timeS){
     // Cancel a future PNG decoder immediately on backward seek/play-from-zero.
     // The same epoch keeps the user's metric zoom/pan while an earlier frame loads.
     archive.set({map_epoch:archive.snapshot.map_epoch,preserve_view_on_seek:true,scan_count:0,version:0});

@@ -24,6 +24,12 @@ assert.ok(!calls.some(c=>c.path?.includes('/map-window')),'causal map must not p
 vm.runInContext("archiveTime('record',.1,true)",context);
 await new Promise(resolve=>setImmediate(resolve));
 assert.ok(calls.some(c=>c.path?.endsWith('/map-playback')&&c.body.playing&&c.body.t_s===.1));
+vm.runInContext("archive.snapshot={map_epoch:'new',frame_t_s:.1,scan_count:5};archiveTime('record',.08,true)",context);
+assert.equal(vm.runInContext('archive.snapshot.scan_count',context),5,'media-clock jitter must retain drawn cells');
+assert.equal(vm.runInContext('archiveTimeS',context),.1,'running cursor must not rewind implicitly');
+vm.runInContext("archiveTime('record',.05,true,true)",context);
+assert.equal(vm.runInContext('archive.snapshot.scan_count',context),0,'explicit backward seek removes future cells');
+assert.equal(vm.runInContext('archiveTimeS',context),.05);
 vm.runInContext("archiveTime('record',.15,false)",context);
 await new Promise(resolve=>setImmediate(resolve));
 assert.ok(calls.some(c=>c.path?.endsWith('/map-playback')&&c.body.playing===false&&c.body.t_s===.15));
