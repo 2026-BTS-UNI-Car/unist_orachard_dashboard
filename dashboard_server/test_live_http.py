@@ -16,6 +16,29 @@ from dashboard_server.autonomy_settings import AutonomySettings
 
 
 class Tests(unittest.TestCase):
+    def test_preflight_is_read_only_and_cannot_start_autonomy(self):
+        from dashboard_server.source_live_mapping import SourceLiveMapping
+        with tempfile.TemporaryDirectory() as root:
+            server=app.create_server('127.0.0.1',0)
+            initial_live=app.DashboardHandler.live_mapping
+            initial_archive=app.DashboardHandler.archive_mapping
+            live=SourceLiveMapping(Path(root)/'live',start_worker=False)
+            app.DashboardHandler.live_mapping=live
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+            url=f'http://127.0.0.1:{server.server_port}'
+            try:
+                with opener.open(url+'/api/autonomy/preflight') as response:r=json.load(response)
+                self.assertFalse(r['autonomy_output_enabled']);self.assertIn('live_mapping_fresh',r['blocking'])
+                self.assertFalse(live.active)
+                with self.assertRaises(HTTPError) as error:
+                    opener.open(Request(url+'/api/autonomy/start',data=b'{}',headers={'Content-Type':'application/json'}))
+                self.assertEqual(error.exception.code,409)
+                self.assertFalse(live.active)
+            finally:
+                server.shutdown();server.server_close();thread.join()
+                live.close();initial_archive.close();initial_live.close()
+
     def test_live_jobs_and_multi_device_mapping_http_contract(self):
         import gzip
         import hashlib

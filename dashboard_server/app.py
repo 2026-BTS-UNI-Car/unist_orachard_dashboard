@@ -177,7 +177,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path.startswith('/api/live/') or path == '/api/autonomy':
+        if path.startswith('/api/live/') or path in ('/api/autonomy','/api/autonomy/preflight'):
             self._live_request(parsed)
         elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
@@ -278,6 +278,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 result=self.mapping_operations.stop(payload.get('job_id'),payload.get('expected_epoch'))
             elif path=='/api/autonomy' and not action:
                 result=self.autonomy_settings.status()
+            elif path=='/api/autonomy/preflight' and not action:
+                from dashboard_server.field_preflight import report
+                result=report(ROOT/'config/field_autonomy_preparation.json',self.live_mapping.task_status())
             elif path=='/api/autonomy/speed' and action:
                 result=self.autonomy_settings.set_speed(payload.get('speed_percent'))
             elif path=='/api/autonomy/start' and action:
