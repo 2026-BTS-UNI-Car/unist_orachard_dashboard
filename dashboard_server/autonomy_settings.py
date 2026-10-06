@@ -21,9 +21,9 @@ class AutonomySettings:
             raise ValueError('invalid_autonomy_speed')
         return float(value)
 
-    def status(self):
+    def status(self, live=None):
         from .field_preflight import report
-        preparation=report(Path(__file__).resolve().parents[1]/'config/field_autonomy_preparation.json')
+        preparation=report(Path(__file__).resolve().parents[1]/'config/field_autonomy_preparation.json',live)
         return dict(ok=True, active=False, enabled=False, speed_percent=self.percent,
                     state='NOT_QUALIFIED', runtime_authority=False, motor_command=False,
                     reason='encoderless_autonomy_pending_physical_validation',

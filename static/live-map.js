@@ -332,6 +332,7 @@ async function poll(){
     $('hardwareAutonomySpeed').value=results[1].value.speed_percent;text('hardwareAutonomySpeedValue',`${results[1].value.speed_percent}%`);
     text('hardwareAutonomyStatus',`${results[1].value.message} · 현재 순항속도 설정 ${results[1].value.speed_percent}%`);
   }
+  if(results[1].status==='fulfilled'&&results[1].value)window.FieldPreparation?.render($('fieldPreparationPanel'),results[1].value.preparation);
   polling=false;if(active())timer=setTimeout(poll,Math.max(0,(live.snapshot.active?100:1000)-(performance.now()-started)));
 }
 async function pollJobs(){

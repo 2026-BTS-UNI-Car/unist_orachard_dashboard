@@ -30,6 +30,9 @@ class Tests(unittest.TestCase):
             try:
                 with opener.open(url+'/api/autonomy/preflight') as response:r=json.load(response)
                 self.assertFalse(r['autonomy_output_enabled']);self.assertIn('live_mapping_fresh',r['blocking'])
+                with opener.open(url+'/api/autonomy') as response:status=json.load(response)
+                self.assertIn('live_mapping_fresh',status['preparation']['blocking'])
+                self.assertFalse(status['runtime_authority'])
                 self.assertFalse(live.active)
                 with self.assertRaises(HTTPError) as error:
                     opener.open(Request(url+'/api/autonomy/start',data=b'{}',headers={'Content-Type':'application/json'}))

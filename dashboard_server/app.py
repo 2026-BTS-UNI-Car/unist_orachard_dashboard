@@ -277,7 +277,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             elif path=='/api/live/mapping-jobs/stop' and action:
                 result=self.mapping_operations.stop(payload.get('job_id'),payload.get('expected_epoch'))
             elif path=='/api/autonomy' and not action:
-                result=self.autonomy_settings.status()
+                live=self.live_mapping.task_status() if hasattr(self.live_mapping,'task_status') else {'state':'unavailable'}
+                result=self.autonomy_settings.status(live)
             elif path=='/api/autonomy/preflight' and not action:
                 from dashboard_server.field_preflight import report
                 result=report(ROOT/'config/field_autonomy_preparation.json',self.live_mapping.task_status())
