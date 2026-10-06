@@ -35,9 +35,16 @@ class ResumablePlaybackMapper(PlaybackMapper):
     def __init__(self,archive,history):
         super().__init__(archive,history)
         self.state_interval=max(.1,min(30.,float(os.environ.get('UBTS_MAP_STATE_INTERVAL_S','2'))))
+        self.allow_compute=lambda:True
+        self.worker_stage='waiting_cursor'
 
     def _run(self):
         try:
+            with self.condition:
+                while not self.closed and not self.allow_compute():
+                    self.worker_stage='waiting_live_priority';self.condition.wait(.25)
+                if self.closed:return
+            self.worker_stage='verifying_source'
             source=self.archive/'mapping_source';manifest=read_json(source/'manifest.json');file=source/'sensors.jsonl.gz'
             if digest(file)!=self.history['source_sensor_sha256']:
                 raise ValueError('unverified_mapping_sensor_source')
@@ -64,12 +71,14 @@ class ResumablePlaybackMapper(PlaybackMapper):
                 def wait_for_play(t):
                     with self.condition:
                         saved=False
-                        while not self.closed and (not self.playing or t>self.target+1e-6):
+                        while not self.closed and (not self.playing or t>self.target+1e-6 or not self.allow_compute()):
                             self.history['waiting_for_cursor']=True
+                            self.worker_stage='waiting_live_priority' if not self.allow_compute() else 'paused' if not self.playing else 'waiting_cursor'
                             if not saved:self._save(log);saved=True
-                            self.condition.wait()
+                            self.condition.wait(.25)
                         if self.closed:return False
                         self.history['waiting_for_cursor']=False
+                        self.worker_stage='localizing'
                         return True
                 def finish(observation):
                     future,message,t,offset=observation

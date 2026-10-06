@@ -2,6 +2,7 @@ import {MetricMap} from './metric-map.mjs';
 import {ArchiveMapBuffer} from './archive-map-buffer.mjs';
 import {ArchiveSegmentGallery} from './archive-segments.mjs';
 import {decodeArchiveWindow} from './archive-window-codec.mjs';
+import {renderJobs} from './mapping-jobs.mjs';
 const $=id=>document.getElementById(id),text=(id,value)=>{if($(id))$(id).textContent=value;};
 // Correct the real-rover front marker as requested, without modifying any
 // retained scan coordinates, localization yaw or simulation body-frame heading.
@@ -12,7 +13,7 @@ let mapBuffer=null,nextMapBuffer=null,mapWindowPending=null,bufferPaintPending=f
 let archiveTimer=null,archivePending=null,archiveTimeS=0,archivePlaying=false,followGeneration=false,archiveGenerating=false;
 let archiveRetryMs=75;
 let cursorMapping=false,playbackPending=null,lastPlaybackPush=-Infinity;
-let triedCausalMap=false;
+let triedCausalMap=false,nextExplicitResume=false,lastJobsPoll=0,liveActionBusy=false,archiveMappingGeneration=null;
 let inlinePlaybackMap=false,immutableCursorMap=false,bufferedCursorMap=false,availableCursorPrefix=0;
 const playbackClient=globalThis.crypto?.randomUUID?.()||`map-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;let playbackSequence=0;
 const segments=new ArchiveSegmentGallery(archive,time=>window.setArchiveTime?.(time,{pause:true}));
@@ -45,7 +46,14 @@ function archiveQuality(value){
 async function request(path,body,signal){
   const timeout=path.includes('/map-window')||path.includes('/map?')||path.endsWith('/map-playback')?30000:8000;
   const response=await fetch(path,{cache:'no-store',priority:path.includes('/map')?'high':'auto',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(timeout)]):AbortSignal.timeout(timeout),...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
-  const value=await response.json();if(!response.ok||value.ok===false)throw new Error(value.error||value.message||`HTTP ${response.status}`);return value;
+  const value=await response.json();
+  if(!response.ok||value.ok===false){
+    const code=value.error||value.message||`HTTP ${response.status}`;
+    const messages={another_device_controls_this_recording:'다른 기기가 이 기록의 매핑을 제어하고 있습니다.',another_recording_mapping_active_stop_it_first:'다른 기록을 매핑 중입니다. 작업 관리에서 중단한 뒤 재생하세요.',mapping_stopped_press_play_to_resume:'매핑이 중단되었습니다. 재생을 눌러 이어가세요.',mapping_epoch_changed_refresh_before_action:'다른 기기에서 지도가 변경되었습니다. 지도를 확인한 뒤 다시 시도하세요.',mapping_worker_stopping_retry:'이전 매핑 작업을 정리 중입니다. 잠시 후 다시 시도하세요.',mapping_read_capacity_busy:'지도 조회가 많습니다. 잠시 후 다시 시도하세요.'};
+    messages.mapping_control_revoked_refresh='매핑 제어권이 변경되었습니다. 지도를 확인한 뒤 재생을 다시 누르세요.';
+    const error=new Error(messages[code]||code);error.code=code;throw error;
+  }
+  return value;
 }
 function paint(value){
   const waiting=value.state==='waiting_for_sensors';
@@ -55,11 +63,15 @@ function paint(value){
   text('liveMapStatus',restored?'저장된 지도 유지 · 새 지도를 눌러 그리기를 시작하세요.':`${waiting?'GPS·IMU·LiDAR 동기화 대기 · 마지막 지도 유지':value.active?'지도 누적 중':value.state==='needs_reset'?'새 지도 필요':'마지막 지도 유지'}${value.reason?` · ${value.reason}`:''}${value.persistence?.saved===false?' · 원본 셀 저장 실패 · 표시 지도 유지':''}`);
 }
 for(const operation of ['start','stop','reset'])$('liveMap'+operation[0].toUpperCase()+operation.slice(1)).addEventListener('click',async()=>{
-  try{paint(await request('/api/live/map/'+operation,{}));}catch(error){text('liveMapStatus',error.message);}
+  if(liveActionBusy)return;liveActionBusy=true;
+  try{paint(await request('/api/live/map/'+operation,{expected_epoch:live.snapshot.map_epoch}));}
+  catch(error){text('liveMapStatus',error.message);}
+  finally{liveActionBusy=false;}
 });
 for(const button of document.querySelectorAll('[data-live-zoom]'))button.addEventListener('click',()=>live.zoom(button.dataset.liveZoom));
 for(const button of document.querySelectorAll('[data-archive-zoom]'))button.addEventListener('click',()=>archive.zoom(button.dataset.archiveZoom));
 async function selectArchive(id){
+  archiveMappingGeneration=null;
   if(id===selected)return;selected=id;const epoch=++archiveEpoch;
   clearTimeout(archiveTimer);archiveTimer=null;archivePending?.controller.abort();
   mapBuffer=null;nextMapBuffer=null;windowSupported=null;mapWindowPending?.controller.abort();mapWindowPending=null;
@@ -106,6 +118,7 @@ async function pollArchive(id,epoch){
   let value;
   try{
     value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map?${query}`,undefined,pending.controller.signal);
+    if(value.mapping_generation)archiveMappingGeneration=value.mapping_generation;
     if(value.map_frame)value=(await decodeArchiveWindow(value)).seed;
     if(epoch!==archiveEpoch||(!followGeneration&&(target===null||target>archiveTimeS+.001)))return;
     if(inlinePlaybackMap&&!bufferedCursorMap&&archivePlaying)return;
@@ -155,6 +168,7 @@ async function loadMapWindow(id,epoch,start,span,next){
   const pending={controller:new AbortController(),epoch,start,end:start+span,next};mapWindowPending=pending;
   try{
     const raw=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-window?start_s=${start.toFixed(3)}&span_s=${span}&codec=xor2-deflate-v1`,undefined,pending.controller.signal);
+    if(raw.mapping_generation)archiveMappingGeneration=raw.mapping_generation;
     const value=await decodeArchiveWindow(raw);
     if(epoch!==archiveEpoch)return;
     windowSupported=value.available===true;
@@ -173,6 +187,7 @@ function scheduleArchive(delay=75){
 }
 function archiveTime(id,timeS,playing,seekRequested=false){
   if(id!==selected)return;
+  if(playing&&!archivePlaying)nextExplicitResume=true;
   // Video quality changes/buffering can report a slightly older media clock.
   // Only an explicit user seek or a paused change may rewind a running map.
   // Keep both the requested raw prefix and rendered cells monotonic otherwise.
@@ -229,13 +244,16 @@ async function pushPlayback(force=false){
   const pending={controller:new AbortController(),epoch};playbackPending=pending;lastPlaybackPush=performance.now();
   try{
     const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/map-playback`,{
-      t_s:time,playing,control:{client:playbackClient,sequence:++playbackSequence},
+      t_s:time,playing,control:{client:playbackClient,sequence:++playbackSequence},resume_mapping:nextExplicitResume,
       // Cached cells render locally while light ordered control still freezes
       // the unfinished worker. Live generation uses inline cells.
+      mapping_generation:archiveMappingGeneration,
       ...(bufferedCursorMap?{}:{transport:'tiles',codec:'xor2-deflate-v1',tile_epoch:archive.tileEpoch,tile_since:archive.snapshot.tile_version||0})
     },pending.controller.signal);
     if(epoch===archiveEpoch){
+      nextExplicitResume=false;
       triedCausalMap=true;
+      if(value.mapping_generation)archiveMappingGeneration=value.mapping_generation;
       if(value.map_snapshot && !value.stale_control_ignored && playbackPending===pending){
         let snapshot=value.map_snapshot;
         if(snapshot.map_frame)snapshot=(await decodeArchiveWindow(snapshot)).seed;
@@ -256,6 +274,9 @@ async function pushPlayback(force=false){
       }
     }
   }catch(error){if(epoch===archiveEpoch&&error.name!=='AbortError'){
+    if(['another_device_controls_this_recording','another_recording_mapping_active_stop_it_first','mapping_stopped_press_play_to_resume','mapping_control_revoked_refresh'].includes(error.code)){
+      archivePlaying=false;nextExplicitResume=false;window.setArchiveTime?.(archiveTimeS,{pause:true});
+    }
     text('liveArchiveStatus',`${error.message} · 마지막 지도 유지`);
     if(!archivePlaying)scheduleArchive(500);
   }}
@@ -271,8 +292,9 @@ $('liveArchiveRegenerate').addEventListener('click',async()=>{
   mapWindowPending?.controller.abort();mapWindowPending=null;playbackPending?.controller.abort();playbackPending=null;
   mapBuffer=null;nextMapBuffer=null;windowSupported=null;$('liveArchiveRegenerate').disabled=true;
   try{
-    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/new-map`,{});
+    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/new-map`,{expected_epoch:archive.snapshot.map_epoch||null,client:playbackClient});
     if(epoch!==archiveEpoch)return;
+    archiveMappingGeneration=value.mapping_generation;
     cursorMapping=true;triedCausalMap=true;inlinePlaybackMap=false;immutableCursorMap=false;bufferedCursorMap=false;availableCursorPrefix=0;
     archiveTimeS=0;archivePlaying=false;archiveGenerating=false;followGeneration=false;
     segments.reset();archive.set({map_epoch:value.map_epoch,preserve_view_on_seek:true,version:0,scan_count:0,tiles:[],tiles_reset:true,playback_driven:true});
@@ -296,6 +318,7 @@ async function poll(){
   const refreshAutonomy=Date.now()-lastAutonomyPoll>3000;
   if(refreshAutonomy)lastAutonomyPoll=Date.now();
   const results=await Promise.allSettled([request('/api/live/map?'+query),refreshAutonomy?request('/api/autonomy'):Promise.resolve(null)]);
+  if($('mappingJobsPanel')?.open&&Date.now()-lastJobsPoll>1500){lastJobsPoll=Date.now();pollJobs().catch(()=>{});}
   if(results[0].status==='fulfilled')paint(results[0].value);else text('liveMapStatus',`지도 연결 대기 · 마지막 지도 유지 · ${results[0].reason.message}`);
   if(results[1].status==='fulfilled'&&results[1].value&&!speedBusy&&document.activeElement!==$('hardwareAutonomySpeed')){
     $('hardwareAutonomySpeed').value=results[1].value.speed_percent;text('hardwareAutonomySpeedValue',`${results[1].value.speed_percent}%`);
@@ -303,6 +326,24 @@ async function poll(){
   }
   polling=false;if(active())timer=setTimeout(poll,Math.max(0,(live.snapshot.active?100:1000)-(performance.now()-started)));
 }
+async function pollJobs(){
+  const value=await request('/api/live/mapping-jobs');
+  const resources=value.resources||{},cpu=resources.cpu_percent_one_core;
+  text('mappingJobsResources',`실시간 우선 · 기록 계산 최대 1개 · 대시보드 CPU ${Number.isFinite(cpu)?cpu.toFixed(1)+'% (1코어 기준)':'—'} · 메모리 ${Number.isFinite(resources.rss_bytes)?(resources.rss_bytes/1048576).toFixed(0)+'MB':'—'} · 센서 드라이버 사용량은 별도`);
+  renderJobs($('mappingJobsList'),value,async job=>{
+    if(job.kind==='archive'&&job.recording_id===selected){
+      window.setArchiveTime?.(archiveTimeS,{pause:true});archivePlaying=false;
+      playbackPending?.controller.abort();nextExplicitResume=false;
+    }
+    try{
+      const stopped=await request('/api/live/mapping-jobs/stop',{job_id:job.id,expected_epoch:job.epoch});
+      if(job.kind==='archive'&&job.recording_id===selected)archiveMappingGeneration=stopped.mapping_generation;
+      await pollJobs();
+      if(job.kind==='live')paint(await request('/api/live/map?transport=tiles'));
+    }catch(error){text('mappingJobsResources',error.message);}
+  });
+}
+$('mappingJobsPanel')?.addEventListener('toggle',()=>{if($('mappingJobsPanel').open)pollJobs().catch(error=>text('mappingJobsResources',error.message));});
 function routeChanged(){live.draw();archive.draw();if(active()){poll();if(selected)scheduleArchive();}}
 window.LiveMap={selectArchive,archiveTime,archiveReady,routeChanged};
 document.addEventListener('visibilitychange',routeChanged);window.addEventListener('popstate',routeChanged);

@@ -272,7 +272,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not isinstance(payload,dict):self.send_error(400,'Object required');return
         path=parsed.path
         try:
-            if path=='/api/autonomy' and not action:
+            if path=='/api/live/mapping-jobs' and not action:
+                result=self.mapping_operations.status()
+            elif path=='/api/live/mapping-jobs/stop' and action:
+                result=self.mapping_operations.stop(payload.get('job_id'),payload.get('expected_epoch'))
+            elif path=='/api/autonomy' and not action:
                 result=self.autonomy_settings.status()
             elif path=='/api/autonomy/speed' and action:
                 result=self.autonomy_settings.set_speed(payload.get('speed_percent'))
@@ -285,7 +289,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         tile_since=query.get('tile_since',[None])[0],tile_epoch=query.get('tile_epoch',[None])[0])
                 else:result=self.live_mapping.status(query.get('since',[None])[0])
             elif path.startswith('/api/live/map/') and action:
-                result=self.live_mapping.action(path.rsplit('/',1)[-1])
+                operation=path.rsplit('/',1)[-1]
+                if hasattr(self.live_mapping,'task_status'):
+                    result=self.live_mapping.action(operation,expected_epoch=payload.get('expected_epoch'))
+                else:result=self.live_mapping.action(operation)
             elif path.startswith('/api/live/recordings/'):
                 parts=path.split('/')
                 if len(parts)!=6:raise ValueError('invalid_archive_route')
@@ -302,9 +309,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 elif parts[5]=='map-window' and not action:
                     query=parse_qs(parsed.query)
                     result=self.archive_mapping.window(archive_id,query.get('start_s',['0'])[0],query.get('span_s',['12'])[0],query.get('codec',[None])[0])
-                elif parts[5]=='new-map' and action:result=self.archive_mapping.new_map(archive_id)
+                elif parts[5]=='new-map' and action:
+                    if getattr(self.archive_mapping,'controlled',False):
+                        result=self.archive_mapping.new_map(archive_id,expected_epoch=payload.get('expected_epoch'),client=payload.get('client'))
+                    else:result=self.archive_mapping.new_map(archive_id)
                 elif parts[5]=='map-playback' and action:
-                    result=self.archive_mapping.playback(archive_id,payload.get('t_s'),payload.get('playing'),payload.get('control'))
+                    kwargs={'resume':payload.get('resume_mapping') is True,'generation':payload.get('mapping_generation')} if getattr(self.archive_mapping,'controlled',False) else {}
+                    result=self.archive_mapping.playback(archive_id,payload.get('t_s'),payload.get('playing'),payload.get('control'),**kwargs)
                     # One round trip carries the ordered playback cursor and
                     # its historical cell changes. Pure reads/older clients
                     # retain the independent map endpoint and full snapshots.
@@ -321,7 +332,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             else:self.send_error(404);return
             self._send_json(result)
         except ValueError as error:
-            self._send_json({'ok':False,'error':str(error)},400)
+            from dashboard_server.mapping_operations import MappingConflict
+            self._send_json({'ok':False,'error':str(error)},409 if isinstance(error,MappingConflict) or str(error)=='mapping_epoch_changed_refresh_before_action' else 400)
 
     def _rover_action(self, path):
         from dashboard_server.rover_api import request
@@ -1100,10 +1112,11 @@ class DashboardServer(ThreadingHTTPServer):
 def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:
     DashboardHandler.provider = TelemetryProvider(config)
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
-    from dashboard_server.archive_mapping import ArchiveMapping
+    from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
     from dashboard_server.autonomy_settings import AutonomySettings
     DashboardHandler.live_mapping=LiveMapping(ROOT/'runtime/live-map',start_worker=os.environ.get('DASHBOARD_LIVE_MAP_WORKER','1')=='1')
-    DashboardHandler.archive_mapping=ArchiveMapping(DashboardHandler.provider.recording_archive_dir)
+    DashboardHandler.archive_mapping=ManagedArchiveMapping(DashboardHandler.provider.recording_archive_dir,DashboardHandler.live_mapping)
+    DashboardHandler.mapping_operations=MappingOperations(DashboardHandler.live_mapping,DashboardHandler.archive_mapping)
     DashboardHandler.autonomy_settings=AutonomySettings(ROOT/'runtime/autonomy_settings.json')
     dashboard_log("server.create", host=host, port=port, session_ttl_s=SESSION_TTL_S)
     return DashboardServer((host, port), DashboardHandler)
@@ -1123,6 +1136,7 @@ def main():
         pass
     finally:
         DashboardHandler.live_mapping.close()
+        DashboardHandler.archive_mapping.close()
         server.server_close()
 
 

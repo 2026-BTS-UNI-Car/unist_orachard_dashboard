@@ -16,6 +16,49 @@ from dashboard_server.autonomy_settings import AutonomySettings
 
 
 class Tests(unittest.TestCase):
+    def test_live_jobs_and_multi_device_mapping_http_contract(self):
+        import gzip
+        import hashlib
+        from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
+        from dashboard_server.source_live_mapping import SourceLiveMapping
+        with tempfile.TemporaryDirectory() as root:
+            folder=Path(root)/'records'/'record';source=folder/'mapping_source';source.mkdir(parents=True)
+            with gzip.open(source/'sensors.jsonl.gz','wb') as stream:stream.write(b'')
+            (source/'manifest.json').write_text(json.dumps(dict(complete=True,output_sha256={'sensors.jsonl.gz':hashlib.sha256((source/'sensors.jsonl.gz').read_bytes()).hexdigest()})))
+            (folder/'metadata.json').write_text(json.dumps(dict(started_at='1970-01-01T00:16:40Z',duration_s=1.)))
+            server=app.create_server('127.0.0.1',0)
+            initial_live=app.DashboardHandler.live_mapping;initial_archive=app.DashboardHandler.archive_mapping
+            live=SourceLiveMapping(Path(root)/'live',start_worker=False)
+            archives=ManagedArchiveMapping(Path(root)/'records',live,start_monitor=False)
+            app.DashboardHandler.live_mapping=live;app.DashboardHandler.archive_mapping=archives
+            app.DashboardHandler.mapping_operations=MappingOperations(live,archives)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            url=f'http://127.0.0.1:{server.server_port}'
+            opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
+            try:
+                with opener.open(url+'/api/autonomy') as response:response.read()
+                def post(path,payload,origin=None):
+                    with opener.open(Request(url+path,data=json.dumps(payload).encode(),headers={'Content-Type':'application/json',**({'Origin':origin} if origin else {})})) as response:return json.load(response)
+                post('/api/live/map/start',{})
+                first=post('/api/live/recordings/record/new-map',dict(expected_epoch=None,client='A'))
+                post('/api/live/recordings/record/map-playback',dict(t_s=.5,playing=True,control=dict(client='A',sequence=1)))
+                with opener.open(url+'/api/live/mapping-jobs') as response:jobs=json.load(response)
+                self.assertTrue(jobs['live_first']);self.assertEqual(jobs['max_recorded_workers'],1)
+                self.assertEqual(jobs['jobs'][1]['state'],'waiting_live_priority')
+                with self.assertRaises(HTTPError) as error:post('/api/live/recordings/record/map-playback',dict(t_s=0,playing=False,control=dict(client='B',sequence=1)))
+                self.assertEqual(error.exception.code,409)
+                with self.assertRaises(HTTPError) as error:post('/api/live/mapping-jobs/stop',dict(job_id='live'),'http://foreign.invalid')
+                self.assertEqual(error.exception.code,403)
+                stopped=post('/api/live/mapping-jobs/stop',dict(job_id='archive:record',expected_epoch=first['map_epoch']))
+                self.assertTrue(stopped['partial_map_preserved'])
+                with self.assertRaises(HTTPError) as error:post('/api/live/recordings/record/map-playback',dict(t_s=.7,playing=True,control=dict(client='A',sequence=2)))
+                self.assertEqual(error.exception.code,409)
+                post('/api/live/mapping-jobs/stop',dict(job_id='live',expected_epoch=live.map_epoch))
+                self.assertFalse(live.tracking)
+            finally:
+                server.shutdown();server.server_close();thread.join()
+                archives.close();live.close();initial_archive.close();initial_live.close()
+
     def test_inline_playback_cells_preserve_ordered_control_and_old_clients(self):
         import base64
         import zlib

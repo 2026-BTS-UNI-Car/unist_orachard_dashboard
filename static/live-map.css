@@ -1,5 +1,11 @@
 ﻿[data-simulation-only][hidden] { display: none !important; }
 .sim-grid-section { min-width: 0; border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; }
+.mapping-jobs { padding: .65rem; border: 1px solid var(--line); border-radius: .5rem; }
+.mapping-jobs summary { cursor: pointer; font-weight: 600; }
+.mapping-job-row { display: flex; gap: .6rem; align-items: center; justify-content: space-between; padding: .5rem 0; border-bottom: 1px solid var(--line); }
+.mapping-job-row p { margin: 0; overflow-wrap: anywhere; font-size: .85rem; }
+.mapping-job-row button { flex: 0 0 auto; }
+@media (max-width: 700px) { .mapping-job-row { align-items: flex-start; flex-direction: column; } }
 .sim-grid-section h3 { margin: 0; }
 .sim-grid-section .panel-head { gap: 10px; flex-wrap: wrap; }
 .sim-map-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }

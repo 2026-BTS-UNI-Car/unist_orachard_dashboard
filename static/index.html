@@ -635,6 +635,11 @@
 <section class="sim-live-map-panel">
 <div class="panel-head mini"><h3>실시간 점유 격자 지도</h3><span class="tag" id="liveMapState">대기</span></div>
 <div class="sim-map-actions"><button class="action-button primary" id="liveMapStart" type="button">그리기 시작</button><button class="action-button secondary" id="liveMapStop" type="button">그리기 멈춤</button><button class="action-button secondary" id="liveMapReset" type="button">새 지도</button></div>
+<details id="mappingJobsPanel" class="mapping-jobs"><summary>매핑 작업 관리 · 실시간 우선</summary>
+<p id="mappingJobsResources" class="sim-map-status">작업 상태를 확인합니다.</p>
+<div id="mappingJobsList" aria-live="polite"></div>
+<p class="sim-map-status">여러 기기는 같은 지도를 조회합니다. 기록 계산은 한 기기만 제어하며, 실시간 매핑 중에는 대기합니다. 중단해도 원본과 완료한 지도는 유지됩니다.</p>
+</details>
 <div class="map-view-toolbar"><div class="sim-map-zoom"><button data-live-zoom="out" type="button">−</button><button data-live-zoom="fit" type="button">로버 주변</button><button data-live-zoom="full" type="button">구간 전체</button><button data-live-zoom="in" type="button">+</button></div></div><div class="sim-map-stage"><canvas id="liveMapCanvas" aria-label="LiDAR·IMU 표시용 지도와 로버 경로" width="720" height="440"></canvas></div>
 <p class="sim-map-status" id="liveMapStatus" role="status">녹화 없이 지도 그리기 · 멈춰도 지도 유지</p>
 <p class="sim-map-note">주변 물체 중심 자동 맞춤 · 수동 확대 유지 · 빨간 로버·경로</p>

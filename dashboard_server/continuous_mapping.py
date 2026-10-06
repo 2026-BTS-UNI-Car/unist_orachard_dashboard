@@ -7,6 +7,7 @@ import json
 import math
 import threading
 import time
+from collections import deque
 import numpy as np
 from .playback_mapping import SourceCursorLocalizer
 from .raw_mapping.raw_localization import source_stamp
@@ -20,7 +21,7 @@ class ContinuousMapping:
         self.localizer=self.source.engine;self.gnss=self.source.gnss
         self.map=StreamingOccupancyMap(max_beams=450,laser_x=0.,laser_y=0.,
                                      conservative_free=True,endpoint_margin_cells=1)
-        self.records=[];self.old_segments=[];self.segment=0;self.generation=0
+        self.records=deque(maxlen=max_records);self.old_segments=[];self.segment=0;self.generation=0
         self.frame='continuous_sensor_local_frame';self.diagnostic={}
         self.max_records=max_records;self.closed=False;self.background_gnss=False
         self.pending={};self.last_imu=-float('inf');self.last_gps=-float('inf')
@@ -53,7 +54,6 @@ class ContinuousMapping:
         started=time.perf_counter();stamp=source_stamp(scan)
         with self.lock:
             if self.closed:raise ValueError('mapping_engine_closed')
-            if len(self.records)>=self.max_records:raise ValueError('retained_scan_limit_new_map_required')
             if imu is not None:self.imu(imu)
             keys=sorted((k for k in self.pending if k[1]<=stamp),key=lambda k:(k[1],k[0]))
             batch=[]
@@ -63,6 +63,12 @@ class ContinuousMapping:
                 else:self.last_gps=max(self.last_gps,t)
             batch.append(dict(topic='/scan',message=scan))
             result,counters,note=self.source.consume(batch)
+            # Pose diagnostics are bounded without stopping a long live run.
+            # Actual numerical keyframes are retained by the localizer.
+            if len(self.source.pairs)>4096:self.source.pairs=self.source.pairs[-4096:]
+            if len(self.gnss.accepted)>4096:
+                self.gnss.accepted=self.gnss.accepted[-4096:]
+                self.gnss.seen={factor.receiver_epoch for factor in self.gnss.accepted}
             if result['accepted']:
                 self.records.append(dict(stamp=stamp,pose=np.array(result['pose'],copy=True)))
                 if draw and result.get('map_eligible',True):
