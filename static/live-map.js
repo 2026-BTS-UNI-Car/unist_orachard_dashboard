@@ -14,6 +14,7 @@ let archiveTimer=null,archivePending=null,archiveTimeS=0,archivePlaying=false,fo
 let archiveRetryMs=75;
 let cursorMapping=false,playbackPending=null,lastPlaybackPush=-Infinity;
 let triedCausalMap=false,nextExplicitResume=false,lastJobsPoll=0,liveActionBusy=false,archiveMappingGeneration=null;
+let liveMapEpoch=null,archiveMapEpoch=null,liveActionError='';
 let inlinePlaybackMap=false,immutableCursorMap=false,bufferedCursorMap=false,availableCursorPrefix=0;
 const playbackClient=globalThis.crypto?.randomUUID?.()||`map-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;let playbackSequence=0;
 const segments=new ArchiveSegmentGallery(archive,time=>window.setArchiveTime?.(time,{pause:true}));
@@ -56,6 +57,7 @@ async function request(path,body,signal){
   return value;
 }
 function paint(value){
+  liveMapEpoch=value.map_epoch;
   const waiting=value.state==='waiting_for_sensors';
   const restored=value.persistence?.restored&&value.state==='needs_reset';
   live.set(value);text('liveMapState',restored?'저장된 지도':waiting?'센서 동기화 대기':value.active?'그리는 중':value.state==='needs_reset'?'위치 추정 중단':'멈춤');
@@ -64,14 +66,15 @@ function paint(value){
 }
 for(const operation of ['start','stop','reset'])$('liveMap'+operation[0].toUpperCase()+operation.slice(1)).addEventListener('click',async()=>{
   if(liveActionBusy)return;liveActionBusy=true;
-  try{paint(await request('/api/live/map/'+operation,{expected_epoch:live.snapshot.map_epoch}));}
-  catch(error){text('liveMapStatus',error.message);}
+  try{const value=await request('/api/live/map/'+operation,{expected_epoch:liveMapEpoch});liveActionError='';paint(value);}
+  catch(error){liveActionError=error.message;text('liveMapStatus',error.message);}
   finally{liveActionBusy=false;}
 });
 for(const button of document.querySelectorAll('[data-live-zoom]'))button.addEventListener('click',()=>live.zoom(button.dataset.liveZoom));
 for(const button of document.querySelectorAll('[data-archive-zoom]'))button.addEventListener('click',()=>archive.zoom(button.dataset.archiveZoom));
 async function selectArchive(id){
   archiveMappingGeneration=null;
+  archiveMapEpoch=null;
   if(id===selected)return;selected=id;const epoch=++archiveEpoch;
   clearTimeout(archiveTimer);archiveTimer=null;archivePending?.controller.abort();
   mapBuffer=null;nextMapBuffer=null;windowSupported=null;mapWindowPending?.controller.abort();mapWindowPending=null;
@@ -141,6 +144,7 @@ async function pollArchive(id,epoch){
   }
 }
 async function acceptArchiveMap(value){
+    archiveMapEpoch=value.map_epoch;
     if(archivePlaying && value.tile_epoch===archive.tileEpoch &&
        Number(value.tile_version)<Number(archive.snapshot.tile_version))return;
     cursorMapping=value.playback_driven===true;
@@ -292,9 +296,10 @@ $('liveArchiveRegenerate').addEventListener('click',async()=>{
   mapWindowPending?.controller.abort();mapWindowPending=null;playbackPending?.controller.abort();playbackPending=null;
   mapBuffer=null;nextMapBuffer=null;windowSupported=null;$('liveArchiveRegenerate').disabled=true;
   try{
-    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/new-map`,{expected_epoch:archive.snapshot.map_epoch||null,client:playbackClient});
+    const value=await request(`/api/live/recordings/${encodeURIComponent(id)}/new-map`,{expected_epoch:archiveMapEpoch,client:playbackClient});
     if(epoch!==archiveEpoch)return;
     archiveMappingGeneration=value.mapping_generation;
+    archiveMapEpoch=value.map_epoch;
     cursorMapping=true;triedCausalMap=true;inlinePlaybackMap=false;immutableCursorMap=false;bufferedCursorMap=false;availableCursorPrefix=0;
     archiveTimeS=0;archivePlaying=false;archiveGenerating=false;followGeneration=false;
     segments.reset();archive.set({map_epoch:value.map_epoch,preserve_view_on_seek:true,version:0,scan_count:0,tiles:[],tiles_reset:true,playback_driven:true});
@@ -319,7 +324,10 @@ async function poll(){
   if(refreshAutonomy)lastAutonomyPoll=Date.now();
   const results=await Promise.allSettled([request('/api/live/map?'+query),refreshAutonomy?request('/api/autonomy'):Promise.resolve(null)]);
   if($('mappingJobsPanel')?.open&&Date.now()-lastJobsPoll>1500){lastJobsPoll=Date.now();pollJobs().catch(()=>{});}
-  if(results[0].status==='fulfilled')paint(results[0].value);else text('liveMapStatus',`지도 연결 대기 · 마지막 지도 유지 · ${results[0].reason.message}`);
+  if(results[0].status==='fulfilled'){
+    paint(results[0].value);
+    if(liveActionError)text('liveMapStatus',liveActionError+' · 마지막 지도 유지');
+  }else text('liveMapStatus',`지도 연결 대기 · 마지막 지도 유지 · ${results[0].reason.message}`);
   if(results[1].status==='fulfilled'&&results[1].value&&!speedBusy&&document.activeElement!==$('hardwareAutonomySpeed')){
     $('hardwareAutonomySpeed').value=results[1].value.speed_percent;text('hardwareAutonomySpeedValue',`${results[1].value.speed_percent}%`);
     text('hardwareAutonomyStatus',`${results[1].value.message} · 현재 순항속도 설정 ${results[1].value.speed_percent}%`);
