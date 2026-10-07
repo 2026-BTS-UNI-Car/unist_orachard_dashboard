@@ -5,10 +5,36 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.build_adaptive_recording import run
+from scripts.build_adaptive_recording import run,vfr_encoder_timing
 
 
 class EncoderDiagnosticsTest(unittest.TestCase):
+    def test_modern_duration_capability_does_not_combine_output_rate_with_vfr(self):
+        help_text='setts AVOptions:\n  -pts <string> default PTS\n  -duration <string> default DURATION\n'
+        with patch('subprocess.run',return_value=subprocess.CompletedProcess([],0,stdout=help_text)) as probe:
+            args,info=vfr_encoder_timing('/opt/ffmpeg')
+        self.assertNotIn('-r',args)
+        self.assertIn('setts=duration=0.001/TB',args)
+        self.assertEqual(args[args.index('-fps_mode')+1],'vfr')
+        self.assertEqual(args[args.index('-enc_time_base')+1],'1:1000')
+        self.assertIsNone(info['encoder_nominal_rate_hz'])
+        probe.assert_called_once_with(['/opt/ffmpeg','-hide_banner','-h','bsf=setts'],
+                                      capture_output=True,text=True,timeout=10)
+
+    def test_legacy_without_duration_option_keeps_identical_nominal_clock(self):
+        # A prose mention of duration is not evidence of the public option.
+        help_text='setts AVOptions:\n  -pts <string> PTS\n packet duration is unavailable\n'
+        with patch('subprocess.run',return_value=subprocess.CompletedProcess([],0,stdout=help_text)):
+            args,info=vfr_encoder_timing()
+        self.assertEqual(args,['-r','1000','-fps_mode','vfr','-enc_time_base','1:1000'])
+        self.assertEqual(info['encoder_nominal_rate_hz'],1000)
+        self.assertEqual(info['terminal_duration_mode'],'legacy_vfr_nominal_clock')
+
+    def test_failed_capability_probe_does_not_guess_or_drop_timing_hint(self):
+        with patch('subprocess.run',return_value=subprocess.CompletedProcess([],1,stdout='')):
+            with self.assertRaisesRegex(RuntimeError,'timing capability probe failed'):
+                vfr_encoder_timing()
+
     def test_failure_reports_current_encoder_diagnosis_and_preserves_cause(self):
         with tempfile.TemporaryDirectory() as folder:
             log=Path(folder)/'encoder.log'

@@ -1,4 +1,4 @@
-# Native JPEG VFR input on FFmpeg 4.4 and PyAV 8
+# Native JPEG VFR input on FFmpeg 4.4/6 and PyAV 8/11
 
 The Jetson Iron/Jammy image uses FFmpeg 4.4. Its concat parser rejects the
 `option framerate 1000` directive. Removing that directive would silently
@@ -33,12 +33,16 @@ honestly. Exact adjacent PTS specify presentation intervals. The helper
 verifies this contract rather than writing private FFmpeg structures.
 The existing terminal-frame policy is preserved explicitly: repeat the last
 JPEG at the terminal PTS after a median observed inter-frame interval (single
-frame fallback: 1/15 s). The encoder uses the old concat demuxer's nominal
-1000-Hz clock together with VFR mode, not a constant output cadence. Actual
-frame PTS and counts are checked without interpolation, including completely
-uniform 20-Hz input. This keeps the terminal presentation at 1 ms even when
-source cadence is uniform; without that clock hint FFmpeg extends the repeat
-by its guessed frame period. `ffprobe` checks final encoded duration. Consequently
+frame fallback: 1/15 s). The encoder probes the public `setts` bitstream-filter
+help. When its `-duration` option exists, it uses `duration=0.001/TB` with VFR
+and a millisecond encoder time base, without an output `-r`. FFmpeg 6 rejects
+an output rate combined with VFR. FFmpeg 4.4 lacks that public duration option
+and retains the verified nominal 1000-Hz clock with VFR. Neither branch forces
+a constant capture cadence. Actual frame PTS, DTS, MP4 sample durations and
+counts are checked without interpolation, including completely uniform 20-Hz
+input. Both branches keep the terminal presentation at 1 ms; without that hint
+FFmpeg extends the repeat by its guessed frame period. `ffprobe` checks final
+encoded duration. Consequently
 the container includes one presentation-only repeated frame and can extend by
 1 ms beyond the final hold endpoint. `source_frames` and source FPS count only
 captured frames. The manifest records this policy and time quantum; capture
@@ -76,6 +80,12 @@ compressed ROS bag and checks final MP4 PTS alongside every source hash,
 variant, `ffprobe` reads actual init+fragment bytes: sample PTS/DTS, count,
 segment endpoints, `EXTINF` and assembled duration must agree. Dependency skips
 are not release passes; `UBTS_REQUIRE_MEDIA_PIPELINE=1` forbids them.
+
+On 2026-10-07, the same 45-test forced-pipeline suite passed in isolated
+one-CPU, network-disabled FFmpeg 4.4.2/PyAV 8.1.0 and FFmpeg 6.1.1/PyAV 11.0.0
+containers. Fragment `duration_time` is not exposed by these ffprobe builds;
+fragment timing is verified from actual PTS/DTS, endpoints and EXTINF instead.
+These synthetic wall-clock archives do not qualify SIM use-sim-time archives.
 
 Primary API references:
 

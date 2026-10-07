@@ -89,7 +89,7 @@ class NativeJpegMuxTest(unittest.TestCase):
         import av
         import cv2
         import numpy as np
-        from scripts.build_adaptive_recording import run
+        from scripts.build_adaptive_recording import run,vfr_encoder_timing
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);(root/'frames').mkdir();frames=[]
             origin=1_800_000_000_000_000_000
@@ -124,15 +124,24 @@ class NativeJpegMuxTest(unittest.TestCase):
                 self.assertEqual(float(packet.get('duration_time',0)),0.)
                 self.assertEqual(packet['data_hash'].lower(),'sha256:'+frames[min(i,len(frames)-1)]['sha256'])
             target=root/'native.mp4'
+            encoder_timing,_=vfr_encoder_timing()
             run(['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-n','-threads','1',
                  '-i',str(path),'-an','-c:v','libx264','-threads','1','-pix_fmt','yuv420p',
-                 '-bf','0','-r','1000','-fps_mode','vfr','-enc_time_base','1:1000','-vf','hflip,vflip',str(target)],root/'encoder.log')
+                 '-bf','0',*encoder_timing,'-vf','hflip,vflip',str(target)],root/'encoder.log')
             encoded=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
                 '-show_frames','-show_format','-show_entries',
                 'frame=best_effort_timestamp_time:format=duration','-of','json',str(target)],text=True))
             stamps=[float(f['best_effort_timestamp_time']) for f in encoded['frames']]
             self.assertEqual(len(stamps),len(expected))
             for got,wanted in zip(stamps,expected):self.assertAlmostEqual(got,wanted,places=6)
+            encoded_packets=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
+                '-show_packets','-show_entries','packet=pts_time,dts_time,duration_time','-of','json',str(target)],text=True))['packets']
+            self.assertEqual(len(encoded_packets),len(expected))
+            for index,packet in enumerate(encoded_packets):
+                self.assertAlmostEqual(float(packet['pts_time']),expected[index],places=6)
+                self.assertEqual(packet['pts_time'],packet['dts_time'])
+                stop=expected[index+1] if index+1<len(expected) else expected[-1]+.001
+                self.assertAlmostEqual(float(packet['duration_time']),stop-expected[index],places=6)
             self.assertAlmostEqual(float(encoded['format']['duration']),expected[-1]+.001,places=6)
             with av.open(str(target)) as decoded:
                 first=next(decoded.decode(video=0)).to_ndarray(format='bgr24')

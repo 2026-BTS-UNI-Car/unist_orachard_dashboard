@@ -23,6 +23,28 @@ def digest(path):
     return h.hexdigest()
 
 
+def vfr_encoder_timing(ffmpeg='ffmpeg'):
+    """Select an explicit terminal packet duration without resampling PTS.
+
+    FFmpeg 6 rejects output -r combined with VFR. Its setts duration option
+    provides the same 1-ms terminal sample hint as the legacy nominal clock,
+    while MP4 materializes all preceding sample durations from actual DTS.
+    Probe the public option rather than guessing from a version string.
+    """
+    probe=subprocess.run([ffmpeg,'-hide_banner','-h','bsf=setts'],
+                         capture_output=True,text=True,timeout=10)
+    if probe.returncode:
+        raise RuntimeError('FFmpeg VFR timing capability probe failed')
+    common=['-fps_mode','vfr','-enc_time_base','1:1000']
+    if re.search(r'^\s+-duration\s+<string>(?:\s|$)',probe.stdout,re.MULTILINE):
+        return common+['-bsf:v','setts=duration=0.001/TB'],dict(
+            terminal_duration_mode='setts_packet_duration',encoder_nominal_rate_hz=None)
+    # FFmpeg 4.4 accepts this nominal clock with -vsync vfr. It forwards the
+    # captured PTS unchanged; it does not synthesize 1,000 captured frames/s.
+    return ['-r','1000',*common],dict(
+        terminal_duration_mode='legacy_vfr_nominal_clock',encoder_nominal_rate_hz=1000)
+
+
 def run(args,log,cwd=None):
     # Ubuntu ROS Iron uses FFmpeg 4.4, whereas the isolated encoder has 6.x.
     # Keep variable source timestamps on both; never force constant 30 FPS.
@@ -102,14 +124,14 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None,vfr_input=None):
         input_args=['-safe','0','-f','concat','-i',str(playlist)]
         input_info=dict(kind='ffconcat_explicit_millisecond_rate',timestamp_quantum_s=.001,
                         last_frame_policy='repeat_last_at_terminal_pts')
+    encoder_timing,timing_info=vfr_encoder_timing(ffmpeg)
     prefix=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads',threads,
         *input_args,'-an','-c:v','libx264','-preset','fast',
-        '-threads',threads,'-pix_fmt','yuv420p','-bf','0','-r','1000','-fps_mode','vfr','-enc_time_base','1:1000',
+        '-threads',threads,'-pix_fmt','yuv420p','-bf','0',*encoder_timing,
         '-level:v','4.1','-force_key_frames','expr:gte(t,n_forced*2)']
-    # This is the same nominal millisecond clock as the old concat demuxer.
-    # VFR forwards recorded PTS, without duplicating/resampling captured frames.
-    # It also keeps the terminal repeat at 1 ms for perfectly uniform sources.
-    input_info.update(encoder_nominal_rate_hz=1000,terminal_presentation_duration_s=.001,
+    # Both public capability branches preserve VFR timestamps and a 1-ms
+    # terminal repeat presentation, including perfectly uniform sources.
+    input_info.update(**timing_info,terminal_presentation_duration_s=.001,
                       b_frames=0,hls_timing='VFR_MP4_sample_durations_then_stream_copy')
     if m.get('rotation_deg')==180:prefix+=['-vf','hflip,vflip']
     # Full source-sized high-quality MP4 is the fallback and top ABR variant.
@@ -131,7 +153,7 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None,vfr_input=None):
             run([ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads',threads,
                  '-i',str(native),'-an','-vf',f'scale={w}:{h}','-c:v','libx264','-preset','fast',
                  '-threads',threads,'-crf',str(crf),'-maxrate',str(rate),'-bufsize',str(rate*2),
-                 '-pix_fmt','yuv420p','-bf','0','-r','1000','-fps_mode','vfr','-enc_time_base','1:1000',
+                 '-pix_fmt','yuv420p','-bf','0',*encoder_timing,
                  '-level:v','4.1','-force_key_frames','expr:gte(t,n_forced*2)',str(variant)],output/'encoder.log')
         args=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads',threads,
               '-i',str(variant),'-an','-c:v','copy']

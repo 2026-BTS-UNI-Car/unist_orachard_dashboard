@@ -81,7 +81,11 @@ native ROS bag through the real child, FFmpeg, VFR MP4 and all HLS renditions.
 It requires ROS bag support plus FFmpeg/ffprobe. Setting
 `UBTS_REQUIRE_MEDIA_PIPELINE=1` makes missing dependencies fail rather than
 skip in a release gate. A dependency skip is not a
-release pass. Existing running SIM images lack FFmpeg, so that full pipeline
-check and recorder image installation must be verified separately. A web-only
-release cannot update a recorder container or add its internal queue routes.
-No real recording was started to validate this change.
+release pass. Jetson's recorder was separately applied from `104adcc` after
+ARM forced-1080 pipeline checks and a bounded readiness wait. Its 470-scan map,
+73 protected files and twelve other roles were preserved. The recorder exposes
+the queue API; applying the web alone cannot do that. No real recording was
+started to validate this change. The follow-up portable VFR encoder has 45
+forced-pipeline passes on each of FFmpeg 4.4/PyAV 8 and FFmpeg 6/PyAV 11.
+The SIM clean-image release and its source/host clock alignment remain separate
+runtime gates; synthetic wall-clock tests do not establish that alignment.
