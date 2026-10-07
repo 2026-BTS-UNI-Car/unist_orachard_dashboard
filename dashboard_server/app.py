@@ -144,6 +144,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/camera/settings":
             payload = self._read_json_body()
             self._send_json(self.provider.set_camera_settings(payload))
+        elif path == "/api/recordings/media-jobs/action":
+            self._recording_media_action()
         elif path == "/api/recordings/start":
             payload = self._read_json_body()
             self._send_json(self.provider.start_recording(payload))
@@ -229,6 +231,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(payload)
         elif path == "/api/rover/status":
             self._send_json(self.provider.rover_status())
+        elif path == "/api/recordings/media-jobs":
+            self._send_json(self.provider._recorder_get("/media-jobs"))
         elif path == "/api/recordings/status":
             self._send_json(self.provider.recording_status())
         elif path == "/api/recordings":
@@ -338,6 +342,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             from dashboard_server.mapping_operations import MappingConflict
             self._send_json({'ok':False,'error':str(error)},409 if isinstance(error,MappingConflict) or str(error)=='mapping_epoch_changed_refresh_before_action' else 400)
+
+    def _recording_media_action(self):
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host"):
+            self.send_error(403, "Origin mismatch"); return
+        if not self._ensure_session(create=False):
+            self.send_error(403, "Dashboard session required"); return
+        payload = self._read_json_body()
+        if (not isinstance(payload, dict) or payload.get('action') not in ('pause','resume','cancel')
+                or not isinstance(payload.get('recording_id'), str)
+                or not 1 <= len(payload['recording_id']) <= 128):
+            self._send_json(dict(ok=False,error='invalid_media_action'),400); return
+        result = self.provider._recorder_post('/media-jobs/action',
+            {key:payload[key] for key in ('recording_id','action')})
+        self._send_json(result,200 if result.get('ok') else 409)
 
     def _rover_action(self, path):
         from dashboard_server.rover_api import request

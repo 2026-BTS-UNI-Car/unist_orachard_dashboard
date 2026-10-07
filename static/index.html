@@ -785,6 +785,12 @@
 </label>
 <label class="switch-control record-imu-option"><input checked="" id="roverRecordGpsToggle" type="checkbox"/><span>GPS 함께 기록 (기본) · 위치·정확도·수신 상태</span></label>
 <div class="test-result" id="roverRecordingStatus">기록 대기 중</div>
+<details class="media-jobs" id="recordingMediaJobs">
+<summary>녹화 영상 변환 작업</summary>
+<p class="media-jobs-note" data-media-note="" role="status">열면 현재 작업을 확인합니다.</p>
+<button class="action-button secondary" data-media-refresh="" type="button">상태 확인</button>
+<div data-media-list=""></div>
+</details>
 </article>
 <article class="panel wide">
 <div class="panel-head">
@@ -939,5 +945,7 @@
 <script src="/static/vendor/pmtiles/pmtiles.js"></script>
 <script src="/static/gps-map.js" type="module"></script>
 <script src="/static/live-map.js" type="module"></script>
+<link href="/static/media-jobs.css" rel="stylesheet"/>
+<script src="/static/media-jobs.js"></script>
 </body>
 </html>

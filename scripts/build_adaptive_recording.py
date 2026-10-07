@@ -5,7 +5,7 @@ No archive/metadata replacement. The package is installed as a generated
 sidecar only after source hashes and playback have been verified. Never raises
 source capture FPS or upscales its resolution. FFmpeg is an offline dependency.
 """
-import argparse,hashlib,json,math,re,subprocess,time,zipfile
+import argparse,hashlib,json,math,os,re,subprocess,time,zipfile
 from pathlib import Path
 from datetime import datetime
 try:
@@ -68,10 +68,11 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
     concat.append(f"file '{frames[-1]['file']}'");concat.append('option framerate 1000')
     playlist=output/'frames.ffconcat';playlist.write_text('\n'.join(concat)+'\n')
     import cv2
+    threads=str(max(1,min(2,int(os.environ.get('UBTS_MEDIA_THREADS','2')))))
     image=cv2.imread(str(output/frames[0]['file']));height,width=image.shape[:2]
-    prefix=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads','2',
+    prefix=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads',threads,
         '-safe','0','-f','concat','-i',str(playlist),'-an','-c:v','libx264','-preset','fast',
-        '-threads','2','-pix_fmt','yuv420p','-fps_mode','vfr','-enc_time_base','1:1000',
+        '-threads',threads,'-pix_fmt','yuv420p','-fps_mode','vfr','-enc_time_base','1:1000',
         '-level:v','4.1','-force_key_frames','expr:gte(t,n_forced*2)']
     if m.get('rotation_deg')==180:prefix+=['-vf','hflip,vflip']
     # Full source-sized high-quality MP4 is the fallback and top ABR variant.
@@ -82,9 +83,9 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
     for h,rate,crf in rates:
         if h>height or any(v['height']==h for v in variants):continue
         w=(int(width*h/height)//2)*2;folder=output/str(h);folder.mkdir()
-        args=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-i',str(native),'-an']
+        args=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads',threads,'-i',str(native),'-an']
         if crf is None:args+=['-c:v','copy']
-        else:args+=['-vf',f'scale={w}:{h}','-c:v','libx264','-preset','fast','-threads','2','-crf',str(crf),
+        else:args+=['-vf',f'scale={w}:{h}','-c:v','libx264','-preset','fast','-threads',threads,'-crf',str(crf),
                    '-maxrate',str(rate),'-bufsize',str(rate*2),'-pix_fmt','yuv420p','-fps_mode','vfr',
                    '-enc_time_base','1:1000','-level:v','4.1','-force_key_frames','expr:gte(t,n_forced*2)']
         args+=['-f','hls','-hls_time','4','-hls_playlist_type','vod','-hls_segment_type','fmp4',

@@ -111,6 +111,9 @@ class RecordingState:
         self.gps_log = None
         self.motor_timeline = MotorTimeline(args.rover_status_topic)
         self.mapping_writer = None
+        self.media_queue = None
+        self.finalizing = False
+        self.finalizing_id = None
         self.write_status("start")
 
     def status(self) -> dict[str, Any]:
@@ -122,9 +125,10 @@ class RecordingState:
                 )
             return {
                 "ok": True,
-                "state": "recording" if active else "idle",
-                "active": bool(active),
-                "recording_id": active.get("id"),
+                "state": "finalizing" if self.finalizing else "recording" if active else "idle",
+                "active": bool(active) or self.finalizing,
+                "finalizing": self.finalizing,
+                "recording_id": active.get("id") or self.finalizing_id,
                 "kind": active.get("kind"),
                 "include_imu": bool(active.get("include_imu", True))
                 if active
@@ -287,6 +291,9 @@ class RecordingState:
                 "error": "kind must be lidar, camera, or both",
             }
         with self.lock:
+            if self.finalizing:
+                return {"ok": False, "state": "finalizing", "error": "recording_finalization_in_progress",
+                        "recording_id": self.finalizing_id}
             if self.active:
                 already_active = True
             else:
@@ -294,6 +301,9 @@ class RecordingState:
         if already_active:
             return {"ok": False, "state": "already_recording", "status": self.status()}
         with self.lock:
+            if self.finalizing or self.active:
+                return {"ok": False, "state": "finalizing" if self.finalizing else "already_recording",
+                        "error": "recording_busy"}
             recording_id = (
                 f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{kind}"
             )
@@ -381,10 +391,14 @@ class RecordingState:
 
     def stop(self) -> dict[str, Any]:
         with self.lock:
+            if self.finalizing:
+                return {"ok": True, "state": "finalizing", "recording_id": self.finalizing_id}
             active = dict(self.active or {})
             proc = self.process
             if self.active:
                 self.active["stopping"] = True
+                self.finalizing = True
+                self.finalizing_id = active.get('id')
         if not active:
             self.write_status("stop_idle")
             return {"ok": True, "state": "idle", "status": self.status()}
@@ -457,7 +471,12 @@ class RecordingState:
             self.mapping_writer = None
         if active.get('kind') in ('camera','both'):
             from scripts.recording_postprocess import enqueue
-            enqueue(root)
+            result = enqueue(root, self.media_queue)
+            if not result.get('ok'):
+                log('media_queue_rejected', id=active.get('id'), error=result.get('error'))
+        with self.lock:
+            self.finalizing = False
+            self.finalizing_id = None
         log("stop", id=active.get("id"), duration_s=duration_s)
         self.write_status("stop_recording")
         return {
@@ -1044,7 +1063,10 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):
-        if self.path == "/status":
+        if self.path == "/media-jobs":
+            queue = self.state.media_queue
+            self.send_json(queue.status() if queue else {"ok": False, "error": "media_queue_unavailable"})
+        elif self.path == "/status":
             self.send_json(self.state.status())
         elif self.path == "/recordings":
             self.send_json(self.state.list_recordings())
@@ -1060,7 +1082,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404, "Not found")
 
     def do_POST(self):
-        if self.path == "/start":
+        if self.path == "/media-jobs/action":
+            payload = self.read_json()
+            try:
+                queue = self.state.media_queue
+                if queue is None:
+                    raise ValueError('media_queue_unavailable')
+                result = queue.action(payload.get('recording_id'), payload.get('action'))
+                self.send_json(result)
+            except ValueError as error:
+                self.send_json({"ok": False, "error": str(error)}, status=409)
+        elif self.path == "/start":
             payload = self.read_json()
             raw_include_imu = payload.get("include_imu", True)
             include_imu = (
@@ -1269,13 +1301,14 @@ def main() -> int:
     camera_thread.start()
     log("listen", host=args.host, port=args.port, archive_dir=args.archive_dir)
     rclpy.init()
-    from scripts.recording_postprocess import resume
-    resume(Path(args.archive_dir))
+    from scripts.recording_postprocess import initialize
+    media_queue = initialize(state)
     node = RecorderNode(args, state)
     try:
         rclpy.spin(node)
     finally:
         state.stop()
+        media_queue.close()
         camera_shutdown.set()
         state.camera_pending_event.set()
         camera_thread.join(timeout=2)

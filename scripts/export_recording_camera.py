@@ -29,8 +29,11 @@ def export(archive,output,topic='auto'):
     if topic=='auto':
         topic=next((name for name in ('/camera/recording/jpeg','/camera/image_jpeg','/camera/image_raw') if topics.get(name,0)>0),None)
     if topic not in topics or not topics[topic]:raise ValueError('camera_topic_not_recorded')
+    if archive.joinpath('rosbag2').is_symlink():raise ValueError('source_bag_symlink')
+    bag_files=sorted(p for p in (archive/'rosbag2').rglob('*') if p.is_file())
+    if any(p.is_symlink() or archive not in p.resolve().parents for p in bag_files):raise ValueError('source_bag_symlink')
     signatures={str(p.relative_to(archive)):[p.stat().st_size,p.stat().st_mtime_ns] for p in
-                [archive/'metadata.json',archive/'rosbag2/metadata.yaml',*sorted((archive/'rosbag2').glob('*.mcap')),
+                [archive/'metadata.json',*bag_files,
                  *[archive/n for n in ('gps.jsonl','motor.jsonl') if (archive/n).is_file()]]}
     hashes={name:digest(archive/name) for name in signatures}
     reader=rosbag2_py.SequentialReader()
