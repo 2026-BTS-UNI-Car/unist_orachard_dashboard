@@ -10,6 +10,31 @@ import numpy as np
 from dashboard_server.occupancy_map import OccupancyMap, grayscale_png
 
 
+def _native_touched_tile_keys(tile_coordinates):
+    """Same signed lexical keys as packed unique(), with a bounded tile bitmap.
+
+    Unsupported dimensions/coordinates retain the existing selection fallback.
+    The outer native path still owns beam, cell-cap and integer validity gates.
+    """
+    if (not isinstance(tile_coordinates, np.ndarray)
+            or tile_coordinates.dtype != np.int64 or tile_coordinates.ndim != 2
+            or tile_coordinates.shape[1] != 2 or not len(tile_coordinates)):
+        return None
+    # Reduce each strided column independently: avoid a scalar row-axis loop.
+    low = np.array([tile_coordinates[:, 0].min(), tile_coordinates[:, 1].min()])
+    high = np.array([tile_coordinates[:, 0].max(), tile_coordinates[:, 1].max()])
+    if int(low.min()) < -2147483648 or int(high.max()) > 2147483647:
+        return None
+    # Python differences avoid int64 overflow on unsupported direct inputs.
+    nx, ny = (int(high[index])-int(low[index])+1 for index in (0, 1))
+    if nx > 128 or ny > 128 or nx*ny > 4096:
+        return None
+    present = np.zeros((nx, ny), dtype=bool)
+    present[tile_coordinates[:, 0]-low[0], tile_coordinates[:, 1]-low[1]] = True
+    # C order has x tile first, y tile second, identical to packed-key sorting.
+    return np.argwhere(present)+low
+
+
 class TiledOccupancyMap(OccupancyMap):
     TILE = 64
 
@@ -44,10 +69,12 @@ class TiledOccupancyMap(OccupancyMap):
                 and np.all((tile_coordinates>=-2147483648)&(tile_coordinates<=2147483647))):
             from .native_raster import UPDATE,update_tiles
             if UPDATE is not None:
-                encoded=((tile_coordinates[:,0]+2147483648).astype(np.uint64)<<np.uint64(32)) | (tile_coordinates[:,1]+2147483648).astype(np.uint64)
-                unique=np.unique(encoded)
-                keys=np.column_stack(((unique>>np.uint64(32)).astype(np.int64)-2147483648,
-                    (unique&np.uint64(0xffffffff)).astype(np.int64)-2147483648))
+                keys=_native_touched_tile_keys(tile_coordinates)
+                if keys is None:
+                    encoded=((tile_coordinates[:,0]+2147483648).astype(np.uint64)<<np.uint64(32)) | (tile_coordinates[:,1]+2147483648).astype(np.uint64)
+                    unique=np.unique(encoded)
+                    keys=np.column_stack(((unique>>np.uint64(32)).astype(np.int64)-2147483648,
+                        (unique&np.uint64(0xffffffff)).astype(np.int64)-2147483648))
                 count=update_tiles(coordinates,x0,y0,delta,self.conservative_free,self._tiles,keys)
                 if count is not None:
                     self._cell_count+=count
