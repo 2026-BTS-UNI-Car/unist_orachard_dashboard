@@ -1271,6 +1271,13 @@ class TelemetryProvider:
             return self._recording_light_telemetry(path,timeline_path,start_s,duration_s)
 
         def response(timeline):
+            if not (timeline.get('lidar') or {}).get('frames'):
+                from .lidar_preview_recovery import window
+                try: recovered = window(path,self.recording_playback_cache_dir,start_s,duration_s)
+                except (OSError,ValueError,TypeError,KeyError): recovered = None
+                if recovered:
+                    recovered = dict(recovered);recovered.pop('telemetry',None)
+                    timeline = dict(timeline,lidar=recovered)
             timeline = self._with_recorded_gps(path, timeline, start_s, duration_s)
             timeline = with_recorded_motor(path, timeline, start_s, duration_s)
             if profile in (PLAYBACK_DASHBOARD_PROFILE, POLAR_PROFILE) and self.recording_adaptive_video(recording_id):
@@ -1289,7 +1296,17 @@ class TelemetryProvider:
                 return response(cached_segment)
         timeline = self._load_recording_timeline(timeline_path)
         if not timeline:
-            return {"ok": False, "error": "timeline_not_found", "id": recording_id}
+            # Missing previews are prepared explicitly offline. Never scan a
+            # complete raw recording in this HTTP handler or steal live CPU.
+            from .lidar_preview_recovery import window
+            try: prepared = window(path,self.recording_playback_cache_dir,start_s,duration_s)
+            except (OSError,ValueError,TypeError,KeyError): prepared = None
+            if prepared is None:
+                return {"ok": False, "error": "preview_recovery_required", "id": recording_id}
+            timeline = prepared['telemetry']
+            if not timeline:
+                return {"ok": False, "error": "timeline_not_found", "id": recording_id}
+            return response(self._recording_timeline_segment(timeline,start_s or 0,duration_s or 8))
         if start_s is not None or duration_s is not None:
             if playback_request is not None:
                 cached_segment = self._build_playback_cache(
@@ -1310,13 +1327,14 @@ class TelemetryProvider:
             start=max(0.0,start);duration=min(24.0,max(.5,duration))
         except (ValueError,TypeError):return dict(ok=False,error='invalid_telemetry_window')
         cache_dir=self._playback_cache_path(path,timeline_path)
-        if cache_dir is None:return dict(ok=False,error='timeline_not_found')
-        if self._valid_playback_manifest(cache_dir,timeline_path) is None:
+        if cache_dir is None or self._valid_playback_manifest(cache_dir,timeline_path) is None:
             timeline=self._load_recording_timeline(timeline_path)
             if not timeline:
-                from dashboard_server.telemetry_cache import raw_telemetry
-                timeline=raw_telemetry(path,self.recording_playback_cache_dir)
-                if not timeline:return dict(ok=False,error='timeline_not_found')
+                from .lidar_preview_recovery import window
+                try: prepared=window(path,self.recording_playback_cache_dir,start,duration)
+                except (OSError,ValueError,TypeError,KeyError): prepared=None
+                if prepared is None:return dict(ok=False,error='preview_recovery_required')
+                timeline=prepared['telemetry']
                 result=self._recording_timeline_segment(timeline,start,duration)
                 result=self._with_recorded_gps(path,result,start,duration)
                 result=with_recorded_motor(path,result,start,duration)
@@ -1401,6 +1419,11 @@ class TelemetryProvider:
         not being used by the playback canvases.
         """
         if str(profile or "") not in (PLAYBACK_DASHBOARD_PROFILE, POLAR_PROFILE):
+            lidar = timeline.get('lidar') or {}
+            if lidar.get('source') == 'verified_raw_preview_recovery':
+                from .playback_profile import FULL_FIELDS
+                return dict(timeline,lidar=dict(lidar,frames=[dict(f,points=[
+                    dict(zip(FULL_FIELDS,p)) for p in f.get('points',[])]) for f in lidar.get('frames',[])]))
             return timeline
         result = dict(timeline)
         lidar = dict(timeline.get("lidar") or {})

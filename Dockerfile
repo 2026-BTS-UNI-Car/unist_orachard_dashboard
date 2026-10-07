@@ -23,6 +23,7 @@ COPY static ./static
 COPY config ./config
 COPY docs ./docs
 COPY scripts/__init__.py ./scripts/__init__.py
+COPY scripts/recover_recorded_lidar.py ./scripts/recover_recorded_lidar.py
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends util-linux \
