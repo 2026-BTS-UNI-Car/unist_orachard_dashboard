@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
 
 import cv2
 import rclpy
+from scripts.camera_cadence import CameraCadence
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, CompressedImage, Image
@@ -76,7 +77,7 @@ def normalize_mode(width: Any, height: Any, fps: Any, fourcc: Any) -> dict[str, 
         normalized_fps = float(fps)
     except (TypeError, ValueError):
         return None
-    if normalized_width <= 0 or normalized_height <= 0 or normalized_fps < 1:
+    if normalized_width <= 0 or normalized_height <= 0 or not math.isfinite(normalized_fps) or normalized_fps < 1:
         return None
     rounded_fps: int | float = int(round(normalized_fps)) if abs(normalized_fps - round(normalized_fps)) < 0.05 else round(normalized_fps, 2)
     normalized_fourcc = str(fourcc or "MJPG").strip().upper()[:4] or "MJPG"
@@ -282,6 +283,9 @@ class UsbCameraDriver(Node):
         self.request_height = int(initial_mode["height"])
         self.request_fps = float(initial_mode["fps"])
         self.request_fourcc = str(initial_mode["fourcc"])
+        self.capture_cadence = CameraCadence(self.request_fps)
+        self.last_read_ms: float | None = None
+        self.last_publish_work_ms: float | None = None
         self.settings_mtime_ns: int | None = None
         self.next_settings_check_at = 0.0
         # Camera images are real-time sensor samples, not a reliable work queue.
@@ -396,6 +400,9 @@ class UsbCameraDriver(Node):
             "compressed_jpeg_quality": self.args.compressed_jpeg_quality,
             "compressed_preview_width": self.args.compressed_preview_width,
             "last_compressed_encode_ms": self.last_compressed_encode_ms,
+            "capture_cadence": self.capture_cadence.status(),
+            "last_read_ms": self.last_read_ms,
+            "last_publish_work_ms": self.last_publish_work_ms,
             "fail_count": self.fail_count,
             "last_error": self.last_error,
             "last_recovery": self.last_recovery,
@@ -466,6 +473,9 @@ class UsbCameraDriver(Node):
         self.request_fps = float(mode["fps"])
         self.request_fourcc = str(mode["fourcc"])
         if changed:
+            self.capture_cadence = CameraCadence(self.request_fps)
+            self.last_read_ms = None
+            self.last_publish_work_ms = None
             log("settings_changed", **self.current_mode())
             self.close_camera()
             self.next_open_attempt_at = 0.0
@@ -528,7 +538,9 @@ class UsbCameraDriver(Node):
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.request_width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.request_height)
             cap.set(cv2.CAP_PROP_FPS, self.request_fps)
+            read_started = time.monotonic()
             ok, frame = cap.read()
+            read_completed = time.monotonic()
             if not ok or frame is None:
                 cap.release()
                 continue
@@ -540,6 +552,10 @@ class UsbCameraDriver(Node):
             self.compressed_frame_count = 0
             self.last_raw_publish_at = 0.0
             self.last_publish_at = 0.0
+            self.capture_cadence = CameraCadence(self.request_fps)
+            self.capture_cadence.claim(read_started)
+            self.capture_cadence.succeeded(read_completed)
+            self.last_read_ms = round((read_completed - read_started) * 1000.0, 2)
             self.last_error = None
             self.actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or frame.shape[1])
             self.actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or frame.shape[0])
@@ -595,12 +611,13 @@ class UsbCameraDriver(Node):
         if self.cap is None:
             self.open_camera()
             return
-        now = time.time()
-        publish_interval = 1.0 / max(1.0, self.request_fps)
-        if now - self.last_publish_at < publish_interval:
+        read_started = time.monotonic()
+        if not self.capture_cadence.claim(read_started):
             self.write_status("streaming")
             return
         ok, frame = self.cap.read()
+        read_completed = time.monotonic()
+        self.last_read_ms = round((read_completed - read_started) * 1000.0, 2)
         if not ok or frame is None:
             self.fail_count += 1
             if self.fail_count >= 5:
@@ -610,13 +627,15 @@ class UsbCameraDriver(Node):
                 self.write_status("reopen", force=True)
             return
         self.fail_count = 0
+        self.capture_cadence.succeeded(read_completed)
         self.publish_frame(frame)
         self.write_status("streaming")
 
     def publish_frame(self, frame):
+        work_started = time.monotonic()
         if self.args.rotate_180:
             frame = cv2.rotate(frame, cv2.ROTATE_180)
-        self.last_publish_at = time.time()
+        self.last_publish_at = time.monotonic()
         stamp = self.get_clock().now().to_msg()
         height, width = frame.shape[:2]
         # Encode original capture pixels only while a bag/recording subscriber
@@ -671,6 +690,7 @@ class UsbCameraDriver(Node):
             self.raw_frame_count += 1
             self.last_raw_publish_at = self.last_publish_at
         self.frame_count += 1
+        self.last_publish_work_ms = round((time.monotonic() - work_started) * 1000.0, 2)
 
     def publish_native(self, data, stamp, width, height):
         message = CompressedImage()

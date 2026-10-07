@@ -78,4 +78,15 @@ class RecoveryTests(unittest.TestCase):
   metadata=self.archive/'metadata.json';v=json.loads(metadata.read_text());v['state']='recording';metadata.write_text(json.dumps(v))
   with self.assertRaisesRegex(ValueError,'finished_recording'):build(self.archive,self.cache)
 
+ def test_verified_motor_sidecar_is_retained_when_preview_descriptor_was_lost(self):
+  metadata=self.archive/'metadata.json';v=json.loads(metadata.read_text());v['timeline']=dict(motor_schema='orchard.motor_pwm.timeline.v1');metadata.write_text(json.dumps(v))
+  (self.archive/'motor.jsonl').write_text(json.dumps(dict(t_s=9.2,pins=dict(D8=dict(reported_pwm=40))))+'\n')
+  build(self.archive,self.cache)
+  provider=TelemetryProvider.__new__(TelemetryProvider);provider.recording_playback_cache_dir=self.cache
+  provider.recording_archive_path=lambda _:self.archive
+  with patch.object(provider,'_load_recording_timeline',return_value={}),patch.object(provider,'recording_adaptive_video',return_value=None):
+   response=provider.recording_timeline('archive',9,1,'dashboard-polar-v2')
+  self.assertEqual(len(response['timeline']['motor']['frames']),1)
+  self.assertEqual(response['timeline']['motor']['frames'][0]['pins']['D8']['reported_pwm'],40)
+
 if __name__=='__main__':unittest.main()

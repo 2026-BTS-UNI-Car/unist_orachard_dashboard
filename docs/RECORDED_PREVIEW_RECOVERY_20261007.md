@@ -26,7 +26,7 @@ chunks. The normal compact and object point formats remain available. A missing
 or incompatible prepared cache returns `preview_recovery_required`; it does not
 launch expensive work from a browser request.
 
-Linux verification: seven recovery tests plus five existing telemetry/profile
+Linux verification: eight recovery tests plus five existing telemetry/profile
 tests passed. Tests cover original-file preservation, receipt-time alignment,
 bounded seek, IMU synchronization, corrupt chunks, changed/active sources,
-compact point compatibility and the light endpoint without full raw decoding.
+recovery of recorded PWM sidecar descriptors, compact point compatibility and the light endpoint without full raw decoding.

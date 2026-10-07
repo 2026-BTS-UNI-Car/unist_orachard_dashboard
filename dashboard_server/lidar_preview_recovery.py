@@ -136,6 +136,13 @@ def window(archive,cache,start_s,duration_s):
   if before:selected.insert(0,before[-1])
   return selected
  selected=select(rows)
+ telemetry=dict(duration_s=value['duration_s'],imu=dict(frames=select(imus)),source='verified_raw_preview_recovery')
+ metadata=json.loads((archive/'metadata.json').read_text())
+ from .motor_pwm import MOTOR_TIMELINE_SCHEMA,pin_metadata,MOTOR_PIN_PROVENANCE
+ if (metadata.get('timeline') or {}).get('motor_schema')==MOTOR_TIMELINE_SCHEMA:
+  telemetry['motor']=dict(schema=MOTOR_TIMELINE_SCHEMA,enabled=True,frames=[],frames_file='motor.jsonl',
+   pins=pin_metadata(),pin_mapping_source=MOTOR_PIN_PROVENANCE,
+   sampling='status_snapshots_not_all_serial_edges',reported_pwm_semantics='last_cached_mcu_report_not_voltage_or_measured_speed')
  return dict(frames=selected,source='verified_raw_preview_recovery',source_sensor_sha256=sha,
   original_preview_missing=True,complete=True,total_source_frames=value['frames'],
-  telemetry=dict(duration_s=value['duration_s'],imu=dict(frames=select(imus)),source='verified_raw_preview_recovery'))
+  telemetry=telemetry)
