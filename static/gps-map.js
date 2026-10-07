@@ -5,6 +5,20 @@ const byId = id => document.getElementById(id);
 const text = (id, value) => { const element = byId(id); if (element) element.textContent = value; };
 const number = (value, digits=2) => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—';
 const empty = () => ({type:'FeatureCollection', features:[]});
+// pathFeatures owns validity/gap/order behavior. Compare its actual LineString
+// output, never raw replay time, input identity or an assumed sorted prefix.
+// Keep only the last submitted GeoJSON; no hash/string/history snapshot or queue.
+function samePathFeatures(left, right) {
+  if (!left || left.features.length !== right.features.length) return false;
+  for (let index = 0; index < left.features.length; index++) {
+    const a = left.features[index].geometry.coordinates;
+    const b = right.features[index].geometry.coordinates;
+    if (a.length !== b.length) return false;
+    for (let point = 0; point < a.length; point++)
+      if (a[point][0] !== b[point][0] || a[point][1] !== b[point][1]) return false;
+  }
+  return true;
+}
 const protocol = new window.pmtiles.Protocol();
 maplibregl.addProtocol('pmtiles', protocol.tile);
 const qualityName = {autonomous:'일반 GNSS', dgps:'DGNSS', rtk_float:'RTK FLOAT', rtk_fixed:'RTK FIX', dead_reckoning:'추정 위치', no_fix:'위치 미확정'};
@@ -27,8 +41,11 @@ class GpsMapView {
   constructor(prefix, archive=false) {
     this.prefix = prefix; this.archive = archive;
     this.model = new FollowModel(); this.map = null; this.marker = null;
-    this.sample = {}; this.frames = []; this.until = Infinity; this.lastTrackKey = '';
+    this.sample = {}; this.frames = []; this.until = Infinity; this.lastTrackData = null;
     this.initializing = null; this.lastCentered = '';
+    this.markerMounted = false; this.lastPositionKey = null; this.lastAppearanceKey = null;
+    this.lastAccuracyKey = null;
+    this.paintTask = null; this.paintGeneration = 0;
     // Stop following before MapLibre's drag threshold. A new GPS frame can
     // otherwise jumpTo() and cancel the gesture before dragstart ever fires.
     const container = byId(`${prefix}Map`);
@@ -74,7 +91,7 @@ class GpsMapView {
     this.map.addControl(new maplibregl.ScaleControl({unit:'metric'}), 'bottom-left');
     this.map.on('dragstart', () => { this.model.userPan(); this.renderFollow(); });
     this.map.on('boxzoomstart', () => { this.model.userPan(); this.renderFollow(); });
-    this.map.on('style.load', () => { this.addOverlays(); this.paint(); });
+    this.map.on('style.load', () => { this.addOverlays(); this.requestPaint(); });
     this.map.on('error', event => {
       text(`${this.prefix}MapStatus`, `지도 일부를 표시하지 못했습니다 · ${event.error?.message || '파일 확인 필요'}`);
     });
@@ -92,12 +109,12 @@ class GpsMapView {
     this.map.addLayer({id:'gps-accuracy-fill', type:'fill', source:'gps-accuracy', paint:{'fill-color':'#20b5cf','fill-opacity':.15}});
     this.map.addLayer({id:'gps-accuracy-line', type:'line', source:'gps-accuracy', paint:{'line-color':'#20b5cf','line-width':1}});
     this.map.addLayer({id:'gps-track-line', type:'line', source:'gps-track', paint:{'line-color':'#00b4cf','line-width':3,'line-opacity':.8}});
-    this.lastTrackKey = '';
+    this.lastTrackData = null; this.lastAccuracyKey = null;
   }
   update(sample, frames, until=Infinity, receptionElapsedS=0) {
     this.sample = sample || {}; this.frames = frames || []; this.until = until;
     this.model.update(this.sample);
-    this.paint();
+    this.requestPaint();
     const sampleValid = validFix(this.sample);
     text(`${this.prefix}Position`, sampleValid ? `${number(this.sample.latitude, 7)}, ${number(this.sample.longitude, 7)}` : this.model.position ? `마지막 위치 ${number(this.model.position[1], 7)}, ${number(this.model.position[0], 7)}` : 'GPS 위치 수신 대기');
     text(`${this.prefix}Quality`, sampleValid ? `${qualityName[this.sample.fix_type] || 'GNSS'} · ${usedSatellitesText(this.sample)}` : this.sample.state === 'stale' ? '수신 끊김 · 마지막 위치' : this.sample.state === 'no_fix' ? `위치 미확정 · ${usedSatellitesText(this.sample)}` : 'GPS 데이터 없음');
@@ -108,29 +125,75 @@ class GpsMapView {
     const badge = byId(`${this.prefix}FixState`);
     if (badge) { badge.dataset.state = sampleValid ? 'fix' : 'waiting'; badge.textContent = sampleValid ? qualityName[this.sample.fix_type] || 'GNSS' : '수신 대기'; }
   }
+  requestPaint() {
+    if (!this.map || !this.marker || this.paintTask) return;
+    // One pending paint per view. Every callback reads the newest desired GPS
+    // state; raw fixes/readouts and replay time are never queued or rewritten.
+    const task = {generation:this.paintGeneration, raf:null, timer:null};
+    this.paintTask = task;
+    const run = () => {
+      if (this.paintTask !== task) return;
+      this.paintTask = null;
+      if (task.raf !== null) cancelAnimationFrame(task.raf);
+      if (task.timer !== null) clearTimeout(task.timer);
+      if (task.generation === this.paintGeneration) this.paint();
+    };
+    task.raf = requestAnimationFrame(run);
+    task.timer = setTimeout(run, 100);
+  }
+  cancelPaint() {
+    this.paintGeneration++;
+    const task = this.paintTask; this.paintTask = null;
+    if (task?.raf !== null && task?.raf !== undefined) cancelAnimationFrame(task.raf);
+    if (task?.timer !== null && task?.timer !== undefined) clearTimeout(task.timer);
+  }
   paint() {
     if (!this.map || !this.marker) return;
     const point = this.model.position;
     if (point) {
-      this.marker.setLngLat(point).addTo(this.map);
-      this.markerElement.classList.toggle('stale', !this.model.fresh);
+      const positionKey = point.join(',');
+      if (!this.markerMounted || positionKey !== this.lastPositionKey) this.marker.setLngLat(point);
+      if (!this.markerMounted) { this.marker.addTo(this.map); this.markerMounted = true; }
+      this.lastPositionKey = positionKey;
       const heading = this.model.fresh && this.sample.speed_mps > .3 && Number.isFinite(this.sample.course_deg);
-      this.markerElement.classList.toggle('has-course', heading);
-      this.markerElement.style.setProperty('--gps-course', `${heading ? this.sample.course_deg : 0}deg`);
-      const centerKey = point.join(',');
+      const appearanceKey = `${this.model.fresh}:${heading}:${heading ? this.sample.course_deg : 0}`;
+      if (appearanceKey !== this.lastAppearanceKey) {
+        this.markerElement.classList.toggle('stale', !this.model.fresh);
+        this.markerElement.classList.toggle('has-course', heading);
+        this.markerElement.style.setProperty('--gps-course', `${heading ? this.sample.course_deg : 0}deg`);
+        this.lastAppearanceKey = appearanceKey;
+      }
+      const centerKey = positionKey;
       // Repeated status frames must not cancel a user's drag/zoom animation.
       if (this.model.follow && this.lastCentered !== centerKey) this.map.jumpTo({center:point});
       this.lastCentered = centerKey;
-    } else this.marker.remove();
+    } else {
+      if (this.markerMounted) this.marker.remove();
+      this.markerMounted = false; this.lastPositionKey = null; this.lastAppearanceKey = null;
+    }
     const accuracy = this.map.getSource('gps-accuracy');
-    if (accuracy) accuracy.setData(accuracyCircle(point, this.model.fresh ? this.sample.h_acc_m : null));
+    const meters = this.model.fresh ? this.sample.h_acc_m : null;
+    const accuracyKey = point && Number.isFinite(meters) && meters > 0 && meters <= 100000
+      ? `${point.join(',')}:${meters}` : 'empty';
+    if (accuracy && accuracyKey !== this.lastAccuracyKey) {
+      accuracy.setData(accuracyCircle(point, meters)); this.lastAccuracyKey = accuracyKey;
+    }
     const track = this.map.getSource('gps-track');
-    const trackKey = `${this.frames.length}:${this.frames.at(-1)?.t_s}:${this.sample.received_at}:${this.until}`;
-    if (track && trackKey !== this.lastTrackKey) {
-      track.setData(pathFeatures(this.frames, this.until)); this.lastTrackKey = trackKey;
+    if (track) {
+      const data = pathFeatures(this.frames, this.until);
+      if (!samePathFeatures(this.lastTrackData, data)) {
+        track.setData(data); this.lastTrackData = data;
+      }
     }
   }
-  reset() { this.model = new FollowModel(); this.frames = []; this.marker?.remove(); this.lastTrackKey = ''; this.lastCentered = ''; this.renderFollow(); }
+  reset() {
+    this.cancelPaint();
+    this.model = new FollowModel(); this.frames = [];
+    if (this.markerMounted) this.marker?.remove();
+    this.markerMounted = false; this.lastPositionKey = null; this.lastAppearanceKey = null;
+    this.lastTrackData = null; this.lastAccuracyKey = null; this.lastCentered = '';
+    this.renderFollow(); this.requestPaint();
+  }
   async theme() { if (this.map) this.map.setStyle(await localStyle()); }
 }
 
