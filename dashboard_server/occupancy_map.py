@@ -116,6 +116,12 @@ def raster_cells(endpoints, endpoint_margin_cells=0):
             distance,_=cKDTree(occupied).query(free,p=np.inf,workers=1)
             free=free[distance>endpoint_margin_cells]
         return free,occupied
+    from .native_raster import raster_bitmap
+    bitmap=raster_bitmap(rays,xmin,ymin,width,height,endpoint_margin_cells)
+    if bitmap is not None:
+        free=np.flatnonzero(bitmap==1);occupied=np.flatnonzero(bitmap==2)
+        return (np.column_stack((free//height+xmin,free%height+ymin)),
+                np.column_stack((occupied//height+xmin,occupied%height+ymin)))
     seen=np.zeros(width*height,dtype=bool)
     for first in range(0,len(rays),256):
         x,y,hit=rays[first:first+256].T;dx,dy=np.abs(x),np.abs(y)

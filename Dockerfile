@@ -1,3 +1,9 @@
+FROM python:3.11-slim AS raster-builder
+RUN apt-get update && apt-get install -y --no-install-recommends g++ \
+    && rm -rf /var/lib/apt/lists/*
+COPY dashboard_server/native_raster.cc /build/native_raster.cc
+RUN g++ -O3 -std=c++17 -shared -fPIC /build/native_raster.cc -o /build/_native_raster.so
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -12,6 +18,7 @@ COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY dashboard_server ./dashboard_server
+COPY --from=raster-builder /build/_native_raster.so ./dashboard_server/_native_raster.so
 COPY static ./static
 COPY config ./config
 COPY docs ./docs

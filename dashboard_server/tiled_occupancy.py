@@ -40,6 +40,25 @@ class TiledOccupancyMap(OccupancyMap):
         if not len(coordinates): return
         absolute = coordinates + np.array([x0,y0],dtype=np.int64)
         tile_coordinates = absolute//self.TILE
+        if (len(absolute)>=4096 and self._cell_count+len(absolute)<=self.max_cells
+                and np.all((tile_coordinates>=-2147483648)&(tile_coordinates<=2147483647))):
+            from .native_raster import UPDATE,update_tiles
+            if UPDATE is not None:
+                encoded=((tile_coordinates[:,0]+2147483648).astype(np.uint64)<<np.uint64(32)) | (tile_coordinates[:,1]+2147483648).astype(np.uint64)
+                unique=np.unique(encoded)
+                keys=np.column_stack(((unique>>np.uint64(32)).astype(np.int64)-2147483648,
+                    (unique&np.uint64(0xffffffff)).astype(np.int64)-2147483648))
+                count=update_tiles(coordinates,x0,y0,delta,self.conservative_free,self._tiles,keys)
+                if count is not None:
+                    self._cell_count+=count
+                    self._last_updated_tiles=[tuple(int(v) for v in key) for key in keys]
+                    xmin,ymin=int(absolute[:,0].min()),int(absolute[:,1].min())
+                    xmax,ymax=int(absolute[:,0].max()),int(absolute[:,1].max())
+                    if self.bounds:
+                        old=self.bounds
+                        xmin,ymin,xmax,ymax=min(old[0],xmin),min(old[1],ymin),max(old[2],xmax),max(old[3],ymax)
+                    self.bounds=(xmin,ymin,xmax,ymax)
+                    return
         order=None
         # Scalar integer keys avoid structured-row sorting on every free cell.
         # Signed ordering and floor division remain identical across zero.
@@ -58,6 +77,34 @@ class TiledOccupancyMap(OccupancyMap):
         else:
             keys, membership = np.unique(tile_coordinates,axis=0,return_inverse=True)
         self._last_updated_tiles = [tuple(int(v) for v in key) for key in keys]
+        if order is not None and len(absolute)>=4096:
+            # One bounded vector gather/scatter instead of a Python/NumPy
+            # operation sequence for every tile. The admission-at-cap path
+            # below stays unchanged. Values and increments are bit-identical.
+            membership=np.empty(len(absolute),dtype=np.int64)
+            membership[order]=np.repeat(np.arange(len(keys)),np.diff(starts))
+            tiles=[]
+            for key in self._last_updated_tiles:
+                tile=self._tiles.get(key)
+                if tile is None:
+                    tile=np.full((self.TILE,self.TILE),127,dtype=np.int8)
+                    self._tiles[key]=tile
+                tiles.append(tile)
+            batch=np.stack(tiles).reshape(-1)
+            local=absolute%self.TILE
+            indices=membership*(self.TILE*self.TILE)+local[:,1]*self.TILE+local[:,0]
+            values=batch[indices].astype(np.int16);fresh=values==127
+            self._cell_count+=int(fresh.sum());values[fresh]=0
+            increments=np.where(values>=9,-1,delta) if self.conservative_free and delta<0 else delta
+            batch[indices]=np.clip(values+increments,-40,60)
+            for tile,values in zip(tiles,batch.reshape(-1,self.TILE,self.TILE)):tile[:]=values
+            xmin,ymin=int(absolute[:,0].min()),int(absolute[:,1].min())
+            xmax,ymax=int(absolute[:,0].max()),int(absolute[:,1].max())
+            if self.bounds:
+                old=self.bounds
+                xmin,ymin,xmax,ymax=min(old[0],xmin),min(old[1],ymin),max(old[2],xmax),max(old[3],ymax)
+            self.bounds=(xmin,ymin,xmax,ymax)
+            return
         # Admission follows the original ray raster's global x/y order even
         # when a scan crosses tile boundaries. Updating existing cells remains
         # possible after reaching the memory cap.

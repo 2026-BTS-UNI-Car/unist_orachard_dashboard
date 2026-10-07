@@ -79,7 +79,9 @@ class ContinuousMapping:
             return result
 
     def info(self):
+        from .native_raster import backend_status
         return dict(segment=0,segments=int(bool(self.records)),coordinate_frame=self.frame,
+            raster_backend=backend_status(),
             localization='causal_fixed_frame_LiDAR_native_IMU_quality_GNSS',
             pose_source='encoderless_scan_registration',source='original_LaserScan_and_raw_IMU',
             runtime_authority=False,autonomy_eligible=False,pose_accuracy_validated=False,
