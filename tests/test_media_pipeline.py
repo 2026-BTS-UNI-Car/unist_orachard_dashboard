@@ -10,14 +10,17 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import time
 import unittest
 
 from scripts.recording_postprocess import MediaQueue, atomic_json, source_hashes
+from tests.test_native_jpeg_vfr import assert_hls_sample_timeline
 
 
 PIPELINE_DEPENDENCIES = bool(shutil.which('ffmpeg') and shutil.which('ffprobe') and
+                             importlib.util.find_spec('av') and
                              importlib.util.find_spec('rosbag2_py') and importlib.util.find_spec('rclpy'))
 REQUIRED = os.environ.get('UBTS_REQUIRE_MEDIA_PIPELINE') == '1'
 
@@ -90,10 +93,25 @@ class NativePipelineTest(unittest.TestCase):
                 self.assertEqual(manifest['source_topic'], topic)
                 self.assertEqual((manifest['source_width'], manifest['source_height']), (1920, 1080))
                 self.assertEqual(manifest['frame_timing'], 'recorded_camera_receipt_VFR')
+                self.assertEqual(manifest['vfr_input']['kind'],'pyav_mjpeg_matroska')
+                self.assertTrue(manifest['vfr_input']['source_jpeg_bytes_preserved'])
                 self.assertEqual(manifest['source_frames'], len(intervals))
                 self.assertAlmostEqual(manifest['fps'], (len(intervals) - 1) / intervals[-1], places=6)
                 self.assertEqual({v['height'] for v in manifest['variants']}, {1080, 720, 480, 360, 240})
                 self.assertAlmostEqual(manifest['timeline_offset_s'], .02, places=5)
+                probe=json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0',
+                    '-show_streams','-show_frames','-show_format','-show_entries',
+                    'stream=width,height:frame=best_effort_timestamp_time:format=duration','-of','json',
+                    str(archive/'adaptive_video/native.mp4')],text=True))
+                self.assertEqual((probe['streams'][0]['width'],probe['streams'][0]['height']),(1920,1080))
+                stamps=[float(row['best_effort_timestamp_time']) for row in probe['frames']]
+                expected=intervals+[manifest['vfr_input']['terminal_pts_s']]
+                self.assertEqual(len(stamps),len(expected))
+                for got,wanted in zip(stamps,expected):self.assertAlmostEqual(got,wanted,places=3)
+                self.assertAlmostEqual(float(probe['format']['duration']),expected[-1]+.001,places=3)
+                for variant in manifest['variants']:
+                    assert_hls_sample_timeline(self,archive/'adaptive_video'/str(variant['height']),expected)
+                    self.assertAlmostEqual(variant['measured_duration_s'],expected[-1]+.001,places=3)
                 for name, value in manifest['assets'].items():
                     asset = archive / 'adaptive_video' / name
                     self.assertEqual(asset.stat().st_size, value['bytes'])

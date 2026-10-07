@@ -9,9 +9,11 @@ import argparse,hashlib,json,math,os,re,subprocess,time,zipfile
 from pathlib import Path
 from datetime import datetime
 try:
-    from scripts.hls_bandwidth import hls_bandwidth_metrics
+    from scripts.hls_bandwidth import hls_bandwidth_metrics,normalize_generated_target_duration
+    from scripts.native_jpeg_vfr import frame_timing,mux_native_jpeg
 except ModuleNotFoundError:
-    from hls_bandwidth import hls_bandwidth_metrics
+    from hls_bandwidth import hls_bandwidth_metrics,normalize_generated_target_duration
+    from native_jpeg_vfr import frame_timing,mux_native_jpeg
 
 
 def digest(path):
@@ -30,10 +32,27 @@ def run(args,log,cwd=None):
             args=['-vsync' if item=='-fps_mode' else item for item in args]
     import shutil
     if shutil.which('nice'):args=['nice','-n','10',*args]
-    with log.open('ab') as f:subprocess.run(args,check=True,stdout=f,stderr=subprocess.STDOUT,cwd=cwd)
+    start=0
+    try:
+        with log.open('ab') as f:
+            start=f.tell()
+            subprocess.run(args,check=True,stdout=f,stderr=subprocess.STDOUT,cwd=cwd)
+    except subprocess.CalledProcessError as error:
+        # A temporary smoke archive may be removed when its test fails. Keep
+        # the actual encoder diagnosis in the worker traceback/job error before
+        # that happens, without reading old successful attempts or a huge log.
+        try:
+            with log.open('rb') as f:
+                end=f.seek(0,os.SEEK_END)
+                f.seek(max(start,end-4096))
+                tail=f.read(4096).decode('utf8',errors='replace').strip()
+        except OSError:
+            tail='encoder log unavailable'
+        raise RuntimeError(f'FFmpeg failed (exit {error.returncode}): '
+                           f'{tail or "no encoder diagnostic output"}') from error
 
 
-def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
+def build(source,output,ffmpeg='ffmpeg',archive_metadata=None,vfr_input=None):
     source=source.resolve(strict=True);output=output.resolve()
     if output.exists():raise ValueError('new_output_directory_required')
     output.mkdir(parents=True);framesdir=output/'frames';framesdir.mkdir()
@@ -57,23 +76,41 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
             previous=stamp;data=bundle.read(name)
             if len(data)!=row['bytes'] or hashlib.sha256(data).hexdigest()!=row['sha256']:raise ValueError('frame_hash_mismatch')
             (output/name).write_bytes(data)
-    # FFconcat paths are fixed numeric relative names, with real per-frame
-    # receipt intervals. The last duplicate provides the final frame duration.
+    # FFmpeg 4.4 cannot parse concat's `option framerate` directive. Remux
+    # verified JPEG packets into an explicit millisecond VFR input by default;
+    # never fall back to 25-Hz concat timestamps. The old explicit concat mode
+    # is retained for existing FFmpeg 6 tooling, not selected automatically.
+    vfr_input=vfr_input or os.environ.get('UBTS_MEDIA_VFR_INPUT','pyav')
+    if vfr_input not in ('pyav','concat'):raise ValueError('invalid_media_vfr_input')
+    timing=frame_timing(frames)
     intervals=[frames[i+1]['t_s']-frames[i]['t_s'] for i in range(len(frames)-1)]
-    ordered=sorted(intervals);last_dt=ordered[len(ordered)//2] if ordered else 1/15
-    concat=['ffconcat version 1.0']
-    for i,row in enumerate(frames):
-        concat.extend([f"file '{row['file']}'",'option framerate 1000',
-            f"duration {(intervals[i] if i<len(intervals) else last_dt):.9f}"])
-    concat.append(f"file '{frames[-1]['file']}'");concat.append('option framerate 1000')
-    playlist=output/'frames.ffconcat';playlist.write_text('\n'.join(concat)+'\n')
+    last_dt=timing['last_dt_s']
     import cv2
     threads=str(max(1,min(2,int(os.environ.get('UBTS_MEDIA_THREADS','2')))))
     image=cv2.imread(str(output/frames[0]['file']));height,width=image.shape[:2]
+    if vfr_input=='pyav':
+        native_input=output/'native_frames.mkv'
+        input_info=mux_native_jpeg(frames,output,native_input,width,height)
+        input_args=['-i',str(native_input)]
+    else:
+        concat=['ffconcat version 1.0']
+        for i,row in enumerate(frames):
+            concat.extend([f"file '{row['file']}'",'option framerate 1000',
+                f"duration {(intervals[i] if i<len(intervals) else last_dt):.9f}"])
+        concat.append(f"file '{frames[-1]['file']}'");concat.append('option framerate 1000')
+        playlist=output/'frames.ffconcat';playlist.write_text('\n'.join(concat)+'\n')
+        input_args=['-safe','0','-f','concat','-i',str(playlist)]
+        input_info=dict(kind='ffconcat_explicit_millisecond_rate',timestamp_quantum_s=.001,
+                        last_frame_policy='repeat_last_at_terminal_pts')
     prefix=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads',threads,
-        '-safe','0','-f','concat','-i',str(playlist),'-an','-c:v','libx264','-preset','fast',
-        '-threads',threads,'-pix_fmt','yuv420p','-fps_mode','vfr','-enc_time_base','1:1000',
+        *input_args,'-an','-c:v','libx264','-preset','fast',
+        '-threads',threads,'-pix_fmt','yuv420p','-bf','0','-r','1000','-fps_mode','vfr','-enc_time_base','1:1000',
         '-level:v','4.1','-force_key_frames','expr:gte(t,n_forced*2)']
+    # This is the same nominal millisecond clock as the old concat demuxer.
+    # VFR forwards recorded PTS, without duplicating/resampling captured frames.
+    # It also keeps the terminal repeat at 1 ms for perfectly uniform sources.
+    input_info.update(encoder_nominal_rate_hz=1000,terminal_presentation_duration_s=.001,
+                      b_frames=0,hls_timing='VFR_MP4_sample_durations_then_stream_copy')
     if m.get('rotation_deg')==180:prefix+=['-vf','hflip,vflip']
     # Full source-sized high-quality MP4 is the fallback and top ABR variant.
     native=output/'native.mp4'
@@ -83,18 +120,30 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
     for h,rate,crf in rates:
         if h>height or any(v['height']==h for v in variants):continue
         w=(int(width*h/height)//2)*2;folder=output/str(h);folder.mkdir()
-        args=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads',threads,'-i',str(native),'-an']
-        if crf is None:args+=['-c:v','copy']
-        else:args+=['-vf',f'scale={w}:{h}','-c:v','libx264','-preset','fast','-threads',threads,'-crf',str(crf),
-                   '-maxrate',str(rate),'-bufsize',str(rate*2),'-pix_fmt','yuv420p','-fps_mode','vfr',
-                   '-enc_time_base','1:1000','-level:v','4.1','-force_key_frames','expr:gte(t,n_forced*2)']
+        variant=native
+        if crf is not None:
+            # FFmpeg 4.4's direct HLS encode sums nominal packet durations,
+            # even with exact VFR PTS, producing e.g. EXTINF=.013 for .8 s.
+            # MP4 first materializes actual sample deltas, then stream-copy
+            # HLS preserves them without a second encode. No B frames means
+            # PTS=DTS, avoiding the muxer's negative-DTS timeline shift.
+            variant=output/f'variant-{h}.mp4'
+            run([ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads',threads,
+                 '-i',str(native),'-an','-vf',f'scale={w}:{h}','-c:v','libx264','-preset','fast',
+                 '-threads',threads,'-crf',str(crf),'-maxrate',str(rate),'-bufsize',str(rate*2),
+                 '-pix_fmt','yuv420p','-bf','0','-r','1000','-fps_mode','vfr','-enc_time_base','1:1000',
+                 '-level:v','4.1','-force_key_frames','expr:gte(t,n_forced*2)',str(variant)],output/'encoder.log')
+        args=[ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-n','-threads',threads,
+              '-i',str(variant),'-an','-c:v','copy']
         args+=['-f','hls','-hls_time','4','-hls_playlist_type','vod','-hls_segment_type','fmp4',
                '-hls_flags','independent_segments','-hls_fmp4_init_filename','init.mp4',
                '-hls_segment_filename','segment-%05d.m4s','index.m3u8']
         run(args,output/'encoder.log',cwd=folder)
+        target_info=normalize_generated_target_duration(folder)
         names=[p.relative_to(output).as_posix() for p in folder.iterdir() if p.is_file()];assetnames+=names
         metrics=hls_bandwidth_metrics(folder)
-        variants.append(dict(height=h,width=w,playlist=f'{h}/index.m3u8',**metrics))
+        variants.append(dict(height=h,width=w,playlist=f'{h}/index.m3u8',**target_info,**metrics))
+        if variant!=native:variant.unlink()
     master=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-INDEPENDENT-SEGMENTS']
     for v in sorted(variants,key=lambda v:v['height']):
         # The decoder reads the actual AVC configuration in init.mp4. Do not
@@ -106,6 +155,7 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
         source_topic=m['source_topic'],source_sha256=m['source_sha256'],source_signatures=m['source_signatures'],camera_export_sha256=digest(source),
         source_frames=len(frames),source_width=width,source_height=height,fps=(len(frames)-1)/(duration-last_dt) if len(frames)>1 else 1/last_dt,
         timeline_offset_s=bag_offset+frames[0]['t_s'],duration_s=duration,frame_timing='recorded_camera_receipt_VFR',
+        vfr_input=input_info,
         time_base='archive_metadata.started_at',
         master='master.m3u8',fallback='native.mp4',variants=variants,
         assets={name:dict(bytes=(output/name).stat().st_size,sha256=digest(output/name)) for name in sorted(assetnames)},
@@ -118,4 +168,5 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None):
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('source',type=Path);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--ffmpeg',default='ffmpeg');p.add_argument('--archive-metadata',type=Path,required=True)
-    a=p.parse_args();build(a.source,a.output,a.ffmpeg,a.archive_metadata)
+    p.add_argument('--vfr-input',choices=('pyav','concat'))
+    a=p.parse_args();build(a.source,a.output,a.ffmpeg,a.archive_metadata,a.vfr_input)

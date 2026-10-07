@@ -6,7 +6,7 @@ ENV LIDAR_BRIDGE_SOURCE=ros2
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg python3-pip python3-opencv python3-smbus i2c-tools v4l-utils ros-iron-rosbag2 ros-iron-rosbag2-storage-default-plugins \
+  && apt-get install -y --no-install-recommends ffmpeg python3-av python3-pip python3-opencv python3-smbus i2c-tools v4l-utils ros-iron-rosbag2 ros-iron-rosbag2-storage-default-plugins \
   && python3 -m pip install --no-cache-dir "websockets>=12,<13" "adafruit-circuitpython-bno08x==1.3.3" "adafruit-extended-bus==1.0.2" \
   && rm -rf /var/lib/apt/lists/*
 
@@ -20,7 +20,7 @@ COPY scripts/imu_ros2_driver.py ./scripts/imu_ros2_driver.py
 COPY scripts/imu_ws_bridge.py ./scripts/imu_ws_bridge.py
 COPY scripts/esp_wheel_controller.py scripts/esp_motor.py scripts/rover_control_core.py scripts/rover_control_bridge.py scripts/stream_policy.py ./scripts/
 COPY scripts/data_recorder_service.py ./scripts/data_recorder_service.py
-COPY scripts/native_camera_encoder.py scripts/mapping_sensor_writer.py scripts/recording_postprocess.py scripts/export_recording_camera.py scripts/build_adaptive_recording.py scripts/hls_bandwidth.py scripts/install_adaptive_recording.py ./scripts/
+COPY scripts/native_camera_encoder.py scripts/mapping_sensor_writer.py scripts/recording_postprocess.py scripts/export_recording_camera.py scripts/build_adaptive_recording.py scripts/native_jpeg_vfr.py scripts/hls_bandwidth.py scripts/install_adaptive_recording.py ./scripts/
 COPY scripts/gps_ros2_driver.py scripts/gps_ws_bridge.py ./scripts/
 
 EXPOSE 8765 8770 8775 8778 8790

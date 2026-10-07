@@ -6,16 +6,17 @@ All segment bytes include container overhead. HTTP overhead is not included.
 import math,re
 from pathlib import Path
 
-def hls_bandwidth_metrics(folder):
+def _completed_playlist(folder,allow_zero_target=False):
     folder=Path(folder).resolve(strict=True);playlist=folder/'index.m3u8'
+    if playlist.is_symlink():raise ValueError('unconfined_playlist')
     if playlist.stat().st_size>1024*1024:raise ValueError('playlist_too_large')
-    lines=playlist.read_text(encoding='utf-8').splitlines();target=None;duration=None;rows=[]
+    lines=playlist.read_text(encoding='utf-8').splitlines();target=None;duration=None;rows=[];target_index=None
     if '#EXT-X-ENDLIST' not in lines:raise ValueError('completed_VOD_required')
-    for line in lines:
+    for index,line in enumerate(lines):
         if line.startswith('#EXT-X-TARGETDURATION:'):
             value=line.partition(':')[2]
-            if not value.isdigit() or not 1<=int(value)<=3600 or target is not None:raise ValueError('invalid_target_duration')
-            target=int(value)
+            if not value.isdigit() or not (0 if allow_zero_target else 1)<=int(value)<=3600 or target is not None:raise ValueError('invalid_target_duration')
+            target=int(value);target_index=index
         elif line.startswith('#EXTINF:'):
             if duration is not None:raise ValueError('missing_segment_URI')
             duration=float(line.partition(':')[2].split(',')[0])
@@ -28,6 +29,26 @@ def hls_bandwidth_metrics(folder):
             if not 0<size<=1024**3:raise ValueError('invalid_segment_size')
             rows.append((duration,size));duration=None
     if target is None or duration is not None or not 1<=len(rows)<=20000:raise ValueError('invalid_completed_playlist')
+    return playlist,lines,target_index,target,rows
+
+
+def normalize_generated_target_duration(folder):
+    """Fix only the target bound of a newly generated, complete VOD playlist.
+
+    FFmpeg 4.4 can round a valid short clip's target to zero. Validate every
+    segment before editing; preserve all EXTINF/sample timestamps and bytes.
+    This is called only inside the builder's exclusive new work directory.
+    """
+    playlist,lines,index,old,rows=_completed_playlist(folder,allow_zero_target=True)
+    target=max(1,math.ceil(max(duration for duration,size in rows)))
+    if old!=target:
+        lines[index]=f'#EXT-X-TARGETDURATION:{target}'
+        playlist.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+    return dict(original_target_duration_s=old,target_duration_s=target)
+
+
+def hls_bandwidth_metrics(folder):
+    playlist,lines,index,target,rows=_completed_playlist(folder)
     low,high=.5*target,1.5*target;peak=0.;total_duration=sum(d for d,s in rows)
     for start in range(len(rows)):
         elapsed=size=0
