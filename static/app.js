@@ -4566,7 +4566,11 @@ function configureArchiveNativeVideo(payload) {
         state.archivePlayback.sourceSwitchTimeS=state.archivePlayback.timeS;
         configureArchiveNativeVideo(replacement);
         const video=$("roverArchiveCameraVideo");
-        if(state.archivePlayback.playing)video?.play().catch(()=>{});
+        if(state.archivePlayback.playing && video) {
+          Promise.resolve(video.play()).then(()=>{
+            if(!state.archivePlayback.playing && !state.archivePlayback.videoPlayRequested)video.pause();
+          }).catch(()=>{});
+        }
       };
     }
     state.archivePlayback.selectedSourceVideo=null;
@@ -4577,6 +4581,8 @@ function configureArchiveNativeVideo(payload) {
   const url = String(payload?.video_url || "");
   const changed = url !== state.archivePlayback.nativeVideoUrl;
   if (changed) {
+    state.archivePlayback.videoPlayRevision=(state.archivePlayback.videoPlayRevision||0)+1;
+    state.archivePlayback.videoPlayRequested=false;
     state.archivePlayback.videoPlayer?.destroy();
     state.archivePlayback.videoPlayer = null;
     state.archivePlayback.videoQuality = {};
@@ -4593,13 +4599,13 @@ function configureArchiveNativeVideo(payload) {
   frame?.classList.toggle("native-video", Boolean(url));
   if (!url) return;
   video.onloadedmetadata = () => {
+    if (url !== state.archivePlayback.nativeVideoUrl) return;
     if (Number.isFinite(state.archivePlayback.sourceSwitchTimeS)) {
       const cursor=state.archivePlayback.sourceSwitchTimeS;
       state.archivePlayback.sourceSwitchTimeS=null;
       state.archivePlayback.timeS=cursor;
       video.currentTime=archiveVideoTime(cursor);
     }
-    if (url !== state.archivePlayback.nativeVideoUrl) return;
     state.archivePlayback.nativeVideoReady = true;
     state.archivePlayback.nativeVideoError = "";
     const duration = Number(video.duration) + state.archivePlayback.nativeVideoOffsetS;
@@ -4610,7 +4616,8 @@ function configureArchiveNativeVideo(payload) {
     if (!state.archivePlayback.playing && Math.abs(video.currentTime - archiveVideoTime(state.archivePlayback.timeS)) > 0.08) {
       video.currentTime = archiveVideoTime(state.archivePlayback.timeS);
     }
-    renderArchiveFrame();
+    // Another metadata listener restores the fallback's saved media cursor.
+    renderArchiveFrame({sampleMedia:false});
   };
   video.onerror = () => {
     if (url !== state.archivePlayback.nativeVideoUrl) return;
@@ -4633,6 +4640,19 @@ function configureArchiveNativeVideo(payload) {
 
 function archiveVideoTime(timeS) {
   return Math.max(0, Number(timeS) - (state.archivePlayback.nativeVideoOffsetS || 0));
+}
+
+function archiveRenderClock({sampleMedia=true}={}) {
+  const p=state.archivePlayback,video=archiveNativeVideo();
+  if(sampleMedia && p.playing && !p.mapBuffering && p.nativeVideoReady && !p.nativeVideoError
+      && !Number.isFinite(p.sourceSwitchTimeS) && video && video.readyState>=1 && !video.seeking) {
+    const media=Number(video.currentTime),offset=Number(p.nativeVideoOffsetS||0),next=media+offset;
+    if(Number.isFinite(media) && media>=0 && Number.isFinite(offset) && Number.isFinite(next)) {
+      const duration=Number(p.durationS);
+      p.timeS=Math.max(0,Number.isFinite(duration)&&duration>0?Math.min(duration,next):next);
+    }
+  }
+  return Math.max(0,Number(p.timeS)||0);
 }
 
 function archiveNativeVideo() {
@@ -4690,7 +4710,7 @@ function resumeLiveCameraAfterArchive() {
 }
 
 async function toggleArchivePlayback() {
-  if (state.archivePlayback.playing) {
+  if (state.archivePlayback.playing || state.archivePlayback.videoPlayRequested) {
     stopArchivePlayback(false);
     return;
   }
@@ -4698,17 +4718,26 @@ async function toggleArchivePlayback() {
   suspendLiveCameraForArchive();
   const startTime = state.archivePlayback.timeS >= state.archivePlayback.durationS ? 0 : state.archivePlayback.timeS;
   const video = archiveNativeVideo();
+  const revision=(state.archivePlayback.videoPlayRevision||0)+1;
+  state.archivePlayback.videoPlayRevision=revision;state.archivePlayback.videoPlayRequested=true;
   if (video) {
     try {
       video.currentTime = archiveVideoTime(startTime);
       await video.play();
+      if(revision!==state.archivePlayback.videoPlayRevision) {
+        if(!state.archivePlayback.playing && !state.archivePlayback.videoPlayRequested)video.pause();
+        return;
+      }
     } catch (err) {
+      if(revision!==state.archivePlayback.videoPlayRevision)return;
+      state.archivePlayback.videoPlayRequested=false;
       state.archivePlayback.nativeVideoError = err?.message || "native video play failed";
       resumeLiveCameraAfterArchive();
       renderArchiveFrame();
       return;
     }
   }
+  state.archivePlayback.videoPlayRequested=false;
   state.archivePlayback.playing = true;
   state.archivePlayback.startedAt = performance.now();
   state.archivePlayback.startTimeS = startTime;
@@ -4734,6 +4763,8 @@ function queueArchivePlaybackTick() {
 
 function stopArchivePlayback(reset = false) {
   state.archivePlayback.playing = false;
+  state.archivePlayback.videoPlayRequested=false;
+  state.archivePlayback.videoPlayRevision=(state.archivePlayback.videoPlayRevision||0)+1;
   state.archivePlayback.mapBuffering = false;
   state.archivePlayback.mapResumeRevision=(state.archivePlayback.mapResumeRevision||0)+1;
   resumeLiveCameraAfterArchive();
@@ -4767,7 +4798,7 @@ function syncArchiveMapClock(next,now,video){
   if(video?.paused){
     const revision=(playback.mapResumeRevision||0)+1;playback.mapResumeRevision=revision;
     Promise.resolve(video.play()).then(()=>{
-      if(!playback.playing||revision!==playback.mapResumeRevision)video.pause();
+      if(!playback.playing && !playback.videoPlayRequested)video.pause();
     }).catch(error=>{
       if(playback.playing&&revision===playback.mapResumeRevision){
         playback.mapBuffering=true;playback.nativeVideoError=error?.message||'video resume failed';
@@ -4809,12 +4840,12 @@ function setArchiveTime(value, options = {}) {
     try { video.currentTime = archiveVideoTime(state.archivePlayback.timeS); } catch (_) { /* metadata is not ready yet */ }
   }
   scheduleArchiveSeek(state.archivePlayback.timeS);
-  renderArchiveFrame();
+  renderArchiveFrame({sampleMedia:false});
 }
 
-function renderArchiveFrame() {
+function renderArchiveFrame(options={}) {
   const timeline = state.recordings.timeline;
-  const timeS = Math.max(0, Number(state.archivePlayback.timeS) || 0);
+  const timeS = archiveRenderClock(options);
   window.LiveMap?.archiveTime(state.recordings.selectedId, timeS, state.archivePlayback.playing);
   const cache = state.archivePlayback.cache || {};
   window.RoverGps?.archive(cache.gpsFrames || [], timeS, state.recordings.selectedId, timeline?.gps?.enabled === true);
@@ -4896,7 +4927,7 @@ function renderArchiveFrame() {
   const mapScrubber = $("roverOrchardMapScrubber");
   if (mapScrubber && document.activeElement !== mapScrubber) mapScrubber.value = String(timeS);
   const play = $("roverArchivePlayButton");
-  if (play) play.textContent = state.archivePlayback.playing ? "일시정지" : "재생";
+  if (play) play.textContent = state.archivePlayback.playing || state.archivePlayback.videoPlayRequested ? "일시정지" : "재생";
 
 }
 
