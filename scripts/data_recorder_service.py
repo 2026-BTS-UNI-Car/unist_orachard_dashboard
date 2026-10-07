@@ -32,6 +32,9 @@ from dashboard_server.imu_processing import (
     raw_imu_payload,
 )
 from dashboard_server.gps import GPS_SCHEMA, GPS_TIMELINE_SCHEMA, valid_position, finite
+from dashboard_server.recording_clock import (
+    clock_sample, clock_epoch, start_clock_snapshot, display_clock, sort_key,
+)
 from dashboard_server.motor_pwm import (
     MOTOR_APPLIED_TOPIC,
     MOTOR_REQUESTED_TOPIC,
@@ -106,6 +109,11 @@ class RecordingState:
         self.gps_valid_count = 0
         self.gps_latest = {}
         self.gps_last_at = None
+        # HPPOSLLH inherits NAV-PVT UTC fields but is not a new time epoch.
+        # This separate cache carries only time evidence, never coordinates.
+        self.gps_clock_latest = {}
+        self.gps_clock_last_at = None
+        self.gps_clock_epoch_watermark = None
         self.gps_write_error = None
         self.next_gps_sample_at = 0.0
         self.gps_log = None
@@ -137,6 +145,8 @@ class RecordingState:
                 if active
                 else True,
                 "started_at": active.get("started_at"),
+                **(display_clock(self.archive_dir / safe_id(str(active.get('id') or '')),
+                                 active) if active else {}),
                 "duration_s": active.get("duration_s"),
                 "rosbag_topics": list(active.get("topics") or []),
                 "archive_dir": str(self.archive_dir),
@@ -228,21 +238,25 @@ class RecordingState:
                         "kind": metadata.get("kind") or "unknown",
                         "state": metadata.get("state") or "archived",
                         "started_at": metadata.get("started_at"),
+                        **display_clock(path, metadata),
                         "finished_at": metadata.get("finished_at"),
                         "duration_s": metadata.get("duration_s"),
                     }
                 )
-        return {"ok": True, "recordings": rows, "archive_dir": str(self.archive_dir)}
+        return {"ok": True, "recordings": sorted(rows, key=sort_key, reverse=True),
+                "archive_dir": str(self.archive_dir)}
 
     def detail(self, recording_id: str) -> dict[str, Any]:
         path = self.archive_dir / safe_id(recording_id)
         if not path.exists():
             return {"ok": False, "error": "recording_not_found", "id": recording_id}
+        metadata = read_json(path / "metadata.json")
         return {
             "ok": True,
             "recording": {
                 "id": path.name,
-                "metadata": read_json(path / "metadata.json"),
+                "metadata": metadata,
+                **display_clock(path, metadata),
                 "preview_scan": read_json(path / "preview_scan.json"),
                 "timeline_summary": self.timeline_summary(path),
             },
@@ -340,6 +354,9 @@ class RecordingState:
                     "motor_frames_file": "motor.jsonl",
                 },
             }
+            metadata['clock_quality_snapshot'] = start_clock_snapshot(
+                metadata['started_at'], self.gps_clock_latest, self.gps_clock_last_at,
+                now_monotonic=time.monotonic(), host_now_s=time.time())
             write_json_atomic(root / "metadata.json", metadata)
             self.preview_scan = {}
             self.lidar_frames = []
@@ -649,6 +666,22 @@ class RecordingState:
         with self.lock:
             self.gps_latest = sample
             self.gps_last_at = now
+            if status:
+                self.gps_clock_latest = {}
+                self.gps_clock_last_at = None
+            elif sample.get('protocol') == 'UBX_NAV_PVT':
+                incoming = clock_sample(sample)
+                incoming_epoch = clock_epoch(incoming)
+                previous_epoch = self.gps_clock_epoch_watermark
+                if (incoming_epoch is None or previous_epoch is None
+                        or incoming_epoch > previous_epoch):
+                    self.gps_clock_latest = incoming
+                    self.gps_clock_last_at = now
+                    if incoming_epoch is not None:
+                        self.gps_clock_epoch_watermark = incoming_epoch
+                elif incoming_epoch < previous_epoch:
+                    self.gps_clock_latest = {}
+                    self.gps_clock_last_at = None
             active = self.active
             if (
                 not active

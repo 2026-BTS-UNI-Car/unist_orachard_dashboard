@@ -4476,6 +4476,18 @@ function renderArchiveDownloadButton(payload, id) {
   if (meta) meta.textContent = `${recordingSensorLabel(payload)} · tar.gz`;
 }
 
+function recordingClockLabel(payload) {
+  if (payload?.clock_quality === "gnss_estimated") return "GPS 시각 보정";
+  if (payload?.clock_quality === "gnss_receiver_estimated") return "GPS UTC 기준";
+  return "장치 시각 미검증";
+}
+
+function recordingClockDescription(payload) {
+  if (payload?.clock_quality === "gnss_estimated") return "기존 기록의 표시 시각을 보정했습니다. 센서 시각과 재생 시간은 원본을 유지합니다.";
+  if (payload?.clock_quality === "gnss_receiver_estimated") return "녹화 시작 시 GPS UTC를 확인했습니다. 수신 지연은 보정하지 않았습니다.";
+  return "검증된 GPS 시간 정보가 없어 장치 시각으로 표시합니다.";
+}
+
 function renderRecordings() {
   const target = $("roverArchiveList");
   if (!target) return;
@@ -4496,7 +4508,7 @@ function renderRecordings() {
     button.innerHTML = `
       <span>${escapeHtml(recordingSensorLabel(item))}</span>
       <strong>${escapeHtml(item.id)}</strong>
-      <small>${escapeHtml(formatShortDate(item.display_started_at || item.started_at || item.created_at))} · ${item.clock_quality === "gnss_estimated" ? "GPS 시각 보정 · " : ""}${escapeHtml(item.duration_s ? `${fmtNumber(item.duration_s, 1)}s` : item.state || "ready")} · L${escapeHtml(item.timeline?.lidar_frames ?? 0)} C${escapeHtml(item.timeline?.camera_frames ?? 0)} I${escapeHtml(item.timeline?.imu_frames ?? 0)} G${escapeHtml(item.timeline?.gps_frames ?? 0)}</small>
+      <small>${escapeHtml(formatShortDate(item.display_started_at || item.started_at || item.created_at))} · ${escapeHtml(recordingClockLabel(item))} · ${escapeHtml(item.duration_s ? `${fmtNumber(item.duration_s, 1)}s` : item.state || "ready")} · L${escapeHtml(item.timeline?.lidar_frames ?? 0)} C${escapeHtml(item.timeline?.camera_frames ?? 0)} I${escapeHtml(item.timeline?.imu_frames ?? 0)} G${escapeHtml(item.timeline?.gps_frames ?? 0)}</small>
     `;
     button.addEventListener("click", () => selectRecording(item.id));
     target.append(button);
@@ -4520,6 +4532,7 @@ function renderRecordingDetail(detail) {
   const rows = id ? [
     { title: "ID", sub: recordingSensorLabel(payload), ok: true, level: "ok", value: id },
     { title: "Duration", sub: `${formatShortDate(payload.display_started_at || metadata.started_at)}${payload.clock_quality === "gnss_estimated" ? ` · GPS 시각 보정 (원본 ${formatShortDate(metadata.started_at)})` : ""}`, ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
+    { title: "기록 시각", sub: recordingClockDescription(payload), ok: ["gnss_estimated", "gnss_receiver_estimated"].includes(payload.clock_quality), level: ["gnss_estimated", "gnss_receiver_estimated"].includes(payload.clock_quality) ? "ok" : "warn", value: recordingClockLabel(payload) },
     { title: "Timeline", sub: `${payload?.timeline_summary?.lidar_frames || state.recordings.timeline?.lidar?.frames?.length || 0} lidar · ${payload?.timeline_summary?.camera_frames || state.recordings.timeline?.camera?.frames?.length || 0} camera · ${payload?.timeline_summary?.imu_frames || state.recordings.timeline?.imu?.frames?.length || 0} imu`, ok: Boolean(state.recordings.timeline), level: state.recordings.timeline ? "ok" : "warn", value: state.recordings.timeline ? "playable" : "preview only" },
   ] : [
     { title: "Archive", sub: "기록을 선택하세요", ok: false, level: "warn", value: "--" },
