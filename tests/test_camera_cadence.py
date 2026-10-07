@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 from scripts.camera_cadence import CameraCadence
+from scripts.camera_preview_worker import LatestCameraWorker
 
 
 def load_driver():
@@ -41,6 +42,23 @@ def load_driver():
 
 
 DRIVER = load_driver()
+
+
+def publication_node():
+    node = DRIVER.UsbCameraDriver.__new__(DRIVER.UsbCameraDriver)
+    node.args = SimpleNamespace(rotate_180=True, compressed_preview_width=1280,
+                                compressed_jpeg_quality=70, raw_publish_fps=5, fov_deg=70)
+    node.frame_id = "camera_link_optical"
+    node.recording_pub = SimpleNamespace(get_subscription_count=lambda: 1, publish=Mock())
+    node.native_encoder = SimpleNamespace(submit=Mock())
+    for name in ("compressed_pub", "preview_info_pub", "image_pub", "info_pub"):
+        setattr(node, name, SimpleNamespace(publish=Mock()))
+    node.get_clock = lambda: SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: "ros_stamp"))
+    node.raw_frame_count = node.compressed_frame_count = node.frame_count = 0
+    node.raw_submit_count = 0
+    node.last_raw_publish_at = node.last_raw_submitted_at = 0
+    node.preview_worker = LatestCameraWorker(node.process_preview_frame)
+    return node
 
 
 class CameraCadenceTests(unittest.TestCase):
@@ -153,25 +171,19 @@ class CameraCadenceTests(unittest.TestCase):
             node.close_camera.assert_called_once()
 
     def test_driver_keeps_native_dimensions_rotation_and_preview_quality(self):
-        node = DRIVER.UsbCameraDriver.__new__(DRIVER.UsbCameraDriver)
-        node.args = SimpleNamespace(rotate_180=True, compressed_preview_width=1280,
-                                    compressed_jpeg_quality=70, raw_publish_fps=5, fov_deg=70)
-        node.frame_id = "camera_link_optical"
-        node.recording_pub = SimpleNamespace(get_subscription_count=lambda: 1)
-        node.native_encoder = SimpleNamespace(submit=Mock())
-        for name in ("compressed_pub", "preview_info_pub", "image_pub", "info_pub"):
-            setattr(node, name, SimpleNamespace(publish=Mock()))
-        node.get_clock = lambda: SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: "ros_stamp"))
-        node.raw_frame_count = node.compressed_frame_count = node.frame_count = 0
-        node.last_raw_publish_at = 0
+        node = publication_node()
+        self.addCleanup(node.preview_worker.close)
         frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
         frame[0, 0] = [1, 2, 3]
         original = frame.copy()
         with patch.object(DRIVER.cv2, "imencode", wraps=cv2.imencode) as encode:
             node.publish_frame(frame)
-        submitted, stamp = node.native_encoder.submit.call_args.args
+            self.assertTrue(node.preview_worker.wait_idle())
+        self.assertIsNone(node.preview_worker.status()['error'])
+        submitted, (stamp, generation) = node.native_encoder.submit.call_args.args
         self.assertEqual(submitted.shape, (1080, 1920, 3))
         self.assertEqual(submitted[-1, -1].tolist(), [1, 2, 3])
+        self.assertFalse(submitted.flags.writeable)
         np.testing.assert_array_equal(frame, original)
         self.assertEqual(stamp, "ros_stamp")
         self.assertEqual(encode.call_args.args[1].shape, (720, 1280, 3))

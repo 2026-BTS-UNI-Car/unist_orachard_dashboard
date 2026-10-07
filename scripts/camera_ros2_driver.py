@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
 import cv2
 import rclpy
 from scripts.camera_cadence import CameraCadence
+from scripts.camera_preview_worker import LatestCameraWorker
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, CompressedImage, Image
@@ -314,6 +315,8 @@ class UsbCameraDriver(Node):
         self.raw_frame_count = 0
         self.compressed_frame_count = 0
         self.last_raw_publish_at = 0.0
+        self.last_raw_submitted_at = 0.0
+        self.raw_submit_count = 0
         self.last_compressed_encode_ms: float | None = None
         self.last_error: str | None = None
         self.last_recovery: dict[str, Any] | None = None
@@ -324,6 +327,7 @@ class UsbCameraDriver(Node):
         self.last_wait_log_at = 0.0
         self.last_status_write_at = 0.0
         self.last_publish_at = 0.0
+        self.preview_worker = LatestCameraWorker(self.process_preview_frame)
         self.apply_settings_file(force=True)
         self.timer = self.create_timer(1.0 / max(1.0, args.max_tick_fps), self.tick)
         log(
@@ -395,7 +399,8 @@ class UsbCameraDriver(Node):
             "raw_publish_fps": self.args.raw_publish_fps,
             "compressed_topic": self.args.compressed_topic,
                 "recording_topic": self.args.recording_topic,
-                "native_recording": self.native_encoder.status(),
+            "native_recording": self.native_encoder.status(),
+            "preview_worker": self.preview_worker.status(),
             "preview_camera_info_topic": self.args.preview_camera_info_topic,
             "compressed_jpeg_quality": self.args.compressed_jpeg_quality,
             "compressed_preview_width": self.args.compressed_preview_width,
@@ -551,6 +556,8 @@ class UsbCameraDriver(Node):
             self.raw_frame_count = 0
             self.compressed_frame_count = 0
             self.last_raw_publish_at = 0.0
+            self.last_raw_submitted_at = 0.0
+            self.raw_submit_count = 0
             self.last_publish_at = 0.0
             self.capture_cadence = CameraCadence(self.request_fps)
             self.capture_cadence.claim(read_started)
@@ -597,6 +604,7 @@ class UsbCameraDriver(Node):
         return False
 
     def close_camera(self):
+        self.preview_worker.reset()
         if self.cap is not None:
             self.cap.release()
         self.cap = None
@@ -637,11 +645,24 @@ class UsbCameraDriver(Node):
             frame = cv2.rotate(frame, cv2.ROTATE_180)
         self.last_publish_at = time.monotonic()
         stamp = self.get_clock().now().to_msg()
+        # VideoCapture.read() provides a new owned array. It is never mutated
+        # after this shared handoff to independent native/preview encoders.
+        frame.flags.writeable = False
+        raw_interval = 1.0 / max(0.1, float(self.args.raw_publish_fps))
+        raw_due = self.raw_submit_count == 0 or self.last_publish_at - self.last_raw_submitted_at >= raw_interval
+        generation = self.preview_worker.submit(frame, stamp, raw_due, work_started)
+        if raw_due and generation is not None:
+            self.raw_submit_count += 1
+            self.last_raw_submitted_at = self.last_publish_at
+        if generation is not None and self.recording_pub.get_subscription_count():
+            self.native_encoder.submit(frame, (stamp, generation))
+        self.frame_count += 1
+        self.last_publish_work_ms = round((time.monotonic() - work_started) * 1000.0, 2)
+
+    def process_preview_frame(self, frame, stamp, raw_due, generation):
+        if not self.preview_worker.is_current(generation):
+            return
         height, width = frame.shape[:2]
-        # Encode original capture pixels only while a bag/recording subscriber
-        # exists. Preview quality/network policy cannot reduce recording size.
-        if self.recording_pub.get_subscription_count():
-            self.native_encoder.submit(frame, stamp)
         preview = frame
         preview_width = min(width, max(320, int(self.args.compressed_preview_width)))
         if preview_width < width:
@@ -662,18 +683,19 @@ class UsbCameraDriver(Node):
             compressed.header.frame_id = self.frame_id
             compressed.format = f"bgr8; jpeg compressed bgr8; width={preview_width}; height={preview_height}"
             compressed.data = encoded.tobytes()
-            self.compressed_pub.publish(compressed)
-            self.compressed_frame_count += 1
             preview_info = estimate_camera_info(preview_width, preview_height, self.frame_id, self.args.fov_deg)
             preview_info.header.stamp = stamp
-            self.preview_info_pub.publish(preview_info)
+            def publish_preview():
+                self.compressed_pub.publish(compressed)
+                self.preview_info_pub.publish(preview_info)
+                self.compressed_frame_count += 1
+            self.preview_worker.publish_current(generation, publish_preview)
 
         # Raw BGR remains available for archive snapshots,
         # but is deliberately bounded. Live viewing consumes the high-rate
         # compressed ROS2 topic, avoiding roughly 6 MiB of DDS traffic per
         # 1080p frame.
-        raw_interval = 1.0 / max(0.1, float(self.args.raw_publish_fps))
-        if self.raw_frame_count == 0 or self.last_publish_at - self.last_raw_publish_at >= raw_interval:
+        if raw_due and self.preview_worker.is_current(generation):
             image = Image()
             image.header.stamp = stamp
             image.header.frame_id = self.frame_id
@@ -683,24 +705,26 @@ class UsbCameraDriver(Node):
             image.is_bigendian = 0
             image.step = width * 3
             image.data = frame.tobytes()
-            self.image_pub.publish(image)
             info = estimate_camera_info(width, height, self.frame_id, self.args.fov_deg)
             info.header.stamp = stamp
-            self.info_pub.publish(info)
-            self.raw_frame_count += 1
-            self.last_raw_publish_at = self.last_publish_at
-        self.frame_count += 1
-        self.last_publish_work_ms = round((time.monotonic() - work_started) * 1000.0, 2)
+            def publish_raw():
+                self.image_pub.publish(image)
+                self.info_pub.publish(info)
+                self.raw_frame_count += 1
+                self.last_raw_publish_at = time.monotonic()
+            self.preview_worker.publish_current(generation, publish_raw, 'raw')
 
-    def publish_native(self, data, stamp, width, height):
+    def publish_native(self, data, envelope, width, height):
+        stamp, generation = envelope
         message = CompressedImage()
         message.header.stamp = stamp
         message.header.frame_id = self.frame_id
         message.format = f"bgr8; jpeg compressed bgr8; width={width}; height={height}"
         message.data = data
-        self.recording_pub.publish(message)
+        return self.preview_worker.publish_current(generation, lambda: self.recording_pub.publish(message), 'native')
 
     def destroy_node(self):
+        self.preview_worker.close()
         self.native_encoder.close()
         self.write_status("shutdown", force=True)
         self.close_camera()

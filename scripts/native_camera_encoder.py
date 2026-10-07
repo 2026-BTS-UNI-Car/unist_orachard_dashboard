@@ -11,6 +11,7 @@ class NativeCameraEncoder:
         self.quality = max(80, min(95, quality))
         self.queue = queue.Queue(maxsize=4)
         self.dropped = self.published = 0
+        self.cancelled = 0
         self.last_encode_ms = 0.
         self.error = None
         self.stop = threading.Event()
@@ -34,8 +35,11 @@ class NativeCameraEncoder:
                 ok, data = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.quality])
                 if not ok:
                     raise ValueError('native_jpeg_encode_failed')
-                self.publish(data.tobytes(), stamp, frame.shape[1], frame.shape[0])
-                self.published += 1
+                accepted = self.publish(data.tobytes(), stamp, frame.shape[1], frame.shape[0])
+                if accepted is False:
+                    self.cancelled += 1
+                else:
+                    self.published += 1
                 self.last_encode_ms = (time.perf_counter()-started)*1000
             except Exception as error:
                 self.error = str(error)[:160]
@@ -47,6 +51,6 @@ class NativeCameraEncoder:
         self.thread.join(timeout=3)
 
     def status(self):
-        return dict(published=self.published, dropped=self.dropped, pending=self.queue.qsize(),
+        return dict(published=self.published, dropped=self.dropped, cancelled=self.cancelled, pending=self.queue.qsize(),
                     encode_ms=round(self.last_encode_ms, 2), error=self.error,
                     width_policy='capture_native_without_resize', quality=self.quality)

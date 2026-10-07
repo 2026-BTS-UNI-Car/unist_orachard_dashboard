@@ -43,3 +43,41 @@ encoder reported no queue drops. This probe parsed the first JPEG SOF header
 only, without decoding every frame, opening the device, or starting a recording.
 BEST_EFFORT/KEEP_LAST(1) subscriber loss remains possible. These baseline results
 support the cadence diagnosis but do not qualify the un-deployed patch.
+
+## Independent preview and raw publication
+
+The first cadence-only deployment was subsequently measured at approximately
+22.38 Hz preview-only and 20.5 Hz with native JPEG subscribed. Preview resizing,
+JPEG encoding and raw BGR serialization/DDS publication still occupied the
+acquisition callback; removing its extra wait alone did not qualify 30 FPS.
+
+`camera_preview_worker.py` now performs that preview/raw work independently.
+Capture rotates the owned frame once, marks it read-only, assigns its original
+ROS stamp and hands it to a **one pending frame** slot. Replacing a pending
+frame increments `overwritten`; it never creates a backlog. A pending raw
+request is carried to the newest real frame, preserving its matching stamp
+without inventing/interpolating sensor data. Native JPEG submission remains
+independent, at its existing original resolution, quality 90 and queue limit 4.
+
+Each reopen/settings change invalidates queued and in-flight generations.
+Preview, raw and native publishers have separate publication gates so one
+stream cannot block submission or another stream. The reset barrier waits
+at most 0.5 seconds and reports a timeout if a previously started DDS call
+does not finish. Shutdown invalidates work immediately and joins the preview
+worker for at most three seconds; an uninterruptible codec/DDS call is reported
+as `camera_preview_worker_shutdown_timeout`, rather than falsely called clean.
+The native encoder counts generation cancellation separately from publication.
+
+Driver status adds the worker's pending/busy state, overwritten/cancelled counts,
+work time, queue wait and completed-frame age. `last_publish_work_ms` now means
+the acquisition callback's rotation/handoff work, excluding background JPEG/DDS
+work. Capture, preview and native rates must still be measured independently
+after deployment. No new 30 FPS result is claimed by the device-free tests.
+
+`tests.test_camera_cadence` and `tests.test_camera_preview_worker` cover actual
+driver methods, a completely blocked preview callback with continued capture
+and native submission, latest-only replacement, raw-request carry, generation
+cancellation, bounded reset/shutdown failures, and readonly 1920×1080 native
+JPEG encoding without changing quality or original pixels. The SIM repository's
+USB-driver copy uses the same worker; Gazebo's camera source is separate and
+is not changed by this USB-driver patch.
