@@ -1,0 +1,33 @@
+{
+  "schema": "ubts.physical_sensor_shadow.source_package.v1",
+  "build_file_count": 19,
+  "build_files_sha256": {
+    "physical-package/inputs.py": "ff1d5b92e91f12325f6ab524cde4c88ce914b606bc5def856a09a5cdcc06df86",
+    "physical-package/VENDORED_INPUTS.json": "77742314c816bdd0f9863ee8122fff22d602f3e3295e1221effc3d50a919bc47",
+    "physical-package/physical_ingress.py": "81d07d3e619468fa640b712265b4e020873d44b776d3533490a30d2fabd974a0",
+    "physical-package/physical_factory.py": "5988cc9d88403c1220e891e7f94a2873ea8de890da612cd63deb5add7c11825a",
+    "physical-package/observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
+    "physical-package/common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "physical-package/common/native_ownership.py": "f330f555d71b85ff0b90717b360307333e6ec5f6a242d97b3932b4561b6637be",
+    "physical-package/common/original_cdr.py": "6eb6929782063888880a827d2ef652d820cd0ebdc3ee8e83cc01ed8aabb341d3",
+    "physical-package/common/sensor_contract.py": "39242c55cc8c259d1cf6acaa744a17f9912d7a277281959adfefa9676da08275",
+    "physical-package/common/sensor_views.py": "40718ec325826ffc63995c9409f56cf928991d5fad7a4a0e3a0678d1c745796c",
+    "physical-package/kernel/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "physical-package/kernel/fit_workers.py": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c",
+    "physical-package/kernel/raw_localization.py": "027cc2445931a3e072e9eb5f3df8647e2c36c3e477093c8b287f8392c2923d47",
+    "physical-package/HANDOFF.json": "714fa332f73983fe4bffe1606831663365e6c121fa049a18873e2b53479f5077",
+    "physical-package/DEPLOY_CLOSURE.json": "9ccef8ac1c3d5fc674fd034bdd1299807940c82bfe0bc02fe08b53e12e896be2",
+    "observer-src/actual_cdr_observer.cpp": "dd3c15374ad6981db31d4949e624cbaa4271d0edb205210409b8c54bdd0ad463",
+    "observer-src/CMakeLists.txt": "8145fa7d460f4ad9e8ec90478499e9c1da43ac1f2925d5db3cbbae7ea8df329e",
+    "Dockerfile.shadow": "0d845c05c8234d279c9af9586fe8849e1c8fd2b4202fb545378050aaf56db7ad",
+    "physical_shadow_runner.py": "97cdd5021d99f493c03bdfb75c335c2084cab87bb6dacce695f177b5d753e7cf"
+  },
+  "physical_factory_manifest_sha256": "714fa332f73983fe4bffe1606831663365e6c121fa049a18873e2b53479f5077",
+  "native_observer_manifest_sha256": "93cbe9221f7d0b3d06079c04e35c4633cfa454c2c80233cb893629907af97563",
+  "live_runner_manifest_sha256": "911053844baac5cd8ad6363b9a863c96f1c7562738045525631411287230a9eb",
+  "immutable_base_image": "sha256:fa63d0d9a0cc8b11ed9fe093314ad1cb522e051613ba0b5737de26790ec6a7b2",
+  "runtime_authority": false,
+  "motor_transport": false,
+  "installed_live_factory_qualified": false,
+  "original_upstream_absolute_paths_are_inert_provenance_only": true
+}

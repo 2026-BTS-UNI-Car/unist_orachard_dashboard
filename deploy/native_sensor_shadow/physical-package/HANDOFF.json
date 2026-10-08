@@ -1,0 +1,43 @@
+{
+  "schema": "ubts.private.physical_native_shadow_factory.v2",
+  "owned_count": 22,
+  "files_sha256": {
+    "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "common/native_ownership.py": "f330f555d71b85ff0b90717b360307333e6ec5f6a242d97b3932b4561b6637be",
+    "common/original_cdr.py": "6eb6929782063888880a827d2ef652d820cd0ebdc3ee8e83cc01ed8aabb341d3",
+    "common/sensor_contract.py": "39242c55cc8c259d1cf6acaa744a17f9912d7a277281959adfefa9676da08275",
+    "common/sensor_views.py": "40718ec325826ffc63995c9409f56cf928991d5fad7a4a0e3a0678d1c745796c",
+    "DEPLOY_CLOSURE.json": "9ccef8ac1c3d5fc674fd034bdd1299807940c82bfe0bc02fe08b53e12e896be2",
+    "fixtures.py": "bef9f343f8cfcb7682f4b79a5d964c4fa5e122412f4fbd201c148ea2a3e3c056",
+    "inputs.py": "ff1d5b92e91f12325f6ab524cde4c88ce914b606bc5def856a09a5cdcc06df86",
+    "inspect_capture.py": "784f6fd9bd4433c981e1a7028cc8a7463b81fafd7b198efe19c8ec598871bf54",
+    "kernel/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "kernel/fit_workers.py": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c",
+    "kernel/raw_localization.py": "027cc2445931a3e072e9eb5f3df8647e2c36c3e477093c8b287f8392c2923d47",
+    "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
+    "PARENT_FROZEN_HANDOFF.json": "09d5b7390723ae2eaca8ee30a127166c5ba4d44910ab04fbd1201c517e412396",
+    "physical_factory.py": "5988cc9d88403c1220e891e7f94a2873ea8de890da612cd63deb5add7c11825a",
+    "physical_ingress.py": "81d07d3e619468fa640b712265b4e020873d44b776d3533490a30d2fabd974a0",
+    "pure-result.json": "bcc38a4b67a191319361a7f9f7b707d7f2485da89bdddcb793aa1c7f94c5fa5e",
+    "pure-tests.log": "24d4c18901de1234e0aa9c792af5fe70a3b224d0256cfa3c13009a3ea0354738",
+    "README.md": "44ef98186e88f238fc69acc4d3a11e1414aad2a75dbc77104381608930bc6be7",
+    "run_pure.py": "14acf2378a8d71c5ade3e8bb116d2294a9bb01938d0f969ec71019132f980fae",
+    "test_physical.py": "ff880c629f5206fc929d35affe4db1788d806a308a7b1696e429aebab7c758ed",
+    "VENDORED_INPUTS.json": "77742314c816bdd0f9863ee8122fff22d602f3e3295e1221effc3d50a919bc47"
+  },
+  "parent_manifest_sha256": "09d5b7390723ae2eaca8ee30a127166c5ba4d44910ab04fbd1201c517e412396",
+  "pure_tests": {
+    "run": 22,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0
+  },
+  "deployment_closure_count": 13,
+  "no_SIM_or_external_BASE_imports": true,
+  "physical_body_calibration_braking_REP145_qualified": false,
+  "installed_original_callback_or_live_pipeline_qualified": false,
+  "runtime_authority": false,
+  "motor_transport": false,
+  "after_last_association_final_scalar_fence": true,
+  "source_frozen": true
+}

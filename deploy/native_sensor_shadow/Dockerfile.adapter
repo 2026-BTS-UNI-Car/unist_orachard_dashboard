@@ -1,0 +1,14 @@
+# Source-only optional NEW image. Never apt inside a running/actual service.
+ARG BASE_IMAGE=sha256:fa63d0d9a0cc8b11ed9fe093314ad1cb522e051613ba0b5737de26790ec6a7b2
+FROM ${BASE_IMAGE}
+USER 0:0
+RUN apt-get update && apt-get install -y --no-install-recommends python3-scipy && rm -rf /var/lib/apt/lists/*
+COPY observer-src/ /opt/ubts-shadow-build/src/
+RUN /bin/bash -c 'source /opt/ros/iron/setup.bash && cmake -S /opt/ubts-shadow-build/src -B /opt/ubts-shadow-build/build -DCMAKE_BUILD_TYPE=Release && cmake --build /opt/ubts-shadow-build/build --parallel 1 && install -D -m 0755 /opt/ubts-shadow-build/build/actual_cdr_observer /opt/ubts-shadow/bin/actual_cdr_observer'
+COPY physical-package/ /opt/ubts-shadow/package/
+COPY physical_shadow_runner.py /opt/ubts-shadow/physical_shadow_runner.py
+ENV ROS_DOMAIN_ID=0 UBTS_MAP_FIT_WORKERS=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+RUN /bin/bash -c 'source /opt/ros/iron/setup.bash && /usr/bin/python3 -c "import numpy, scipy; from rclpy.clock import Clock,ClockType; assert Clock(clock_type=ClockType.SYSTEM_TIME).clock_type == ClockType.SYSTEM_TIME"'
+RUN /bin/bash -c 'source /opt/ros/iron/setup.bash && /opt/ubts-shadow/bin/actual_cdr_observer && /usr/bin/python3 -B /opt/ubts-shadow/physical_shadow_runner.py'
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["/usr/bin/python3", "-B", "/opt/ubts-shadow/physical_shadow_runner.py"]
