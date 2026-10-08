@@ -9,6 +9,7 @@ import hashlib
 import math
 import os
 import threading
+import time
 
 from common.native_ownership import PreparedInputs
 from physical_ingress import (PhysicalOriginalIngress, PhysicalClockReading, require,
@@ -114,6 +115,53 @@ class PhysicalNativeShadowFactory:
         self.fault = None
         self._pending = self._pending_digest = None
         self._state = DiagnosticState(0, None)
+        self._timing = {'stages_ns': {}, 'selected_TTL_margins_ns': {}}
+
+    def _timed(self, name, function, *args, **kwargs):
+        begin = time.perf_counter_ns()
+        try:
+            return function(*args, **kwargs)
+        finally:
+            self._timing['stages_ns'][name] = time.perf_counter_ns()-begin
+
+    def timing_snapshot(self):
+        with self.lock:
+            return dict(schema='ubts.physical.shadow.bounded_stage_timing.v1',
+                measurement_clock='python.perf_counter_elapsed_only_not_authority',
+                stages_ns=dict(self._timing['stages_ns']),
+                selected_TTL_margins_ns=dict(self._timing['selected_TTL_margins_ns']),
+                current_original_imu_count=self._timing.get('imu_count'),
+                failed_scalar_check=self._timing.get('failed_scalar_check'),
+                diagnostic_version=self._state.version,
+                HOLD_zero_not_accuracy_or_motor_authority=True)
+
+    def _scalar_margins(self, original, final_clock):
+        # Full owned associations have already checked all of these exact
+        # frozen originals. This last scalar work never rehashes/retimestamps.
+        require(type(final_clock) is PhysicalClockReading and
+                final_clock.source_session == self._session and
+                final_clock.raw_domain == self.ingress.domain and
+                self.ingress.generation == self._generation,
+                'final_physical_clock_epoch_changed')
+        newest = original.imu_originals[-1]
+        checks = (
+            ('scan', original.current.wire.header.stamp_ns, original.current.receipt.ns),
+            ('selected_lower_IMU', original.pairing.rate_stamp_ns, original.pairing.rate_receipt_ns),
+            ('captured_newest_IMU', newest.wire.header.stamp_ns, newest.receipt.ns))
+        margins = self._timing['selected_TTL_margins_ns']
+        for name, stamp, receipt in checks:
+            source_age = final_clock.source_ns-stamp
+            receipt_age = final_clock.receipt_ns-receipt
+            margins[name+'_source_age'] = source_age
+            margins[name+'_receipt_age'] = receipt_age
+            margins[name+'_source_remaining'] = SOURCE_AGE_NS-source_age
+            margins[name+'_receipt_remaining'] = RECEIPT_AGE_NS-receipt_age
+            if not 0 <= source_age < SOURCE_AGE_NS:self._timing['failed_scalar_check'] = name
+            require(0 <= source_age < SOURCE_AGE_NS,
+                    'final_physical_native_source_deadline')
+            if not 0 <= receipt_age < RECEIPT_AGE_NS:self._timing['failed_scalar_check'] = name
+            require(0 <= receipt_age < RECEIPT_AGE_NS,
+                    'final_physical_native_receipt_deadline')
 
     def snapshot(self):
         with self.lock:
@@ -150,7 +198,9 @@ class PhysicalNativeShadowFactory:
         self.stop_intent.set()
         self.ingress.stop()
         self._pending = self._pending_digest = None
-        return hold(self.fault)
+        answer = hold(self.fault)
+        answer['diagnostic_stage_timing'] = self.timing_snapshot()
+        return answer
 
     def stop(self):
         self.stop_intent.set()  # visible before waiting for numeric/owner mutex
@@ -168,11 +218,15 @@ class PhysicalNativeShadowFactory:
         with self.lock:
             if self.fault or self.stop_intent.is_set():
                 return hold(self.fault or 'operator_stop')
+            total_start = time.perf_counter_ns()
+            self._timing = {'stages_ns': {}, 'selected_TTL_margins_ns': {}}
             try:
                 require(self._pending is None, 'one_physical_diagnostic_in_flight_required')
                 with self.ingress.lock:
-                    _clock, pairing = self._clock_and_pair(original)
+                    _clock, pairing = self._timed('prepare_association', self._clock_and_pair, original)
+                    self._timing['imu_count'] = len(original.imu_originals)
                     original_digest = self.ingress._digest_prepared(original)
+                fit_start = time.perf_counter_ns()
                 before = surfaces(scan_points(self._view(original.previous)))
                 after = surfaces(scan_points(self._view(original.current)))
                 dt = (original.current.wire.header.stamp_ns-original.previous.wire.header.stamp_ns)*1e-9
@@ -183,8 +237,9 @@ class PhysicalNativeShadowFactory:
                 xy, yaw = tuple(float(v) for v in result['xy']), float(result['yaw'])
                 require(len(xy) == 2 and all(math.isfinite(v) for v in (*xy, yaw)) and
                         math.hypot(*xy) <= .6 and abs(yaw) < math.pi, 'bounded_sensor_frame_fit_required')
+                self._timing['stages_ns']['numeric_fit'] = time.perf_counter_ns()-fit_start
                 with self.ingress.lock:
-                    clock, pairing = self._clock_and_pair(original)
+                    clock, pairing = self._timed('postfit_association', self._clock_and_pair, original)
                     require(self.ingress._digest_prepared(original) == original_digest,
                             'original_bytes_changed_during_diagnostic_fit')
                     record = PhysicalDiagnosticMotion(
@@ -204,49 +259,43 @@ class PhysicalNativeShadowFactory:
                     return self._pending
             except Exception as error:
                 return self._fail(error)
+            finally:
+                self._timing['stages_ns']['prepare_total'] = time.perf_counter_ns()-total_start
 
     def commit(self, prepared):
         with self.lock:
             if self.fault or self.stop_intent.is_set():
                 return hold(self.fault or 'operator_stop')
+            total_start = time.perf_counter_ns()
             try:
                 with self.ingress.lock:
                     require(type(prepared) is PreparedPhysicalDiagnostic and prepared is self._pending
                             and prepared._owner is self, 'owned_physical_diagnostic_capability_required')
                     original = prepared.original_inputs
-                    self._clock_and_pair(original)
+                    self._timed('commit_initial_association', self._clock_and_pair, original)
                     require(hashlib.sha256(repr(prepared.record).encode()+
                         self.ingress._digest_prepared(original).encode()).hexdigest() == self._pending_digest,
                         'original_physical_diagnostic_changed')
                     next_state = DiagnosticState(self._state.version+1, prepared.record)
                     response = hold('unverified_physical_REP145_extrinsics_braking_HOLD',
                                     diagnostic=prepared.record)
-                    outcome = self.ingress.commit(original)
+                    outcome = self._timed('receiver_consume', self.ingress.commit, original)
                     require(self.ingress.fault is None and self.ingress.prepared is None and
                             outcome.reason in ('first_pair_new_epoch',
                             'inputs_only_reviewed_typed_localizer_factory_missing'), outcome.reason)
                     # Receiver consumption is not publication. Recheck after it.
-                    self._clock_and_pair(original, pending=False)
+                    self._timed('commit_consumed_association', self._clock_and_pair, original, pending=False)
                     # Full association checks above can take time. Sample only
                     # after that work; then bound original scalar stamps without
                     # another full hash/decode or rewriting the prepared record.
+                    response['diagnostic_stage_timing'] = self.timing_snapshot()
                     final_clock = self.ingress._evaluate()
-                    require(type(final_clock) is PhysicalClockReading and
-                            final_clock.source_session == self._session and
-                            final_clock.raw_domain == self.ingress.domain and
-                            self.ingress.generation == self._generation,
-                            'final_physical_clock_epoch_changed')
-                    for stamp in (original.current.wire.header.stamp_ns,
-                                  original.pairing.rate_stamp_ns):
-                        require(0 <= final_clock.source_ns-stamp < SOURCE_AGE_NS,
-                                'final_physical_native_source_deadline')
-                    for receipt in (original.current.receipt.ns,
-                                    original.pairing.rate_receipt_ns):
-                        require(0 <= final_clock.receipt_ns-receipt < RECEIPT_AGE_NS,
-                                'final_physical_native_receipt_deadline')
+                    self._timed('commit_final_scalar_fence', self._scalar_margins, original, final_clock)
                     require(not self.stop_intent.is_set(), 'physical_shadow_STOP_latched')
                     self._state = next_state  # one final immutable pointer swap
                     self._pending = self._pending_digest = None
                     return response
             except Exception as error:
                 return self._fail(error)
+            finally:
+                self._timing['stages_ns']['commit_total'] = time.perf_counter_ns()-total_start

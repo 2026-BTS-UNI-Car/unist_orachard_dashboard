@@ -34,7 +34,7 @@ A build or dependency check does not prove fresh sensor delivery or successful f
 
 ## Explicit fresh observation
 
-The reviewed launcher supplies `--observe-shadow`, `--package /opt/ubts-shadow/package`, `--package-manifest-sha256 714fa332f73983fe4bffe1606831663365e6c121fa049a18873e2b53479f5077`, `--observer-bin /opt/ubts-shadow/bin/actual_cdr_observer`, `--observer-binary-sha256 <verified-installed-binary-sha>`, `--scan-gid <fresh-gid32hex>`, `--imu-gid <fresh-gid32hex>` and `--evidence-dir <new-owned0700-directory>`.
+The reviewed launcher supplies `--observe-shadow`, `--package /opt/ubts-shadow/package`, `--package-manifest-sha256 940ecb0f0e2ad3667d1cb41a5600506dfcbf3698c1ad43393492c849a4a82bb9`, `--observer-bin /opt/ubts-shadow/bin/actual_cdr_observer`, `--observer-binary-sha256 <verified-installed-binary-sha>`, `--scan-gid <fresh-gid32hex>`, `--imu-gid <fresh-gid32hex>` and `--evidence-dir <new-owned0700-directory>`.
 
 The receiver and independent RCL_SYSTEM_TIME clock exist before native subprocess creation. Original sensor/callback timestamps remain unchanged. The [official Iron Clock API](https://raw.githubusercontent.com/ros2/rclpy/iron/rclpy/rclpy/clock.py) supports this explicit clock without constructing a Node or fabricating a /clock publisher. Native CDR, integer header stamps, per-message16-byte GIDs and callback CLOCK_MONOTONIC_RAW are preserved. Original rolling timing is validated but not deskewed. IMU covariance zeros remain unknown; REP145 and mounting do not become verified body heading.
 

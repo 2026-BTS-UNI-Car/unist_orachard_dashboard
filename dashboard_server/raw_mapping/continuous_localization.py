@@ -42,6 +42,23 @@ class ContinuousLocalization:
     def gps_prior(self,stamp,local_xy,scale_m):
         self.position_prior=(float(stamp),np.asarray(local_xy,dtype=float),max(1.,float(scale_m)))
 
+    def _signed_gyro_consistent(self,reference,stamp,fit):
+        """Apply the existing _fit innovation bound to geometry fallbacks too.
+
+        An unsigned quaternion angle only bounds how much the sensor rotated;
+        it does not establish the sign of that rotation. Missing causal gyro
+        coverage keeps the original geometric behavior, without inventing a
+        signed prior. This is a consistency check, not a new pose source.
+        """
+        if fit is None:return False
+        dt=stamp-reference['stamp']
+        coverage=self.gyro_valid_s-reference['gyro_valid']
+        if dt>0 and coverage>=dt*.8:
+            gyro=self.gyro_integral-reference['gyro']
+            sigma=math.radians(.35+.3*min(dt,10))
+            return abs(fit['yaw']-gyro)<=max(math.radians(2),3*sigma)
+        return True
+
     def _recover(self,current,q,stamp):
         reference=self.previous;dt=stamp-reference['stamp']
         if dt<.6 or stamp-self.last_recovery<.75:return None
@@ -66,7 +83,8 @@ class ContinuousLocalization:
         candidates=[]
         for _,yaw,seed in sorted(ranked,key=lambda a:a[0])[:6]:
             fitted=fit_surfaces(reference['surfaces'],current,yaw,seed,radius*1.5+np.linalg.norm(center),max(abs(yaw)+math.radians(8),math.radians(15)))
-            if fitted and fitted['coverage']>=.55 and fitted['rmse_m']<=.05:
+            if (fitted and fitted['coverage']>=.55 and fitted['rmse_m']<=.05
+                    and self._signed_gyro_consistent(reference,stamp,fitted)):
                 candidates.append(fitted)
         if not candidates:return None
         candidates.sort(key=lambda a:(-a['coverage'],a['rmse_m']));best=candidates[0]
@@ -159,7 +177,7 @@ class ContinuousLocalization:
                 if weighted:fit=weighted;used='adjacent_signed_IMU_fit'
                 if not self._strong(fit):
                     candidate=registration(reference['surfaces'],current,angular_change(reference['q'],q),dt,self.velocity)
-                    if candidate['accepted'] and (fit is None or (candidate['coverage']>fit['coverage']+.03
+                    if candidate['accepted'] and self._signed_gyro_consistent(reference,stamp,candidate) and (fit is None or (candidate['coverage']>fit['coverage']+.03
                             and candidate['rmse_m']<=max(.015,fit['rmse_m']*1.15))):
                         fit=candidate;used='adjacent_surface_fit'
                 if anchored and (fit is None or (anchored['coverage']>=fit['coverage']-.03

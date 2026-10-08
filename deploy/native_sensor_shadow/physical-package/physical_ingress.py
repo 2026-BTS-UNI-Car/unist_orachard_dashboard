@@ -4,13 +4,14 @@ No /clock health is fabricated. Local system-time observations and original
 native callback stamps are separate. This receiver never authorizes motion.
 """
 import inputs
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import time
 import hashlib
 import math
 import os
 
 from common.native_ownership import (OriginalIngress, RawReceipt, Outcome, _ns, _sha,
-    MAX_OWNERS, IMU_HORIZON_NS)
+    MAX_OWNERS, IMU_HORIZON_NS, PreparedInputs)
 from common.original_cdr import LASER_TYPE, IMU_TYPE, CLOCK_TYPE, WireImu
 from common.sensor_views import ImuSample, pair_imu
 
@@ -259,6 +260,57 @@ class PhysicalOriginalIngress(OriginalIngress):
                                  'first_physical_original_scan', envelope=envelope)
         except Exception as error:
             return self._invalidate(str(error))
+
+    def prepare(self):
+        """Freeze only original interpolation brackets plus newest context.
+
+        The500ms horizon remains the initial retention/selection bound. An
+        unused historical sample is not an enduring association dependency.
+        Exact bracket samples, lower-end gyro and original callback clocks are
+        preserved; a fresh current/newest sample cannot replace a missing pair.
+        """
+        generation = self.generation
+        try:
+            with self.lock:
+                if self.fault is not None:
+                    return self._outcome(self.fault)
+                pair, self.pending = self.pending, None
+                if pair is None:
+                    return self._outcome('no_pending_original_pair')
+                token = self._active = object()
+                originals = tuple(self.imus)
+                first = self._first_pair
+            clock = self._evaluate()
+            originals = tuple(e for e in originals
+                if e.wire.header.stamp_ns >= clock.source_ns-IMU_HORIZON_NS)
+            samples, pairing = self._association(*pair, originals, clock)
+            # Keep exact association endpoints and independently bound latest
+            # original context; never synthesize a sample or change its stamp.
+            indices = sorted(set(pairing.start_indices+pairing.end_indices+(len(originals)-1,)))
+            selected = tuple(originals[i] for i in indices)
+            selected_samples = tuple(samples[i] for i in indices)
+            remap = {old: new for new, old in enumerate(indices)}
+            selected_pairing = replace(pairing,
+                start_indices=tuple(remap[i] for i in pairing.start_indices),
+                end_indices=tuple(remap[i] for i in pairing.end_indices))
+            prepared = PreparedInputs(generation, *pair, selected, selected_samples,
+                                      selected_pairing, clock, first)
+            end_clock = self._evaluate()
+            check_samples, check_pairing = self._association(*pair, selected, end_clock)
+            require(check_samples == selected_samples and check_pairing == selected_pairing,
+                    'minimal_original_brackets_changed')
+            with self.lock:
+                if generation != self.generation or token is not self._active:
+                    return self._outcome('late_prepare_discarded')
+                self.prepared, self._active = prepared, None
+                self._prepared_digest = self._digest_prepared(prepared)
+                return self._outcome('prepared_original_inputs_no_motion_factory',
+                    prepared=prepared, input_ready=not first)
+        except Exception as error:
+            with self.lock:
+                if generation != self.generation:
+                    return self._outcome('late_prepare_discarded')
+                return self._invalidate(str(error))
 
     def _association(self, previous, current, originals, clock):
         self.validate_owned(previous)

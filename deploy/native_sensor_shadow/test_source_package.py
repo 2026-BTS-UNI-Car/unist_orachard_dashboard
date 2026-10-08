@@ -41,7 +41,7 @@ class PortableSourceTests(unittest.TestCase):
         old=list(sys.path)
         try:
             package=source.HERE/'physical-package'
-            self.assertEqual(runner.load_package(package,'714fa332f73983fe4bffe1606831663365e6c121fa049a18873e2b53479f5077'),package.resolve())
+            self.assertEqual(runner.load_package(package,'940ecb0f0e2ad3667d1cb41a5600506dfcbf3698c1ad43393492c849a4a82bb9'),package.resolve())
             import inputs
             self.assertFalse(inputs.verify()['deep_SIM_or_external_BASE_modules_needed'])
             self.assertFalse((package/'test_physical.py').exists())

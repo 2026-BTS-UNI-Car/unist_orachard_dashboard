@@ -49,7 +49,7 @@ def load_package(path, expected_manifest_sha):
     manifest=path/'HANDOFF.json'
     require(sha_file(manifest)==expected_manifest_sha, 'reviewed_physical_package_manifest_required')
     m=json.loads(manifest.read_text())
-    require(m['schema']=='ubts.private.physical_native_shadow_factory.v2' and m['owned_count']==22 and
+    require(m['schema']=='ubts.private.physical_native_shadow_factory.v3' and m['owned_count']==22 and
             len(m['files_sha256'])==22 and m['deployment_closure_count']==13 and
             m['runtime_authority'] is False and m['after_last_association_final_scalar_fence'] is True,
             'explicit_physical_observer_only_package_required')
@@ -187,6 +187,21 @@ def save_result(directory, capture, result, started):
         return False
 
 
+def retain_stage_timing(result, unit):
+    """Latest bounded diagnostic measurement, never input/freshness authority."""
+    try:
+        snapshot=unit.timing_snapshot()
+        require(snapshot['schema']=='ubts.physical.shadow.bounded_stage_timing.v1' and
+                len(snapshot['stages_ns'])<=9 and
+                snapshot['HOLD_zero_not_accuracy_or_motor_authority'] is True,
+                'bounded_shadow_stage_timing_contract_required')
+        require(len(json.dumps(snapshot,allow_nan=False).encode())<=8192,
+                'bounded_shadow_stage_timing_bytes_required')
+        result['diagnostic_stage_timing']=snapshot
+    except Exception as error:
+        result['diagnostic_stage_timing_unqualified']=str(error)[:256]
+
+
 def observe(args):
     require(sys.platform.startswith('linux') and os.geteuid()==0,
             'root_reviewed_Linux_UID0_private_observer_only')
@@ -243,6 +258,7 @@ def observe(args):
                 owned=unit.prepare(prepared.prepared)
                 require(not isinstance(owned,dict),'physical_internal_fit_rejected:'+str(owned))
                 answer=unit.commit(owned)
+                retain_stage_timing(result,unit)
                 require(answer['diagnostic'] is not None and answer['runtime_authority'] is False
                         and answer['proposed_linear_mps']==0 and answer['proposed_yaw_rate_rad_s']==0,
                         'physical_shadow_final_fence_failed:'+answer['reason'])
@@ -255,6 +271,7 @@ def observe(args):
             diagnostic_count=unit.snapshot().version,original_callback_live_ingestion_qualified=True)
     except Exception as error:
         result['error']=str(error)[:512]
+        retain_stage_timing(result,unit)  # Preserve the pre-STOP causal stage.
         unit.stop()
     finally:
         if child is not None and child.poll() is None:
