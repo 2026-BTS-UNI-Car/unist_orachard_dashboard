@@ -180,8 +180,10 @@ class PhysicalNativeShadowFactory:
         if pending:
             require(original is self.ingress.prepared and self.ingress._prepared_digest ==
                     self.ingress._digest_prepared(original), 'original_prepared_ownership_changed')
-        for envelope in (original.previous, original.current)+original.imu_originals:
-            self.ingress.validate_owned(envelope)
+        # _clock_and_pair immediately performs _association under this same
+        # ingress lock. That independently validates every original envelope
+        # with its full SHA/provenance digest/CDR decode; repeating that pass
+        # here adds latency without checking another publication boundary.
 
     def _clock_and_pair(self, original, *, pending=True):
         self._owned(original, pending=pending)

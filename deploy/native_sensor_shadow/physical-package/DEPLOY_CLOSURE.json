@@ -4,7 +4,7 @@
     "inputs.py": "ff1d5b92e91f12325f6ab524cde4c88ce914b606bc5def856a09a5cdcc06df86",
     "VENDORED_INPUTS.json": "77742314c816bdd0f9863ee8122fff22d602f3e3295e1221effc3d50a919bc47",
     "physical_ingress.py": "4a42abf170e410d2647cdc1744b0c4aac9a1cea737b983b6e119a4258feeec6d",
-    "physical_factory.py": "0b3d5dc390ddec3499fb50bd1a00c6ba3c9e303c064c28e87cc3a19a24ac291a",
+    "physical_factory.py": "8f2f0f37f62c337d34159080544ec2f90ef5495f0eb058c0fde246a9e586f913",
     "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
     "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "common/native_ownership.py": "f330f555d71b85ff0b90717b360307333e6ec5f6a242d97b3932b4561b6637be",
