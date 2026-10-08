@@ -18,11 +18,41 @@ class ContinuousLocalization:
         self.pose=np.zeros(3);self.previous=None;self.anchor=None;self.segment=0
         self.last_seen=None;self.gyro_time=None;self.gyro_rate=None
         self.gyro_integral=0.;self.gyro_valid_s=0.;self.velocity=None
+        self.gyro_time_ns=None;self.gyro_valid_ns=0
+        self._scan_header_ns=None;self._scan_stamp_for_ns=None
         self.rejected=0;self.accepted=0
         self.last_recovery=-float('inf')
         self.position_prior=None
         self.gps_speed=None;self.direction=None;self.last_geometry_stamp=None
         self.motion_prior_count=0;self.path_break_pending=False
+
+    @staticmethod
+    def _header_ns(message):
+        """Exact native header metadata; never rebuild it from float time."""
+        try:
+            stamp=message['header']['stamp'];sec=stamp['sec'];ns=stamp['nanosec']
+            if type(sec) is int and type(ns) is int and sec>=0 and 0<=ns<10**9:
+                return sec*10**9+ns
+        except (KeyError,TypeError):pass
+        return None
+
+    def _gyro_covered(self,reference,stamp):
+        """80% rational eligibility only; numerical integration stays float.
+
+        Old direct helper fixtures with no integer metadata retain their
+        float behavior. add() always creates both keys, including None
+        for invalid headers, so native/mixed metadata cannot fall back.
+        """
+        if (not any(k in reference for k in ('stamp_ns','gyro_valid_ns'))
+                and self._scan_header_ns is None and self._scan_stamp_for_ns is None):
+            dt=stamp-reference['stamp']
+            return dt>0 and self.gyro_valid_s-reference['gyro_valid']>=dt*.8
+        a=reference.get('stamp_ns');v=reference.get('gyro_valid_ns')
+        b=self._scan_header_ns
+        if (type(a) is not int or type(b) is not int or type(v) is not int
+                or type(self.gyro_time_ns) is not int or self._scan_stamp_for_ns!=stamp):return False
+        interval=b-a;covered=self.gyro_valid_ns-v
+        return interval>0 and covered>=0 and 5*covered>=4*interval
 
     def gps(self,sample):
         try:
@@ -35,7 +65,7 @@ class ContinuousLocalization:
         if self.direction is None or self.gps_speed is None or self.last_geometry_stamp is None:return None
         dt=stamp-self.previous['stamp'];gps_t,speed=self.gps_speed
         if not 0<dt<=1.5 or stamp-self.last_geometry_stamp>1.5 or not 0<=stamp-gps_t<=1.5:return None
-        if self.gyro_valid_s-self.previous['gyro_valid']<dt*.8:return None
+        if not self._gyro_covered(self.previous,stamp):return None
         yaw=self.gyro_integral-self.previous['gyro']
         return dict(xy=rotate(yaw*.5)@self.direction*speed*dt,yaw=yaw,rmse_m=0.)
 
@@ -52,8 +82,7 @@ class ContinuousLocalization:
         """
         if fit is None:return False
         dt=stamp-reference['stamp']
-        coverage=self.gyro_valid_s-reference['gyro_valid']
-        if dt>0 and coverage>=dt*.8:
+        if self._gyro_covered(reference,stamp):
             gyro=self.gyro_integral-reference['gyro']
             sigma=math.radians(.35+.3*min(dt,10))
             return abs(fit['yaw']-gyro)<=max(math.radians(2),3*sigma)
@@ -104,7 +133,11 @@ class ContinuousLocalization:
                 if dt<=0:return
                 if dt<=.20:
                     self.gyro_integral+=(rate+self.gyro_rate)*.5*dt;self.gyro_valid_s+=dt
-            self.gyro_time=t;self.gyro_rate=rate
+                    ns=self._header_ns(message)
+                    if ns is not None and self.gyro_time_ns is not None:
+                        gap_ns=ns-self.gyro_time_ns
+                        if 0<gap_ns<=200_000_000:self.gyro_valid_ns+=gap_ns
+            self.gyro_time=t;self.gyro_rate=rate;self.gyro_time_ns=self._header_ns(message)
         except (ValueError,KeyError,TypeError):return
 
     def reject(self,stamp,reason):
@@ -118,7 +151,7 @@ class ContinuousLocalization:
         delta_yaw=self.pose[2]-reference['pose'][2]
         gyro=self.gyro_integral-reference['gyro'];coverage=self.gyro_valid_s-reference['gyro_valid']
         prior=None
-        if dt>0 and coverage>=dt*.8:
+        if self._gyro_covered(reference,stamp):
             # Noise/bias floor grows with keyframe age. A prior is not a zero
             # rotation rule and never overrides the scan observability gates.
             prior=(gyro,math.radians(.35+.3*min(dt,10)))
@@ -151,6 +184,7 @@ class ContinuousLocalization:
 
     def add(self,scan,imu):
         stamp=source_stamp(scan)
+        self._scan_header_ns=self._header_ns(scan);self._scan_stamp_for_ns=stamp
         if self.last_seen is not None and stamp<=self.last_seen:return self.reject(stamp,'scan_clock_nonmonotonic')
         self.last_seen=stamp
         try:
@@ -189,10 +223,10 @@ class ContinuousLocalization:
                 dt=stamp-self.previous['stamp'];reference=self.previous
                 if 0<dt<=3:
                     alternative=point_support_registration(reference['surfaces'],current,angular_change(reference['q'],q),dt,self.velocity)
-                    gyro=self.gyro_integral-reference['gyro'];covered=self.gyro_valid_s-reference['gyro_valid']
-                    if alternative['accepted'] and (covered<dt*.8 or abs(alternative['yaw']-gyro)<math.radians(3)):
+                    gyro=self.gyro_integral-reference['gyro']
+                    if alternative['accepted'] and (not self._gyro_covered(reference,stamp) or abs(alternative['yaw']-gyro)<math.radians(3)):
                         fit=alternative;used='dense_surface_validated_fit'
-                if fit is None and 0<dt<=.35 and covered>=dt*.8:
+                if fit is None and 0<dt<=.35 and self._gyro_covered(reference,stamp):
                     prediction=np.zeros(2) if self.velocity is None else self.velocity*dt
                     partial=proposal(reference['surfaces'],current,gyro,prediction,
                         min(1.,.1+3*dt),abs(gyro)+math.radians(2),
@@ -221,7 +255,8 @@ class ContinuousLocalization:
         # Sampling is for the query scan only. Sparse reference anchors created
         # artificial empty gaps along distant walls and rejected valid matches.
         dense_reference=surfaces(current.dense,maximum=len(current.dense))
-        value=dict(stamp=stamp,surfaces=dense_reference,q=q,pose=self.pose.copy(),gyro=self.gyro_integral,gyro_valid=self.gyro_valid_s)
+        value=dict(stamp=stamp,surfaces=dense_reference,q=q,pose=self.pose.copy(),gyro=self.gyro_integral,gyro_valid=self.gyro_valid_s,
+                   stamp_ns=self._scan_header_ns,gyro_valid_ns=self.gyro_valid_ns)
         self.previous=value
         if (self.anchor is None or used=='short_GNSS_speed_IMU_motion_prior' or np.linalg.norm(self.pose[:2]-self.anchor['pose'][:2])>1.25
                 or abs(self.pose[2]-self.anchor['pose'][2])>math.radians(15)):
