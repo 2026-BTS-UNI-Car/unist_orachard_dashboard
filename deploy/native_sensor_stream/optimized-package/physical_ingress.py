@@ -58,6 +58,10 @@ class _ValidatedImuGap(Exception):
     """Private signal; only the exact receiver's pending identity is accepted."""
 
 
+class _ValidatedPreparationCausalRawExpiry(Exception):
+    """Exact factory preparation association, before any diagnostic exists."""
+
+
 class _ValidatedConsumedCausalRawExpiry(Exception):
     """Only the exact consumed factory attempt may abandon this expired pair."""
 
@@ -143,6 +147,8 @@ class PhysicalOriginalIngress(OriginalIngress):
         self.admission_failure_timing_error = None
         self.imu_gap_failure_timing = None
         self.imu_gap_failure_timing_error = None
+        self.receiver_end_scalar_failure_timing = None
+        self.receiver_end_scalar_failure_timing_error = None
         self.causal_imu_failure_timing = None
         self.causal_imu_failure_timing_error = None
         self._gap_exception = self._gap_wait_outcome = None
@@ -152,6 +158,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._expiry_wait_outcome = None
         self.scan_expiry_wait_count = 0
         self.scan_expiry_wait_timing = None
+        self._preparation_expiry_proof = None
         self._consumed_expiry_proof = None
         self._receiver_expiry_proof = self._receiver_expiry_wait = None
         self._final_expiry_proof = None
@@ -175,6 +182,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._callback_context = None
         self._gap_exception = self._gap_wait_outcome = None
         self._expiry_wait_outcome = None
+        self._preparation_expiry_proof = None
         self._consumed_expiry_proof = None
         self._receiver_expiry_proof = self._receiver_expiry_wait = None
         self._final_expiry_proof = None
@@ -756,6 +764,33 @@ class PhysicalOriginalIngress(OriginalIngress):
         except Exception as error:
             self.causal_imu_failure_timing_error = str(error)[:128]
 
+    def _retain_receiver_end_scalar_failure_timing(self, lower, clock):
+        # Existing failed receiver-end scalar clock and owned selected-lower original;
+        # never resample, renew its receipt, recover or modify the failed gate.
+        if self.receiver_end_scalar_failure_timing is not None or self.receiver_end_scalar_failure_timing_error is not None:
+            return
+        try:
+            callback = self.callback_provenance[id(lower)][1]
+            source_age = clock.source_ns-lower.wire.header.stamp_ns
+            raw_age = clock.receipt_ns-lower.receipt.ns
+            value = dict(schema='ubts.native.receiver_end_scalar_failure_timing.v1',
+                stage='receiver_commit_end_scalar', source_sequence=lower.source_sequence,
+                comparison=dict(source_ns=clock.source_ns, RAW_ns=clock.receipt_ns),
+                lower=dict(header_ns=lower.wire.header.stamp_ns, callback_RAW_ns=lower.receipt.ns,
+                    callback_SYSTEM_ns=callback.independent_ros_system_now_ns,
+                    source_age_ns=source_age, RAW_age_ns=raw_age,
+                    callback_SYSTEM_age_ns=clock.source_ns-callback.independent_ros_system_now_ns,
+                    header_to_callback_ns=callback.independent_ros_system_now_ns-lower.wire.header.stamp_ns),
+                SOURCE_TTL_ns=SOURCE_AGE_NS, RAW_TTL_ns=RECEIPT_AGE_NS,
+                checks=dict(source_fresh=0 <= source_age < SOURCE_AGE_NS,
+                            RAW_fresh=0 <= raw_age < RECEIPT_AGE_NS),
+                data_qualified=False, recovery_permitted=False)
+            raw = json.dumps(value, allow_nan=False, separators=(',', ':'))
+            require(len(raw.encode('utf-8')) <= 1024, 'receiver_end_scalar_failure_timing_capacity')
+            self.receiver_end_scalar_failure_timing = json.loads(raw)
+        except Exception as error:
+            self.receiver_end_scalar_failure_timing_error = str(error)[:128]
+
     def _consumed_raw_expiry_guards(self, original, samples, pairing, clock):
         # This is a classification of the EXISTING association sample, not a
         # second clock observation or a weaker association. Check every other
@@ -823,6 +858,41 @@ class PhysicalOriginalIngress(OriginalIngress):
                 0 <= clock.receipt_ns-newest.receipt.ns < RECEIPT_AGE_NS,
                 'captured_newest_IMU_must_remain_fresh')
 
+    def _raise_preparation_raw_expiry(self, owner, attempt, original, samples, pairing, clock):
+        from physical_factory import PhysicalNativeShadowFactory
+        require(type(owner) is PhysicalNativeShadowFactory and owner.ingress is self,
+                'exact_preparation_physical_factory_required')
+        owner._validate_preparation_expiry_attempt(attempt, original, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        owner._validate_preparation_expiry_attempt(attempt, original, clock)
+        error = _ValidatedPreparationCausalRawExpiry('selected_lower_causal_RAW_positive_expiry')
+        self._preparation_expiry_proof = (error, owner, attempt, original, samples, pairing, clock)
+        raise error
+
+    def _quarantine_preparation_raw_expiry(self, error, owner, attempt):
+        proof = self._preparation_expiry_proof
+        require(type(error) is _ValidatedPreparationCausalRawExpiry and proof is not None and
+                proof[0] is error and proof[1] is owner and proof[2] is attempt,
+                'owned_preparation_RAW_expiry_proof_required')
+        _,_,_,original,samples,pairing,clock = proof
+        owner._validate_preparation_expiry_attempt(attempt, original, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        owner._validate_preparation_expiry_attempt(attempt, original, clock)
+        # Preserve every observed Header floor; older captured originals must
+        # never lower floors advanced by valid unadmitted priming observations.
+        scan_floor = max(v for v in (self._observed_scan_header_floor, self._gap_scan_floor,
+                         original.current.wire.header.stamp_ns) if v is not None)
+        imu_floor = max(v for v in (self._observed_imu_header_floor, self._gap_imu_floor,
+                        *(v.wire.header.stamp_ns for v in self.imus)) if v is not None)
+        self._observed_scan_header_floor = self._gap_scan_floor = scan_floor
+        self._observed_imu_header_floor = self._gap_imu_floor = imu_floor
+        self.previous = self.pending = self.prepared = self._active = None
+        self._prepared_digest = None
+        self.imus.clear(); self._owners.clear(); self.callback_provenance.clear()
+        self._gap_exception = self._gap_wait_outcome = self._expiry_wait_outcome = None
+        self._preparation_expiry_proof = None
+        self._first_pair = True
+
     def _raise_consumed_raw_expiry(self, owner, attempt, original, samples, pairing, clock):
         from physical_factory import PhysicalNativeShadowFactory
         require(type(owner) is PhysicalNativeShadowFactory and owner.ingress is self,
@@ -855,6 +925,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._prepared_digest = None
         self.imus.clear(); self._owners.clear(); self.callback_provenance.clear()
         self._gap_exception = self._gap_wait_outcome = self._expiry_wait_outcome = None
+        self._preparation_expiry_proof = None
         self._consumed_expiry_proof = None
         self._first_pair = True
 
@@ -937,6 +1008,18 @@ class PhysicalOriginalIngress(OriginalIngress):
             if not 0 <= end_clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS:
                 raise ValueError('stale_causal_imu_source')
             if not 0 <= end_clock.receipt_ns-pairing.rate_receipt_ns < RECEIPT_AGE_NS:
+                self._retain_receiver_end_scalar_failure_timing(
+                    prepared.imu_originals[pairing.end_indices[0]], end_clock)
+                if end_clock.receipt_ns-pairing.rate_receipt_ns >= RECEIPT_AGE_NS:
+                    # Failed leaf only. Reuse this already sampled end clock and
+                    # exact original attempt; complete guards precede typed WAIT.
+                    try:
+                        self._association(prepared.previous, prepared.current,
+                            prepared.imu_originals, end_clock,
+                            _receiver_commit_raw_expiry=(owner,attempt,prepared))
+                    except _ValidatedReceiverCommitCausalRawExpiry as error:
+                        with self.lock:
+                            return self._quarantine_receiver_commit_raw_expiry(error, owner, attempt)
                 raise ValueError('stale_causal_imu_receipt')
             with self.lock:
                 if generation != self.generation or prepared is not self.prepared:
@@ -989,13 +1072,14 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._prepared_digest = None
         self.imus.clear(); self._owners.clear(); self.callback_provenance.clear()
         self._gap_exception = self._gap_wait_outcome = self._expiry_wait_outcome = None
+        self._preparation_expiry_proof = None
         self._final_expiry_proof = self._consumed_expiry_proof = None
         self._receiver_expiry_proof = self._receiver_expiry_wait = None
         self._first_pair = True
 
     def _association(self, previous, current, originals, clock, *, allow_expected_gap=False,
                      _consumed_raw_expiry=None, _receiver_commit_raw_expiry=None,
-                     _final_scalar_raw_expiry=None):
+                     _final_scalar_raw_expiry=None, _preparation_raw_expiry=None):
         self.validate_owned(previous)
         self._scan_fresh(current, clock)
         samples = []
@@ -1021,6 +1105,11 @@ class PhysicalOriginalIngress(OriginalIngress):
         if not (0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
                 0 <= clock.receipt_ns-pairing.rate_receipt_ns < RECEIPT_AGE_NS):
             self._retain_causal_imu_failure_timing(originals[pairing.end_indices[0]], clock)
+            if (_preparation_raw_expiry is not None and
+                    0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
+                    clock.receipt_ns-pairing.rate_receipt_ns >= RECEIPT_AGE_NS):
+                owner, attempt, original = _preparation_raw_expiry
+                self._raise_preparation_raw_expiry(owner, attempt, original, samples, pairing, clock)
             if (_receiver_commit_raw_expiry is not None and
                     0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
                     clock.receipt_ns-pairing.rate_receipt_ns >= RECEIPT_AGE_NS):

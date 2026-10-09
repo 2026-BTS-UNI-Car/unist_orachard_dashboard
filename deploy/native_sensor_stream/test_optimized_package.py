@@ -174,12 +174,12 @@ class OptimizedPackageTests(unittest.TestCase):
 
     def test_real_frozen_final_scalar_package_validates_without_importing_sensor_or_ROS_modules(self):
         package = Path(__file__).resolve().with_name('optimized-package')
-        expected = '4de382364c247de7b3ad05e819b2272e1de50a57d0d9e1c0ffe7d2e12ac85cf4'
+        expected = '4669f543c358ca563c854dbddd70ca889d64f1837e012f29cc4dbc4f5a87818e'
         self.assertEqual(runner.sha_file(package / 'HANDOFF.json'), expected)
         with patch.object(sys, 'path', sys.path.copy()):
             features = {}
             self.assertIs(runner.load_physical_package(package, expected, reviewed_features=features), True)
-            self.assertEqual(features, dict(dict.fromkeys(FEATURES+(FACTORY_FEATURE,RECEIVER_FEATURE,FINAL_FEATURE), True), **{NEAREST_FEATURE:False}))
+            self.assertEqual(features, dict(dict.fromkeys(FEATURES+(FACTORY_FEATURE,RECEIVER_FEATURE,FINAL_FEATURE), True), **{NEAREST_FEATURE:False,'preparation_causal_raw_expiry_reanchor_enabled':True}))
             self.assertEqual(Path(sys.path[0]), package.resolve())
         self.assertNotIn('physical_factory', sys.modules)
         self.assertNotIn('physical_ingress', sys.modules)

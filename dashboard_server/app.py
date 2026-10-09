@@ -179,7 +179,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path.startswith('/api/live/') or path in ('/api/autonomy','/api/autonomy/preflight','/api/autonomy/observe'):
+        if path.startswith('/api/live/') or path.startswith('/api/autonomy/native-map/') or path in ('/api/autonomy','/api/autonomy/preflight','/api/autonomy/observe'):
             self._live_request(parsed)
         elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
@@ -286,6 +286,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
             elif path=='/api/autonomy/preflight' and not action:
                 from dashboard_server.field_preflight import report
                 result=report(ROOT/'config/field_autonomy_preparation.json',self.live_mapping.task_status())
+            elif path in ('/api/autonomy/native-map/status','/api/autonomy/native-map/tiles','/api/autonomy/native-map/release') and not action:
+                native=getattr(self,'native_observation_client',None)
+                if not getattr(self,'native_map_preview_enabled',False) or native is None:
+                    result=dict(ok=True,available=False,status=dict(enabled=False,reason='native_map_default_OFF'),
+                        runtime_authority=False,motor_command_sent=False,autonomy_output_enabled=False,
+                        execution_eligible=False,physical_accuracy_verified=False,live_input_eligible=False)
+                else:
+                    query=parse_qs(parsed.query,keep_blank_values=True)
+                    if set(query)-{'cursor','lease'} or any(len(v)!=1 for v in query.values()):
+                        raise ValueError('native_map_get_query_required')
+                    if path.endswith('/status'):
+                        if query:raise ValueError('native_map_status_has_no_query')
+                        result=native.map_status()
+                    elif path.endswith('/release'):
+                        if set(query)!={'lease'}:raise ValueError('native_map_lease_required')
+                        result=native.map_release(query['lease'][0])
+                    else:
+                        if set(query)-{'cursor'}:raise ValueError('native_map_tiles_query_required')
+                        result=native.map_tiles(query.get('cursor',[None])[0])
+                    if (not isinstance(result,dict) or any(result.get(k) is not False for k in
+                            ('runtime_authority','motor_command_sent','autonomy_output_enabled'))):
+                        raise ValueError('native_map_observation_only_reply_required')
+                    if len(json.dumps(result,allow_nan=False,separators=(',',':')).encode())>131072:
+                        raise ValueError('native_map_page_capacity')
+            elif path=='/api/autonomy/native-map/new' and action:
+                native=getattr(self,'native_observation_client',None)
+                if (not getattr(self,'native_map_preview_enabled',False) or native is None or
+                        parsed.query or set(payload)!={'map_epoch'}):
+                    raise ValueError('explicit_enabled_native_new_map_required')
+                result=native.map_new(payload['map_epoch'])
+                if (not isinstance(result,dict) or any(result.get(k) is not False for k in
+                        ('runtime_authority','motor_command_sent','autonomy_output_enabled'))):
+                    raise ValueError('native_map_observation_only_reply_required')
             elif path=='/api/autonomy/observe' and not action:
                 result=self._autonomy_observe_status()
             elif path in ('/api/autonomy/observe/start','/api/autonomy/observe/stop') and action:
@@ -1210,6 +1243,7 @@ def create_server(host: str, port: int, config: str | None = None) -> ThreadingH
     DashboardHandler.autonomy_settings=AutonomySettings(ROOT/'runtime/autonomy_settings.json')
     native_path=os.environ.get('UBTS_NATIVE_STREAM_SOCKET')
     DashboardHandler.native_observation_client=None
+    DashboardHandler.native_map_preview_enabled=os.environ.get('UBTS_NATIVE_MAP_PREVIEW','0')=='1'
     if native_path:
         from dashboard_server.native_observation_client import NativeObservationClient
         DashboardHandler.native_observation_client=NativeObservationClient(native_path)

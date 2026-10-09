@@ -2,8 +2,8 @@
   "schema": "ubts.private.physical_native_shadow_factory.v4",
   "owned_count": 14,
   "deployment_closure_count": 13,
-  "parent_manifest_sha256": "68bd1239327ca8701004fd284484223b1ddfabd9105ace933ee8ead9ec1ed5a7",
-  "source_revision": "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait",
+  "parent_manifest_sha256": "b6b8e500cf49481177610f877b837be66ab1c71b5d273fe5326fc887c2b31f48",
+  "source_revision": "native_v15_exact_cache_preparation_causal_raw_expiry_wait",
   "source_frozen": true,
   "runtime_authority": false,
   "motor_transport": false,
@@ -17,10 +17,10 @@
   "initial_IMU_horizon_ns": 500000000,
   "exact_surface_cache_enabled": true,
   "files_sha256": {
-    "inputs.py": "18487f711a6c58f4ac3402846eab918aa9903af518e8ef0b9540e225ed676ce7",
-    "VENDORED_INPUTS.json": "4a131d7baaf9152908279f9abc78a59fb1affd48fa7c3682b6fd13624c334786",
-    "physical_ingress.py": "b191fc6b2eabbff706ee4ccdaeb1c61cb8628c2e6b3282189ab3f036761cd755",
-    "physical_factory.py": "589cc51cce7e0d3972508e5a1e2929fec0201e14f984d8b96717fc2c5a3f1d5d",
+    "inputs.py": "1845848056f63fb51b4a570adbc49a432ebb5615902a7a31350c5c0fc28d23c8",
+    "VENDORED_INPUTS.json": "268c01c9fb83f7b834299359bab25bab576b884588bb430acc6ecda2654e15f9",
+    "physical_ingress.py": "cca2931d4ff52d3fcf196ad0efbdd3d835096f8a440ec72c475607c2d6a6b570",
+    "physical_factory.py": "7cbc3a0e52855ee90f60ec50a9ebf5ddb3571549b16134596ad93106c8f9b382",
     "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
     "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "common/native_ownership.py": "c705c627390735226d5aafed8322de37e1c8d53ad5f71151e144a843f87dd8c6",
@@ -30,7 +30,7 @@
     "kernel/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "kernel/fit_workers.py": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c",
     "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
-    "DEPLOY_CLOSURE.json": "565ce0af039b72fd6fb905d28ab3edea2241235bfd384bb7cb2662d85d4a54b9"
+    "DEPLOY_CLOSURE.json": "e26f300a802766df6ee94a6f68491dc89d45db04da2832ed4312c67b878c057e"
   },
   "admission_timing_only": false,
   "imu_gap_timing_only": false,
@@ -40,5 +40,7 @@
   "current_expiry_reanchor_enabled": true,
   "postconsumed_causal_raw_expiry_reanchor_enabled": true,
   "receiver_commit_causal_raw_expiry_reanchor_enabled": true,
-  "final_scalar_causal_raw_expiry_reanchor_enabled": true
+  "final_scalar_causal_raw_expiry_reanchor_enabled": true,
+  "receiver_end_scalar_causal_raw_expiry_wait_enabled": true,
+  "preparation_causal_raw_expiry_reanchor_enabled": true
 }

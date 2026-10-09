@@ -56,12 +56,15 @@ def bounded_status(value):
 
 
 class _StreamResource:
-    def __init__(self, context, adapter_factory, process_factory, identity, thread_factory):
+    def __init__(self, context, adapter_factory, process_factory, identity, thread_factory, map_session=None):
         self.context, self.adapter_factory = context, adapter_factory
         self.process_factory, self.identity, self.thread_factory = process_factory, identity, thread_factory
         self.lock = threading.RLock()
         self.rows = queue.Queue(maxsize=QUEUE_ROWS)
         self.adapter = self.child = None
+        self.map_transport = None
+        self.map_session = map_session  # pretracked before the adapter factory/Thread.start
+        self.map_worker_cleanup = None
         self.threads = []
         self.stdout_done, self.stderr_done = threading.Event(), threading.Event()
         self.worker_done, self.stop_requested = threading.Event(), threading.Event()
@@ -91,6 +94,11 @@ class _StreamResource:
         # exceptions must never lose a Popen/reader that already exists.
         try:
             self.adapter = self.adapter_factory()
+            self.map_transport = getattr(self.adapter, "native_map_transport", None)
+            created_map = getattr(self.adapter, "native_map_session", None)
+            require(self.map_session is None or created_map is self.map_session,
+                    "exact_pretracked_native_map_session_required")
+            self.map_session = created_map
             require(all(callable(getattr(self.adapter, name, None)) for name in
                         ("bind_process", "receive_line", "stop", "finish", "status")),
                     "original_stream_adapter_required")
@@ -242,6 +250,11 @@ class _StreamResource:
     def request_stop(self):
         self.stop_requested.set()
         errors = []
+        if self.map_session is not None:
+            try:
+                self.map_session.stop()  # immediate publication fence; never join here
+            except BaseException as error:
+                errors.append(error)
         with self.lock:
             adapter_stop = self.adapter is not None and not self.adapter_stop_attempted
             self.adapter_stop_attempted = self.adapter_stop_attempted or adapter_stop
@@ -298,7 +311,18 @@ class _StreamResource:
                 self.fail(error)
                 threads_joined = False
         exited = child is None or child.poll() is not None
-        self.joined = exited and threads_joined and not self.unknown
+        map_joined = True
+        if self.map_session is not None:
+            try:
+                self.map_worker_cleanup = bounded_status(self.map_session.close(
+                    min(5., max(0., deadline-time.monotonic()))))
+                proof = self.map_worker_cleanup
+                map_joined = (proof.get('joined') is True and proof.get('worker_alive') is False and
+                    proof.get('owned_worker_retained') is False and proof.get('publication_inhibited') is True)
+            except BaseException as error:
+                self.fail(error)
+                map_joined = False
+        self.joined = exited and threads_joined and map_joined and not self.unknown
         if self.joined and self.adapter is not None and self.protocol is None:
             try:
                 self.protocol = bounded_status(self.adapter.finish(None if child is None else child.poll(), True))
@@ -338,6 +362,8 @@ class _StreamResource:
             self.fail(error)
         self.closed = not errors
         if self.closed:
+            if self.map_transport is not None:
+                self.map_transport.retain_and_detach()
             self.adapter = None  # release bounded physical caches, retain only status
             while True:
                 try:
@@ -364,6 +390,7 @@ class _StreamResource:
                 first_error=self.first_error, explicit_stop=self.explicit_stop,
                 readers_joined=self.joined, resources_closed=self.closed,
                 creation_unknown=self.unknown,
+                native_map_worker_cleanup=self.map_worker_cleanup,
                 terminate_attempted=self.terminate_attempted, kill_attempted=self.kill_attempted,
                 protocol=None if self.protocol is None else bounded_status(self.protocol),
                 adapter_last_processed_row=None if self.adapter_live is None else bounded_status(self.adapter_live),
@@ -377,7 +404,7 @@ class _StreamResource:
 class NativeStreamRunner:
     """Inert until explicit Start; injected factories create one owner generation."""
     def __init__(self, adapter_factory, process_factory, *, identity=None,
-                 thread_factory=threading.Thread):
+                 thread_factory=threading.Thread, map_session=None):
         require(callable(adapter_factory) and callable(process_factory) and callable(thread_factory),
                 "explicit_stream_factories_required")
         self.lock, self.resource = threading.RLock(), None
@@ -385,12 +412,15 @@ class NativeStreamRunner:
         self.identity = identity or (lambda: os.readlink("/proc/self/ns/time"))
         require(callable(self.identity), "process_time_namespace_identity_required")
         self.thread_factory = thread_factory
+        require(map_session is None or all(callable(getattr(map_session, name, None))
+                for name in ('stop', 'close')), 'owned_native_map_session_required')
+        self.map_session = map_session
         self.pending_explicit_stop_generation = None
         self.lifecycle = NativeOwnerLifecycle(self._factory)
 
     def _factory(self, context):
         resource = _StreamResource(context, self.adapter_factory, self.process_factory,
-                                   self.identity, self.thread_factory)
+                                   self.identity, self.thread_factory, self.map_session)
         with self.lock:
             self.resource = resource
             resource.explicit_stop = self.pending_explicit_stop_generation == context.generation
@@ -561,6 +591,10 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "68bd1239327ca8701004fd284484223b1ddfabd9105ace933ee8ead9ec1ed5a7",
             "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait":
                 "68bd1239327ca8701004fd284484223b1ddfabd9105ace933ee8ead9ec1ed5a7",
+            "native_v15_exact_cache_preparation_causal_raw_expiry_wait":
+                "b6b8e500cf49481177610f877b837be66ab1c71b5d273fe5326fc887c2b31f48",
+            "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait":
+                "4de382364c247de7b3ad05e819b2272e1de50a57d0d9e1c0ffe7d2e12ac85cf4",
         }
         require(type(manifest.get("owned_count")) is int and manifest["owned_count"] == 14 and
                 set(manifest["files_sha256"]) == expected_paths | {"DEPLOY_CLOSURE.json"} and
@@ -577,7 +611,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                         "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
                          "native_private_strict_nearest_gates_default_OFF",
                         "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
             require(manifest.get("admission_timing_only") is False and
                     manifest.get("imu_gap_timing_only") is False and
                     manifest.get("preserved_timing_hooks") is True,
@@ -589,7 +623,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
         if revision in ("native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
                         "native_private_strict_nearest_gates_default_OFF",
                         "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
             key = "postconsumed_causal_raw_expiry_reanchor_enabled"
             require(manifest.get(key) is True,
                     "reviewed_optimized_physical_consumed_RAW_expiry_feature_required")
@@ -642,7 +676,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "reviewed_strict_nearest_gates_default_OFF_contract_required")
         features["strict_nearest_gates_enabled"] = True
     if optimized and revision in ("native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
         require(manifest.get("receiver_commit_causal_raw_expiry_reanchor_enabled") is True,
                 "reviewed_receiver_commit_RAW_recovery_feature_required")
         features["receiver_commit_causal_raw_expiry_reanchor_enabled"] = True
@@ -654,15 +688,44 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "a27cad5b3ae16bfac181199ccbc931b8f41192d2ded02039030b0cd0138d371c",
                 "reviewed_combined_strict_nearest_contract_required")
         features["strict_nearest_gates_enabled"] = True
-    if optimized and revision == "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait":
+    if optimized and revision in ("native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
         require(manifest.get("final_scalar_causal_raw_expiry_reanchor_enabled") is True and
                 manifest.get("strict_nearest_gates_enabled", False) is False,
                 "reviewed_final_scalar_RAW_recovery_feature_required")
         features["final_scalar_causal_raw_expiry_reanchor_enabled"] = True
+    if optimized and revision in ("native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
+        require(manifest.get("receiver_end_scalar_causal_raw_expiry_wait_enabled") is True,
+                "reviewed_receiver_end_scalar_RAW_recovery_required")
+    if optimized and revision == "native_v15_exact_cache_preparation_causal_raw_expiry_wait":
+        require(manifest.get("preparation_causal_raw_expiry_reanchor_enabled") is True,
+                "reviewed_preparation_RAW_recovery_required")
+        features["preparation_causal_raw_expiry_reanchor_enabled"] = True
     sys.path.insert(0, str(path))
     if reviewed_features is not None:
         reviewed_features.update(features)  # only after the complete closure and isolation proof
     return optimized
+
+
+def load_native_map_sources(path, expected_sha):
+    # New algorithm source admission is explicit and independent of ROS input pins.
+    root = Path(path).resolve()
+    require(sha_file(root / "NATIVE_MAP_SOURCE.json", 16384) == expected_sha,
+            "native_map_source_manifest_SHA_required")
+    manifest = strict_json(read_regular(root / "NATIVE_MAP_SOURCE.json", 16384))
+    names = {"native_map_owner.py", "committed_native_map.py", "stream_rows_map.py", "native_map_transport.py",
+             "keyframe_registration.py", "batched_map_owner.py", "batched_rays.py"}
+    require(manifest.get("schema") == "ubts.private.native_map_source.v1" and
+            set(manifest.get("files_sha256", {})) == names and
+            manifest.get("parent_package_sha256") == "4669f543c358ca563c854dbddd70ca889d64f1837e012f29cc4dbc4f5a87818e" and
+            manifest.get("parent_map_handoff_sha256") == "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9" and
+            manifest.get("runtime_qualified") is False and manifest.get("motor_command_sent") is False and
+            manifest.get("execution_eligible") is False, "exact_unqualified_native_map_sources_required")
+    for name, sha in manifest["files_sha256"].items():
+        require(sha_file(root / name, 262144) == sha, "native_map_module_SHA_required")
+        module = sys.modules.get(Path(name).stem)
+        if module is not None:
+            require(Path(module.__file__).resolve() == root / name, "native_map_module_identity_required")
+    return True
 
 
 def make_adapter(args):
@@ -681,7 +744,8 @@ def make_adapter(args):
     feature_keys = ingress_keys | {"postconsumed_causal_raw_expiry_reanchor_enabled",
                                    "strict_nearest_gates_enabled",
                                    "receiver_commit_causal_raw_expiry_reanchor_enabled",
-                                   "final_scalar_causal_raw_expiry_reanchor_enabled"}
+                                   "final_scalar_causal_raw_expiry_reanchor_enabled",
+                                   "preparation_causal_raw_expiry_reanchor_enabled"}
     require(type(features) is dict and set(features) <= feature_keys and
             all(type(value) is bool for value in features.values()),
             "verified_physical_receiver_features_required")
@@ -702,9 +766,30 @@ def make_adapter(args):
         factory_options["receiver_commit_causal_raw_expiry_reanchor_enabled"] = True
     if features.get("final_scalar_causal_raw_expiry_reanchor_enabled") is True:
         factory_options["final_scalar_causal_raw_expiry_reanchor_enabled"] = True
+    if features.get("preparation_causal_raw_expiry_reanchor_enabled") is True:
+        factory_options["preparation_causal_raw_expiry_reanchor_enabled"] = True
     if features.get("strict_nearest_gates_enabled") is True:
         factory_options["strict_nearest_gates_enabled"] = True
     factory = PhysicalNativeShadowFactory(receiver, contract, **factory_options)
+    map_enabled = getattr(args, "native_map_enabled", False)
+    require(type(map_enabled) is bool, "typed_native_map_default_OFF_required")
+    if map_enabled:
+        load_native_map_sources(Path(__file__).parent, args.native_map_manifest_sha256)
+        import uuid
+        from committed_native_map import CommittedNativeMapAdapter
+        from stream_rows_map import StreamObserverRows as MapRows
+        from native_map_transport import NativeMapTransport
+        from native_map_transport import NativeMapSession
+        session = getattr(args, 'native_map_session', None)
+        if session is None:
+            session = NativeMapSession(CommittedNativeMapAdapter, map_epoch=uuid.uuid4().hex)
+            args.native_map_session = session
+        native_map = session.bind_factory(factory)  # explicit owner Start; independent resume registration
+        adapter = MapRows(receiver, factory, observer_contract_sha256=args.observer_contract_sha256,
+                          map_adapter=native_map)
+        adapter.native_map_transport = session.transport
+        adapter.native_map_session = session
+        return adapter
     return StreamObserverRows(receiver, factory,
                               observer_contract_sha256=args.observer_contract_sha256)
 

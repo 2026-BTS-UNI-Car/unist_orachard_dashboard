@@ -78,13 +78,14 @@
       "candidate_direct_source_manifest_sha256": "949e689e105fec506549ef7585b5601f17e367e9c3dc4b73351333878e043d79",
       "constructor_default_off": true,
       "only_private_cache_and_two_surface_calls_changed": false,
-      "candidate_sha256": "8fd307b08c4e4a926a54d291bf0d61045beafc649b988c1d5081184b27ca7ccb",
+      "candidate_sha256": "7cbc3a0e52855ee90f60ec50a9ebf5ddb3571549b16134596ad93106c8f9b382",
       "postconsumed_positive_lower_RAW_expiry_candidate": true,
-      "constructor_default_OFF": true
+      "constructor_default_OFF": true,
+      "preparation_positive_lower_RAW_expiry_candidate": true
     },
     "physical_ingress.py": {
       "parent_source_sha256": "5caee0f91716a8b45a9cc2f35b85ecc7644cecda6a02fc8bdc79480c1ffe00a1",
-      "candidate_sha256": "586d5ec8540af252b86d186a06e66bfdff8b08fc3b3223cbc9bd2390dae44e5c",
+      "candidate_sha256": "cca2931d4ff52d3fcf196ad0efbdd3d835096f8a440ec72c475607c2d6a6b570",
       "copied_exact_bytes": false,
       "admission_timing_only": false,
       "existing_failed_clock_used_without_resample": true,
@@ -99,7 +100,8 @@
       "constructor_defaults_OFF": true,
       "observed_Header_floors_include_unadmitted_valid_rows": true,
       "postconsumed_positive_lower_RAW_expiry_candidate": true,
-      "constructor_default_OFF": true
+      "constructor_default_OFF": true,
+      "preparation_positive_lower_RAW_expiry_candidate": true
     }
   },
   "production_external_python_packages": [

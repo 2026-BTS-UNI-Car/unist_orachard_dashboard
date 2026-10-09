@@ -14,13 +14,26 @@ class NativeObservationClient:
             raise ValueError('bounded_absolute_native_observation_socket_required')
         self.socket_path=socket_path
 
-    def _request(self, operation):
+    def _request(self, operation, *, cursor=None, lease=None, map_epoch=None):
         try:
             with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as client:
                 deadline=time.monotonic()+(3.5 if operation=='stop' else .6)
                 client.settimeout(max(.001,deadline-time.monotonic()))
                 client.connect(self.socket_path)
-                client.sendall((json.dumps({'op':operation})+'\n').encode())
+                value={'op':operation}
+                if cursor is not None:
+                    if operation!='map_tiles' or type(cursor) is not str or len(cursor)>67:
+                        raise ValueError('native_map_cursor_required')
+                    value['cursor']=cursor
+                if lease is not None:
+                    if operation!='map_release' or type(lease) is not str or len(lease)!=32:
+                        raise ValueError('native_map_lease_required')
+                    value['lease']=lease
+                if map_epoch is not None:
+                    if operation!='map_new' or type(map_epoch) is not str or len(map_epoch)!=32:
+                        raise ValueError('native_map_epoch_required')
+                    value['map_epoch']=map_epoch
+                client.sendall((json.dumps(value)+'\n').encode())
                 parts=[];size=0
                 while True:
                     remaining=deadline-time.monotonic()
@@ -45,6 +58,10 @@ class NativeObservationClient:
     def start(self):return self._request('start')
     def stop(self):return self._request('stop')
     def status(self):return self._request('status')
+    def map_status(self):return self._request('map_status')
+    def map_tiles(self, cursor=None):return self._request('map_tiles',cursor=cursor)
+    def map_release(self, lease):return self._request('map_release',lease=lease)
+    def map_new(self, map_epoch):return self._request('map_new',map_epoch=map_epoch)
     def input(self):
         result=self._request('input')
         return result.get('input') if result.get('ok') is True else None

@@ -131,7 +131,10 @@
         status.textContent=model.active?'관찰 중 · BODY·장착·제동·실차 정확도 미검증':'관찰 OFF · 마지막 판단은 현재 입력으로 사용하지 않습니다.';},
       error:message=>{status.textContent=`관찰 상태 확인 실패 · ${message} · 마지막 표시 유지`;},
       busy:pending=>{start.disabled=pending;status.textContent=pending?'관찰 작업 응답 확인 중 · 모터 적용 0':status.textContent;}});
-    start.addEventListener('click',()=>control.start());stop.addEventListener('click',()=>control.stop());
+    // This optional display never calls Start/Stop on sensors or motors itself.
+    import('./native-accepted-map.mjs').then(module=>module.mountNativeAcceptedMap(container)).catch(()=>{});
+    start.addEventListener('click',()=>control.start().then(()=>container._nativeMapView?.start()));
+    stop.addEventListener('click',()=>{container._nativeMapView?.stop();return control.stop();});
     container.appendChild(panel);container._autonomyObservation=control;
     const refresh=()=>{if(!document.hidden&&container.offsetParent!==null)control.refresh();};
     setInterval(refresh,1000);refresh();

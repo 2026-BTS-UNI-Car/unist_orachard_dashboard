@@ -183,6 +183,11 @@ class StreamObserverRows:
         require(type(nearest) is bool, "exact_factory_strict_nearest_feature_boolean_required")
         return nearest
 
+    def _factory_preparation_feature(self):
+        feature = getattr(self.factory, 'preparation_causal_raw_expiry_reanchor_enabled', False)
+        require(type(feature) is bool, 'exact_factory_preparation_recovery_feature_boolean_required')
+        return feature
+
     def _factory_final_feature(self):
         feature = getattr(self.factory, 'final_scalar_causal_raw_expiry_reanchor_enabled', False)
         require(type(feature) is bool, 'exact_factory_final_scalar_recovery_feature_boolean_required')
@@ -194,7 +199,7 @@ class StreamObserverRows:
                 i.scan_frame, i.imu_frame, i.profile_revision, i.observer_contract_sha256,
                 self._feature("imu_gap_reanchor_enabled"), self._feature("startup_expiry_discard_enabled"),
                 self._feature("current_expiry_reanchor_enabled"), self._factory_expiry_feature(),
-                self._factory_receiver_feature(), self._factory_final_feature(), self._factory_nearest_feature())
+                self._factory_preparation_feature(), self._factory_receiver_feature(), self._factory_final_feature(), self._factory_nearest_feature())
 
     def _accept_owned_receiver_commit_raw_expiry_wait(self, outcome):
         if not self._factory_receiver_feature():
@@ -210,6 +215,38 @@ class StreamObserverRows:
                     'native_stream_receiver_RAW_expiry_wait_revoked')
             self._proposal_input = None
             self.waiting_reason = outcome.reason
+            map_adapter = getattr(self, '_map_adapter', None)
+            if map_adapter is not None:
+                invalidate = getattr(map_adapter, 'invalidate_gap', None)
+                require(callable(invalidate), 'native_map_gap_invalidator_required')
+                invalidate('native_original_pair_wait')
+                require(validator(outcome) and not self._stopping.is_set() and
+                        self._context() == self._binding,
+                        'native_stream_receiver_RAW_expiry_wait_revoked')
+        return True
+
+    def _accept_owned_preparation_raw_expiry_wait(self, outcome):
+        if not self._factory_preparation_feature():
+            return False
+        validator = getattr(self.factory, 'is_owned_preparation_raw_expiry_wait', None)
+        require(callable(validator), 'reviewed_native_preparation_RAW_wait_validator_required')
+        if not validator(outcome):
+            return False
+        require(not self._stopping.is_set() and self._context() == self._binding,
+                'native_stream_source_context_changed_or_stopped')
+        with self.factory.lock:
+            require(validator(outcome) and not self._stopping.is_set(),
+                    'native_stream_preparation_RAW_expiry_wait_revoked')
+            self._proposal_input = None
+            self.waiting_reason = outcome.reason
+            map_adapter = getattr(self, '_map_adapter', None)
+            if map_adapter is not None:
+                invalidate = getattr(map_adapter, 'invalidate_gap', None)
+                require(callable(invalidate), 'native_map_gap_invalidator_required')
+                invalidate('native_original_pair_wait')
+                require(validator(outcome) and not self._stopping.is_set() and
+                        self._context() == self._binding,
+                        'native_stream_preparation_RAW_expiry_wait_revoked')
         return True
 
     def _accept_owned_final_scalar_raw_expiry_wait(self, outcome):
@@ -544,6 +581,8 @@ class StreamObserverRows:
             owned = self.factory.prepare(prepared.prepared)
             if self._stopping.is_set():
                 break
+            if self._accept_owned_preparation_raw_expiry_wait(owned):
+                return ()
             if isinstance(owned, dict):
                 self._retain_factory_failure_timing(owned)
             require(not isinstance(owned, dict), 'physical_internal_fit_rejected:' + str(owned))
@@ -628,6 +667,8 @@ class StreamObserverRows:
             if self._stopping.is_set() or self.fault is not None or self._proposal_input is None:
                 return None
             try:
+                require(self._factory_preparation_feature() == self._binding[-4],
+                        "native_stream_preparation_recovery_configuration_changed")
                 require(self._factory_receiver_feature() == self._binding[-3],
                         "native_stream_receiver_recovery_configuration_changed")
                 require(self._factory_final_feature() == self._binding[-2],
@@ -676,6 +717,10 @@ class StreamObserverRows:
                     getattr(self.ingress, 'causal_imu_failure_timing', None)),
                 ingress_causal_imu_failure_timing_error=getattr(
                     self.ingress, 'causal_imu_failure_timing_error', None),
+                ingress_receiver_end_scalar_failure_timing=copy.deepcopy(
+                    getattr(self.ingress, 'receiver_end_scalar_failure_timing', None)),
+                ingress_receiver_end_scalar_failure_timing_error=getattr(
+                    self.ingress, 'receiver_end_scalar_failure_timing_error', None),
                 imu_gap_reanchor_enabled=self._feature("imu_gap_reanchor_enabled"),
                 imu_gap_reanchor_count=getattr(self.ingress, "gap_reanchor_count", 0),
                 startup_expiry_discard_enabled=self._feature("startup_expiry_discard_enabled"),
@@ -687,6 +732,10 @@ class StreamObserverRows:
                 receiver_commit_raw_expiry_wait_count=getattr(self.factory, 'receiver_commit_raw_expiry_wait_count', 0),
                 receiver_commit_raw_expiry_wait_timing=copy.deepcopy(getattr(
                     self.factory, 'receiver_commit_raw_expiry_wait_timing', None)),
+                preparation_causal_raw_expiry_reanchor_enabled=self._factory_preparation_feature(),
+                preparation_raw_expiry_wait_count=getattr(self.factory, 'preparation_raw_expiry_wait_count', 0),
+                preparation_raw_expiry_wait_timing=copy.deepcopy(getattr(
+                    self.factory, 'preparation_raw_expiry_wait_timing', None)),
                 final_scalar_causal_raw_expiry_reanchor_enabled=self._factory_final_feature(),
                 final_scalar_raw_expiry_wait_count=getattr(self.factory, 'final_scalar_raw_expiry_wait_count', 0),
                 final_scalar_raw_expiry_wait_timing=copy.deepcopy(getattr(

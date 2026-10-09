@@ -21,6 +21,7 @@ from types import SimpleNamespace
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument('--serve',action='store_true')
+    parser.add_argument('--enable-native-map',action='store_true')
     for name in ('socket-path','scan-gid','imu-gid'):
         parser.add_argument('--'+name)
     args=parser.parse_args(argv)
@@ -46,6 +47,15 @@ def main(argv=None):
     bound.physical_surface_cache_enabled = stream_runner.load_physical_package(
         '/opt/ubts-shadow/package',bound.package_manifest_sha256,
         reviewed_features=bound.physical_reviewed_features)
+    bound.native_map_enabled = args.enable_native_map
+    bound.native_map_manifest_sha256 = '682391b127ce637755e7f2dfde2b732d07fc04ac995b85d0a7d281040aab54d5'
+    if args.enable_native_map:
+        stream_runner.load_native_map_sources(root, bound.native_map_manifest_sha256)
+        from committed_native_map import CommittedNativeMapAdapter
+        from native_map_transport import NativeMapSession
+        import uuid
+        bound.native_map_session = NativeMapSession(CommittedNativeMapAdapter, map_epoch=uuid.uuid4().hex)
+    retained_map = getattr(bound, 'native_map_session', None)
     binary=root/'bin/actual_cdr_stream'
     stream_runner.require(stream_runner.sha_file(binary)==bound.observer_binary_sha256,'compiled_observer_SHA_required')
     # Warm imports before accepting requests; no ROS context/node or receiver.
@@ -56,7 +66,8 @@ def main(argv=None):
     assert Clock and ClockType and LinuxRawClock and PhysicalNativeShadowFactory and stream_rows
     runner=stream_runner.NativeStreamRunner(lambda:stream_runner.make_adapter(bound),lambda:subprocess.Popen(
         [str(binary),'--observe-until-stop','--expected-scan-gid',args.scan_gid,'--expected-imu-gid',args.imu_gid],
-        stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,shell=False))
+        stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,shell=False),
+        map_session=getattr(bound, 'native_map_session', None))
     stop=threading.Event()
     for sig in (signal.SIGTERM,signal.SIGINT):
         signal.signal(sig,lambda _sig,_frame:stop.set())
@@ -90,8 +101,29 @@ def main(argv=None):
                     stream_runner.require(len(request)<=4096 and request.count(b'\n')==1 and request.endswith(b'\n'),
                         'bounded_sensor_owner_request')
                     value=stream_runner.strict_json(request)
-                    stream_runner.require(type(value) is dict and set(value)=={'op'} and
-                        value['op'] in ('start','stop','status','input'),'sensor_owner_operation_required')
+                    map_request = type(value) is dict and value.get('op') in ('map_status','map_tiles','map_release')
+                    map_new = type(value) is dict and value.get('op') == 'map_new'
+                    stream_runner.require(map_request or map_new or (type(value) is dict and set(value)=={'op'} and
+                        value['op'] in ('start','stop','status','input')), 'sensor_owner_operation_required')
+                    if map_new:
+                        stream_runner.require(args.enable_native_map and set(value) == {'op','map_epoch'} and
+                            not runner.lifecycle.status().owned, 'native_new_map_requires_closed_owner')
+                        result = retained_map.new_map(value['map_epoch'])
+                        conn.sendall((json.dumps(result,allow_nan=False,separators=(',',':'))+'\n').encode())
+                        continue
+                    if map_request:
+                        if args.enable_native_map:
+                            from native_map_transport import dispatch_map_request
+                            result = dispatch_map_request(runner, value, retained_map)
+                        else:
+                            stream_runner.require(set(value) <= {'op','cursor','lease'}, 'native_map_get_request_required')
+                            result = dict(ok=True, available=False, status=dict(enabled=False, reason='native_map_default_OFF'),
+                                runtime_authority=False,motor_command_sent=False,autonomy_output_enabled=False,
+                                execution_eligible=False,physical_accuracy_verified=False,live_input_eligible=False)
+                        raw=(json.dumps(result,allow_nan=False,separators=(',',':'))+'\n').encode()
+                        stream_runner.require(len(raw)<=131072,'bounded_native_map_reply')
+                        conn.sendall(raw)
+                        continue
                     if value['op']=='start':
                         runner.start()
                     elif value['op']=='stop':
