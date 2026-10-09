@@ -16,7 +16,9 @@ HERE = Path(__file__).resolve().parent
 FEATURES = ('imu_gap_reanchor_enabled', 'startup_expiry_discard_enabled',
             'current_expiry_reanchor_enabled')
 FACTORY_FEATURE = 'postconsumed_causal_raw_expiry_reanchor_enabled'
-ALL_FEATURES = FEATURES + (FACTORY_FEATURE,)
+NEAREST_FEATURE = "strict_nearest_gates_enabled"
+RECEIVER_FEATURE = "receiver_commit_causal_raw_expiry_reanchor_enabled"
+ALL_FEATURES = FEATURES + (FACTORY_FEATURE, NEAREST_FEATURE, RECEIVER_FEATURE)
 
 
 class TrustedWiringTests(unittest.TestCase):
@@ -125,8 +127,10 @@ class TrustedWiringTests(unittest.TestCase):
     def test_factory_feature_does_not_leak_to_receiver_constructor(self):
         calls=self.adapter(dict.fromkeys(ALL_FEATURES,True))
         self.assertNotIn(FACTORY_FEATURE,calls[0][1])
+        self.assertNotIn(RECEIVER_FEATURE,calls[0][1])
+        self.assertNotIn(NEAREST_FEATURE,calls[0][1])
         self.assertEqual({key:calls[0][1][key] for key in FEATURES},dict.fromkeys(FEATURES,True))
-        self.assertEqual(calls[2],('factory',{'exact_surface_cache_enabled':True,FACTORY_FEATURE:True}))
+        self.assertEqual(calls[2],('factory',{'exact_surface_cache_enabled':True,FACTORY_FEATURE:True,NEAREST_FEATURE:True,RECEIVER_FEATURE:True}))
 
     def test_false_factory_feature_omitted_for_legacy_factory_signature(self):
         for features in ({FACTORY_FEATURE:False},dict.fromkeys(ALL_FEATURES,False)):

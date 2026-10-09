@@ -100,6 +100,15 @@ class _ConsumedCausalRawExpiryWait:
     input_ready: bool = False
 
 
+@dataclass(frozen=True)
+class _ReceiverCommitCausalRawExpiryWait:
+    reason: str
+    generation: int
+    _owner: object
+    diagnostic_version: int
+    input_ready: bool = False
+
+
 class PhysicalNativeShadowFactory:
     """Compute one internally fitted diagnostic, then final ownership fences.
 
@@ -109,7 +118,15 @@ class PhysicalNativeShadowFactory:
     diagnostic and invalidates receiver continuity until an external new epoch.
     """
     def __init__(self, ingress, contract, *, exact_surface_cache_enabled=False,
-                 postconsumed_causal_raw_expiry_reanchor_enabled=False):
+                 postconsumed_causal_raw_expiry_reanchor_enabled=False,
+                 receiver_commit_causal_raw_expiry_reanchor_enabled=False):
+        require(type(receiver_commit_causal_raw_expiry_reanchor_enabled) is bool,
+                'typed_receiver_commit_causal_RAW_expiry_option_required')
+        self.__receiver_commit_causal_raw_expiry_reanchor_enabled = receiver_commit_causal_raw_expiry_reanchor_enabled
+        self._receiver_expiry_configuration = receiver_commit_causal_raw_expiry_reanchor_enabled
+        self._receiver_attempt = self._receiver_clock = self._receiver_wait = None
+        self.receiver_commit_raw_expiry_wait_count = 0
+        self.receiver_commit_raw_expiry_wait_timing = None
         require(type(postconsumed_causal_raw_expiry_reanchor_enabled) is bool,
                 'typed_postconsumed_causal_RAW_expiry_option_required')
         require(type(exact_surface_cache_enabled) is bool,
@@ -145,6 +162,10 @@ class PhysicalNativeShadowFactory:
     @property
     def postconsumed_causal_raw_expiry_reanchor_enabled(self):
         return self.__postconsumed_causal_raw_expiry_reanchor_enabled
+
+    @property
+    def receiver_commit_causal_raw_expiry_reanchor_enabled(self):
+        return self.__receiver_commit_causal_raw_expiry_reanchor_enabled
 
     def _timed(self, name, function, *args, **kwargs):
         begin = time.perf_counter_ns()
@@ -197,6 +218,9 @@ class PhysicalNativeShadowFactory:
             return self._state
 
     def _owned(self, original, *, pending=True):
+        require(type(self.receiver_commit_causal_raw_expiry_reanchor_enabled) is bool and
+                self.receiver_commit_causal_raw_expiry_reanchor_enabled is self._receiver_expiry_configuration,
+                'physical_shadow_receiver_recovery_configuration_changed')
         require(type(self.postconsumed_causal_raw_expiry_reanchor_enabled) is bool and
                 self.postconsumed_causal_raw_expiry_reanchor_enabled is self._consumed_expiry_configuration,
                 'physical_shadow_recovery_configuration_changed')
@@ -252,6 +276,82 @@ class PhysicalNativeShadowFactory:
                 self.ingress._digest_prepared(original).encode()).hexdigest() == self._pending_digest,
                 'original_physical_diagnostic_changed')
 
+    def _validate_receiver_commit_expiry_attempt(self, attempt, original, clock, *, quarantined=False):
+        self._owned(original, pending=not quarantined)
+        require(type(self) is PhysicalNativeShadowFactory and
+                self.receiver_commit_causal_raw_expiry_reanchor_enabled is True and
+                type(attempt) is tuple and len(attempt) == 5 and attempt is self._receiver_attempt and
+                attempt[1] is self._pending and attempt[2] is original and
+                type(self._pending) is PreparedPhysicalDiagnostic and self._pending._owner is self and
+                attempt[3] is self._pending._capability and attempt[4] == self._pending_digest and
+                self._pending.original_inputs is original,
+                'owned_receiver_commit_factory_attempt_required')
+        require(hashlib.sha256(repr(self._pending.record).encode()+
+                self.ingress._digest_prepared(original).encode()).hexdigest() == self._pending_digest,
+                'original_physical_diagnostic_changed')
+        if clock is not None:
+            require(type(clock) is PhysicalClockReading and
+                    clock.source_session == self._session and clock.raw_domain == self.ingress.domain,
+                    'exact_receiver_commit_expiry_clock_required')
+            if self._receiver_clock is None:
+                self._receiver_clock = clock
+            require(clock is self._receiver_clock, 'one_receiver_commit_expiry_clock_required')
+        if quarantined:
+            require(self.ingress.is_owned_receiver_commit_raw_wait(
+                self.ingress._receiver_expiry_wait, self, attempt),
+                'exact_receiver_commit_quarantine_required')
+
+    def _abandon_receiver_commit_raw_expiry(self, outcome):
+        attempt, clock = self._receiver_attempt, self._receiver_clock
+        require(attempt is not None and clock is not None and
+                self.ingress.is_owned_receiver_commit_raw_wait(outcome, self, attempt),
+                'owned_receiver_commit_RAW_wait_required')
+        original = attempt[2]
+        self._validate_receiver_commit_expiry_attempt(attempt, original, clock, quarantined=True)
+        require(type(self.receiver_commit_raw_expiry_wait_count) is int and
+                0 <= self.receiver_commit_raw_expiry_wait_count < (1<<63)-1,
+                'receiver_commit_RAW_expiry_counter_exhausted')
+        lower = original.imu_originals[original.pairing.end_indices[0]]
+        timing = dict(schema='ubts.native.receiver_commit_causal_RAW_expiry_wait.v1',
+            stage='commit_receiver_association', source_sequence=lower.source_sequence,
+            comparison=dict(source_ns=clock.source_ns,RAW_ns=clock.receipt_ns),
+            lower_header_ns=lower.wire.header.stamp_ns, lower_callback_RAW_ns=lower.receipt.ns,
+            lower_SOURCE_age_ns=clock.source_ns-lower.wire.header.stamp_ns,
+            lower_RAW_age_ns=clock.receipt_ns-lower.receipt.ns,
+            SOURCE_TTL_ns=SOURCE_AGE_NS,RAW_TTL_ns=RECEIPT_AGE_NS,
+            diagnostic_version=self._state.version,data_qualified=False)
+        import json
+        require(len(json.dumps(timing,allow_nan=False,separators=(',',':')).encode()) <= 1024,
+                'receiver_commit_RAW_expiry_timing_capacity')
+        self._validate_receiver_commit_expiry_attempt(attempt, original, clock, quarantined=True)
+        self._pending = self._pending_digest = self._receiver_attempt = self._receiver_clock = None
+        # Drop the transient proof, which contains original/fit capabilities.
+        # The returned factory WAIT retains only owner/generation/version.
+        self.ingress._receiver_expiry_wait = None
+        self.receiver_commit_raw_expiry_wait_count += 1
+        self.receiver_commit_raw_expiry_wait_timing = timing
+        self._receiver_wait = _ReceiverCommitCausalRawExpiryWait(
+            'waiting_for_fresh_scan_after_receiver_commit_causal_RAW_expiry',
+            self._generation,self,self._state.version)
+        return self._receiver_wait
+
+    def is_owned_receiver_commit_raw_expiry_wait(self, value):
+        with self.lock, self.ingress.lock:
+            return (type(value) is _ReceiverCommitCausalRawExpiryWait and value is self._receiver_wait and
+                value._owner is self and value.generation == self._generation == self.ingress.generation and
+                self.ingress.clock_session == self._session and self._pid == os.getpid() and
+                self.ingress.profile_revision == self._revision == revision(self.contract) and
+                value.diagnostic_version == self._state.version and
+                self.receiver_commit_causal_raw_expiry_reanchor_enabled is True and
+                self._receiver_expiry_configuration is True and self.fault is None and self.ingress.fault is None and
+                not self.stop_intent.is_set() and self._pending is None and self._pending_digest is None and
+                self._receiver_attempt is None and self._receiver_clock is None and
+                self.ingress.previous is None and self.ingress.pending is None and self.ingress.prepared is None and
+                self.ingress._active is None and self.ingress._prepared_digest is None and
+                self.ingress._receiver_expiry_proof is None and self.ingress._receiver_expiry_wait is None and
+                not self.ingress._owners and not self.ingress.imus and
+                not self.ingress.callback_provenance)
+
     def _abandon_consumed_raw_expiry(self, error):
         attempt = self._consumed_attempt
         require(attempt is not None, 'owned_consumed_factory_attempt_required')
@@ -305,6 +405,7 @@ class PhysicalNativeShadowFactory:
         self.ingress.stop()
         self._pending = self._pending_digest = None
         self._consumed_attempt = self._consumed_wait = None
+        self._receiver_attempt = self._receiver_clock = self._receiver_wait = None
         answer = hold(self.fault)
         answer['diagnostic_stage_timing'] = self.timing_snapshot()
         return answer
@@ -386,7 +487,16 @@ class PhysicalNativeShadowFactory:
                     next_state = DiagnosticState(self._state.version+1, prepared.record)
                     response = hold('unverified_physical_REP145_extrinsics_braking_HOLD',
                                     diagnostic=prepared.record)
-                    outcome = self._timed('receiver_consume', self.ingress.commit, original)
+                    if self.receiver_commit_causal_raw_expiry_reanchor_enabled:
+                        attempt = self._receiver_attempt = (object(),self._pending,original,
+                            self._pending._capability,self._pending_digest)
+                        outcome = self._timed('receiver_consume', self.ingress.commit, original,
+                            _receiver_causal_raw_expiry=(self,attempt))
+                        if self.ingress.is_owned_receiver_commit_raw_wait(outcome,self,attempt):
+                            return self._abandon_receiver_commit_raw_expiry(outcome)
+                        self._receiver_attempt = self._receiver_clock = None
+                    else:
+                        outcome = self._timed('receiver_consume', self.ingress.commit, original)
                     require(self.ingress.fault is None and self.ingress.prepared is None and
                             outcome.reason in ('first_pair_new_epoch',
                             'inputs_only_reviewed_typed_localizer_factory_missing'), outcome.reason)

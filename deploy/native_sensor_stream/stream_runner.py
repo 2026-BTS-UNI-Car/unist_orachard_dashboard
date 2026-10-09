@@ -522,7 +522,9 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
             "empty_trusted_reviewed_features_required")
     features = dict(imu_gap_reanchor_enabled=False, startup_expiry_discard_enabled=False,
                     current_expiry_reanchor_enabled=False,
-                    postconsumed_causal_raw_expiry_reanchor_enabled=False)
+                    postconsumed_causal_raw_expiry_reanchor_enabled=False,
+                    strict_nearest_gates_enabled=False,
+                    receiver_commit_causal_raw_expiry_reanchor_enabled=False)
     path = Path(path).resolve(strict=True)
     handoff = path / "HANDOFF.json"
     require(sha_file(handoff) == expected_sha, "reviewed_physical_package_manifest_required")
@@ -550,6 +552,12 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "92303f90fe9efc98db14aa77ced6f37c990f0f24195395f7988c5dd0f0f51df3",
             "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait":
                 "42e46534f700cacdce08ea9aee64b3fe9667f6bb35a297b99182507d1afd12a1",
+            "native_private_strict_nearest_gates_default_OFF":
+                "d24a38bafde135b70db87c50e39303f4d6d82c2267ffeef3f769a45587ab57f1",
+            "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait":
+                "d24a38bafde135b70db87c50e39303f4d6d82c2267ffeef3f769a45587ab57f1",
+            "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait":
+                "68bd1239327ca8701004fd284484223b1ddfabd9105ace933ee8ead9ec1ed5a7",
         }
         require(type(manifest.get("owned_count")) is int and manifest["owned_count"] == 14 and
                 set(manifest["files_sha256"]) == expected_paths | {"DEPLOY_CLOSURE.json"} and
@@ -563,7 +571,9 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
             require(manifest.get("imu_gap_timing_only") is True,
                     "reviewed_optimized_physical_imu_gap_timing_required")
         if revision in ("native_v9_exact_cache_positive_scan_expiry_wait",
-                        "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait"):
+                        "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
+                         "native_private_strict_nearest_gates_default_OFF",
+                        "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait"):
             require(manifest.get("admission_timing_only") is False and
                     manifest.get("imu_gap_timing_only") is False and
                     manifest.get("preserved_timing_hooks") is True,
@@ -572,7 +582,9 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                         "current_expiry_reanchor_enabled"):
                 require(manifest.get(key) is True, "reviewed_optimized_physical_recovery_feature_required:" + key)
                 features[key] = True
-        if revision == "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait":
+        if revision in ("native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
+                        "native_private_strict_nearest_gates_default_OFF",
+                        "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait"):
             key = "postconsumed_causal_raw_expiry_reanchor_enabled"
             require(manifest.get(key) is True,
                     "reviewed_optimized_physical_consumed_RAW_expiry_feature_required")
@@ -619,6 +631,23 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "physical_deployment_source_changed:" + name)
     require(not any(name in sys.modules for name in ("physical_factory", "physical_ingress", "inputs")),
             "isolated_physical_module_loader_required")
+    if optimized and revision == "native_private_strict_nearest_gates_default_OFF":
+        require(manifest.get("strict_nearest_gates_enabled_default") is False and
+                manifest.get("strict_nearest_gates_runtime_qualified") is False,
+                "reviewed_strict_nearest_gates_default_OFF_contract_required")
+        features["strict_nearest_gates_enabled"] = True
+    if optimized and revision in ("native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait"):
+        require(manifest.get("receiver_commit_causal_raw_expiry_reanchor_enabled") is True,
+                "reviewed_receiver_commit_RAW_recovery_feature_required")
+        features["receiver_commit_causal_raw_expiry_reanchor_enabled"] = True
+    if optimized and revision == "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait":
+        require(manifest.get("strict_nearest_gates_enabled") is True and
+                manifest.get("strict_nearest_gates_enabled_default") is False and
+                manifest.get("strict_nearest_gates_runtime_qualified") is False and
+                manifest.get("strict_nearest_source_manifest_sha256") ==
+                "a27cad5b3ae16bfac181199ccbc931b8f41192d2ded02039030b0cd0138d371c",
+                "reviewed_combined_strict_nearest_contract_required")
+        features["strict_nearest_gates_enabled"] = True
     sys.path.insert(0, str(path))
     if reviewed_features is not None:
         reviewed_features.update(features)  # only after the complete closure and isolation proof
@@ -638,7 +667,9 @@ def make_adapter(args):
     features = getattr(args, "physical_reviewed_features", {})
     ingress_keys = {"imu_gap_reanchor_enabled", "startup_expiry_discard_enabled",
                     "current_expiry_reanchor_enabled"}
-    feature_keys = ingress_keys | {"postconsumed_causal_raw_expiry_reanchor_enabled"}
+    feature_keys = ingress_keys | {"postconsumed_causal_raw_expiry_reanchor_enabled",
+                                   "strict_nearest_gates_enabled",
+                                   "receiver_commit_causal_raw_expiry_reanchor_enabled"}
     require(type(features) is dict and set(features) <= feature_keys and
             all(type(value) is bool for value in features.values()),
             "verified_physical_receiver_features_required")
@@ -655,6 +686,10 @@ def make_adapter(args):
     factory_options = {"exact_surface_cache_enabled": True} if cache_enabled else {}
     if features.get("postconsumed_causal_raw_expiry_reanchor_enabled") is True:
         factory_options["postconsumed_causal_raw_expiry_reanchor_enabled"] = True
+    if features.get("receiver_commit_causal_raw_expiry_reanchor_enabled") is True:
+        factory_options["receiver_commit_causal_raw_expiry_reanchor_enabled"] = True
+    if features.get("strict_nearest_gates_enabled") is True:
+        factory_options["strict_nearest_gates_enabled"] = True
     factory = PhysicalNativeShadowFactory(receiver, contract, **factory_options)
     return StreamObserverRows(receiver, factory,
                               observer_contract_sha256=args.observer_contract_sha256)

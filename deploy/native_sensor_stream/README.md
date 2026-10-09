@@ -1,3 +1,5 @@
+현재 설치·검증 범위: [nearest·receiver 만료 복구 통합](../../docs/NATIVE_COMBINED_RECOVERY_PROGRESS_20261010.md). 실제 자율주행과 GPS 통합 지도는 미완료입니다.
+
 현재 설치·한계: [v10 최종 IMU 검사와 전체 기록 GPS 시각 점검](../../docs/NATIVE_POSTCONSUMED_RECOVERY_PROGRESS_20261010.md). 실제 자율주행·GPS 통합 지도는 미완료입니다.
 
 # Native 센서 관찰 서비스

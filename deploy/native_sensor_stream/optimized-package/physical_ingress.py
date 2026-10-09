@@ -62,6 +62,20 @@ class _ValidatedConsumedCausalRawExpiry(Exception):
     """Only the exact consumed factory attempt may abandon this expired pair."""
 
 
+class _ValidatedReceiverCommitCausalRawExpiry(Exception):
+    """Exact initial receiver-commit association, before its generic latch."""
+
+
+@dataclass(frozen=True)
+class _ReceiverCommitCausalRawExpiryWait:
+    reason: str
+    generation: int
+    _owner: object
+    _factory: object
+    _attempt: object
+    input_ready: bool = False
+
+
 @dataclass(frozen=True)
 class _ImuGapWait:
     reason: str
@@ -135,6 +149,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self.scan_expiry_wait_count = 0
         self.scan_expiry_wait_timing = None
         self._consumed_expiry_proof = None
+        self._receiver_expiry_proof = self._receiver_expiry_wait = None
 
     @property
     def imu_gap_reanchor_enabled(self):
@@ -156,6 +171,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._gap_exception = self._gap_wait_outcome = None
         self._expiry_wait_outcome = None
         self._consumed_expiry_proof = None
+        self._receiver_expiry_proof = self._receiver_expiry_wait = None
         return value
 
     def reset(self):
@@ -836,8 +852,107 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._consumed_expiry_proof = None
         self._first_pair = True
 
+    def _raise_receiver_commit_raw_expiry(self, owner, attempt, original, samples, pairing, clock):
+        from physical_factory import PhysicalNativeShadowFactory
+        require(type(owner) is PhysicalNativeShadowFactory and owner.ingress is self,
+                'exact_receiver_commit_physical_factory_required')
+        owner._validate_receiver_commit_expiry_attempt(attempt, original, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        owner._validate_receiver_commit_expiry_attempt(attempt, original, clock)
+        error = _ValidatedReceiverCommitCausalRawExpiry('selected_lower_receiver_commit_RAW_positive_expiry')
+        self._receiver_expiry_proof = (error, owner, attempt, original, samples, pairing, clock)
+        raise error
+
+    def _quarantine_receiver_commit_raw_expiry(self, error, owner, attempt):
+        proof = self._receiver_expiry_proof
+        require(type(error) is _ValidatedReceiverCommitCausalRawExpiry and proof is not None and
+                proof[0] is error and proof[1] is owner and proof[2] is attempt,
+                'owned_receiver_commit_RAW_expiry_proof_required')
+        _,_,_,original,samples,pairing,clock = proof
+        owner._validate_receiver_commit_expiry_attempt(attempt, original, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        owner._validate_receiver_commit_expiry_attempt(attempt, original, clock)
+        scan_floor = max(v for v in (self._observed_scan_header_floor, self._gap_scan_floor,
+                         original.current.wire.header.stamp_ns) if v is not None)
+        imu_floor = max(v for v in (self._observed_imu_header_floor, self._gap_imu_floor,
+                        *(v.wire.header.stamp_ns for v in self.imus)) if v is not None)
+        self._observed_scan_header_floor = self._gap_scan_floor = scan_floor
+        self._observed_imu_header_floor = self._gap_imu_floor = imu_floor
+        self.previous = self.pending = self.prepared = self._active = None
+        self._prepared_digest = None
+        self.imus.clear(); self._owners.clear(); self.callback_provenance.clear()
+        self._gap_exception = self._gap_wait_outcome = self._expiry_wait_outcome = None
+        self._consumed_expiry_proof = self._receiver_expiry_proof = None
+        self._first_pair = True
+        self._receiver_expiry_wait = _ReceiverCommitCausalRawExpiryWait(
+            'waiting_for_fresh_scan_after_receiver_commit_causal_RAW_expiry',
+            self.generation, self, owner, attempt)
+        return self._receiver_expiry_wait
+
+    def is_owned_receiver_commit_raw_wait(self, value, owner, attempt):
+        with self.lock:
+            return (type(value) is _ReceiverCommitCausalRawExpiryWait and
+                value is self._receiver_expiry_wait and value._owner is self and
+                value._factory is owner and value._attempt is attempt and
+                value.generation == self.generation and self.fault is None and
+                self.previous is None and self.pending is None and self.prepared is None and
+                self._active is None and self._prepared_digest is None and
+                not self._owners and not self.imus and not self.callback_provenance)
+
+    def commit(self, prepared, *, _receiver_causal_raw_expiry=None):
+        # OFF is the exact inherited implementation, including all its latches.
+        if _receiver_causal_raw_expiry is None:
+            return super().commit(prepared)
+        generation = self.generation
+        try:
+            require(type(_receiver_causal_raw_expiry) is tuple and len(_receiver_causal_raw_expiry) == 2,
+                    'exact_receiver_commit_factory_attempt_required')
+            owner, attempt = _receiver_causal_raw_expiry
+            from physical_factory import PhysicalNativeShadowFactory
+            require(type(owner) is PhysicalNativeShadowFactory and owner.ingress is self and
+                    owner.receiver_commit_causal_raw_expiry_reanchor_enabled is True and
+                    attempt is owner._receiver_attempt,
+                    'exact_receiver_commit_factory_attempt_required')
+            with self.lock:
+                if (type(prepared) is not PreparedInputs or prepared is not self.prepared
+                        or prepared.generation != generation
+                        or self._prepared_digest != self._digest_prepared(prepared)):
+                    return self._outcome('unowned_or_stale_prepared_discarded')
+            clock = self._evaluate()
+            try:
+                samples, pairing = self._association(prepared.previous, prepared.current,
+                    prepared.imu_originals, clock,
+                    _receiver_commit_raw_expiry=(owner,attempt,prepared))
+            except _ValidatedReceiverCommitCausalRawExpiry as error:
+                with self.lock:
+                    return self._quarantine_receiver_commit_raw_expiry(error, owner, attempt)
+            end_clock = self._evaluate()
+            self._scan_fresh(prepared.current, end_clock)
+            if not 0 <= end_clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS:
+                raise ValueError('stale_causal_imu_source')
+            if not 0 <= end_clock.receipt_ns-pairing.rate_receipt_ns < RECEIPT_AGE_NS:
+                raise ValueError('stale_causal_imu_receipt')
+            with self.lock:
+                if generation != self.generation or prepared is not self.prepared:
+                    return self._outcome('late_commit_discarded')
+                for envelope in (prepared.previous, prepared.current)+prepared.imu_originals:
+                    self.validate_owned(envelope)
+                if samples != prepared.imu_samples or pairing != prepared.pairing:
+                    raise ValueError('original_prepared_association_changed')
+                self.prepared = None
+                self._prepared_digest = None
+                self._first_pair = False
+                return self._outcome('first_pair_new_epoch' if prepared.first_pair_in_epoch
+                    else 'inputs_only_reviewed_typed_localizer_factory_missing',
+                    input_ready=not prepared.first_pair_in_epoch)
+        except Exception as error:
+            with self.lock:
+                if generation != self.generation:
+                    return self._outcome('late_commit_discarded')
+                return self._invalidate(str(error))
+
     def _association(self, previous, current, originals, clock, *, allow_expected_gap=False,
-                     _consumed_raw_expiry=None):
+                     _consumed_raw_expiry=None, _receiver_commit_raw_expiry=None):
         self.validate_owned(previous)
         self._scan_fresh(current, clock)
         samples = []
@@ -863,6 +978,11 @@ class PhysicalOriginalIngress(OriginalIngress):
         if not (0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
                 0 <= clock.receipt_ns-pairing.rate_receipt_ns < RECEIPT_AGE_NS):
             self._retain_causal_imu_failure_timing(originals[pairing.end_indices[0]], clock)
+            if (_receiver_commit_raw_expiry is not None and
+                    0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
+                    clock.receipt_ns-pairing.rate_receipt_ns >= RECEIPT_AGE_NS):
+                owner, attempt, original = _receiver_commit_raw_expiry
+                self._raise_receiver_commit_raw_expiry(owner, attempt, original, samples, pairing, clock)
             if (_consumed_raw_expiry is not None and
                     0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
                     clock.receipt_ns-pairing.rate_receipt_ns >= RECEIPT_AGE_NS):

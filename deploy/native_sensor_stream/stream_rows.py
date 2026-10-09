@@ -173,12 +173,39 @@ class StreamObserverRows:
         require(type(factory_expiry) is bool, 'exact_factory_recovery_feature_boolean_required')
         return factory_expiry
 
+    def _factory_receiver_feature(self):
+        feature = getattr(self.factory, 'receiver_commit_causal_raw_expiry_reanchor_enabled', False)
+        require(type(feature) is bool, 'exact_factory_receiver_recovery_feature_boolean_required')
+        return feature
+
+    def _factory_nearest_feature(self):
+        nearest = getattr(self.factory, "strict_nearest_gates_enabled", False)
+        require(type(nearest) is bool, "exact_factory_strict_nearest_feature_boolean_required")
+        return nearest
+
     def _context(self):
         i = self.ingress
         return (i.domain, i.clock_session, i.expected_gids, i.scan_topic, i.imu_topic,
                 i.scan_frame, i.imu_frame, i.profile_revision, i.observer_contract_sha256,
                 self._feature("imu_gap_reanchor_enabled"), self._feature("startup_expiry_discard_enabled"),
-                self._feature("current_expiry_reanchor_enabled"), self._factory_expiry_feature())
+                self._feature("current_expiry_reanchor_enabled"), self._factory_expiry_feature(),
+                self._factory_receiver_feature(), self._factory_nearest_feature())
+
+    def _accept_owned_receiver_commit_raw_expiry_wait(self, outcome):
+        if not self._factory_receiver_feature():
+            return False
+        validator = getattr(self.factory, 'is_owned_receiver_commit_raw_expiry_wait', None)
+        require(callable(validator), 'reviewed_native_receiver_RAW_wait_validator_required')
+        if not validator(outcome):
+            return False
+        require(not self._stopping.is_set() and self._context() == self._binding,
+                'native_stream_source_context_changed_or_stopped')
+        with self.factory.lock:
+            require(validator(outcome) and not self._stopping.is_set(),
+                    'native_stream_receiver_RAW_expiry_wait_revoked')
+            self._proposal_input = None
+            self.waiting_reason = outcome.reason
+        return True
 
     def _accept_owned_consumed_raw_expiry_wait(self, outcome):
         if not self._factory_expiry_feature():
@@ -494,6 +521,8 @@ class StreamObserverRows:
             answer = self.factory.commit(owned)
             if self._stopping.is_set():
                 break
+            if self._accept_owned_receiver_commit_raw_expiry_wait(answer):
+                break
             if self._accept_owned_consumed_raw_expiry_wait(answer):
                 break
             valid_answer = (answer.get('diagnostic') is not None and answer.get('body_velocity_mps') is None and
@@ -567,6 +596,14 @@ class StreamObserverRows:
         with self._lock:
             if self._stopping.is_set() or self.fault is not None or self._proposal_input is None:
                 return None
+            try:
+                require(self._factory_receiver_feature() == self._binding[-2],
+                        "native_stream_receiver_recovery_configuration_changed")
+                require(self._factory_nearest_feature() == self._binding[-1],
+                        "native_stream_strict_nearest_configuration_changed")
+            except Exception as error:
+                self._fail(error)
+                return None
             result = copy.deepcopy(self._proposal_input)
             result.update(source_now_ns=self.ingress.source_now(),
                           receipt_now_ns=self.ingress.raw.sample().ns)
@@ -613,6 +650,11 @@ class StreamObserverRows:
                 scan_expiry_wait_count=getattr(self.ingress, "scan_expiry_wait_count", 0),
                 scan_expiry_wait_timing=copy.deepcopy(getattr(self.ingress, "scan_expiry_wait_timing", None)),
                 postconsumed_causal_raw_expiry_reanchor_enabled=self._factory_expiry_feature(),
+                receiver_commit_causal_raw_expiry_reanchor_enabled=self._factory_receiver_feature(),
+                receiver_commit_raw_expiry_wait_count=getattr(self.factory, 'receiver_commit_raw_expiry_wait_count', 0),
+                receiver_commit_raw_expiry_wait_timing=copy.deepcopy(getattr(
+                    self.factory, 'receiver_commit_raw_expiry_wait_timing', None)),
+                strict_nearest_gates_enabled=self._factory_nearest_feature(),
                 consumed_raw_expiry_wait_count=getattr(self.factory, 'consumed_raw_expiry_wait_count', 0),
                 consumed_raw_expiry_wait_timing=copy.deepcopy(getattr(
                     self.factory, 'consumed_raw_expiry_wait_timing', None)),
