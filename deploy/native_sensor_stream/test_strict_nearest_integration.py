@@ -32,7 +32,7 @@ class NearestAdmissionTests(unittest.TestCase):
     def test_fifth_factory_feature_only_after_complete_source_and_isolation_checks(self):
         self.nearest(); flags = {}
         self.assertIs(self.load(flags), True)
-        self.assertEqual(flags, dict(dict.fromkeys(admission.FEATURES+(admission.FACTORY_FEATURE,NN),True), **{admission.RECEIVER_FEATURE:False}))
+        self.assertEqual(flags, dict(dict.fromkeys(admission.FEATURES+(admission.FACTORY_FEATURE,NN),True), **{admission.RECEIVER_FEATURE:False,admission.FINAL_FEATURE:False}))
         self.assertNotIn('rclpy', sys.modules)
 
     def test_literal_default_false_and_no_claim_of_runtime_qualification(self):
@@ -90,7 +90,8 @@ class NearestWiringTests(unittest.TestCase):
         self.assertNotIn(NN, calls[0][1])
         self.assertEqual(calls[2], ('factory', dict(exact_surface_cache_enabled=True,
             postconsumed_causal_raw_expiry_reanchor_enabled=True, strict_nearest_gates_enabled=True,
-            receiver_commit_causal_raw_expiry_reanchor_enabled=True)))
+            receiver_commit_causal_raw_expiry_reanchor_enabled=True,
+            final_scalar_causal_raw_expiry_reanchor_enabled=True)))
 
     def test_false_and_absent_nn_send_no_keyword_to_real_legacy_constructor_signature(self):
         for flags in (None, {}, {NN: False}, dict.fromkeys(wiring.ALL_FEATURES, False)):

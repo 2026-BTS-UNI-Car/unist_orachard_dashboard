@@ -18,7 +18,8 @@ FEATURES = ("imu_gap_reanchor_enabled", "startup_expiry_discard_enabled", "curre
 FACTORY_FEATURE = "postconsumed_causal_raw_expiry_reanchor_enabled"
 NEAREST_FEATURE = "strict_nearest_gates_enabled"
 RECEIVER_FEATURE = "receiver_commit_causal_raw_expiry_reanchor_enabled"
-ALL_FEATURES = FEATURES + (FACTORY_FEATURE, NEAREST_FEATURE, RECEIVER_FEATURE)
+FINAL_FEATURE = "final_scalar_causal_raw_expiry_reanchor_enabled"
+ALL_FEATURES = FEATURES + (FACTORY_FEATURE, NEAREST_FEATURE, RECEIVER_FEATURE, FINAL_FEATURE)
 
 PATHS = (
     'inputs.py', 'VENDORED_INPUTS.json', 'physical_ingress.py', 'physical_factory.py', 'observer_rows.py',
@@ -171,14 +172,14 @@ class OptimizedPackageTests(unittest.TestCase):
         self.assertIs(self.load(), False)
         self.assertNotIn('physical_factory', sys.modules)
 
-    def test_real_frozen_receiver_only_package_validates_without_importing_sensor_or_ROS_modules(self):
+    def test_real_frozen_final_scalar_package_validates_without_importing_sensor_or_ROS_modules(self):
         package = Path(__file__).resolve().with_name('optimized-package')
-        expected = '68bd1239327ca8701004fd284484223b1ddfabd9105ace933ee8ead9ec1ed5a7'
+        expected = '4de382364c247de7b3ad05e819b2272e1de50a57d0d9e1c0ffe7d2e12ac85cf4'
         self.assertEqual(runner.sha_file(package / 'HANDOFF.json'), expected)
         with patch.object(sys, 'path', sys.path.copy()):
             features = {}
             self.assertIs(runner.load_physical_package(package, expected, reviewed_features=features), True)
-            self.assertEqual(features, dict(dict.fromkeys(FEATURES+(FACTORY_FEATURE,RECEIVER_FEATURE), True), **{NEAREST_FEATURE:False}))
+            self.assertEqual(features, dict(dict.fromkeys(FEATURES+(FACTORY_FEATURE,RECEIVER_FEATURE,FINAL_FEATURE), True), **{NEAREST_FEATURE:False}))
             self.assertEqual(Path(sys.path[0]), package.resolve())
         self.assertNotIn('physical_factory', sys.modules)
         self.assertNotIn('physical_ingress', sys.modules)
@@ -262,7 +263,7 @@ class OptimizedPackageTests(unittest.TestCase):
         self.v9()
         features = {}
         self.assertIs(self.load(features), True)
-        self.assertEqual(features, dict(dict.fromkeys(FEATURES, True), **{FACTORY_FEATURE:False,NEAREST_FEATURE:False,RECEIVER_FEATURE:False}))
+        self.assertEqual(features, dict(dict.fromkeys(FEATURES, True), **{FACTORY_FEATURE:False,NEAREST_FEATURE:False,RECEIVER_FEATURE:False,FINAL_FEATURE:False}))
         self.assertIs(self.load(), True)
 
     def test_v9_all_three_features_require_literal_true_not_missing_or_integer(self):
@@ -342,7 +343,7 @@ class OptimizedPackageTests(unittest.TestCase):
     def test_v10_verified_factory_feature_separate_from_three_ingress_features(self):
         self.v10();features={}
         self.assertIs(self.load(features),True)
-        self.assertEqual(features,dict(dict.fromkeys(FEATURES+(FACTORY_FEATURE,),True), **{NEAREST_FEATURE:False,RECEIVER_FEATURE:False}))
+        self.assertEqual(features,dict(dict.fromkeys(FEATURES+(FACTORY_FEATURE,),True), **{NEAREST_FEATURE:False,RECEIVER_FEATURE:False,FINAL_FEATURE:False}))
 
     def test_v10_factory_feature_is_literal_true_not_missing_or_boolean_alias(self):
         self.v10();original=copy.deepcopy(self.manifest)

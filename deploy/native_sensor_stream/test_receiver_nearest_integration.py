@@ -40,12 +40,12 @@ class CombinedAdmissionTests(unittest.TestCase):
         self.receiver(); flags = {}
         self.assertIs(self.load(flags), True)
         self.assertEqual(flags, dict(dict.fromkeys(admission.FEATURES+(admission.FACTORY_FEATURE, RECEIVER), True),
-                                     **{NN: False}))
+                                     **{NN: False,admission.FINAL_FEATURE:False}))
 
     def test_combined_revision_activates_six_only_after_full_verification(self):
         self.combined(); flags = {}
         self.assertIs(self.load(flags), True)
-        self.assertEqual(flags, dict.fromkeys(admission.ALL_FEATURES, True))
+        self.assertEqual(flags, dict(dict.fromkeys(admission.FEATURES+(admission.FACTORY_FEATURE,RECEIVER,NN),True), **{admission.FINAL_FEATURE:False}))
         self.assertNotIn('physical_factory', sys.modules)
         self.assertNotIn('rclpy', sys.modules)
 
@@ -104,7 +104,8 @@ class CombinedWiringTests(unittest.TestCase):
         for key in (wiring.FACTORY_FEATURE, RECEIVER, NN): self.assertNotIn(key, calls[0][1])
         self.assertEqual(calls[2], ('factory', dict(exact_surface_cache_enabled=True,
             postconsumed_causal_raw_expiry_reanchor_enabled=True,
-            receiver_commit_causal_raw_expiry_reanchor_enabled=True, strict_nearest_gates_enabled=True)))
+            receiver_commit_causal_raw_expiry_reanchor_enabled=True, strict_nearest_gates_enabled=True,
+            final_scalar_causal_raw_expiry_reanchor_enabled=True)))
 
     def test_all_false_and_absent_options_do_not_break_legacy_constructor(self):
         for features in (None, {}, dict.fromkeys(wiring.ALL_FEATURES, False)):

@@ -62,6 +62,10 @@ class _ValidatedConsumedCausalRawExpiry(Exception):
     """Only the exact consumed factory attempt may abandon this expired pair."""
 
 
+class _ValidatedFinalScalarCausalRawExpiry(Exception):
+    """Exact already-sampled final selected-lower RAW expiry, before latch."""
+
+
 class _ValidatedReceiverCommitCausalRawExpiry(Exception):
     """Exact initial receiver-commit association, before its generic latch."""
 
@@ -150,6 +154,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self.scan_expiry_wait_timing = None
         self._consumed_expiry_proof = None
         self._receiver_expiry_proof = self._receiver_expiry_wait = None
+        self._final_expiry_proof = None
 
     @property
     def imu_gap_reanchor_enabled(self):
@@ -172,6 +177,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._expiry_wait_outcome = None
         self._consumed_expiry_proof = None
         self._receiver_expiry_proof = self._receiver_expiry_wait = None
+        self._final_expiry_proof = None
         return value
 
     def reset(self):
@@ -951,8 +957,45 @@ class PhysicalOriginalIngress(OriginalIngress):
                     return self._outcome('late_commit_discarded')
                 return self._invalidate(str(error))
 
+    def _raise_final_scalar_raw_expiry(self, owner, attempt, original, samples, pairing, clock):
+        from physical_factory import PhysicalNativeShadowFactory
+        require(type(owner) is PhysicalNativeShadowFactory and owner.ingress is self,
+                'exact_final_scalar_physical_factory_required')
+        owner._validate_final_expiry_attempt(attempt, original, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        owner._validate_final_expiry_attempt(attempt, original, clock)
+        error = _ValidatedFinalScalarCausalRawExpiry('selected_lower_causal_RAW_positive_expiry')
+        self._final_expiry_proof = (error, owner, attempt, original, samples, pairing, clock)
+        raise error
+
+    def _quarantine_final_scalar_raw_expiry(self, error, owner, attempt):
+        proof = self._final_expiry_proof
+        require(type(error) is _ValidatedFinalScalarCausalRawExpiry and proof is not None and
+                proof[0] is error and proof[1] is owner and proof[2] is attempt,
+                'owned_final_scalar_RAW_expiry_proof_required')
+        _,_,_,original,samples,pairing,clock = proof
+        owner._validate_final_expiry_attempt(attempt, original, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        owner._validate_final_expiry_attempt(attempt, original, clock)
+        # Preserve every observed Header floor; older captured originals must
+        # never lower floors advanced by valid unadmitted priming observations.
+        scan_floor = max(v for v in (self._observed_scan_header_floor, self._gap_scan_floor,
+                         original.current.wire.header.stamp_ns) if v is not None)
+        imu_floor = max(v for v in (self._observed_imu_header_floor, self._gap_imu_floor,
+                        *(v.wire.header.stamp_ns for v in self.imus)) if v is not None)
+        self._observed_scan_header_floor = self._gap_scan_floor = scan_floor
+        self._observed_imu_header_floor = self._gap_imu_floor = imu_floor
+        self.previous = self.pending = self.prepared = self._active = None
+        self._prepared_digest = None
+        self.imus.clear(); self._owners.clear(); self.callback_provenance.clear()
+        self._gap_exception = self._gap_wait_outcome = self._expiry_wait_outcome = None
+        self._final_expiry_proof = self._consumed_expiry_proof = None
+        self._receiver_expiry_proof = self._receiver_expiry_wait = None
+        self._first_pair = True
+
     def _association(self, previous, current, originals, clock, *, allow_expected_gap=False,
-                     _consumed_raw_expiry=None, _receiver_commit_raw_expiry=None):
+                     _consumed_raw_expiry=None, _receiver_commit_raw_expiry=None,
+                     _final_scalar_raw_expiry=None):
         self.validate_owned(previous)
         self._scan_fresh(current, clock)
         samples = []
@@ -988,6 +1031,11 @@ class PhysicalOriginalIngress(OriginalIngress):
                     clock.receipt_ns-pairing.rate_receipt_ns >= RECEIPT_AGE_NS):
                 owner, attempt, original = _consumed_raw_expiry
                 self._raise_consumed_raw_expiry(owner, attempt, original, samples, pairing, clock)
+            if (_final_scalar_raw_expiry is not None and
+                    0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
+                    clock.receipt_ns-pairing.rate_receipt_ns >= RECEIPT_AGE_NS):
+                owner, attempt, original = _final_scalar_raw_expiry
+                self._raise_final_scalar_raw_expiry(owner, attempt, original, samples, pairing, clock)
         require(0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
                 0 <= clock.receipt_ns-pairing.rate_receipt_ns < RECEIPT_AGE_NS,
                 'stale_original_causal_imu')

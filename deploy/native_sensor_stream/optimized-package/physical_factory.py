@@ -13,7 +13,7 @@ import time
 
 from common.native_ownership import PreparedInputs
 from physical_ingress import (PhysicalOriginalIngress, PhysicalClockReading, require,
-    SOURCE_AGE_NS, RECEIPT_AGE_NS, _ValidatedConsumedCausalRawExpiry)
+    SOURCE_AGE_NS, RECEIPT_AGE_NS, _ValidatedConsumedCausalRawExpiry, _ValidatedFinalScalarCausalRawExpiry)
 from kernel.raw_localization import scan_points, surfaces, registration, ExactSurfaceCache
 from kernel.fit_workers import WORKERS
 
@@ -109,6 +109,15 @@ class _ReceiverCommitCausalRawExpiryWait:
     input_ready: bool = False
 
 
+@dataclass(frozen=True)
+class _FinalScalarCausalRawExpiryWait:
+    reason: str
+    generation: int
+    _owner: object
+    diagnostic_version: int
+    input_ready: bool = False
+
+
 class PhysicalNativeShadowFactory:
     """Compute one internally fitted diagnostic, then final ownership fences.
 
@@ -119,7 +128,15 @@ class PhysicalNativeShadowFactory:
     """
     def __init__(self, ingress, contract, *, exact_surface_cache_enabled=False,
                  postconsumed_causal_raw_expiry_reanchor_enabled=False,
-                 receiver_commit_causal_raw_expiry_reanchor_enabled=False):
+                 receiver_commit_causal_raw_expiry_reanchor_enabled=False,
+                 final_scalar_causal_raw_expiry_reanchor_enabled=False):
+        require(type(final_scalar_causal_raw_expiry_reanchor_enabled) is bool,
+                'typed_final_scalar_causal_RAW_expiry_option_required')
+        self.__final_scalar_causal_raw_expiry_reanchor_enabled = final_scalar_causal_raw_expiry_reanchor_enabled
+        self._final_expiry_configuration = final_scalar_causal_raw_expiry_reanchor_enabled
+        self._final_attempt = self._final_wait = self._final_pending_seal = None
+        self.final_scalar_raw_expiry_wait_count = 0
+        self.final_scalar_raw_expiry_wait_timing = None
         require(type(receiver_commit_causal_raw_expiry_reanchor_enabled) is bool,
                 'typed_receiver_commit_causal_RAW_expiry_option_required')
         self.__receiver_commit_causal_raw_expiry_reanchor_enabled = receiver_commit_causal_raw_expiry_reanchor_enabled
@@ -185,6 +202,95 @@ class PhysicalNativeShadowFactory:
                 diagnostic_version=self._state.version,
                 HOLD_zero_not_accuracy_or_motor_authority=True)
 
+    def _validate_final_expiry_attempt(self, attempt, original, clock):
+        self._owned(original, pending=False)
+        seal = self._final_pending_seal
+        require(type(seal) is tuple and len(seal) == 5 and seal[0] is self._pending and
+                type(self._pending) is PreparedPhysicalDiagnostic and
+                seal[1] is self._pending._capability and seal[2] is self._state and
+                seal[3] == self._state.version and seal[4] is self._state.latest,
+                'issued_final_scalar_factory_capability_required')
+        require(type(self) is PhysicalNativeShadowFactory and
+                self.final_scalar_causal_raw_expiry_reanchor_enabled and
+                type(attempt) is tuple and attempt is self._final_attempt and len(attempt) == 7 and
+                attempt[1] is self._pending and attempt[2] is original and attempt[3] is clock and
+                type(self._pending) is PreparedPhysicalDiagnostic and self._pending._owner is self and
+                attempt[4] is self._pending._capability and attempt[5] == self._pending_digest and
+                attempt[6] is self._state and type(self._state.version) is int and
+                0 <= self._state.version < (1<<63)-1 and
+                self._pending.original_inputs is original and self.ingress.prepared is None and
+                self.ingress._prepared_digest is None and self.ingress.pending is None and
+                self.ingress._active is None,
+                'owned_successfully_consumed_final_scalar_attempt_required')
+        require(hashlib.sha256(repr(self._pending.record).encode()+
+                self.ingress._digest_prepared(original).encode()).hexdigest() == self._pending_digest,
+                'original_physical_diagnostic_changed')
+        require(type(clock) is PhysicalClockReading and clock.source_session == self._session and
+                clock.raw_domain == self.ingress.domain and clock.source_ns == self.ingress._last_system and
+                clock.receipt_ns == self.ingress._last_eval_raw and
+                clock.sample_sequence == self.ingress._system_sample_sequence,
+                'exact_existing_final_scalar_clock_required')
+
+    def _abandon_final_scalar_raw_expiry(self, error):
+        attempt = self._final_attempt
+        require(attempt is not None, 'owned_final_scalar_factory_attempt_required')
+        original, clock = attempt[2], attempt[3]
+        self._validate_final_expiry_attempt(attempt, original, clock)
+        require(type(self.final_scalar_raw_expiry_wait_count) is int and
+                0 <= self.final_scalar_raw_expiry_wait_count < (1<<63)-1,
+                'final_scalar_RAW_expiry_counter_exhausted')
+        lower = original.imu_originals[original.pairing.end_indices[0]]
+        timing = dict(schema='ubts.native.final_scalar_causal_RAW_expiry_wait.v1',
+            stage='commit_final_scalar_fence', source_sequence=lower.source_sequence,
+            comparison=dict(source_ns=clock.source_ns,RAW_ns=clock.receipt_ns),
+            lower_header_ns=lower.wire.header.stamp_ns, lower_callback_RAW_ns=lower.receipt.ns,
+            lower_SOURCE_age_ns=clock.source_ns-lower.wire.header.stamp_ns,
+            lower_RAW_age_ns=clock.receipt_ns-lower.receipt.ns,
+            SOURCE_TTL_ns=SOURCE_AGE_NS,RAW_TTL_ns=RECEIPT_AGE_NS,
+            diagnostic_version=self._state.version,data_qualified=False)
+        import json
+        require(len(json.dumps(timing,allow_nan=False,separators=(',',':')).encode()) <= 1024,
+                'final_scalar_RAW_expiry_timing_capacity')
+        self.ingress._quarantine_final_scalar_raw_expiry(error, self, attempt)
+        # Quarantine ran full guards after the typed-signal handoff. No latch is
+        # cleared, and no fitted record is published on this path.
+        require(not self.stop_intent.is_set() and self.fault is None and self.ingress.fault is None,
+                'physical_shadow_STOP_latched')
+        self._validate_final_expiry_attempt(attempt, original, clock)
+        self._pending = self._pending_digest = self._final_attempt = self._final_pending_seal = None
+        self._receiver_wait = self._consumed_wait = None
+        self.final_scalar_raw_expiry_wait_count += 1
+        self.final_scalar_raw_expiry_wait_timing = timing
+        self._final_wait = _FinalScalarCausalRawExpiryWait(
+            'waiting_for_fresh_scan_after_final_scalar_causal_RAW_expiry', self._generation,self,self._state.version)
+        return self._final_wait
+    def is_owned_final_scalar_raw_expiry_wait(self, value):
+        with self.lock, self.ingress.lock:
+            return (type(value) is _FinalScalarCausalRawExpiryWait and value is self._final_wait and
+                value._owner is self and value.generation == self._generation == self.ingress.generation and
+                self.ingress.clock_session == self._session and self._pid == os.getpid() and
+                self.ingress.profile_revision == self._revision == revision(self.contract) and
+                value.diagnostic_version == self._state.version and
+                self.final_scalar_causal_raw_expiry_reanchor_enabled is True and
+                self._final_expiry_configuration is True and self.fault is None and
+                self.ingress.fault is None and not self.stop_intent.is_set() and
+                self._pending is None and self._pending_digest is None and self._final_attempt is None and
+                self._final_pending_seal is None and
+                self.ingress.previous is None and self.ingress.pending is None and
+                self.ingress.prepared is None and self.ingress._active is None and
+                self.ingress._prepared_digest is None and self.ingress._final_expiry_proof is None and
+                not self.ingress._owners and not self.ingress.imus and not self.ingress.callback_provenance)
+    def _raise_final_scalar_raw_expiry(self, original, clock):
+        with self.ingress.lock:
+            attempt = self._final_attempt = (object(),self._pending,original,clock,
+                self._pending._capability,self._pending_digest,self._state)
+            self._validate_final_expiry_attempt(attempt, original, clock)
+            # Failed leaf only: same already-sampled final clock, full originals.
+            # Healthy final fences perform no extra SHA/decode/clock work.
+            self.ingress._association(original.previous,original.current,original.imu_originals,clock,
+                _final_scalar_raw_expiry=(self,attempt,original))
+            raise ValueError('exact_positive_final_scalar_RAW_leaf_required')
+
     def _scalar_margins(self, original, final_clock):
         # Full owned associations have already checked all of these exact
         # frozen originals. This last scalar work never rehashes/retimestamps.
@@ -210,6 +316,9 @@ class PhysicalNativeShadowFactory:
             require(0 <= source_age < SOURCE_AGE_NS,
                     'final_physical_native_source_deadline')
             if not 0 <= receipt_age < RECEIPT_AGE_NS:self._timing['failed_scalar_check'] = name
+            if (name == 'selected_lower_IMU' and self.final_scalar_causal_raw_expiry_reanchor_enabled and
+                    receipt_age >= RECEIPT_AGE_NS):
+                self._raise_final_scalar_raw_expiry(original, final_clock)
             require(0 <= receipt_age < RECEIPT_AGE_NS,
                     'final_physical_native_receipt_deadline')
 
@@ -217,7 +326,14 @@ class PhysicalNativeShadowFactory:
         with self.lock:
             return self._state
 
+    @property
+    def final_scalar_causal_raw_expiry_reanchor_enabled(self):
+        return self.__final_scalar_causal_raw_expiry_reanchor_enabled
+
     def _owned(self, original, *, pending=True):
+        require(type(self.final_scalar_causal_raw_expiry_reanchor_enabled) is bool and
+                self.final_scalar_causal_raw_expiry_reanchor_enabled is self._final_expiry_configuration,
+                'physical_shadow_final_scalar_recovery_configuration_changed')
         require(type(self.receiver_commit_causal_raw_expiry_reanchor_enabled) is bool and
                 self.receiver_commit_causal_raw_expiry_reanchor_enabled is self._receiver_expiry_configuration,
                 'physical_shadow_receiver_recovery_configuration_changed')
@@ -406,6 +522,7 @@ class PhysicalNativeShadowFactory:
         self._pending = self._pending_digest = None
         self._consumed_attempt = self._consumed_wait = None
         self._receiver_attempt = self._receiver_clock = self._receiver_wait = None
+        self._final_attempt = self._final_wait = self._final_pending_seal = None
         answer = hold(self.fault)
         answer['diagnostic_stage_timing'] = self.timing_snapshot()
         return answer
@@ -464,6 +581,9 @@ class PhysicalNativeShadowFactory:
                             'native_diagnostic_quality_bounds_required')
                     self._pending = PreparedPhysicalDiagnostic(original, record, self, object())
                     self._pending_digest = hashlib.sha256(repr(record).encode()+original_digest.encode()).hexdigest()
+                    if self.final_scalar_causal_raw_expiry_reanchor_enabled:
+                        self._final_pending_seal = (self._pending,self._pending._capability,
+                            self._state,self._state.version,self._state.latest)
                     return self._pending
             except Exception as error:
                 return self._fail(error)
@@ -510,10 +630,13 @@ class PhysicalNativeShadowFactory:
                     # another full hash/decode or rewriting the prepared record.
                     response['diagnostic_stage_timing'] = self.timing_snapshot()
                     final_clock = self.ingress._evaluate()
-                    self._timed('commit_final_scalar_fence', self._scalar_margins, original, final_clock)
+                    try:
+                        self._timed('commit_final_scalar_fence', self._scalar_margins, original, final_clock)
+                    except _ValidatedFinalScalarCausalRawExpiry as error:
+                        return self._abandon_final_scalar_raw_expiry(error)
                     require(not self.stop_intent.is_set(), 'physical_shadow_STOP_latched')
                     self._state = next_state  # one final immutable pointer swap
-                    self._pending = self._pending_digest = None
+                    self._pending = self._pending_digest = self._final_pending_seal = None
                     return response
             except Exception as error:
                 return self._fail(error)
