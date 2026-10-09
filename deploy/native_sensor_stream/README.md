@@ -1,5 +1,7 @@
 # Native 센서 관찰 서비스
 
+현재 v9 센서 시간 만료·누락 처리는 [설치와 시험](../../docs/NATIVE_INPUT_RECOVERY_PROGRESS_20261010.md)에 있다. 아래 내용은 이전 설치 시점의 기록이다.
+
 현재 v7 원본 LiDAR/IMU 계측의 설치·시험은 [후속 기록](../../docs/NATIVE_IMU_GAP_PROGRESS_20261010.md)에 있다. 아래 내용은 이전 설치 시점의 기록이다.
 
 현재 v6 원본 시각 계측의 설치·시험·제한은 [진행 기록](../../docs/NATIVE_ADMISSION_PROGRESS_20261010.md)에 있다. 아래 이전 이미지·결과와 구분한다.

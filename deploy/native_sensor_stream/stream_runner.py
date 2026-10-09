@@ -516,8 +516,12 @@ def verify_stream_manifest(path, expected_sha, args):
     return base
 
 
-def load_physical_package(path, expected_sha):
-    """Explicit isolated-process validation; no package/binary IO on default plan."""
+def load_physical_package(path, expected_sha, *, reviewed_features=None):
+    """Verify before populating optional trusted features; preserve the cache bool."""
+    require(reviewed_features is None or (type(reviewed_features) is dict and not reviewed_features),
+            "empty_trusted_reviewed_features_required")
+    features = dict(imu_gap_reanchor_enabled=False, startup_expiry_discard_enabled=False,
+                    current_expiry_reanchor_enabled=False)
     path = Path(path).resolve(strict=True)
     handoff = path / "HANDOFF.json"
     require(sha_file(handoff) == expected_sha, "reviewed_physical_package_manifest_required")
@@ -541,6 +545,8 @@ def load_physical_package(path, expected_sha):
                 "4d65ac4cc51172e83b8242bc074c9d6f222bc672cf552691c1bc89b70a15d1c5",
             "native_v7_exact_cache_imu_gap_timing":
                 "f372e8ed6f1d81e5dc54990a51c435ffa9e83a65d80a22e3f3d23bc06c50d9ad",
+            "native_v9_exact_cache_positive_scan_expiry_wait":
+                "92303f90fe9efc98db14aa77ced6f37c990f0f24195395f7988c5dd0f0f51df3",
         }
         require(type(manifest.get("owned_count")) is int and manifest["owned_count"] == 14 and
                 set(manifest["files_sha256"]) == expected_paths | {"DEPLOY_CLOSURE.json"} and
@@ -553,6 +559,14 @@ def load_physical_package(path, expected_sha):
         if revision == "native_v7_exact_cache_imu_gap_timing":
             require(manifest.get("imu_gap_timing_only") is True,
                     "reviewed_optimized_physical_imu_gap_timing_required")
+        if revision == "native_v9_exact_cache_positive_scan_expiry_wait":
+            require(manifest.get("admission_timing_only") is False and
+                    manifest.get("imu_gap_timing_only") is False and
+                    manifest.get("preserved_timing_hooks") is True,
+                    "reviewed_optimized_physical_recovery_timing_contract_required")
+            for key in features:
+                require(manifest.get(key) is True, "reviewed_optimized_physical_recovery_feature_required:" + key)
+            features = dict.fromkeys(features, True)
         for key in ("runtime_authority", "motor_transport", "autonomy_output_enabled",
                     "physical_body_calibration_braking_REP145_qualified",
                     "installed_original_callback_or_live_pipeline_qualified"):
@@ -596,6 +610,8 @@ def load_physical_package(path, expected_sha):
     require(not any(name in sys.modules for name in ("physical_factory", "physical_ingress", "inputs")),
             "isolated_physical_module_loader_required")
     sys.path.insert(0, str(path))
+    if reviewed_features is not None:
+        reviewed_features.update(features)  # only after the complete closure and isolation proof
     return optimized
 
 
@@ -609,11 +625,18 @@ def make_adapter(args):
     clock = Clock(clock_type=ClockType.SYSTEM_TIME)
     require(clock.clock_type == ClockType.SYSTEM_TIME, "actual_RCL_SYSTEM_TIME_required")
     contract = PhysicalShadowContract("laser", "imu_link")
+    features = getattr(args, "physical_reviewed_features", {})
+    feature_keys = {"imu_gap_reanchor_enabled", "startup_expiry_discard_enabled",
+                    "current_expiry_reanchor_enabled"}
+    require(type(features) is dict and set(features) <= feature_keys and
+            all(type(value) is bool for value in features.values()),
+            "verified_physical_receiver_features_required")
+    receiver_options = {key: True for key, value in features.items() if value is True}
     receiver = PhysicalOriginalIngress(raw_clock=LinuxRawClock(), source_now_ns=lambda: clock.now().nanoseconds,
         source_clock_kind=lambda: "ROS_SYSTEM_TIME" if clock.clock_type == ClockType.SYSTEM_TIME else "invalid",
         scan_frame="laser", imu_frame="imu_link", profile_revision=revision(contract),
         scan_publisher_gid=bytes.fromhex(args.scan_gid), imu_publisher_gid=bytes.fromhex(args.imu_gid),
-        observer_contract_sha256=args.observer_contract_sha256)
+        observer_contract_sha256=args.observer_contract_sha256, **receiver_options)
     receiver.reset()  # before Popen and before original callback delivery
     cache_enabled = getattr(args, "physical_surface_cache_enabled", False)
     require(type(cache_enabled) is bool, "reviewed_physical_surface_cache_flag_required")
@@ -651,7 +674,9 @@ def main(argv=None):
                 "explicit_original_publisher_GID16_required")
     require(args.scan_gid != args.imu_gid, "distinct_original_sensor_GIDs_required")
     verify_stream_manifest(args.stream_manifest, args.stream_manifest_sha256, args)
-    args.physical_surface_cache_enabled = load_physical_package(args.package, args.package_manifest_sha256)
+    args.physical_reviewed_features = {}
+    args.physical_surface_cache_enabled = load_physical_package(args.package, args.package_manifest_sha256,
+        reviewed_features=args.physical_reviewed_features)
     binary = Path(args.observer_bin).resolve(strict=True)
     require(sha_file(binary) == args.observer_binary_sha256 and os.access(binary, os.X_OK),
             "root_verified_persistent_observer_binary_required")

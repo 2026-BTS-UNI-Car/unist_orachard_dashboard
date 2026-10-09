@@ -14,6 +14,8 @@ runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 assert Path(runner.__file__).resolve() == Path(__file__).with_name('stream_runner.py').resolve()
 
+FEATURES = ("imu_gap_reanchor_enabled", "startup_expiry_discard_enabled", "current_expiry_reanchor_enabled")
+
 PATHS = (
     'inputs.py', 'VENDORED_INPUTS.json', 'physical_ingress.py', 'physical_factory.py', 'observer_rows.py',
     'common/__init__.py', 'common/native_ownership.py', 'common/original_cdr.py', 'common/sensor_contract.py',
@@ -59,10 +61,10 @@ class OptimizedPackageTests(unittest.TestCase):
         (self.root / 'HANDOFF.json').write_text(json.dumps(self.manifest))
         return runner.sha_file(self.root / 'HANDOFF.json')
 
-    def load(self):
+    def load(self, features=None):
         digest = self.write()
         with patch.object(sys, 'path', sys.path.copy()):
-            return runner.load_physical_package(self.root, digest)
+            return runner.load_physical_package(self.root, digest, reviewed_features=features)
 
     def test_reviewed_v4_enables_only_trusted_constructor_feature(self):
         self.assertIs(self.load(), True)
@@ -165,12 +167,14 @@ class OptimizedPackageTests(unittest.TestCase):
         self.assertIs(self.load(), False)
         self.assertNotIn('physical_factory', sys.modules)
 
-    def test_real_frozen_v7_package_validates_without_importing_sensor_or_ROS_modules(self):
+    def test_real_frozen_v9_package_validates_without_importing_sensor_or_ROS_modules(self):
         package = Path(__file__).resolve().with_name('optimized-package')
-        expected = '1af864127cf4ab8c0f30f8142f93d32f16bd3d7a3145534008aafd2288b2b883'
+        expected = '42e46534f700cacdce08ea9aee64b3fe9667f6bb35a297b99182507d1afd12a1'
         self.assertEqual(runner.sha_file(package / 'HANDOFF.json'), expected)
         with patch.object(sys, 'path', sys.path.copy()):
-            self.assertIs(runner.load_physical_package(package, expected), True)
+            features = {}
+            self.assertIs(runner.load_physical_package(package, expected, reviewed_features=features), True)
+            self.assertEqual(features, dict.fromkeys(FEATURES, True))
             self.assertEqual(Path(sys.path[0]), package.resolve())
         self.assertNotIn('physical_factory', sys.modules)
         self.assertNotIn('physical_ingress', sys.modules)
@@ -242,6 +246,115 @@ class OptimizedPackageTests(unittest.TestCase):
         self.closure['files_sha256']['unknown.py'] = self.closure['files_sha256'].pop('inputs.py')
         with self.assertRaisesRegex(ValueError, 'exact_optimized_physical_deployment_paths'):
             self.load()
+
+
+    def v9(self):
+        self.manifest.update(source_revision='native_v9_exact_cache_positive_scan_expiry_wait',
+            parent_manifest_sha256='92303f90fe9efc98db14aa77ced6f37c990f0f24195395f7988c5dd0f0f51df3',
+            admission_timing_only=False, imu_gap_timing_only=False, preserved_timing_hooks=True)
+        self.manifest.update(dict.fromkeys(FEATURES, True))
+
+    def test_v9_features_populated_only_after_verified_closure_and_bool_return_preserved(self):
+        self.v9()
+        features = {}
+        self.assertIs(self.load(features), True)
+        self.assertEqual(features, dict.fromkeys(FEATURES, True))
+        self.assertIs(self.load(), True)
+
+    def test_v9_all_three_features_require_literal_true_not_missing_or_integer(self):
+        self.v9()
+        original = copy.deepcopy(self.manifest)
+        for key in FEATURES:
+            for value in (False, 0, 1, None, 'true'):
+                self.manifest = copy.deepcopy(original)
+                self.manifest[key] = value
+                features = {}
+                with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, 'recovery_feature_required'):
+                    self.load(features)
+                self.assertEqual(features, {})
+            self.manifest = copy.deepcopy(original)
+            del self.manifest[key]
+            with self.assertRaisesRegex(ValueError, 'recovery_feature_required'):
+                self.load({})
+
+    def test_v9_recovery_timing_contract_has_exact_boolean_semantics(self):
+        self.v9()
+        original = copy.deepcopy(self.manifest)
+        for key, bad_values in (
+                ('admission_timing_only', (True, 0, 1, None, 'false')),
+                ('imu_gap_timing_only', (True, 0, 1, None, 'false')),
+                ('preserved_timing_hooks', (False, 0, 1, None, 'true'))):
+            for value in bad_values:
+                self.manifest = copy.deepcopy(original)
+                self.manifest[key] = value
+                with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, 'recovery_timing_contract'):
+                    self.load({})
+            self.manifest = copy.deepcopy(original)
+            del self.manifest[key]
+            with self.assertRaisesRegex(ValueError, 'recovery_timing_contract'):
+                self.load({})
+
+    def test_v9_wrong_parent_and_unreviewed_v8_do_not_populate_features(self):
+        self.v9()
+        original = copy.deepcopy(self.manifest)
+        for key, value in (('parent_manifest_sha256', '0'*64),
+                           ('parent_manifest_sha256', '1af864127cf4ab8c0f30f8142f93d32f16bd3d7a3145534008aafd2288b2b883'),
+                           ('source_revision', 'native_v8_exact_cache_expected_imu_gap_wait'),
+                           ('source_revision', True)):
+            self.manifest = copy.deepcopy(original)
+            self.manifest[key] = value
+            features = {}
+            with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, 'source_contract'):
+                self.load(features)
+            self.assertEqual(features, {})
+
+    def test_old_v5_v6_v7_never_enable_manifest_supplied_recovery_features(self):
+        original = copy.deepcopy(self.manifest)
+        for revision in ('v5', 'v6', 'v7'):
+            self.manifest = copy.deepcopy(original)
+            if revision != 'v5':getattr(self, revision)()
+            self.manifest.update(dict.fromkeys(FEATURES, True))
+            features = {}
+            self.assertIs(self.load(features), True)
+            self.assertEqual(features, dict.fromkeys(FEATURES, False))
+
+    def test_legacy_v3_populates_false_only_and_ignores_manifest_recovery_flags(self):
+        for index in range(8):
+            name = 'legacy-reference-' + str(index) + '.txt'
+            (self.root/name).write_bytes(b'legacy-extra-not-runtime')
+            self.manifest['files_sha256'][name] = runner.sha_file(self.root/name)
+        self.manifest.update(schema='ubts.private.physical_native_shadow_factory.v3', owned_count=22)
+        self.manifest.update(dict.fromkeys(FEATURES, True))
+        features = {}
+        self.assertIs(self.load(features), False)
+        self.assertEqual(features, dict.fromkeys(FEATURES, False))
+
+    def test_trusted_output_must_be_an_exact_empty_dict(self):
+        class Derived(dict):pass
+        self.v9()
+        for features in ([], Derived(), {'imu_gap_reanchor_enabled': True}, {'untrusted': False}):
+            before = copy.deepcopy(features)
+            with self.subTest(features=features), self.assertRaisesRegex(ValueError, 'empty_trusted_reviewed_features'):
+                self.load(features)
+            self.assertEqual(features, before)
+
+    def test_no_features_or_sys_path_mutation_on_late_file_or_isolation_failure(self):
+        self.v9()
+        digest = self.write()
+        before = sys.path.copy()
+        features = {}
+        path = self.root/'physical_ingress.py'
+        saved = path.read_bytes()
+        path.write_bytes(b'corrupt')
+        with self.assertRaisesRegex(ValueError, 'source_changed'):
+            runner.load_physical_package(self.root, digest, reviewed_features=features)
+        self.assertEqual(features, {})
+        self.assertEqual(sys.path, before)
+        path.write_bytes(saved)
+        with patch.dict(sys.modules, {'inputs': object()}), self.assertRaisesRegex(ValueError, 'isolated_physical_module_loader'):
+            runner.load_physical_package(self.root, digest, reviewed_features=features)
+        self.assertEqual(features, {})
+        self.assertEqual(sys.path, before)
 
 
 if __name__ == '__main__':

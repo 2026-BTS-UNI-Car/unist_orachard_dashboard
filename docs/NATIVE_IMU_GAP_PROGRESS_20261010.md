@@ -1,5 +1,7 @@
 # 2026-10-10 원본 LiDAR 지연과 IMU bracket 계측
 
+현재 v9 복구 설치와 실제 시험은 [후속 기록](NATIVE_INPUT_RECOVERY_PROGRESS_20261010.md)에 있다. 아래 결과는 이전 v7 체크포인트다.
+
 Jetson 관찰 서비스에 v7 계측을 설치했다. **지속 입력, GPS 통합 지도와 실제 자율주행은 미완료다.** 이전 v6 설치와 정상250쌍 뒤 IMU gap 실패는 [이전 시각 계측](NATIVE_ADMISSION_PROGRESS_20261010.md)에 보존한다. 이번 변경은 모터 명령·장착/제동 보정·센서 driver를 변경하지 않았다.
 
 현재 이미지: `sha256:94dd2b79c24b7c8cb02958f5a75edcb56735e678e9a882de5fa01da7ed5d6d06`.
@@ -10,7 +12,7 @@ source inventory: `33d211aa25243a9478a75998e941031452eb629775073beef658ecfcf2418
 
 실패한 IMU bracket의 이전/현재 스캔 경계, 원본 IMU Header/RAW receipt, 검증에 사용한 clock과 gap을 최대1024B로 보존한다. 새 clock을 샘플링하지 않고 기존60ms gate와 CDR/ownership/GID/Stop/시각 검사를 유지한다. gap gate 뒤의 수치군 검증을 통과한 증거는 아니므로 `numeric_groups_validated=False`를 명시한다. v7 revision/parent와 두 timing-only flag를 strict loader에서 확인한다.
 
-??? ?? ???67?? ?? ???/??66?? skip ?? ????. ARM ??83.8?, ?? C++ binary ???? ?? ???/source/binary/package ??? ????. ??13? ???? ??/?? ??/PID? ??470 scans/queue0? ????. ??99cd sidecar? ????. SIM runtime? ????? ?? ??? ?? ??? ???? ???.
+고정 후보67개와 실행기·로더66개 시험이 각각 skip 없이 통과했다. ARM 빌드83.8초, 동일 C++ binary 재사용 및 기본 비실행/source/binary/package 검사를 확인했다. 기존13서비스의 구성·시작시각·PID와 저장 지도470 scans/queue0을 유지했다. 이전99cd sidecar는 보존했다. SIM runtime은 변경하지 않았다.
 
 ## 실제 세 차례 시험
 

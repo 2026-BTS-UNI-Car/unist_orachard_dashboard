@@ -101,6 +101,7 @@ class StreamObserverRows:
         self.bootstrap_scans_unadmitted = 0
         self.waiting_reason = 'waiting_for_original_start_IMU'
         self._last_original_raw = self._last_original_system = None
+        self._observed_header_floors = {LASER_TYPE: None, IMU_TYPE: None}
         self._proposal_input = None
         self.factory_failure_timing = None
         self.factory_failure_timing_error = None
@@ -149,10 +150,69 @@ class StreamObserverRows:
         except Exception as error:
             self.factory_failure_timing_error = str(error)[:128]
 
+    def _feature(self, name):
+        value = getattr(self.ingress, name, False)
+        require(type(value) is bool, "exact_native_recovery_feature_boolean_required:" + name)
+        return value
+
+    def _observe_priming(self, cdr, receipt, system_ns, gid, clock):
+        # Legacy receivers have no priming validator or recovery features.
+        # V9 keeps its full validation/watermarks even with recovery default OFF.
+        validator = getattr(self.ingress, "observe_priming_scan", None)
+        if validator is None:
+            require(not any(self._feature(name) for name in ("imu_gap_reanchor_enabled",
+                "startup_expiry_discard_enabled", "current_expiry_reanchor_enabled")),
+                "reviewed_native_priming_validator_required")
+            return None
+        require(callable(validator), "reviewed_native_priming_validator_required")
+        return validator(cdr, callback_receipt=receipt, callback_ros_system_now_ns=system_ns,
+                         publisher_gid=gid, clock=clock)
+
     def _context(self):
         i = self.ingress
         return (i.domain, i.clock_session, i.expected_gids, i.scan_topic, i.imu_topic,
-                i.scan_frame, i.imu_frame, i.profile_revision, i.observer_contract_sha256)
+                i.scan_frame, i.imu_frame, i.profile_revision, i.observer_contract_sha256,
+                self._feature("imu_gap_reanchor_enabled"), self._feature("startup_expiry_discard_enabled"),
+                self._feature("current_expiry_reanchor_enabled"))
+
+    def _accept_owned_gap_wait(self, outcome):
+        if not self._feature("imu_gap_reanchor_enabled"):
+            return False
+        require(callable(getattr(self.ingress, "is_owned_gap_wait", None)),
+                "reviewed_native_gap_wait_validator_required")
+        if not self.ingress.is_owned_gap_wait(outcome):
+            return False
+        require(not self._stopping.is_set() and self._context() == self._binding,
+                'native_stream_source_context_changed_or_stopped')
+        with self.factory.lock:
+            require(not self.factory.stop_intent.is_set() and self.factory.fault is None and
+                    self.factory._pending is None and self.factory._pending_digest is None,
+                    'one_clean_factory_before_IMU_gap_wait_required')
+            require(self.ingress.is_owned_gap_wait(outcome) and not self._stopping.is_set(),
+                    'native_stream_IMU_gap_wait_revoked')
+            self._proposal_input = None
+            self.waiting_reason = outcome.reason
+        return True
+
+    def _accept_owned_scan_expiry_wait(self, outcome):
+        if not (self._feature("startup_expiry_discard_enabled") or
+                self._feature("current_expiry_reanchor_enabled")):
+            return False
+        require(callable(getattr(self.ingress, "is_owned_scan_expiry_wait", None)),
+                "reviewed_native_scan_expiry_wait_validator_required")
+        if not self.ingress.is_owned_scan_expiry_wait(outcome):
+            return False
+        require(not self._stopping.is_set() and self._context() == self._binding,
+                'native_stream_source_context_changed_or_stopped')
+        with self.factory.lock:
+            require(not self.factory.stop_intent.is_set() and self.factory.fault is None and
+                    self.factory._pending is None and self.factory._pending_digest is None,
+                    'one_clean_factory_before_scan_expiry_wait_required')
+            require(self.ingress.is_owned_scan_expiry_wait(outcome) and not self._stopping.is_set(),
+                    'native_stream_scan_expiry_wait_revoked')
+            self._proposal_input=None
+            self.waiting_reason=outcome.reason
+        return True
 
     def bind_process(self, pid, time_namespace):
         with self._lock:
@@ -305,6 +365,14 @@ class StreamObserverRows:
         counts = (wire.count, len(wire.intensity_f32_bytes)//4) if type(wire) is WireScan else (0, 0)
         require(counts == (row['ranges_count'], row['intensities_count']),
                 'observer_original_array_count_mismatch')
+        require(wire.header.frame_id == (self.ingress.scan_frame if ros_type == LASER_TYPE else self.ingress.imu_frame),
+                'original_native_frame_mismatch')
+        if ros_type == LASER_TYPE:
+            a,b,inc,dt,cycle,minimum,maximum=map(float,wire.metadata)
+            require(all(math.isfinite(v) for v in (a,b,inc,dt,cycle,minimum,maximum)) and
+                    120 <= wire.count <= 4096 and 0 < inc <= .1 and dt >= 0 and 0 <= cycle <= .5 and
+                    0 <= minimum < maximum <= 100 and abs(b-(a+(wire.count-1)*inc)) <= 2e-4 and
+                    (wire.count-1)*dt <= .2, 'bounded_original_physical_scan_geometry_required')
         require(row.get('RAW_schema') == RAW_SCHEMA and row.get('RAW_domain') == self.ingress.domain and
                 _ns(row.get('callback_monotonic_raw_ns')) and _ns(row.get('observer_system_ros_now_ns')),
                 'original_native_callback_clocks_required')
@@ -322,6 +390,9 @@ class StreamObserverRows:
         self.total_original_bytes += len(cdr)
         if self._stopping.is_set():
             return ()
+        floor=self._observed_header_floors[ros_type]
+        require(floor is None or wire.header.stamp_ns > floor,'observed_original_Header_rewind')
+        self._observed_header_floors[ros_type]=wire.header.stamp_ns
         if self._last_original_raw is not None:
             require(row['callback_monotonic_raw_ns'] >= self._last_original_raw and
                     row['observer_system_ros_now_ns'] >= self._last_original_system,
@@ -336,6 +407,24 @@ class StreamObserverRows:
                 # Count it explicitly without creating a velocity pair or
                 # admitting a replacement/synthetic IMU. Keep strict clocks.
                 clock = self.ingress._evaluate()
+                if self._feature("startup_expiry_discard_enabled"):
+                    require(all(callable(getattr(self.ingress, name, None)) for name in
+                        ("_validated_observed_scan", "_positive_scan_expiry", "observe_priming_scan")),
+                        "reviewed_native_startup_expiry_validator_required")
+                    try:
+                        _scan,ages=self.ingress._validated_observed_scan(cdr,
+                            RawReceipt(row['callback_monotonic_raw_ns'],row['RAW_domain']),
+                            row['observer_system_ros_now_ns'],gid,clock)
+                    except Exception:
+                        self._retain_admission_failure_timing(clock,row,wire.header.stamp_ns)
+                        raise
+                    if self.ingress._positive_scan_expiry(ages):
+                        expired=self.ingress.observe_priming_scan(cdr,
+                            callback_receipt=RawReceipt(row['callback_monotonic_raw_ns'],row['RAW_domain']),
+                            callback_ros_system_now_ns=row['observer_system_ros_now_ns'],publisher_gid=gid,clock=clock)
+                        require(self._accept_owned_scan_expiry_wait(expired),'owned_startup_scan_expiry_wait_required')
+                        self.bootstrap_scans_unadmitted+=1
+                        return ()
                 try:
                     require(0 <= clock.receipt_ns-row['callback_monotonic_raw_ns'] < RECEIPT_AGE_NS,
                             'stale_or_future_original_callback_RAW')
@@ -346,6 +435,9 @@ class StreamObserverRows:
                 except Exception:
                     self._retain_admission_failure_timing(clock, row, wire.header.stamp_ns)
                     raise
+                self._observe_priming(cdr,
+                    RawReceipt(row['callback_monotonic_raw_ns'],row['RAW_domain']),
+                    row['observer_system_ros_now_ns'],gid,clock)
                 self.bootstrap_scans_unadmitted += 1
                 self.waiting_reason = 'startup_scan_without_original_start_IMU'
                 return ()
@@ -355,6 +447,8 @@ class StreamObserverRows:
         if self._stopping.is_set():
             return ()
         require(self.ingress.fault is None, 'native_original_ingress_rejected:' + outcome.reason)
+        if self._accept_owned_scan_expiry_wait(outcome):
+            return ()
         self.admitted_samples[ros_type] += 1
         records = []
         while self.ingress.pending is not None and not self._stopping.is_set():
@@ -365,6 +459,8 @@ class StreamObserverRows:
                 break  # existing pending pair remains the one exact pair
             prepared = self.ingress.prepare()
             if self._stopping.is_set():
+                break
+            if self._accept_owned_gap_wait(prepared):
                 break
             require(prepared.prepared is not None,
                     'physical_original_pair_rejected:' + prepared.reason)
@@ -483,6 +579,16 @@ class StreamObserverRows:
                     getattr(self.ingress, 'imu_gap_failure_timing', None)),
                 ingress_imu_gap_failure_timing_error=getattr(
                     self.ingress, 'imu_gap_failure_timing_error', None),
+                ingress_causal_imu_failure_timing=copy.deepcopy(
+                    getattr(self.ingress, 'causal_imu_failure_timing', None)),
+                ingress_causal_imu_failure_timing_error=getattr(
+                    self.ingress, 'causal_imu_failure_timing_error', None),
+                imu_gap_reanchor_enabled=self._feature("imu_gap_reanchor_enabled"),
+                imu_gap_reanchor_count=getattr(self.ingress, "gap_reanchor_count", 0),
+                startup_expiry_discard_enabled=self._feature("startup_expiry_discard_enabled"),
+                current_expiry_reanchor_enabled=self._feature("current_expiry_reanchor_enabled"),
+                scan_expiry_wait_count=getattr(self.ingress, "scan_expiry_wait_count", 0),
+                scan_expiry_wait_timing=copy.deepcopy(getattr(self.ingress, "scan_expiry_wait_timing", None)),
                 runtime_authority=False, motor_command_sent=False, mission_admission=False)
 
     def finish(self, exit_code, operator_stop):

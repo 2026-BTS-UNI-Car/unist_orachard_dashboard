@@ -80,15 +80,21 @@
       "only_private_cache_and_two_surface_calls_changed": true
     },
     "physical_ingress.py": {
-      "parent_source_sha256": "3e64b81c67646825af02ccd85198d6828a8c85231348092b6687873748e706eb",
-      "candidate_sha256": "e8c13d85f993bf58f777effe3ccb77a2ba84d383d4305357abb00df0e52bf2f8",
+      "parent_source_sha256": "cc75eb12b1b06ef6cdb3fcda7b5dc3359a991be3c40ca29fa4a0415cf08ec1c1",
+      "candidate_sha256": "5caee0f91716a8b45a9cc2f35b85ecc7644cecda6a02fc8bdc79480c1ffe00a1",
       "copied_exact_bytes": false,
-      "admission_timing_only": true,
+      "admission_timing_only": false,
       "existing_failed_clock_used_without_resample": true,
       "all_original_gates_and_final_fences_preserved": true,
-      "imu_gap_timing_only": true,
+      "imu_gap_timing_only": false,
       "existing_failed_association_clock_used_without_resample": true,
-      "numeric_groups_behind_gap_not_qualified": true
+      "numeric_groups_behind_gap_not_qualified": true,
+      "expected_IMU_gap_reanchor_candidate": true,
+      "constructor_default_off": true,
+      "preserved_timing_hooks": true,
+      "startup_and_current_positive_expiry_candidate": true,
+      "constructor_defaults_OFF": true,
+      "observed_Header_floors_include_unadmitted_valid_rows": true
     }
   },
   "production_external_python_packages": [

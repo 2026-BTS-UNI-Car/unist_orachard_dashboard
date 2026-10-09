@@ -2,8 +2,8 @@
   "schema": "ubts.private.physical_native_shadow_factory.v4",
   "owned_count": 14,
   "deployment_closure_count": 13,
-  "parent_manifest_sha256": "f372e8ed6f1d81e5dc54990a51c435ffa9e83a65d80a22e3f3d23bc06c50d9ad",
-  "source_revision": "native_v7_exact_cache_imu_gap_timing",
+  "parent_manifest_sha256": "92303f90fe9efc98db14aa77ced6f37c990f0f24195395f7988c5dd0f0f51df3",
+  "source_revision": "native_v9_exact_cache_positive_scan_expiry_wait",
   "source_frozen": true,
   "runtime_authority": false,
   "motor_transport": false,
@@ -17,9 +17,9 @@
   "initial_IMU_horizon_ns": 500000000,
   "exact_surface_cache_enabled": true,
   "files_sha256": {
-    "inputs.py": "d714da92e8e32e577ac3d46082269e8604d7cbb48c68f73dc834dcc2a8218712",
-    "VENDORED_INPUTS.json": "8dd7b50bdc226affc465c7e210a7017fbcbf05f067d9c349a23c44ead2cc5da7",
-    "physical_ingress.py": "e8c13d85f993bf58f777effe3ccb77a2ba84d383d4305357abb00df0e52bf2f8",
+    "inputs.py": "df60822b932e37201bd79cb2d3328652eaf014ea9b4fb7d8ab60aaeee58e3bb0",
+    "VENDORED_INPUTS.json": "dd830e2b8b52d17da5edfa961ac14f7f5e4c012aecb20d1c4688232e899fa30c",
+    "physical_ingress.py": "5caee0f91716a8b45a9cc2f35b85ecc7644cecda6a02fc8bdc79480c1ffe00a1",
     "physical_factory.py": "9d45ae25eb7a6aa4194e0ac1162d0c338d933051e364e435d6afcae95c58d7c7",
     "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
     "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -30,8 +30,12 @@
     "kernel/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "kernel/fit_workers.py": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c",
     "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
-    "DEPLOY_CLOSURE.json": "e88941ca52010624065d02c445d19eea997a93cd99994e893d9d6003b19227e7"
+    "DEPLOY_CLOSURE.json": "19602e17b36671e0589faf49202c20a4cc5b021ba3f8ffe4fe1edc92ffb19014"
   },
-  "admission_timing_only": true,
-  "imu_gap_timing_only": true
+  "admission_timing_only": false,
+  "imu_gap_timing_only": false,
+  "preserved_timing_hooks": true,
+  "imu_gap_reanchor_enabled": true,
+  "startup_expiry_discard_enabled": true,
+  "current_expiry_reanchor_enabled": true
 }
