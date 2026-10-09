@@ -126,8 +126,7 @@ class OptimizedPackageTests(unittest.TestCase):
         self.assertNotIn('physical_factory', sys.modules)
 
     def test_real_frozen_f372_package_validates_without_importing_sensor_or_ROS_modules(self):
-        package = (Path(__file__).resolve().parents[4] /
-                   'native-admission-timing-package-candidate-20261010' / 'package')
+        package = Path(__file__).resolve().with_name('optimized-package')
         expected = 'f372e8ed6f1d81e5dc54990a51c435ffa9e83a65d80a22e3f3d23bc06c50d9ad'
         self.assertEqual(runner.sha_file(package / 'HANDOFF.json'), expected)
         with patch.object(sys, 'path', sys.path.copy()):
