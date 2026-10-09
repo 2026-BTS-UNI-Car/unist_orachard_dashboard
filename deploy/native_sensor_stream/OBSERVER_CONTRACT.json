@@ -1,0 +1,25 @@
+{
+  "schema": "ubts.actual.native_stream.observer_contract.v1",
+  "protocol_schema": "ubts.private.actual_native_cdr_observer.v1",
+  "source_sha256": {
+    "observer-src/actual_cdr_stream.cpp": "f79aaf294abc9c8fd72364e9764740f0b9442edc1ad96bd3affe80f6946abfaa",
+    "observer-src/CMakeLists.txt": "0ce843e640ef9a90dcebb4a8cdbb27aeda1d99c4df58b2e5eb3c8efc8b17c0e2"
+  },
+  "execution_argument": "--observe-until-stop",
+  "topics": ["/scan", "/imu/data_raw"],
+  "original_cdr_required": true,
+  "original_headers_required": true,
+  "expected_publisher_gid_bytes": 16,
+  "callback_clock": "CLOCK_MONOTONIC_RAW",
+  "source_clock": "RCL_SYSTEM_TIME",
+  "max_cdr_bytes": 262144,
+  "max_line_bytes": 532480,
+  "startup_ready_deadline_seconds": 15,
+  "lifetime_deadline_seconds": null,
+  "lifetime_capture_limit_bytes": null,
+  "raw_rows_archived": false,
+  "runtime_authority": false,
+  "motor_command_sent": false,
+  "autonomy_output_enabled": false,
+  "mission_admission": false
+}

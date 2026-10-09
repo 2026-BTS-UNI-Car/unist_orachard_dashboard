@@ -1,0 +1,49 @@
+# Optional overlay for the existing dashboard compose project.
+# Start the service explicitly; it remains IDLE until /observe/start.
+services:
+  dashboard:
+    environment:
+      UBTS_NATIVE_STREAM_SOCKET: /run/ubts-native-stream/observe.sock
+    volumes:
+      - ${UBTS_NATIVE_STREAM_SOCKET_DIR:?use an owned writable sensor socket directory}:/run/ubts-native-stream:ro
+
+  native-sensor-observation:
+    profiles: [native-observe]
+    image: ${UBTS_NATIVE_STREAM_IMAGE:?use the audited native ARM image digest}
+    restart: unless-stopped
+    user: "0:0"
+    network_mode: host
+    ipc: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 2
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+    environment:
+      ROS_DOMAIN_ID: "0"
+      ROS_LOG_DIR: /tmp/ubts-native-stream/log
+      PYTHONDONTWRITEBYTECODE: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+    volumes:
+      - ${UBTS_NATIVE_STREAM_SOCKET_DIR}:/run/ubts-native-stream
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
+        max-file: "2"
+    command:
+      - /usr/bin/python3
+      - -B
+      - /opt/ubts-native-stream/native_observation_service.py
+      - --serve
+      - --socket-path
+      - /run/ubts-native-stream/observe.sock
+      - --scan-gid
+      - ${UBTS_SCAN_PUBLISHER_GID:?bind the observed current scan publisher}
+      - --imu-gid
+      - ${UBTS_IMU_PUBLISHER_GID:?bind the observed current IMU publisher}

@@ -6,6 +6,7 @@ inserting unknown travel; stopped-time motion is never invented.
 """
 import asyncio
 from collections import deque
+import copy
 import json
 import math
 import os
@@ -301,6 +302,7 @@ class SourceLiveMapping(LiveMapping):
         imu=self._cursor_imu_diagnostic(engine,stamp_ns,context,history)
         self.body_feedback.observe(pair,imu,source_now_ns=time.time_ns(),receipt_now_ns=time.monotonic_ns())
         self._feedback_adapter.update(selected_imu_stamp_ns=None if imu is None else imu.source_stamp_ns,
+            selected_imu_receipt_ns=None if imu is None else imu.receipt_ns,
             selected_imu_frame=None if imu is None else imu.imu_frame,
             candidate_vertical_gyro_rad_s=None if imu is None else imu.yaw_rad_s)
         self._feedback_previous=current
@@ -308,6 +310,52 @@ class SourceLiveMapping(LiveMapping):
     def feedback_status(self):
         with self.lock:
             return {**self.body_feedback.snapshot(),'adapter':dict(self._feedback_adapter)}
+
+    def observation_input(self):
+        """Read the existing WS source without starting/resetting map work.
+
+        This fallback cannot prove original DDS/CDR/RAW provenance and therefore
+        cannot produce a native-qualified autonomous proposal. Comparison now
+        is separate from the unchanged original header and WS receipt clocks.
+        """
+        with self.lock:
+            context=dict(source_session=self._feedback_session, epoch=self.map_epoch,
+                generation=self.work_generation, source_clock_domain='ros_header_unverified',
+                receipt_clock_domain='python_monotonic_web_ws')
+            feedback=self.body_feedback.snapshot()
+            adapter=dict(self._feedback_adapter)
+            with self.inbox_lock:
+                latest=self.latest.get('scan')
+            if not self.tracking or latest is None:return None
+            frame,received=latest
+            raw=frame.get('raw_scan')
+            if not raw:return None
+            stamp=self._original_ns(raw);receipt=self._web_receipt_ns(frame,received)
+            if stamp is None or receipt is None:return None
+            try:
+                scan=dict(stamp_ns=stamp,receipt_ns=receipt,sequence=self.received_counts['scan'],
+                    frame_id=raw['header']['frame_id'],ranges=copy.deepcopy(raw['ranges']),
+                    **{key:raw[key] for key in ('angle_min','angle_increment','range_min','range_max')},
+                    original_native=False)
+            except (KeyError,TypeError):return None
+            laser=feedback.get('laser')
+            motion=imu=None
+            if (laser and feedback.get('source_stamp_ns')==stamp and
+                    laser.get('registration_accepted') is True and laser.get('map_eligible') is True and
+                    self._feedback_previous is not None and self._feedback_previous[1]==stamp):
+                motion=dict(previous_scan_stamp_ns=laser['previous_source_stamp_ns'],
+                    current_scan_stamp_ns=stamp,receipt_ns=feedback['receipt_ns'],
+                    dx_m=laser['delta_xy_m'][0],dy_m=laser['delta_xy_m'][1],dyaw_rad=laser['delta_yaw_rad'],
+                    accepted=True,map_eligible=True,path_break=False,motion_prior=False,
+                    body_mount_verified=False,accuracy_verified=False)
+                imu_stamp=adapter.get('selected_imu_stamp_ns')
+                imu_receipt=adapter.get('selected_imu_receipt_ns')
+                rate=adapter.get('candidate_vertical_gyro_rad_s')
+                if imu_stamp is not None and imu_receipt is not None and rate is not None:
+                    imu=dict(stamp_ns=imu_stamp,receipt_ns=imu_receipt,yaw_rate_rad_s=rate,original_native=False)
+            return dict(context=context,scan=scan,motion=motion,imu=imu,
+                source_now_ns=time.time_ns(),receipt_now_ns=time.monotonic_ns(),
+                runtime_authority=False,motor_command_sent=False,physical_autonomy_qualified=False)
 
     @staticmethod
     def native_imu(packet):

@@ -179,7 +179,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path.startswith('/api/live/') or path in ('/api/autonomy','/api/autonomy/preflight'):
+        if path.startswith('/api/live/') or path in ('/api/autonomy','/api/autonomy/preflight','/api/autonomy/observe'):
             self._live_request(parsed)
         elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
@@ -286,8 +286,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             elif path=='/api/autonomy/preflight' and not action:
                 from dashboard_server.field_preflight import report
                 result=report(ROOT/'config/field_autonomy_preparation.json',self.live_mapping.task_status())
+            elif path=='/api/autonomy/observe' and not action:
+                result=self._autonomy_observe_status()
+            elif path in ('/api/autonomy/observe/start','/api/autonomy/observe/stop') and action:
+                if payload:raise ValueError('observation_actions_do_not_accept_sensor_or_control_inputs')
+                self._autonomy_observe_action(path.rsplit('/',1)[-1])
+                result=self._autonomy_observe_status()
             elif path=='/api/autonomy/speed' and action:
-                result=self.autonomy_settings.set_speed(payload.get('speed_percent'))
+                with self.autonomy_observe_lock:
+                    observer=getattr(self,'autonomy_observation',None)
+                    observing=observer is not None and observer.status().get('active') is True
+                    percent=payload.get('speed_percent')
+                    if observing and (isinstance(percent,bool) or not isinstance(percent,(int,float)) or not 0<=percent<=30):
+                        raise ValueError('active_observation_speed_requires_0_to_30_percent')
+                    result=self.autonomy_settings.set_speed(percent)
+                    if observing:observer.set_cruise_percent(percent)
             elif path=='/api/autonomy/start' and action:
                 self._send_json({**self.autonomy_settings.status(),'ok':False},409);return
             elif path=='/api/live/map' and not action:
@@ -342,6 +355,46 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             from dashboard_server.mapping_operations import MappingConflict
             self._send_json({'ok':False,'error':str(error)},409 if isinstance(error,MappingConflict) or str(error)=='mapping_epoch_changed_refresh_before_action' else 400)
+
+    def _autonomy_observe_status(self):
+        result=self.autonomy_observation.status()
+        if (not isinstance(result,dict) or result.get('runtime_authority') is not False
+                or result.get('motor_command_sent') is not False
+                or result.get('autonomy_output_enabled') is not False):
+            raise ValueError('observation_only_status_required')
+        # The existing percentage is a preference. No measured m/s conversion,
+        # motor sender, lease or mapping action is introduced by these routes.
+        native=getattr(self,'native_observation_client',None)
+        return {**result,'speed_percent':self.autonomy_settings.percent,
+            'native_source':native.status() if native is not None else {
+                'enabled':False,'reason':'legacy_web_ws_provenance_unverified'},
+            'speed_units':'percent_of_configured_cruise','calibrated_speed_m_s':None}
+
+    def _autonomy_observe_action(self,action):
+        with self.autonomy_observe_lock:
+            native=self.native_observation_client
+            if action=='start':
+                percent=self.autonomy_settings.percent
+                if isinstance(percent,bool) or not isinstance(percent,(int,float)) or not 0<=percent<=30:
+                    raise ValueError('observation_requires_existing_speed_preference_0_to_30_percent')
+                if native is not None:
+                    started=native.start()
+                    if not isinstance(started,dict) or started.get('ok') is not True:
+                        raise ValueError('native_observation_start_failed:'+str(started.get('error','unknown') if isinstance(started,dict) else 'invalid_response'))
+                try:
+                    observed=self.autonomy_observation.start(cruise_percent=percent)
+                    if not isinstance(observed,dict) or observed.get('active') is not True or observed.get('first_failure_reason'):
+                        raise ValueError('autonomy_observation_start_failed:'+str(observed.get('first_failure_reason') or observed.get('state','unknown') if isinstance(observed,dict) else 'invalid_response'))
+                except Exception:
+                    if native is not None:native.stop()
+                    raise
+            else:
+                try:self.autonomy_observation.stop()
+                finally:
+                    if native is not None:
+                        stopped=native.stop()
+                        if not isinstance(stopped,dict) or stopped.get('ok') is not True:
+                            raise ValueError('native_observation_stop_failed:'+str(stopped.get('error','unknown') if isinstance(stopped,dict) else 'invalid_response'))
 
     def _recording_media_action(self):
         origin = self.headers.get("Origin")
@@ -1131,18 +1184,45 @@ class DashboardServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def server_close(self):
+        try:
+            with self.autonomy_observe_lock:
+                try:
+                    observer=getattr(self,'autonomy_observation',None)
+                    if observer is not None:observer.stop(reason='dashboard_server_closed')
+                finally:
+                    native=getattr(self,'native_observation_client',None)
+                    if native is not None:native.stop()
+        finally:
+            super().server_close()
+
 
 def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:
     DashboardHandler.provider = TelemetryProvider(config)
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
     from dashboard_server.autonomy_settings import AutonomySettings
+    from dashboard_server.autonomy_observation import AutonomyObservation
+    from dashboard_server.record_based_autonomy import RecordBasedAutonomy
     DashboardHandler.live_mapping=LiveMapping(ROOT/'runtime/live-map',start_worker=os.environ.get('DASHBOARD_LIVE_MAP_WORKER','1')=='1')
     DashboardHandler.archive_mapping=ManagedArchiveMapping(DashboardHandler.provider.recording_archive_dir,DashboardHandler.live_mapping)
     DashboardHandler.mapping_operations=MappingOperations(DashboardHandler.live_mapping,DashboardHandler.archive_mapping)
     DashboardHandler.autonomy_settings=AutonomySettings(ROOT/'runtime/autonomy_settings.json')
+    native_path=os.environ.get('UBTS_NATIVE_STREAM_SOCKET')
+    DashboardHandler.native_observation_client=None
+    if native_path:
+        from dashboard_server.native_observation_client import NativeObservationClient
+        DashboardHandler.native_observation_client=NativeObservationClient(native_path)
+    DashboardHandler.autonomy_observe_lock=threading.RLock()
+    DashboardHandler.autonomy_observation=AutonomyObservation(
+        planner=RecordBasedAutonomy(),input_provider=DashboardHandler.native_observation_client.input
+            if DashboardHandler.native_observation_client is not None else DashboardHandler.live_mapping.observation_input)
     dashboard_log("server.create", host=host, port=port, session_ttl_s=SESSION_TTL_S)
-    return DashboardServer((host, port), DashboardHandler)
+    server=DashboardServer((host, port), DashboardHandler)
+    server.autonomy_observation=DashboardHandler.autonomy_observation
+    server.native_observation_client=DashboardHandler.native_observation_client
+    server.autonomy_observe_lock=DashboardHandler.autonomy_observe_lock
+    return server
 
 
 def main():

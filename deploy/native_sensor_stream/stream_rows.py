@@ -1,0 +1,432 @@
+"""Continuous original-CDR protocol; no process, ROS init, thread or IO owner.
+
+The runner verifies the unchanged physical package before importing this module,
+constructs its exact receiver/factory, resets the receiver BEFORE native spawn,
+and supplies the separately reviewed streaming observer contract SHA. This is a
+single consumer. Stop may concurrently inhibit it; outputs are fresh caller-owned
+JSON values, not sensor inputs or mutable references retained by this adapter.
+"""
+from dataclasses import asdict
+import copy
+import hashlib
+import json
+import math
+import re
+import threading
+
+from common.original_cdr import LASER_TYPE, IMU_TYPE, WireScan, decode, MAX_CDR_BYTES
+from common.native_ownership import RawReceipt, RAW_SCHEMA, _ns, _sha
+from physical_ingress import PhysicalOriginalIngress, SOURCE_AGE_NS, RECEIPT_AGE_NS, require
+from physical_factory import PhysicalNativeShadowFactory
+
+SCHEMA = 'ubts.private.actual_native_cdr_observer.v1'
+MAX_COUNTER = 2**63 - 1
+MAX_METADATA_BYTES = 8192
+MAX_LINE_BYTES = 2 * MAX_CDR_BYTES + MAX_METADATA_BYTES
+
+
+def _counter(value):
+    return type(value) is int and 0 <= value <= MAX_COUNTER
+
+
+def _hex(value, count=None):
+    require(type(value) is str and len(value) % 2 == 0 and
+            len(value) <= 2 * MAX_CDR_BYTES and
+            re.fullmatch('[0-9a-f]*', value) is not None,
+            'bounded_exact_lowercase_byte_hex_required')
+    require(count is None or len(value) == 2 * count,
+            'original_byte_hex_length_mismatch')
+    return bytes.fromhex(value)
+
+
+def _unique_object(items):
+    value = {}
+    for key, item in items:
+        require(key not in value, 'duplicate_native_stream_JSON_key')
+        value[key] = item
+    return value
+
+
+def _invalid_number(_value):
+    raise ValueError('nonfinite_native_stream_JSON_number')
+
+
+def _finite_float(value):
+    result = float(value)
+    require(math.isfinite(result), 'nonfinite_native_stream_JSON_number')
+    return result
+
+
+class StreamObserverRows:
+    """Strict contiguous streaming protocol with bounded latest state only.
+
+    receive_line returns a tuple of fresh {diagnostic, evidence} JSON values.
+    Every bracketed pair is consumed before the next original line. Startup
+    scans without any available start IMU are counted as unadmitted priming;
+    a pending end bracket waits for original IMU delivery without replacement.
+    There is no lifetime sample limit, replay or silently skipped fit.
+    The exact factory always emits HOLD/zero and unverified physical flags.
+
+    stop() first sets both cancellation events, then invalidates original ingress;
+    it does not wait for the factory's numeric lock. finish() is called by the
+    sole consumer AFTER process/pipe drain and clears the factory's pending state.
+    Post-Stop original lines still undergo byte/header/GID/sequence validation,
+    but never enter the receiver, fit or publish another diagnostic.
+    """
+    def __init__(self, ingress, factory, *, observer_contract_sha256):
+        require(type(ingress) is PhysicalOriginalIngress,
+                'physical_original_ingress_required')
+        require(type(factory) is PhysicalNativeShadowFactory and factory.ingress is ingress,
+                'exact_physical_original_factory_required')
+        require(_sha(observer_contract_sha256) and
+                ingress.observer_contract_sha256 == observer_contract_sha256,
+                'exact_reviewed_streaming_observer_contract_required')
+        require(ingress.fault is None and _sha(getattr(ingress, 'domain', None)) and
+                type(ingress.clock_session) is str and
+                re.fullmatch('[0-9a-f]{32}', ingress.clock_session) is not None,
+                'receiver_reset_before_native_spawn_required')
+        self.ingress, self.factory = ingress, factory
+        self.observer_contract_sha256 = observer_contract_sha256
+        self._binding = self._context()
+        self._lock, self._stopping = threading.RLock(), threading.Event()
+        self.expected_pid = self.expected_time_namespace = None
+        self.begin = None
+        self.ready = self.ended = self._done = False
+        self._ready_before_stop = False
+        self.fault = None
+        self.rows = self.total_original_bytes = self.total_line_bytes = self._next_seq = 0
+        self.samples = {LASER_TYPE: 0, IMU_TYPE: 0}
+        self.admitted_samples = {LASER_TYPE: 0, IMU_TYPE: 0}
+        self.diagnostics = 0
+        self.bootstrap_scans_unadmitted = 0
+        self.waiting_reason = 'waiting_for_original_start_IMU'
+        self._last_original_raw = self._last_original_system = None
+        self._proposal_input = None
+
+    def _context(self):
+        i = self.ingress
+        return (i.domain, i.clock_session, i.expected_gids, i.scan_topic, i.imu_topic,
+                i.scan_frame, i.imu_frame, i.profile_revision, i.observer_contract_sha256)
+
+    def bind_process(self, pid, time_namespace):
+        with self._lock:
+            require(self.expected_pid is None and self.begin is None and not self.ended,
+                    'native_stream_process_binding_is_single_use')
+            require(_counter(pid) and pid > 0 and type(time_namespace) is str and
+                    0 < len(time_namespace.encode('utf-8')) <= 128,
+                    'root_verified_observer_process_and_time_namespace_required')
+            self.expected_pid, self.expected_time_namespace = pid, time_namespace
+
+    def stop(self):
+        # Events become visible before any original ownership mutex is acquired.
+        self._stopping.set()
+        self.factory.stop_intent.set()
+        self.ingress.stop()
+
+    def _fail(self, error):
+        self.fault = self.fault or str(error)[:256]
+        self.ended = True
+        self.stop()
+
+    def receive_line(self, raw_line):
+        with self._lock:
+            try:
+                require(type(raw_line) is bytes and 0 < len(raw_line) <= MAX_LINE_BYTES and
+                        raw_line.endswith(b'\n') and raw_line.count(b'\n') == 1 and b'\r' not in raw_line,
+                        'one_bounded_original_native_NDJSON_line_required')
+                row = json.loads(raw_line.decode('utf-8', errors='strict'),
+                    object_pairs_hook=_unique_object, parse_constant=_invalid_number,
+                    parse_float=_finite_float)
+                require(type(row) is dict and not self.ended,
+                        'live_native_stream_row_required')
+                require(self.expected_pid is not None, 'native_stream_process_not_bound')
+                require(self._context() == self._binding and
+                        self.ingress.observer_contract_sha256 == self.observer_contract_sha256,
+                        'native_stream_source_context_changed')
+                seq = row.get('seq')
+                require(_counter(seq) and seq == self._next_seq,
+                        'contiguous_signed63_native_stream_sequence_required')
+                require(seq < MAX_COUNTER or row.get('kind') == 'done',
+                        'native_stream_sequence_exhausted')
+                require(row.get('mission_admission') is False,
+                        'native_observer_mission_admission_forbidden')
+                require(self.total_line_bytes <= MAX_COUNTER - len(raw_line),
+                        'native_stream_byte_counter_exhausted')
+                if row.get('kind') != 'original_cdr':
+                    require(len(raw_line) <= MAX_METADATA_BYTES,
+                            'bounded_native_stream_metadata_required')
+                answer = self._receive(row)
+                self.total_line_bytes += len(raw_line)
+                self._next_seq = seq if seq == MAX_COUNTER else seq + 1
+                return answer
+            except Exception as error:
+                self._fail(error)
+                raise
+
+    def _receive(self, row):
+        kind = row.get('kind')
+        if kind == 'begin':
+            require(self.begin is None and row['seq'] == 0 and row.get('schema') == SCHEMA and
+                    row.get('streaming') is True and type(row.get('pid')) is int and
+                    row['pid'] == self.expected_pid and
+                    type(row.get('uid')) is int and row['uid'] == 0 and
+                    type(row.get('gid')) is int and row['gid'] == 0 and
+                    row.get('time_namespace') == self.expected_time_namespace,
+                    'root_verified_streaming_native_observer_begin_required')
+            require(type(row.get('observer_process_session')) is str and
+                    re.fullmatch('[0-9a-f]{32}', row['observer_process_session']) is not None and
+                    row.get('RAW_domain') == self.ingress.domain and
+                    type(row.get('GID_storage_bytes')) is int and row['GID_storage_bytes'] == 16 and
+                    row.get('header_clock_origin') == 'original_publisher_unmodified' and
+                    row.get('observer_clock_type') == 'RCL_SYSTEM_TIME' and
+                    row.get('use_sim_time') is False and row.get('clock_topic_created') is False and
+                    row.get('publishers_created') is False,
+                    'native_physical_clock_and_receipt_association_required')
+            require(_hex(row.get('expected_scan_GID'), 16) == self.ingress.expected_gids[0] and
+                    _hex(row.get('expected_IMU_GID'), 16) == self.ingress.expected_gids[1],
+                    'reviewed_native_observer_publisher_binding_required')
+            self.begin = row  # bounded metadata only; NOT publisher epoch
+            return ()
+        if self.begin is None and kind == 'done' and row['seq'] == 0:
+            # Native initialization can fail before BEGIN. Preserve that bounded
+            # error, but it supplies no actor/source proof or cleanup admission.
+            error = row.get('error')
+            require(row.get('schema') == SCHEMA and row.get('streaming') is True and
+                    row.get('ok') is False and row.get('termination_reason') == 'fault' and
+                    row.get('ready_observed') is False and
+                    type(error) is str and 0 < len(error) <= 512 and
+                    type(row.get('scan_samples')) is int and row['scan_samples'] == 0 and
+                    type(row.get('IMU_samples')) is int and row['IMU_samples'] == 0 and
+                    row.get('physical_autonomy_qualified') is False,
+                    'invalid_native_observer_startup_fault_metadata')
+            self.fault = 'native_observer_startup_fault:' + error
+            raise ValueError(self.fault)
+        require(self.begin is not None, 'native_observer_begin_missing')
+        if kind == 'ready':
+            require(not self.ready and min(self.samples.values()) >= 2 and
+                    type(row.get('stable_graph_min_seconds')) in (int, float) and
+                    row['stable_graph_min_seconds'] == .05 and
+                    row.get('actual_original_CDR_and_per_message_GIDs') is True,
+                    'native_observer_actual_GID_readiness_required')
+            self.ready = True
+            if not self._stopping.is_set():
+                if self.bootstrap_scans_unadmitted == 0:
+                    require(min(self.admitted_samples.values()) >= 2,
+                            'native_stream_readiness_requires_original_ingress')
+                self._ready_before_stop = min(self.admitted_samples.values()) >= 2
+            return ()
+        if kind == 'done':
+            self.ended = True
+            require(row.get('schema') == SCHEMA and row.get('streaming') is True and
+                    row.get('termination_reason') == 'operator_stop' and self._stopping.is_set() and
+                    row.get('ok') is True and row.get('error') == '' and
+                    row.get('ROS_executor_destroyed') is True and
+                    row.get('ROS_subscriptions_destroyed') is True and
+                    row.get('ROS_node_destroyed') is True and
+                    row.get('ROS_shutdown_completed') is True and
+                    row.get('physical_autonomy_qualified') is False and
+                    type(row.get('ready_observed')) is bool and row['ready_observed'] == self.ready,
+                    'native_stream_failed_or_incomplete_cleanup')
+            require(_counter(row.get('scan_samples')) and _counter(row.get('IMU_samples')) and
+                    row['scan_samples'] == self.samples[LASER_TYPE] and
+                    row['IMU_samples'] == self.samples[IMU_TYPE] and
+                    _ns(row.get('observed_elapsed_ns')),
+                    'native_observer_delivery_count_or_elapsed_mismatch')
+            self._done = True
+            return ()
+        require(kind == 'original_cdr', 'native_observer_row_kind_invalid')
+        return self._original(row)
+
+    def _original(self, row):
+        ros_type = row.get('ros_type')
+        require(ros_type in self.samples and row.get('topic') == (
+            self.ingress.scan_topic if ros_type == LASER_TYPE else self.ingress.imu_topic),
+            'original_native_topic_or_type_mismatch')
+        cdr = _hex(row.get('original_CDR_hex'))
+        require(type(row.get('original_CDR_bytes')) is int and
+                len(cdr) == row['original_CDR_bytes'] and _sha(row.get('original_CDR_sha256')) and
+                hashlib.sha256(cdr).hexdigest() == row['original_CDR_sha256'],
+                'original_CDR_SHA_or_length_mismatch')
+        wire = decode(cdr, ros_type)
+        require(all(type(row.get(key)) is int for key in ('original_header_stamp_sec',
+            'original_header_stamp_nanosec', 'original_header_stamp_ns', 'ranges_count', 'intensities_count')),
+            'typed_original_native_header_and_counts_required')
+        require((wire.header.sec, wire.header.nanosec, wire.header.stamp_ns) == (
+            row['original_header_stamp_sec'], row['original_header_stamp_nanosec'],
+            row['original_header_stamp_ns']) and
+            wire.header.frame_id.encode('utf-8') == _hex(row.get('frame_id_bytes_hex')),
+            'observer_original_header_metadata_mismatch')
+        counts = (wire.count, len(wire.intensity_f32_bytes)//4) if type(wire) is WireScan else (0, 0)
+        require(counts == (row['ranges_count'], row['intensities_count']),
+                'observer_original_array_count_mismatch')
+        require(row.get('RAW_schema') == RAW_SCHEMA and row.get('RAW_domain') == self.ingress.domain and
+                _ns(row.get('callback_monotonic_raw_ns')) and _ns(row.get('observer_system_ros_now_ns')),
+                'original_native_callback_clocks_required')
+        gid = _hex(row.get('publisher_gid_hex'), 16)
+        require(gid == self.ingress.expected_gids[0 if ros_type == LASER_TYPE else 1],
+                'actual_native_callback_publisher_changed_or_missing')
+        require(all(type(row.get(k)) in (int, float) and row[k] == 0 for k in
+                    ('proposed_linear_mps', 'proposed_yaw_rate_rad_s')),
+                'original_observer_nonzero_proposal_forbidden')
+        require(self.rows < MAX_COUNTER and self.samples[ros_type] < MAX_COUNTER and
+                self.total_original_bytes <= MAX_COUNTER - len(cdr),
+                'native_stream_sample_counter_exhausted')
+        self.rows += 1
+        self.samples[ros_type] += 1
+        self.total_original_bytes += len(cdr)
+        if self._stopping.is_set():
+            return ()
+        if self._last_original_raw is not None:
+            require(row['callback_monotonic_raw_ns'] >= self._last_original_raw and
+                    row['observer_system_ros_now_ns'] >= self._last_original_system,
+                    'original_native_callback_delivery_regressed')
+        self._last_original_raw = row['callback_monotonic_raw_ns']
+        self._last_original_system = row['observer_system_ros_now_ns']
+        if ros_type == LASER_TYPE and self.ingress.previous is None:
+            originals = tuple(self.ingress.imus)
+            if not originals or originals[0].wire.header.stamp_ns > wire.header.stamp_ns:
+                # Discovery can deliver scan callbacks before the first IMU.
+                # Such an initial scan cannot acquire a historical bracket.
+                # Count it explicitly without creating a velocity pair or
+                # admitting a replacement/synthetic IMU. Keep strict clocks.
+                clock = self.ingress._evaluate()
+                require(0 <= clock.receipt_ns-row['callback_monotonic_raw_ns'] < RECEIPT_AGE_NS,
+                        'stale_or_future_original_callback_RAW')
+                require(0 <= clock.source_ns-row['observer_system_ros_now_ns'] < SOURCE_AGE_NS and
+                        0 <= clock.source_ns-wire.header.stamp_ns < SOURCE_AGE_NS and
+                        wire.header.stamp_ns <= row['observer_system_ros_now_ns'],
+                        'stale_or_future_original_callback_system_time')
+                self.bootstrap_scans_unadmitted += 1
+                self.waiting_reason = 'startup_scan_without_original_start_IMU'
+                return ()
+        outcome = self.ingress.consume_original(ros_type, cdr,
+            callback_receipt=RawReceipt(row['callback_monotonic_raw_ns'], row['RAW_domain']),
+            callback_ros_system_now_ns=row['observer_system_ros_now_ns'], publisher_gid=gid)
+        if self._stopping.is_set():
+            return ()
+        require(self.ingress.fault is None, 'native_original_ingress_rejected:' + outcome.reason)
+        self.admitted_samples[ros_type] += 1
+        records = []
+        while self.ingress.pending is not None and not self._stopping.is_set():
+            previous, current = self.ingress.pending
+            originals = tuple(self.ingress.imus)
+            if originals and originals[-1].wire.header.stamp_ns < current.wire.header.stamp_ns:
+                self.waiting_reason = 'waiting_for_original_end_IMU'
+                break  # existing pending pair remains the one exact pair
+            prepared = self.ingress.prepare()
+            if self._stopping.is_set():
+                break
+            require(prepared.prepared is not None,
+                    'physical_original_pair_rejected:' + prepared.reason)
+            owned = self.factory.prepare(prepared.prepared)
+            if self._stopping.is_set():
+                break
+            require(not isinstance(owned, dict), 'physical_internal_fit_rejected:' + str(owned))
+            answer = self.factory.commit(owned)
+            if self._stopping.is_set():
+                break
+            require(answer.get('diagnostic') is not None and answer.get('body_velocity_mps') is None and
+                    all(answer.get(k) is False for k in ('motor_command_sent', 'runtime_authority',
+                        'autonomy_output_enabled', 'execution_eligible', 'physical_autonomy_qualified')) and
+                    all(type(answer.get(k)) in (int, float) and answer[k] == 0 for k in
+                        ('applied_linear_mps', 'applied_yaw_rate_rad_s', 'proposed_linear_mps',
+                         'proposed_yaw_rate_rad_s')),
+                    'physical_shadow_final_fence_failed:' + str(answer.get('reason','unknown'))[:256])
+            diagnostic = dict(answer, diagnostic=asdict(answer['diagnostic']))
+            evidence = dict(observer_seq=row['seq'], original_CDR_sha256=row['original_CDR_sha256'],
+                samples=self.rows, diagnostic_version=self.factory.snapshot().version,
+                original_callback_RAW_ns=row['callback_monotonic_raw_ns'],
+                diagnostic_stage_timing=self.factory.timing_snapshot())
+            require(len(json.dumps(dict(diagnostic=diagnostic, evidence=evidence),
+                    allow_nan=False).encode('utf-8')) <= MAX_METADATA_BYTES,
+                    'bounded_physical_stream_diagnostic_required')
+            self.diagnostics += 1
+            self.waiting_reason = None
+            if self.ready and min(self.admitted_samples.values()) >= 2:
+                self._ready_before_stop = True
+            original = prepared.prepared
+            record = answer['diagnostic']
+            scan_wire = original.current.wire
+            a, _b, inc, _dt, _cycle, minimum, maximum = map(float, scan_wire.metadata)
+            lower = next(e for e in original.imu_originals
+                         if e.wire.header.stamp_ns == record.original_lower_imu_stamp_ns)
+            q, _qc, angular, _ac, _linear, _lc = lower.wire.groups
+            norm = math.sqrt(sum(float(v)*float(v) for v in q))
+            require(.9 < norm < 1.1, 'original_imu_quaternion_required')
+            x, y, z, w = (float(v)/norm for v in q)
+            gx, gy, gz = map(float, angular)
+            vertical = 2*(x*z-w*y)*gx+2*(y*z+w*x)*gy+(1-2*(x*x+y*y))*gz
+            require(math.isfinite(vertical), 'original_vertical_gyro_required')
+            self._proposal_input = dict(
+                context=dict(source_session=self.ingress.clock_session,
+                    epoch=self.begin['observer_process_session'], generation=self.ingress.generation,
+                    source_clock_domain='ROS_SYSTEM_TIME',
+                    receipt_clock_domain='CLOCK_MONOTONIC_RAW:'+self.ingress.domain),
+                scan=dict(stamp_ns=scan_wire.header.stamp_ns, receipt_ns=original.current.receipt.ns,
+                    sequence=self.diagnostics, frame_id=scan_wire.header.frame_id,
+                    ranges=[float(v) if math.isfinite(float(v)) else None for v in scan_wire.ranges],
+                    angle_min=a, angle_increment=inc, range_min=minimum, range_max=maximum,
+                    original_native=True, nonfinite_ranges_as_unknown=True, original_CDR_sha256=original.current.original_sha256),
+                motion=dict(previous_scan_stamp_ns=original.previous.wire.header.stamp_ns,
+                    current_scan_stamp_ns=scan_wire.header.stamp_ns, receipt_ns=original.current.receipt.ns,
+                    dx_m=float(record.delta_xy_laser_plane_m[0]), dy_m=float(record.delta_xy_laser_plane_m[1]),
+                    dyaw_rad=float(record.fitted_laser_plane_yaw_rad),
+                    accepted=True, map_eligible=True, path_break=False, motion_prior=False,
+                    body_mount_verified=False, accuracy_verified=False),
+                imu=dict(stamp_ns=lower.wire.header.stamp_ns, receipt_ns=lower.receipt.ns,
+                    yaw_rate_rad_s=vertical, original_native=True),
+                estimated_mount=True, physical_autonomy_qualified=False,
+                runtime_authority=False, motor_command_sent=False)
+            # Native numpy calculations can return float64 scalars. Serialize
+            # this DERIVED diagnostic once into JSON primitives; original CDR,
+            # integer stamps and ownership inputs are never rewritten.
+            records.append(json.loads(json.dumps(dict(diagnostic=diagnostic, evidence=evidence),
+                                                 allow_nan=False)))
+        return tuple(records)
+
+    def proposal_input(self):
+        """Latest native-derived planning input only; no body/actuator permit.
+
+        Comparison clocks are fresh. Original sensor stamps and receipts remain
+        unchanged. Nonfinite original ranges preserve their slot as unknown.
+        """
+        with self._lock:
+            if self._stopping.is_set() or self.fault is not None or self._proposal_input is None:
+                return None
+            result = copy.deepcopy(self._proposal_input)
+            result.update(source_now_ns=self.ingress.source_now(),
+                          receipt_now_ns=self.ingress.raw.sample().ns)
+            # A cached result is not a fresh sensor observation. Deny expired
+            # input without restamping its source or relaxing physical bounds.
+            if not (0 <= result['source_now_ns']-result['scan']['stamp_ns'] < SOURCE_AGE_NS and
+                    all(0 <= result['receipt_now_ns']-result[key]['receipt_ns'] < RECEIPT_AGE_NS
+                        for key in ('scan','motion','imu')) and
+                    0 <= result['source_now_ns']-result['imu']['stamp_ns'] < SOURCE_AGE_NS):
+                return None
+            return result
+
+    def status(self):
+        with self._lock:
+            return dict(schema='ubts.physical.native_stream_status.v1',
+                ready_observed=self.ready, data_ready_before_stop=self._ready_before_stop,
+                stopped=self._stopping.is_set(), ended=self.ended, fault=self.fault,
+                next_sequence=self._next_seq, sample_rows=self.rows,
+                original_bytes=self.total_original_bytes, line_bytes=self.total_line_bytes,
+                samples=dict(self.samples), admitted_samples=dict(self.admitted_samples),
+                startup_scans_unadmitted=self.bootstrap_scans_unadmitted,
+                waiting_reason=self.waiting_reason,
+                diagnostic_count=self.diagnostics, pending_pair=self.ingress.pending is not None,
+                runtime_authority=False, motor_command_sent=False, mission_admission=False)
+
+    def finish(self, exit_code, operator_stop):
+        """Protocol cleanup only; runner separately proves process/reader joins."""
+        with self._lock:
+            ok = (type(exit_code) is int and exit_code == 0 and operator_stop is True and
+                  self._stopping.is_set() and self._done and self.ended and self.fault is None)
+            self.stop()
+            self.factory.stop()  # sole consumer now drained; clear pending owned inputs
+            return dict(ok=ok, owner_cleanup=ok, ready_observed=self.ready,
+                data_ready_before_stop=self._ready_before_stop,
+                error=self.fault if self.fault else None if ok else 'native_stream_protocol_incomplete',
+                status=self.status(), runtime_authority=False, motor_command_sent=False,
+                mission_admission=False, physical_autonomy_qualified=False)
