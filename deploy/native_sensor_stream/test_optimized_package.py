@@ -12,6 +12,7 @@ from unittest.mock import patch
 spec = importlib.util.spec_from_file_location('optimized_runner_tested', Path(__file__).with_name('stream_runner.py'))
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
+assert Path(runner.__file__).resolve() == Path(__file__).with_name('stream_runner.py').resolve()
 
 PATHS = (
     'inputs.py', 'VENDORED_INPUTS.json', 'physical_ingress.py', 'physical_factory.py', 'observer_rows.py',
@@ -66,6 +67,74 @@ class OptimizedPackageTests(unittest.TestCase):
     def test_reviewed_v4_enables_only_trusted_constructor_feature(self):
         self.assertIs(self.load(), True)
         self.assertNotIn('physical_factory', sys.modules)
+        self.assertNotIn('rclpy', sys.modules)
+
+    def v6(self):
+        self.manifest.update(source_revision='native_v6_exact_cache_admission_timing',
+            parent_manifest_sha256='4d65ac4cc51172e83b8242bc074c9d6f222bc672cf552691c1bc89b70a15d1c5',
+            admission_timing_only=True)
+
+    def test_reviewed_v6_admission_timing_preserves_only_verified_cache_feature(self):
+        self.v6()
+        self.assertIs(self.load(), True)
+        self.assertNotIn('physical_factory', sys.modules)
+        self.assertNotIn('rclpy', sys.modules)
+
+    def test_v6_admission_timing_requires_exact_boolean_true(self):
+        self.v6()
+        original = copy.deepcopy(self.manifest)
+        for value in (False, 0, 1, None, 'true'):
+            self.manifest = copy.deepcopy(original)
+            self.manifest['admission_timing_only'] = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'admission_timing_required'):
+                self.load()
+        self.manifest = copy.deepcopy(original)
+        del self.manifest['admission_timing_only']
+        with self.assertRaisesRegex(ValueError, 'admission_timing_required'):
+            self.load()
+
+    def test_revision_parent_pair_is_exact_and_unknown_or_boolean_revision_rejects(self):
+        v5 = copy.deepcopy(self.manifest)
+        self.v6()
+        v6 = copy.deepcopy(self.manifest)
+        for manifest, key, value in (
+                (v5, 'parent_manifest_sha256', v6['parent_manifest_sha256']),
+                (v6, 'parent_manifest_sha256', v5['parent_manifest_sha256']),
+                (v6, 'parent_manifest_sha256', '0' * 64),
+                (v6, 'source_revision', 'unreviewed'),
+                (v6, 'source_revision', True),
+                (v6, 'source_revision', False),
+                (v6, 'source_revision', None)):
+            self.manifest = copy.deepcopy(manifest)
+            self.manifest[key] = value
+            with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, 'source_contract'):
+                self.load()
+
+    def test_legacy_v3_still_returns_feature_false_with_original_22_owned_13_closure(self):
+        for index in range(8):
+            name = 'legacy-reference-' + str(index) + '.txt'
+            path = self.root / name
+            path.write_bytes(b'legacy-extra-not-runtime')
+            self.manifest['files_sha256'][name] = runner.sha_file(path)
+        self.manifest.update(schema='ubts.private.physical_native_shadow_factory.v3', owned_count=22)
+        for key in ('source_revision', 'parent_manifest_sha256', 'source_frozen',
+                    'full_original_SHA_decode_at_every_association_preserved',
+                    'exact_surface_cache_enabled', 'selected_source_TTL_ns',
+                    'selected_callback_RAW_TTL_ns', 'initial_IMU_horizon_ns'):
+            del self.manifest[key]
+        self.assertIs(self.load(), False)
+        self.assertNotIn('physical_factory', sys.modules)
+
+    def test_real_frozen_f372_package_validates_without_importing_sensor_or_ROS_modules(self):
+        package = (Path(__file__).resolve().parents[4] /
+                   'native-admission-timing-package-candidate-20261010' / 'package')
+        expected = 'f372e8ed6f1d81e5dc54990a51c435ffa9e83a65d80a22e3f3d23bc06c50d9ad'
+        self.assertEqual(runner.sha_file(package / 'HANDOFF.json'), expected)
+        with patch.object(sys, 'path', sys.path.copy()):
+            self.assertIs(runner.load_physical_package(package, expected), True)
+            self.assertEqual(Path(sys.path[0]), package.resolve())
+        self.assertNotIn('physical_factory', sys.modules)
+        self.assertNotIn('physical_ingress', sys.modules)
         self.assertNotIn('rclpy', sys.modules)
 
     def test_all_authority_and_unverified_qualification_flags_reject_nonfalse(self):

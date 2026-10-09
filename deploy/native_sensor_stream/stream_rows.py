@@ -104,6 +104,36 @@ class StreamObserverRows:
         self._proposal_input = None
         self.factory_failure_timing = None
         self.factory_failure_timing_error = None
+        self.admission_failure_timing = None
+        self.admission_failure_timing_error = None
+
+    def _retain_admission_failure_timing(self, clock, row, header_ns):
+        # Only the failed gate's already sampled clock and validated originals.
+        # No new comparison clock, restamp, raw CDR/history or data admission.
+        if self.admission_failure_timing is not None or self.admission_failure_timing_error is not None:
+            return
+        try:
+            raw_age = clock.receipt_ns-row['callback_monotonic_raw_ns']
+            system_age = clock.source_ns-row['observer_system_ros_now_ns']
+            header_age = clock.source_ns-header_ns
+            header_to_callback = row['observer_system_ros_now_ns']-header_ns
+            value = dict(schema='ubts.native.admission_failure_timing.v1',
+                stage='startup_scan_without_original_start_IMU', seq=row['seq'],
+                source_now_ns=clock.source_ns, receipt_now_ns=clock.receipt_ns,
+                callback_raw_ns=row['callback_monotonic_raw_ns'],
+                callback_system_ns=row['observer_system_ros_now_ns'], header_ns=header_ns,
+                callback_raw_age_ns=raw_age, callback_system_age_ns=system_age,
+                header_age_ns=header_age, header_to_callback_ns=header_to_callback,
+                RAW_TTL_ns=RECEIPT_AGE_NS, SOURCE_TTL_ns=SOURCE_AGE_NS,
+                checks=dict(raw_fresh=0 <= raw_age < RECEIPT_AGE_NS,
+                    system_fresh=0 <= system_age < SOURCE_AGE_NS,
+                    header_fresh=0 <= header_age < SOURCE_AGE_NS,
+                    header_causal=header_to_callback >= 0), data_qualified=False)
+            raw = json.dumps(value, allow_nan=False, separators=(',', ':'))
+            require(len(raw.encode('utf-8')) <= 1024, 'admission_failure_timing_capacity')
+            self.admission_failure_timing = json.loads(raw)
+        except Exception as error:
+            self.admission_failure_timing_error = str(error)[:128]
 
     def _retain_factory_failure_timing(self, answer):
         # Preserve only the already measured failed attempt, not raw inputs or
@@ -306,12 +336,16 @@ class StreamObserverRows:
                 # Count it explicitly without creating a velocity pair or
                 # admitting a replacement/synthetic IMU. Keep strict clocks.
                 clock = self.ingress._evaluate()
-                require(0 <= clock.receipt_ns-row['callback_monotonic_raw_ns'] < RECEIPT_AGE_NS,
-                        'stale_or_future_original_callback_RAW')
-                require(0 <= clock.source_ns-row['observer_system_ros_now_ns'] < SOURCE_AGE_NS and
-                        0 <= clock.source_ns-wire.header.stamp_ns < SOURCE_AGE_NS and
-                        wire.header.stamp_ns <= row['observer_system_ros_now_ns'],
-                        'stale_or_future_original_callback_system_time')
+                try:
+                    require(0 <= clock.receipt_ns-row['callback_monotonic_raw_ns'] < RECEIPT_AGE_NS,
+                            'stale_or_future_original_callback_RAW')
+                    require(0 <= clock.source_ns-row['observer_system_ros_now_ns'] < SOURCE_AGE_NS and
+                            0 <= clock.source_ns-wire.header.stamp_ns < SOURCE_AGE_NS and
+                            wire.header.stamp_ns <= row['observer_system_ros_now_ns'],
+                            'stale_or_future_original_callback_system_time')
+                except Exception:
+                    self._retain_admission_failure_timing(clock, row, wire.header.stamp_ns)
+                    raise
                 self.bootstrap_scans_unadmitted += 1
                 self.waiting_reason = 'startup_scan_without_original_start_IMU'
                 return ()
@@ -439,6 +473,12 @@ class StreamObserverRows:
                 diagnostic_count=self.diagnostics, pending_pair=self.ingress.pending is not None,
                 factory_failure_timing=copy.deepcopy(self.factory_failure_timing),
                 factory_failure_timing_error=self.factory_failure_timing_error,
+                admission_failure_timing=copy.deepcopy(self.admission_failure_timing),
+                admission_failure_timing_error=self.admission_failure_timing_error,
+                ingress_admission_failure_timing=copy.deepcopy(
+                    getattr(self.ingress, 'admission_failure_timing', None)),
+                ingress_admission_failure_timing_error=getattr(
+                    self.ingress, 'admission_failure_timing_error', None),
                 runtime_authority=False, motor_command_sent=False, mission_admission=False)
 
     def finish(self, exit_code, operator_stop):

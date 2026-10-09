@@ -7,6 +7,7 @@ import inputs
 from dataclasses import dataclass, replace
 import time
 import hashlib
+import json
 import math
 import os
 
@@ -83,6 +84,8 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._last_eval_raw = self._last_system = None
         self._system_sample_sequence = 0
         self._system_anchor = self._system_progress_raw = None
+        self.admission_failure_timing = None
+        self.admission_failure_timing_error = None
 
     def _invalidate(self, reason):
         value = super()._invalidate(reason)
@@ -220,10 +223,42 @@ class PhysicalOriginalIngress(OriginalIngress):
         require(type(clock) is PhysicalClockReading and
                 clock.source_session == self.clock_session and clock.raw_domain == self.domain,
                 'physical_system_clock_epoch_required')
-        require(0 <= clock.source_ns-envelope.wire.header.stamp_ns < SOURCE_AGE_NS,
-                'stale_or_future_native_source')
-        require(0 <= clock.receipt_ns-envelope.receipt.ns < RECEIPT_AGE_NS,
-                'stale_or_future_native_receipt')
+        try:
+            require(0 <= clock.source_ns-envelope.wire.header.stamp_ns < SOURCE_AGE_NS,
+                    'stale_or_future_native_source')
+            require(0 <= clock.receipt_ns-envelope.receipt.ns < RECEIPT_AGE_NS,
+                    'stale_or_future_native_receipt')
+        except Exception:
+            # These are the failed attempt's original comparison clocks, not
+            # a later sample. Keep the first bounded measurement after owned
+            # envelope and clock-epoch validation, before _invalidate clears it.
+            if self.admission_failure_timing is None and self.admission_failure_timing_error is None:
+                try:
+                    callback = self.callback_provenance[id(envelope)][1]
+                    header_ns = envelope.wire.header.stamp_ns
+                    source_age = clock.source_ns-header_ns
+                    receipt_age = clock.receipt_ns-envelope.receipt.ns
+                    callback_age = clock.source_ns-callback.independent_ros_system_now_ns
+                    header_to_callback = callback.independent_ros_system_now_ns-header_ns
+                    value = dict(schema='ubts.native.admission_failure_timing.v1',
+                        stage='owned_scan_freshness', source_sequence=envelope.source_sequence,
+                        source_now_ns=clock.source_ns, receipt_now_ns=clock.receipt_ns,
+                        callback_raw_ns=envelope.receipt.ns,
+                        callback_system_ns=callback.independent_ros_system_now_ns,
+                        header_ns=header_ns, header_age_ns=source_age,
+                        callback_raw_age_ns=receipt_age, callback_system_age_ns=callback_age,
+                        header_to_callback_ns=header_to_callback,
+                        RAW_TTL_ns=RECEIPT_AGE_NS, SOURCE_TTL_ns=SOURCE_AGE_NS,
+                        checks=dict(header_fresh=0 <= source_age < SOURCE_AGE_NS,
+                            raw_fresh=0 <= receipt_age < RECEIPT_AGE_NS,
+                            system_fresh=0 <= callback_age < SOURCE_AGE_NS,
+                            header_causal=header_to_callback >= 0), data_qualified=False)
+                    raw = json.dumps(value, allow_nan=False, separators=(',', ':'))
+                    require(len(raw.encode('utf-8')) <= 1024, 'admission_failure_timing_capacity')
+                    self.admission_failure_timing = json.loads(raw)
+                except Exception as error:
+                    self.admission_failure_timing_error = str(error)[:128]
+            raise
 
     def _consume_scan(self, cdr, receipt, generation, publisher_gid):
         envelope = None

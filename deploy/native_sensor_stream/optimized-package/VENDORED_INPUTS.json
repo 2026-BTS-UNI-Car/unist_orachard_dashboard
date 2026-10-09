@@ -78,6 +78,14 @@
       "candidate_direct_source_manifest_sha256": "949e689e105fec506549ef7585b5601f17e367e9c3dc4b73351333878e043d79",
       "constructor_default_off": true,
       "only_private_cache_and_two_surface_calls_changed": true
+    },
+    "physical_ingress.py": {
+      "parent_source_sha256": "4a42abf170e410d2647cdc1744b0c4aac9a1cea737b983b6e119a4258feeec6d",
+      "candidate_sha256": "3e64b81c67646825af02ccd85198d6828a8c85231348092b6687873748e706eb",
+      "copied_exact_bytes": false,
+      "admission_timing_only": true,
+      "existing_failed_clock_used_without_resample": true,
+      "all_original_gates_and_final_fences_preserved": true
     }
   },
   "production_external_python_packages": [

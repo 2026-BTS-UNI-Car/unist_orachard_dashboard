@@ -1,9 +1,9 @@
 {
   "schema": "ubts.private.physical_native_shadow_deployment_closure.v1",
   "files_sha256": {
-    "inputs.py": "847e1d781daad021d62c6cc3f30877dce5b00af4e53439d04ea4c131c3966f97",
-    "VENDORED_INPUTS.json": "56b9bb9af1165cd243a8e9c193e2c6833a33b5c5a1cef7b7152c9b6cc9a94405",
-    "physical_ingress.py": "4a42abf170e410d2647cdc1744b0c4aac9a1cea737b983b6e119a4258feeec6d",
+    "inputs.py": "d5e3b6897a52473a8ec81d307be9e8594c7ae15e7c00d5ef8f231e10fecb69ce",
+    "VENDORED_INPUTS.json": "5d6d66baeba6f033ca4699c15a5b91dd3cd9b7141f191c0ef41003c84be61a93",
+    "physical_ingress.py": "3e64b81c67646825af02ccd85198d6828a8c85231348092b6687873748e706eb",
     "physical_factory.py": "9d45ae25eb7a6aa4194e0ac1162d0c338d933051e364e435d6afcae95c58d7c7",
     "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
     "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -25,6 +25,6 @@
   "original_native_Cpp_observer_required_separately": true,
   "offline_inspector_optional_file": "inspect_capture.py",
   "source_only_no_installed_live_pipeline_qualification": true,
-  "parent_manifest_sha256": "fb57299a084f4b16a90abb31a627048b4a8b11175bb260089cd0e69ae0aa1ed3",
-  "source_revision": "native_v5_typed_envelope_seal_exact_surface_cache"
+  "parent_manifest_sha256": "4d65ac4cc51172e83b8242bc074c9d6f222bc672cf552691c1bc89b70a15d1c5",
+  "source_revision": "native_v6_exact_cache_admission_timing"
 }

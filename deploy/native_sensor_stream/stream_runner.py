@@ -533,12 +533,21 @@ def load_physical_package(path, expected_sha):
             "common/original_cdr.py", "common/sensor_contract.py", "common/sensor_views.py",
             "kernel/__init__.py", "kernel/fit_workers.py", "kernel/raw_localization.py",
         }
+        revision = manifest.get("source_revision")
+        reviewed_parents = {
+            "native_v5_typed_envelope_seal_exact_surface_cache":
+                "fb57299a084f4b16a90abb31a627048b4a8b11175bb260089cd0e69ae0aa1ed3",
+            "native_v6_exact_cache_admission_timing":
+                "4d65ac4cc51172e83b8242bc074c9d6f222bc672cf552691c1bc89b70a15d1c5",
+        }
         require(type(manifest.get("owned_count")) is int and manifest["owned_count"] == 14 and
                 set(manifest["files_sha256"]) == expected_paths | {"DEPLOY_CLOSURE.json"} and
-                manifest.get("source_revision") == "native_v5_typed_envelope_seal_exact_surface_cache" and
-                manifest.get("parent_manifest_sha256") ==
-                "fb57299a084f4b16a90abb31a627048b4a8b11175bb260089cd0e69ae0aa1ed3",
+                type(revision) is str and revision in reviewed_parents and
+                manifest.get("parent_manifest_sha256") == reviewed_parents[revision],
                 "reviewed_optimized_physical_source_contract_required")
+        if revision == "native_v6_exact_cache_admission_timing":
+            require(manifest.get("admission_timing_only") is True,
+                    "reviewed_optimized_physical_admission_timing_required")
         for key in ("runtime_authority", "motor_transport", "autonomy_output_enabled",
                     "physical_body_calibration_braking_REP145_qualified",
                     "installed_original_callback_or_live_pipeline_qualified"):
