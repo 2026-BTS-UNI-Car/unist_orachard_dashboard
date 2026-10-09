@@ -1,3 +1,5 @@
+현재 설치·한계: [v10 최종 IMU 검사와 전체 기록 GPS 시각 점검](../../docs/NATIVE_POSTCONSUMED_RECOVERY_PROGRESS_20261010.md). 실제 자율주행·GPS 통합 지도는 미완료입니다.
+
 # Native 센서 관찰 서비스
 
 현재 v9 센서 시간 만료·누락 처리는 [설치와 시험](../../docs/NATIVE_INPUT_RECOVERY_PROGRESS_20261010.md)에 있다. 아래 내용은 이전 설치 시점의 기록이다.

@@ -15,6 +15,8 @@ import native_observation_service as service
 HERE = Path(__file__).resolve().parent
 FEATURES = ('imu_gap_reanchor_enabled', 'startup_expiry_discard_enabled',
             'current_expiry_reanchor_enabled')
+FACTORY_FEATURE = 'postconsumed_causal_raw_expiry_reanchor_enabled'
+ALL_FEATURES = FEATURES + (FACTORY_FEATURE,)
 
 
 class TrustedWiringTests(unittest.TestCase):
@@ -40,6 +42,10 @@ class TrustedWiringTests(unittest.TestCase):
                 def reset(self):calls.append(('reset',))
         class Factory:
             def __init__(self, receiver, contract, **kwargs):calls.append(('factory', kwargs))
+        if legacy:
+            class Factory:
+                def __init__(self, receiver, contract, *, exact_surface_cache_enabled=False):
+                    calls.append(('factory', {'exact_surface_cache_enabled':True} if exact_surface_cache_enabled else {}))
         class Rows:
             def __init__(self, receiver, factory, **kwargs):calls.append(('rows', kwargs))
         modules['rclpy.clock'].Clock=Clock
@@ -106,15 +112,31 @@ class TrustedWiringTests(unittest.TestCase):
             sentinel=object()
             def load(path,sha,*,reviewed_features):
                 self.assertEqual(reviewed_features,{})
-                reviewed_features.update(dict.fromkeys(FEATURES,True))
+                reviewed_features.update(dict.fromkeys(ALL_FEATURES,True))
                 return sentinel
             bound=SimpleNamespace(package='verified-kit',package_manifest_sha256='a'*64)
             namespace={variable:bound,'load_physical_package':load,
                        'stream_runner':SimpleNamespace(load_physical_package=load)}
             isolated=ast.Module(body=selected,type_ignores=[])
             exec(compile(ast.fix_missing_locations(isolated),'<exact-entrypoint-wiring>','exec'),namespace)
-            self.assertEqual(bound.physical_reviewed_features,dict.fromkeys(FEATURES,True))
+            self.assertEqual(bound.physical_reviewed_features,dict.fromkeys(ALL_FEATURES,True))
             self.assertIs(bound.physical_surface_cache_enabled,sentinel)
+
+    def test_factory_feature_does_not_leak_to_receiver_constructor(self):
+        calls=self.adapter(dict.fromkeys(ALL_FEATURES,True))
+        self.assertNotIn(FACTORY_FEATURE,calls[0][1])
+        self.assertEqual({key:calls[0][1][key] for key in FEATURES},dict.fromkeys(FEATURES,True))
+        self.assertEqual(calls[2],('factory',{'exact_surface_cache_enabled':True,FACTORY_FEATURE:True}))
+
+    def test_false_factory_feature_omitted_for_legacy_factory_signature(self):
+        for features in ({FACTORY_FEATURE:False},dict.fromkeys(ALL_FEATURES,False)):
+            calls=self.adapter(features,legacy=True,cache=False)
+            self.assertEqual(calls[2],('factory',{}))
+
+    def test_factory_feature_exact_bool_not_integer_or_external_feature_name(self):
+        for features in ({FACTORY_FEATURE:1},{FACTORY_FEATURE:'true'},{'factory_override':True}):
+            with self.subTest(features=features),self.assertRaisesRegex(ValueError,'verified_physical_receiver_features'):
+                self.adapter(features)
 
     def test_service_input_is_adapter_proposal_not_retained_diagnostic_history(self):
         tree=ast.parse(Path(service.__file__).read_bytes())

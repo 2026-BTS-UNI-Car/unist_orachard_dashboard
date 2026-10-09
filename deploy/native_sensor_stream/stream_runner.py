@@ -521,7 +521,8 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
     require(reviewed_features is None or (type(reviewed_features) is dict and not reviewed_features),
             "empty_trusted_reviewed_features_required")
     features = dict(imu_gap_reanchor_enabled=False, startup_expiry_discard_enabled=False,
-                    current_expiry_reanchor_enabled=False)
+                    current_expiry_reanchor_enabled=False,
+                    postconsumed_causal_raw_expiry_reanchor_enabled=False)
     path = Path(path).resolve(strict=True)
     handoff = path / "HANDOFF.json"
     require(sha_file(handoff) == expected_sha, "reviewed_physical_package_manifest_required")
@@ -547,6 +548,8 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "f372e8ed6f1d81e5dc54990a51c435ffa9e83a65d80a22e3f3d23bc06c50d9ad",
             "native_v9_exact_cache_positive_scan_expiry_wait":
                 "92303f90fe9efc98db14aa77ced6f37c990f0f24195395f7988c5dd0f0f51df3",
+            "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait":
+                "42e46534f700cacdce08ea9aee64b3fe9667f6bb35a297b99182507d1afd12a1",
         }
         require(type(manifest.get("owned_count")) is int and manifest["owned_count"] == 14 and
                 set(manifest["files_sha256"]) == expected_paths | {"DEPLOY_CLOSURE.json"} and
@@ -559,14 +562,21 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
         if revision == "native_v7_exact_cache_imu_gap_timing":
             require(manifest.get("imu_gap_timing_only") is True,
                     "reviewed_optimized_physical_imu_gap_timing_required")
-        if revision == "native_v9_exact_cache_positive_scan_expiry_wait":
+        if revision in ("native_v9_exact_cache_positive_scan_expiry_wait",
+                        "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait"):
             require(manifest.get("admission_timing_only") is False and
                     manifest.get("imu_gap_timing_only") is False and
                     manifest.get("preserved_timing_hooks") is True,
                     "reviewed_optimized_physical_recovery_timing_contract_required")
-            for key in features:
+            for key in ("imu_gap_reanchor_enabled", "startup_expiry_discard_enabled",
+                        "current_expiry_reanchor_enabled"):
                 require(manifest.get(key) is True, "reviewed_optimized_physical_recovery_feature_required:" + key)
-            features = dict.fromkeys(features, True)
+                features[key] = True
+        if revision == "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait":
+            key = "postconsumed_causal_raw_expiry_reanchor_enabled"
+            require(manifest.get(key) is True,
+                    "reviewed_optimized_physical_consumed_RAW_expiry_feature_required")
+            features[key] = True
         for key in ("runtime_authority", "motor_transport", "autonomy_output_enabled",
                     "physical_body_calibration_braking_REP145_qualified",
                     "installed_original_callback_or_live_pipeline_qualified"):
@@ -626,12 +636,14 @@ def make_adapter(args):
     require(clock.clock_type == ClockType.SYSTEM_TIME, "actual_RCL_SYSTEM_TIME_required")
     contract = PhysicalShadowContract("laser", "imu_link")
     features = getattr(args, "physical_reviewed_features", {})
-    feature_keys = {"imu_gap_reanchor_enabled", "startup_expiry_discard_enabled",
+    ingress_keys = {"imu_gap_reanchor_enabled", "startup_expiry_discard_enabled",
                     "current_expiry_reanchor_enabled"}
+    feature_keys = ingress_keys | {"postconsumed_causal_raw_expiry_reanchor_enabled"}
     require(type(features) is dict and set(features) <= feature_keys and
             all(type(value) is bool for value in features.values()),
             "verified_physical_receiver_features_required")
-    receiver_options = {key: True for key, value in features.items() if value is True}
+    receiver_options = {key: True for key, value in features.items()
+                        if key in ingress_keys and value is True}
     receiver = PhysicalOriginalIngress(raw_clock=LinuxRawClock(), source_now_ns=lambda: clock.now().nanoseconds,
         source_clock_kind=lambda: "ROS_SYSTEM_TIME" if clock.clock_type == ClockType.SYSTEM_TIME else "invalid",
         scan_frame="laser", imu_frame="imu_link", profile_revision=revision(contract),
@@ -640,8 +652,10 @@ def make_adapter(args):
     receiver.reset()  # before Popen and before original callback delivery
     cache_enabled = getattr(args, "physical_surface_cache_enabled", False)
     require(type(cache_enabled) is bool, "reviewed_physical_surface_cache_flag_required")
-    factory = (PhysicalNativeShadowFactory(receiver, contract, exact_surface_cache_enabled=True)
-               if cache_enabled else PhysicalNativeShadowFactory(receiver, contract))
+    factory_options = {"exact_surface_cache_enabled": True} if cache_enabled else {}
+    if features.get("postconsumed_causal_raw_expiry_reanchor_enabled") is True:
+        factory_options["postconsumed_causal_raw_expiry_reanchor_enabled"] = True
+    factory = PhysicalNativeShadowFactory(receiver, contract, **factory_options)
     return StreamObserverRows(receiver, factory,
                               observer_contract_sha256=args.observer_contract_sha256)
 

@@ -58,6 +58,10 @@ class _ValidatedImuGap(Exception):
     """Private signal; only the exact receiver's pending identity is accepted."""
 
 
+class _ValidatedConsumedCausalRawExpiry(Exception):
+    """Only the exact consumed factory attempt may abandon this expired pair."""
+
+
 @dataclass(frozen=True)
 class _ImuGapWait:
     reason: str
@@ -130,6 +134,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._expiry_wait_outcome = None
         self.scan_expiry_wait_count = 0
         self.scan_expiry_wait_timing = None
+        self._consumed_expiry_proof = None
 
     @property
     def imu_gap_reanchor_enabled(self):
@@ -150,6 +155,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._callback_context = None
         self._gap_exception = self._gap_wait_outcome = None
         self._expiry_wait_outcome = None
+        self._consumed_expiry_proof = None
         return value
 
     def reset(self):
@@ -728,7 +734,110 @@ class PhysicalOriginalIngress(OriginalIngress):
         except Exception as error:
             self.causal_imu_failure_timing_error = str(error)[:128]
 
-    def _association(self, previous, current, originals, clock, *, allow_expected_gap=False):
+    def _consumed_raw_expiry_guards(self, original, samples, pairing, clock):
+        # This is a classification of the EXISTING association sample, not a
+        # second clock observation or a weaker association. Check every other
+        # boundary before the single positive selected-lower RAW exception.
+        self._receipt(original.current.receipt, self.generation)
+        require(type(clock) is PhysicalClockReading and clock.source_session == self.clock_session and
+                clock.raw_domain == self.domain and clock.source_ns == self._last_system and
+                clock.receipt_ns == self._last_eval_raw and
+                clock.sample_sequence == self._system_sample_sequence and
+                _ns(clock.source_ns) and _ns(clock.receipt_ns) and _ns(clock.sample_sequence) and
+                clock.clock_kind == SYSTEM_CLOCK and clock.provenance_domain == PHYSICAL_DOMAIN,
+                'exact_existing_consumed_association_clock_required')
+        require(type(original) is PreparedInputs and original.generation == self.generation and
+                samples == original.imu_samples and pairing == original.pairing and
+                pairing.reason == 'bracketed_available_imu', 'original_causal_sensor_IMU_changed')
+        previous, current, originals = original.previous, original.current, original.imu_originals
+        require(0 < current.wire.header.stamp_ns-previous.wire.header.stamp_ns <= PAIR_INTERVAL_NS and
+                previous.receipt.ns <= current.receipt.ns, 'missing_or_reordered_adjacent_native_pair')
+        for owner, _digest in tuple(self._owners.values()):
+            self.validate_owned(owner)
+        for value in (previous, current)+originals:
+            self.validate_owned(value)
+            callback = self.callback_provenance[id(value)][1]
+            require(type(callback) is NativeCallbackProvenance and
+                    callback.publisher_gid == self.expected_gids[0 if value.ros_type == LASER_TYPE else 1] and
+                    callback.observer_contract_sha256 == self.observer_contract_sha256 and
+                    value.wire.header.stamp_ns <= callback.independent_ros_system_now_ns <= clock.source_ns and
+                    value.receipt.ns <= clock.receipt_ns, 'noncausal_consumed_original_callback')
+        for value in (previous, current):
+            scan = self._native_scan(value)
+            a,b,inc,dt,cycle,minimum,maximum = map(float,value.wire.metadata)
+            require(all(math.isfinite(v) for v in (a,b,inc,dt,cycle,minimum,maximum)) and
+                    120 <= len(scan.ranges) <= 4096 and 0 < inc <= .1 and dt >= 0 and
+                    0 <= cycle <= .5 and 0 <= minimum < maximum <= 100 and
+                    abs(b-(a+(len(scan.ranges)-1)*inc)) <= 2e-4 and
+                    (len(scan.ranges)-1)*dt <= .2, 'bounded_original_physical_scan_geometry_required')
+            callback = self.callback_provenance[id(value)][1]
+            require(scan.stamp_ns+math.ceil((len(scan.ranges)-1)*dt*1e9) <=
+                    callback.independent_ros_system_now_ns, 'rolling_scan_wire_time_future_at_original_callback')
+        # All retained/captured groups must be valid, including groups which
+        # were not selected as interpolation endpoints. No malformed group is
+        # hidden under a freshness label.
+        retained_and_captured = {id(value): value for value in (*originals,*tuple(self.imus))}
+        for value in retained_and_captured.values():
+            self.validate_owned(value)
+            require(type(value.wire) is WireImu and value.wire.header.frame_id == self.imu_frame,
+                    'original_imu_window_required')
+            callback = self.callback_provenance[id(value)][1]
+            require(value.wire.header.stamp_ns <= callback.independent_ros_system_now_ns <= clock.source_ns and
+                    value.receipt.ns <= clock.receipt_ns, 'noncausal_consumed_original_callback')
+            q,qc,angular,ac,_linear,_lc = tuple(tuple(float(v) for v in group) for group in value.wire.groups)
+            groups = dict(quaternion=q, orientation_covariance=qc,
+                          angular_velocity=angular, angular_velocity_covariance=ac)
+            for name, group in (('orientation', _imu_group(groups,'quaternion','orientation_covariance',4)),
+                    ('angular_velocity', _imu_group(groups,'angular_velocity','angular_velocity_covariance',3))):
+                require(group.valid and group.available, 'imu_'+name+'_'+group.reason)
+        self._scan_fresh(current, clock)
+        require(0 <= clock.source_ns-self.callback_provenance[id(current)][1].independent_ros_system_now_ns
+                < SOURCE_AGE_NS, 'stale_or_future_original_callback_system_time')
+        lower, newest = originals[pairing.end_indices[0]], originals[-1]
+        require(0 <= clock.source_ns-lower.wire.header.stamp_ns < SOURCE_AGE_NS and
+                clock.receipt_ns-lower.receipt.ns >= RECEIPT_AGE_NS,
+                'typed_positive_selected_lower_RAW_expiry_required')
+        require(0 <= clock.source_ns-newest.wire.header.stamp_ns < SOURCE_AGE_NS and
+                0 <= clock.receipt_ns-newest.receipt.ns < RECEIPT_AGE_NS,
+                'captured_newest_IMU_must_remain_fresh')
+
+    def _raise_consumed_raw_expiry(self, owner, attempt, original, samples, pairing, clock):
+        from physical_factory import PhysicalNativeShadowFactory
+        require(type(owner) is PhysicalNativeShadowFactory and owner.ingress is self,
+                'exact_consumed_physical_factory_required')
+        owner._validate_consumed_expiry_attempt(attempt, original, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        owner._validate_consumed_expiry_attempt(attempt, original, clock)
+        error = _ValidatedConsumedCausalRawExpiry('selected_lower_causal_RAW_positive_expiry')
+        self._consumed_expiry_proof = (error, owner, attempt, original, samples, pairing, clock)
+        raise error
+
+    def _quarantine_consumed_raw_expiry(self, error, owner, attempt):
+        proof = self._consumed_expiry_proof
+        require(type(error) is _ValidatedConsumedCausalRawExpiry and proof is not None and
+                proof[0] is error and proof[1] is owner and proof[2] is attempt,
+                'owned_consumed_RAW_expiry_proof_required')
+        _,_,_,original,samples,pairing,clock = proof
+        owner._validate_consumed_expiry_attempt(attempt, original, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        owner._validate_consumed_expiry_attempt(attempt, original, clock)
+        # Preserve every observed Header floor; older captured originals must
+        # never lower floors advanced by valid unadmitted priming observations.
+        scan_floor = max(v for v in (self._observed_scan_header_floor, self._gap_scan_floor,
+                         original.current.wire.header.stamp_ns) if v is not None)
+        imu_floor = max(v for v in (self._observed_imu_header_floor, self._gap_imu_floor,
+                        *(v.wire.header.stamp_ns for v in self.imus)) if v is not None)
+        self._observed_scan_header_floor = self._gap_scan_floor = scan_floor
+        self._observed_imu_header_floor = self._gap_imu_floor = imu_floor
+        self.previous = self.pending = self.prepared = self._active = None
+        self._prepared_digest = None
+        self.imus.clear(); self._owners.clear(); self.callback_provenance.clear()
+        self._gap_exception = self._gap_wait_outcome = self._expiry_wait_outcome = None
+        self._consumed_expiry_proof = None
+        self._first_pair = True
+
+    def _association(self, previous, current, originals, clock, *, allow_expected_gap=False,
+                     _consumed_raw_expiry=None):
         self.validate_owned(previous)
         self._scan_fresh(current, clock)
         samples = []
@@ -754,6 +863,11 @@ class PhysicalOriginalIngress(OriginalIngress):
         if not (0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
                 0 <= clock.receipt_ns-pairing.rate_receipt_ns < RECEIPT_AGE_NS):
             self._retain_causal_imu_failure_timing(originals[pairing.end_indices[0]], clock)
+            if (_consumed_raw_expiry is not None and
+                    0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
+                    clock.receipt_ns-pairing.rate_receipt_ns >= RECEIPT_AGE_NS):
+                owner, attempt, original = _consumed_raw_expiry
+                self._raise_consumed_raw_expiry(owner, attempt, original, samples, pairing, clock)
         require(0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
                 0 <= clock.receipt_ns-pairing.rate_receipt_ns < RECEIPT_AGE_NS,
                 'stale_original_causal_imu')

@@ -13,7 +13,7 @@ import time
 
 from common.native_ownership import PreparedInputs
 from physical_ingress import (PhysicalOriginalIngress, PhysicalClockReading, require,
-    SOURCE_AGE_NS, RECEIPT_AGE_NS)
+    SOURCE_AGE_NS, RECEIPT_AGE_NS, _ValidatedConsumedCausalRawExpiry)
 from kernel.raw_localization import scan_points, surfaces, registration, ExactSurfaceCache
 from kernel.fit_workers import WORKERS
 
@@ -91,6 +91,15 @@ class DiagnosticState:
     latest: PhysicalDiagnosticMotion | None
 
 
+@dataclass(frozen=True)
+class _ConsumedCausalRawExpiryWait:
+    reason: str
+    generation: int
+    _owner: object
+    diagnostic_version: int
+    input_ready: bool = False
+
+
 class PhysicalNativeShadowFactory:
     """Compute one internally fitted diagnostic, then final ownership fences.
 
@@ -99,7 +108,10 @@ class PhysicalNativeShadowFactory:
     admission, endpoint-grid publication or transport. Fault preserves latest
     diagnostic and invalidates receiver continuity until an external new epoch.
     """
-    def __init__(self, ingress, contract, *, exact_surface_cache_enabled=False):
+    def __init__(self, ingress, contract, *, exact_surface_cache_enabled=False,
+                 postconsumed_causal_raw_expiry_reanchor_enabled=False):
+        require(type(postconsumed_causal_raw_expiry_reanchor_enabled) is bool,
+                'typed_postconsumed_causal_RAW_expiry_option_required')
         require(type(exact_surface_cache_enabled) is bool,
                 'typed_constructor_surface_cache_option_required')
         require(type(ingress) is PhysicalOriginalIngress, 'exact_physical_original_receiver_required')
@@ -120,10 +132,19 @@ class PhysicalNativeShadowFactory:
         self._timing = {'stages_ns': {}, 'selected_TTL_margins_ns': {}}
         self.__exact_surface_cache_enabled = exact_surface_cache_enabled
         self._exact_surface_cache = ExactSurfaceCache(enabled=exact_surface_cache_enabled)
+        self.__postconsumed_causal_raw_expiry_reanchor_enabled = postconsumed_causal_raw_expiry_reanchor_enabled
+        self._consumed_expiry_configuration = postconsumed_causal_raw_expiry_reanchor_enabled
+        self._consumed_attempt = self._consumed_wait = None
+        self.consumed_raw_expiry_wait_count = 0
+        self.consumed_raw_expiry_wait_timing = None
 
     @property
     def exact_surface_cache_enabled(self):
         return self.__exact_surface_cache_enabled
+
+    @property
+    def postconsumed_causal_raw_expiry_reanchor_enabled(self):
+        return self.__postconsumed_causal_raw_expiry_reanchor_enabled
 
     def _timed(self, name, function, *args, **kwargs):
         begin = time.perf_counter_ns()
@@ -176,6 +197,9 @@ class PhysicalNativeShadowFactory:
             return self._state
 
     def _owned(self, original, *, pending=True):
+        require(type(self.postconsumed_causal_raw_expiry_reanchor_enabled) is bool and
+                self.postconsumed_causal_raw_expiry_reanchor_enabled is self._consumed_expiry_configuration,
+                'physical_shadow_recovery_configuration_changed')
         require(not self.stop_intent.is_set(), 'physical_shadow_STOP_latched')
         require(self.fault is None and self.ingress.fault is None,
                 self.fault or self.ingress.fault or 'physical_receiver_fault')
@@ -197,17 +221,90 @@ class PhysicalNativeShadowFactory:
         self._owned(original, pending=pending)
         clock = self.ingress._evaluate()
         require(type(clock) is PhysicalClockReading, 'physical_system_clock_required')
-        samples, pairing = self.ingress._association(original.previous, original.current,
-            original.imu_originals, clock)
+        if not pending and self.postconsumed_causal_raw_expiry_reanchor_enabled:
+            attempt = self._consumed_attempt = (object(), self._pending, original, clock,
+                                               self._pending._capability)
+            # Complete proof/digest work is required only if the unchanged
+            # association identifies the narrow positive RAW-expiry leaf.
+            samples, pairing = self.ingress._association(original.previous, original.current,
+                original.imu_originals, clock, _consumed_raw_expiry=(self,attempt,original))
+            self._consumed_attempt = None
+        else:
+            samples, pairing = self.ingress._association(original.previous, original.current,
+                original.imu_originals, clock)
         require(samples == original.imu_samples and pairing == original.pairing,
                 'original_causal_sensor_IMU_changed')
         return clock, pairing
+
+    def _validate_consumed_expiry_attempt(self, attempt, original, clock):
+        self._owned(original, pending=False)
+        require(type(self) is PhysicalNativeShadowFactory and
+                self.postconsumed_causal_raw_expiry_reanchor_enabled and
+                type(attempt) is tuple and attempt is self._consumed_attempt and len(attempt) == 5 and
+                attempt[1] is self._pending and attempt[2] is original and attempt[3] is clock and
+                type(self._pending) is PreparedPhysicalDiagnostic and self._pending._owner is self and
+                attempt[4] is self._pending._capability and
+                self._pending.original_inputs is original and self.ingress.prepared is None and
+                self.ingress._prepared_digest is None and self.ingress.pending is None and
+                self.ingress._active is None,
+                'owned_successfully_consumed_factory_attempt_required')
+        require(hashlib.sha256(repr(self._pending.record).encode()+
+                self.ingress._digest_prepared(original).encode()).hexdigest() == self._pending_digest,
+                'original_physical_diagnostic_changed')
+
+    def _abandon_consumed_raw_expiry(self, error):
+        attempt = self._consumed_attempt
+        require(attempt is not None, 'owned_consumed_factory_attempt_required')
+        original, clock = attempt[2], attempt[3]
+        self._validate_consumed_expiry_attempt(attempt, original, clock)
+        require(type(self.consumed_raw_expiry_wait_count) is int and
+                0 <= self.consumed_raw_expiry_wait_count < (1<<63)-1,
+                'consumed_RAW_expiry_counter_exhausted')
+        lower = original.imu_originals[original.pairing.end_indices[0]]
+        timing = dict(schema='ubts.native.postconsumed_causal_RAW_expiry_wait.v1',
+            stage='commit_consumed_association', source_sequence=lower.source_sequence,
+            comparison=dict(source_ns=clock.source_ns,RAW_ns=clock.receipt_ns),
+            lower_header_ns=lower.wire.header.stamp_ns, lower_callback_RAW_ns=lower.receipt.ns,
+            lower_SOURCE_age_ns=clock.source_ns-lower.wire.header.stamp_ns,
+            lower_RAW_age_ns=clock.receipt_ns-lower.receipt.ns,
+            SOURCE_TTL_ns=SOURCE_AGE_NS,RAW_TTL_ns=RECEIPT_AGE_NS,
+            diagnostic_version=self._state.version,data_qualified=False)
+        import json
+        require(len(json.dumps(timing,allow_nan=False,separators=(',',':')).encode()) <= 1024,
+                'consumed_RAW_expiry_timing_capacity')
+        self.ingress._quarantine_consumed_raw_expiry(error, self, attempt)
+        # Quarantine ran full guards after the typed-signal handoff. No latch is
+        # cleared, and no fitted record is published on this path.
+        require(not self.stop_intent.is_set() and self.fault is None and self.ingress.fault is None,
+                'physical_shadow_STOP_latched')
+        self._pending = self._pending_digest = self._consumed_attempt = None
+        self.consumed_raw_expiry_wait_count += 1
+        self.consumed_raw_expiry_wait_timing = timing
+        self._consumed_wait = _ConsumedCausalRawExpiryWait(
+            'waiting_for_fresh_scan_after_consumed_causal_RAW_expiry', self._generation,self,self._state.version)
+        return self._consumed_wait
+
+    def is_owned_consumed_raw_expiry_wait(self, value):
+        with self.lock, self.ingress.lock:
+            return (type(value) is _ConsumedCausalRawExpiryWait and value is self._consumed_wait and
+                value._owner is self and value.generation == self._generation == self.ingress.generation and
+                self.ingress.clock_session == self._session and self._pid == os.getpid() and
+                self.ingress.profile_revision == self._revision == revision(self.contract) and
+                value.diagnostic_version == self._state.version and
+                self.postconsumed_causal_raw_expiry_reanchor_enabled is True and
+                self._consumed_expiry_configuration is True and self.fault is None and
+                self.ingress.fault is None and not self.stop_intent.is_set() and
+                self._pending is None and self._pending_digest is None and self._consumed_attempt is None and
+                self.ingress.previous is None and self.ingress.pending is None and
+                self.ingress.prepared is None and self.ingress._active is None and
+                not self.ingress._owners and not self.ingress.imus and not self.ingress.callback_provenance)
 
     def _fail(self, reason):
         self.fault = self.fault or str(reason)[:160]
         self.stop_intent.set()
         self.ingress.stop()
         self._pending = self._pending_digest = None
+        self._consumed_attempt = self._consumed_wait = None
         answer = hold(self.fault)
         answer['diagnostic_stage_timing'] = self.timing_snapshot()
         return answer
@@ -294,7 +391,10 @@ class PhysicalNativeShadowFactory:
                             outcome.reason in ('first_pair_new_epoch',
                             'inputs_only_reviewed_typed_localizer_factory_missing'), outcome.reason)
                     # Receiver consumption is not publication. Recheck after it.
-                    self._timed('commit_consumed_association', self._clock_and_pair, original, pending=False)
+                    try:
+                        self._timed('commit_consumed_association', self._clock_and_pair, original, pending=False)
+                    except _ValidatedConsumedCausalRawExpiry as error:
+                        return self._abandon_consumed_raw_expiry(error)
                     # Full association checks above can take time. Sample only
                     # after that work; then bound original scalar stamps without
                     # another full hash/decode or rewriting the prepared record.

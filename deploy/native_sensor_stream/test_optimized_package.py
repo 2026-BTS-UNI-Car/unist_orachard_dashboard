@@ -15,6 +15,8 @@ spec.loader.exec_module(runner)
 assert Path(runner.__file__).resolve() == Path(__file__).with_name('stream_runner.py').resolve()
 
 FEATURES = ("imu_gap_reanchor_enabled", "startup_expiry_discard_enabled", "current_expiry_reanchor_enabled")
+FACTORY_FEATURE = "postconsumed_causal_raw_expiry_reanchor_enabled"
+ALL_FEATURES = FEATURES + (FACTORY_FEATURE,)
 
 PATHS = (
     'inputs.py', 'VENDORED_INPUTS.json', 'physical_ingress.py', 'physical_factory.py', 'observer_rows.py',
@@ -167,14 +169,14 @@ class OptimizedPackageTests(unittest.TestCase):
         self.assertIs(self.load(), False)
         self.assertNotIn('physical_factory', sys.modules)
 
-    def test_real_frozen_v9_package_validates_without_importing_sensor_or_ROS_modules(self):
+    def test_real_frozen_v10_package_validates_without_importing_sensor_or_ROS_modules(self):
         package = Path(__file__).resolve().with_name('optimized-package')
-        expected = '42e46534f700cacdce08ea9aee64b3fe9667f6bb35a297b99182507d1afd12a1'
+        expected = 'd24a38bafde135b70db87c50e39303f4d6d82c2267ffeef3f769a45587ab57f1'
         self.assertEqual(runner.sha_file(package / 'HANDOFF.json'), expected)
         with patch.object(sys, 'path', sys.path.copy()):
             features = {}
             self.assertIs(runner.load_physical_package(package, expected, reviewed_features=features), True)
-            self.assertEqual(features, dict.fromkeys(FEATURES, True))
+            self.assertEqual(features, dict.fromkeys(ALL_FEATURES, True))
             self.assertEqual(Path(sys.path[0]), package.resolve())
         self.assertNotIn('physical_factory', sys.modules)
         self.assertNotIn('physical_ingress', sys.modules)
@@ -258,7 +260,7 @@ class OptimizedPackageTests(unittest.TestCase):
         self.v9()
         features = {}
         self.assertIs(self.load(features), True)
-        self.assertEqual(features, dict.fromkeys(FEATURES, True))
+        self.assertEqual(features, dict(dict.fromkeys(FEATURES, True), **{FACTORY_FEATURE:False}))
         self.assertIs(self.load(), True)
 
     def test_v9_all_three_features_require_literal_true_not_missing_or_integer(self):
@@ -316,7 +318,7 @@ class OptimizedPackageTests(unittest.TestCase):
             self.manifest.update(dict.fromkeys(FEATURES, True))
             features = {}
             self.assertIs(self.load(features), True)
-            self.assertEqual(features, dict.fromkeys(FEATURES, False))
+            self.assertEqual(features, dict.fromkeys(ALL_FEATURES, False))
 
     def test_legacy_v3_populates_false_only_and_ignores_manifest_recovery_flags(self):
         for index in range(8):
@@ -327,7 +329,55 @@ class OptimizedPackageTests(unittest.TestCase):
         self.manifest.update(dict.fromkeys(FEATURES, True))
         features = {}
         self.assertIs(self.load(features), False)
-        self.assertEqual(features, dict.fromkeys(FEATURES, False))
+        self.assertEqual(features, dict.fromkeys(ALL_FEATURES, False))
+
+    def v10(self):
+        self.v9()
+        self.manifest.update(source_revision='native_v10_exact_cache_postconsumed_causal_raw_expiry_wait',
+            parent_manifest_sha256='42e46534f700cacdce08ea9aee64b3fe9667f6bb35a297b99182507d1afd12a1')
+        self.manifest[FACTORY_FEATURE]=True
+
+    def test_v10_verified_factory_feature_separate_from_three_ingress_features(self):
+        self.v10();features={}
+        self.assertIs(self.load(features),True)
+        self.assertEqual(features,dict.fromkeys(ALL_FEATURES,True))
+
+    def test_v10_factory_feature_is_literal_true_not_missing_or_boolean_alias(self):
+        self.v10();original=copy.deepcopy(self.manifest)
+        for value in (False,0,1,None,'true'):
+            self.manifest=copy.deepcopy(original);self.manifest[FACTORY_FEATURE]=value;features={}
+            with self.subTest(value=value),self.assertRaisesRegex(ValueError,'consumed_RAW_expiry_feature_required'):
+                self.load(features)
+            self.assertEqual(features,{})
+        self.manifest=copy.deepcopy(original);del self.manifest[FACTORY_FEATURE]
+        with self.assertRaisesRegex(ValueError,'consumed_RAW_expiry_feature_required'):self.load({})
+
+    def test_v10_wrong_parent_unknown_revision_and_nonboolean_flags_leave_output_empty(self):
+        self.v10();original=copy.deepcopy(self.manifest)
+        cases=(('parent_manifest_sha256','0'*64),('parent_manifest_sha256','92303f90fe9efc98db14aa77ced6f37c990f0f24195395f7988c5dd0f0f51df3'),
+            ('source_revision','native_v11_unreviewed'),('source_revision',True),
+            ('admission_timing_only',0),('imu_gap_timing_only',0),('preserved_timing_hooks',1),
+            ('imu_gap_reanchor_enabled',1),('selected_callback_RAW_TTL_ns',True))
+        for key,value in cases:
+            self.manifest=copy.deepcopy(original);self.manifest[key]=value;features={}
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):self.load(features)
+            self.assertEqual(features,{})
+
+    def test_older_optimized_revisions_cannot_activate_new_factory_manifest_flag(self):
+        original=copy.deepcopy(self.manifest)
+        for revision in ('v5','v6','v7','v9'):
+            self.manifest=copy.deepcopy(original)
+            if revision!='v5':getattr(self,revision)()
+            self.manifest[FACTORY_FEATURE]=True;features={}
+            self.assertIs(self.load(features),True)
+            self.assertIs(features[FACTORY_FEATURE],False)
+
+    def test_v10_late_corruption_never_populates_factory_feature(self):
+        self.v10();digest=self.write();features={};before=sys.path.copy()
+        (self.root/'physical_factory.py').write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError,'source_changed'):
+            runner.load_physical_package(self.root,digest,reviewed_features=features)
+        self.assertEqual(features,{});self.assertEqual(sys.path,before)
 
     def test_trusted_output_must_be_an_exact_empty_dict(self):
         class Derived(dict):pass

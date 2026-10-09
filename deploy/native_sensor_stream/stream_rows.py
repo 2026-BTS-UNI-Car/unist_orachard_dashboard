@@ -168,12 +168,33 @@ class StreamObserverRows:
         return validator(cdr, callback_receipt=receipt, callback_ros_system_now_ns=system_ns,
                          publisher_gid=gid, clock=clock)
 
+    def _factory_expiry_feature(self):
+        factory_expiry = getattr(self.factory, 'postconsumed_causal_raw_expiry_reanchor_enabled', False)
+        require(type(factory_expiry) is bool, 'exact_factory_recovery_feature_boolean_required')
+        return factory_expiry
+
     def _context(self):
         i = self.ingress
         return (i.domain, i.clock_session, i.expected_gids, i.scan_topic, i.imu_topic,
                 i.scan_frame, i.imu_frame, i.profile_revision, i.observer_contract_sha256,
                 self._feature("imu_gap_reanchor_enabled"), self._feature("startup_expiry_discard_enabled"),
-                self._feature("current_expiry_reanchor_enabled"))
+                self._feature("current_expiry_reanchor_enabled"), self._factory_expiry_feature())
+
+    def _accept_owned_consumed_raw_expiry_wait(self, outcome):
+        if not self._factory_expiry_feature():
+            return False
+        validator = getattr(self.factory, 'is_owned_consumed_raw_expiry_wait', None)
+        require(callable(validator), 'reviewed_native_consumed_RAW_wait_validator_required')
+        if not validator(outcome):
+            return False
+        require(not self._stopping.is_set() and self._context() == self._binding,
+                'native_stream_source_context_changed_or_stopped')
+        with self.factory.lock:
+            require(validator(outcome) and not self._stopping.is_set(),
+                    'native_stream_consumed_RAW_expiry_wait_revoked')
+            self._proposal_input = None
+            self.waiting_reason = outcome.reason
+        return True
 
     def _accept_owned_gap_wait(self, outcome):
         if not self._feature("imu_gap_reanchor_enabled"):
@@ -473,6 +494,8 @@ class StreamObserverRows:
             answer = self.factory.commit(owned)
             if self._stopping.is_set():
                 break
+            if self._accept_owned_consumed_raw_expiry_wait(answer):
+                break
             valid_answer = (answer.get('diagnostic') is not None and answer.get('body_velocity_mps') is None and
                     all(answer.get(k) is False for k in ('motor_command_sent', 'runtime_authority',
                         'autonomy_output_enabled', 'execution_eligible', 'physical_autonomy_qualified')) and
@@ -589,6 +612,10 @@ class StreamObserverRows:
                 current_expiry_reanchor_enabled=self._feature("current_expiry_reanchor_enabled"),
                 scan_expiry_wait_count=getattr(self.ingress, "scan_expiry_wait_count", 0),
                 scan_expiry_wait_timing=copy.deepcopy(getattr(self.ingress, "scan_expiry_wait_timing", None)),
+                postconsumed_causal_raw_expiry_reanchor_enabled=self._factory_expiry_feature(),
+                consumed_raw_expiry_wait_count=getattr(self.factory, 'consumed_raw_expiry_wait_count', 0),
+                consumed_raw_expiry_wait_timing=copy.deepcopy(getattr(
+                    self.factory, 'consumed_raw_expiry_wait_timing', None)),
                 runtime_authority=False, motor_command_sent=False, mission_admission=False)
 
     def finish(self, exit_code, operator_stop):
