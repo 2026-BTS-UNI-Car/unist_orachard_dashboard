@@ -1,6 +1,6 @@
-# Sensor-only diagnostics overlay on the reviewed v5 ARM image.
+# Sensor-only diagnostics overlay on the reviewed v6 ARM image.
 # Its inert command, fixed environment and unchanged CPP observer are inherited.
-ARG BASE_IMAGE=sha256:27f3e9d0cdd4ae71f4d5c07557d143c698dd4807cba216f86bec2e40d79c2b5d
+ARG BASE_IMAGE=sha256:0f8a3b7b4e1e8b58020ea5d457d21b86a867ca33ea94cdbc23f28e45dbb46835
 FROM ${BASE_IMAGE}
 ARG PHYSICAL_PACKAGE_SHA
 COPY deploy/native_sensor_stream/optimized-package/ /opt/ubts-shadow/package/

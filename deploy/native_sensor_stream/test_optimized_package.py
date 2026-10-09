@@ -74,6 +74,46 @@ class OptimizedPackageTests(unittest.TestCase):
             parent_manifest_sha256='4d65ac4cc51172e83b8242bc074c9d6f222bc672cf552691c1bc89b70a15d1c5',
             admission_timing_only=True)
 
+    def v7(self):
+        self.v6()
+        self.manifest.update(source_revision='native_v7_exact_cache_imu_gap_timing',
+            parent_manifest_sha256='f372e8ed6f1d81e5dc54990a51c435ffa9e83a65d80a22e3f3d23bc06c50d9ad',
+            imu_gap_timing_only=True)
+
+    def test_reviewed_v7_is_diagnostic_only_and_preserves_trusted_cache(self):
+        self.v7()
+        self.assertIs(self.load(), True)
+        self.assertNotIn('physical_factory', sys.modules)
+        self.assertNotIn('rclpy', sys.modules)
+
+    def test_v7_requires_both_diagnostic_flags_as_exact_boolean_true(self):
+        self.v7()
+        original = copy.deepcopy(self.manifest)
+        for key in ('admission_timing_only', 'imu_gap_timing_only'):
+            for value in (False, 0, 1, None, 'true'):
+                self.manifest = copy.deepcopy(original)
+                self.manifest[key] = value
+                with self.subTest(key=key, value=value), self.assertRaisesRegex(ValueError, 'timing_required'):
+                    self.load()
+            self.manifest = copy.deepcopy(original)
+            del self.manifest[key]
+            with self.assertRaisesRegex(ValueError, 'timing_required'):
+                self.load()
+
+    def test_v7_rejects_each_prior_parent_and_unreviewed_revision(self):
+        self.v7()
+        original = copy.deepcopy(self.manifest)
+        for parent in ('0'*64, '4d65ac4cc51172e83b8242bc074c9d6f222bc672cf552691c1bc89b70a15d1c5',
+                       'fb57299a084f4b16a90abb31a627048b4a8b11175bb260089cd0e69ae0aa1ed3'):
+            self.manifest = copy.deepcopy(original)
+            self.manifest['parent_manifest_sha256'] = parent
+            with self.subTest(parent=parent), self.assertRaisesRegex(ValueError, 'source_contract'):
+                self.load()
+        self.manifest = copy.deepcopy(original)
+        self.manifest['source_revision'] = 'native_v8_unreviewed'
+        with self.assertRaisesRegex(ValueError, 'source_contract'):
+            self.load()
+
     def test_reviewed_v6_admission_timing_preserves_only_verified_cache_feature(self):
         self.v6()
         self.assertIs(self.load(), True)
@@ -125,9 +165,9 @@ class OptimizedPackageTests(unittest.TestCase):
         self.assertIs(self.load(), False)
         self.assertNotIn('physical_factory', sys.modules)
 
-    def test_real_frozen_f372_package_validates_without_importing_sensor_or_ROS_modules(self):
+    def test_real_frozen_v7_package_validates_without_importing_sensor_or_ROS_modules(self):
         package = Path(__file__).resolve().with_name('optimized-package')
-        expected = 'f372e8ed6f1d81e5dc54990a51c435ffa9e83a65d80a22e3f3d23bc06c50d9ad'
+        expected = '1af864127cf4ab8c0f30f8142f93d32f16bd3d7a3145534008aafd2288b2b883'
         self.assertEqual(runner.sha_file(package / 'HANDOFF.json'), expected)
         with patch.object(sys, 'path', sys.path.copy()):
             self.assertIs(runner.load_physical_package(package, expected), True)

@@ -539,15 +539,20 @@ def load_physical_package(path, expected_sha):
                 "fb57299a084f4b16a90abb31a627048b4a8b11175bb260089cd0e69ae0aa1ed3",
             "native_v6_exact_cache_admission_timing":
                 "4d65ac4cc51172e83b8242bc074c9d6f222bc672cf552691c1bc89b70a15d1c5",
+            "native_v7_exact_cache_imu_gap_timing":
+                "f372e8ed6f1d81e5dc54990a51c435ffa9e83a65d80a22e3f3d23bc06c50d9ad",
         }
         require(type(manifest.get("owned_count")) is int and manifest["owned_count"] == 14 and
                 set(manifest["files_sha256"]) == expected_paths | {"DEPLOY_CLOSURE.json"} and
                 type(revision) is str and revision in reviewed_parents and
                 manifest.get("parent_manifest_sha256") == reviewed_parents[revision],
                 "reviewed_optimized_physical_source_contract_required")
-        if revision == "native_v6_exact_cache_admission_timing":
+        if revision in ("native_v6_exact_cache_admission_timing", "native_v7_exact_cache_imu_gap_timing"):
             require(manifest.get("admission_timing_only") is True,
                     "reviewed_optimized_physical_admission_timing_required")
+        if revision == "native_v7_exact_cache_imu_gap_timing":
+            require(manifest.get("imu_gap_timing_only") is True,
+                    "reviewed_optimized_physical_imu_gap_timing_required")
         for key in ("runtime_authority", "motor_transport", "autonomy_output_enabled",
                     "physical_body_calibration_braking_REP145_qualified",
                     "installed_original_callback_or_live_pipeline_qualified"):

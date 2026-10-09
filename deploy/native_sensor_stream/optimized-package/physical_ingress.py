@@ -4,6 +4,7 @@ No /clock health is fabricated. Local system-time observations and original
 native callback stamps are separate. This receiver never authorizes motion.
 """
 import inputs
+from bisect import bisect_left
 from dataclasses import dataclass, replace
 import time
 import hashlib
@@ -14,7 +15,7 @@ import os
 from common.native_ownership import (OriginalIngress, RawReceipt, Outcome, _ns, _sha,
     MAX_OWNERS, IMU_HORIZON_NS, PreparedInputs)
 from common.original_cdr import LASER_TYPE, IMU_TYPE, CLOCK_TYPE, WireImu
-from common.sensor_views import ImuSample, pair_imu
+from common.sensor_views import ImuSample, pair_imu, MAX_IMU_BRACKET_NS
 
 SYSTEM_CLOCK = 'ROS_SYSTEM_TIME'
 PHYSICAL_DOMAIN = 'physical.ros_system_time.original_callback.v1'
@@ -86,6 +87,8 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._system_anchor = self._system_progress_raw = None
         self.admission_failure_timing = None
         self.admission_failure_timing_error = None
+        self.imu_gap_failure_timing = None
+        self.imu_gap_failure_timing_error = None
 
     def _invalidate(self, reason):
         value = super()._invalidate(reason)
@@ -347,6 +350,49 @@ class PhysicalOriginalIngress(OriginalIngress):
                     return self._outcome('late_prepare_discarded')
                 return self._invalidate(str(error))
 
+    def _retain_imu_gap_failure_timing(self, previous, current, originals, samples, clock):
+        # pair_imu has already validated window ordering/frames/receipt
+        # causality. Retain its FIRST failed boundary without interpolation,
+        # numeric-group qualification or a replacement comparison clock.
+        if self.imu_gap_failure_timing is not None or self.imu_gap_failure_timing_error is not None:
+            return
+        try:
+            stamps = tuple(s.stamp_ns for s in samples)
+            failed = None
+            for boundary, at in (('previous', previous.wire.header.stamp_ns),
+                                 ('current', current.wire.header.stamp_ns)):
+                index = bisect_left(stamps, at)
+                if index < len(stamps) and stamps[index] == at:
+                    lo = hi = index
+                elif 0 < index < len(stamps):
+                    lo, hi = index-1, index
+                else:
+                    raise ValueError('failed_gap_bracket_unavailable')
+                if stamps[hi]-stamps[lo] > MAX_IMU_BRACKET_NS:
+                    failed = boundary, lo, hi
+                    break
+            require(failed is not None, 'failed_gap_not_found')
+            boundary, lo, hi = failed
+            def endpoint(index):
+                value = originals[index]
+                return dict(source_sequence=value.source_sequence,
+                    header_ns=value.wire.header.stamp_ns, callback_RAW_ns=value.receipt.ns,
+                    source_age_ns=clock.source_ns-value.wire.header.stamp_ns,
+                    RAW_age_ns=clock.receipt_ns-value.receipt.ns)
+            value = dict(schema='ubts.native.imu_gap_failure_timing.v1',
+                stage='association_bracket', scan_boundary=boundary,
+                scan_headers_ns=[previous.wire.header.stamp_ns, current.wire.header.stamp_ns],
+                comparison=dict(source_ns=clock.source_ns, RAW_ns=clock.receipt_ns),
+                bracket_indices=[lo, hi], lower=endpoint(lo), upper=endpoint(hi),
+                gap_ns=stamps[hi]-stamps[lo], gap_limit_ns=MAX_IMU_BRACKET_NS,
+                SOURCE_TTL_ns=SOURCE_AGE_NS, RAW_TTL_ns=RECEIPT_AGE_NS,
+                numeric_groups_validated=False, data_qualified=False)
+            raw = json.dumps(value, allow_nan=False, separators=(',', ':'))
+            require(len(raw.encode('utf-8')) <= 1024, 'imu_gap_failure_timing_capacity')
+            self.imu_gap_failure_timing = json.loads(raw)
+        except Exception as error:
+            self.imu_gap_failure_timing_error = str(error)[:128]
+
     def _association(self, previous, current, originals, clock):
         self.validate_owned(previous)
         self._scan_fresh(current, clock)
@@ -365,6 +411,8 @@ class PhysicalOriginalIngress(OriginalIngress):
         pairing = pair_imu(samples, previous.wire.header.stamp_ns,
             current.wire.header.stamp_ns, frame_id=self.imu_frame,
             receipt_now_ns=clock.receipt_ns, max_roll_pitch_rad=None)
+        if pairing.reason == 'imu_bracket_gap_exceeded':
+            self._retain_imu_gap_failure_timing(previous, current, originals, samples, clock)
         require(pairing.reason == 'bracketed_available_imu', pairing.reason)
         require(0 <= clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS and
                 0 <= clock.receipt_ns-pairing.rate_receipt_ns < RECEIPT_AGE_NS,

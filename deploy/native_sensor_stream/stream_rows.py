@@ -479,6 +479,10 @@ class StreamObserverRows:
                     getattr(self.ingress, 'admission_failure_timing', None)),
                 ingress_admission_failure_timing_error=getattr(
                     self.ingress, 'admission_failure_timing_error', None),
+                ingress_imu_gap_failure_timing=copy.deepcopy(
+                    getattr(self.ingress, 'imu_gap_failure_timing', None)),
+                ingress_imu_gap_failure_timing_error=getattr(
+                    self.ingress, 'imu_gap_failure_timing_error', None),
                 runtime_authority=False, motor_command_sent=False, mission_admission=False)
 
     def finish(self, exit_code, operator_stop):
