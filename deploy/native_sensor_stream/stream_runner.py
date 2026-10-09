@@ -522,9 +522,41 @@ def load_physical_package(path, expected_sha):
     handoff = path / "HANDOFF.json"
     require(sha_file(handoff) == expected_sha, "reviewed_physical_package_manifest_required")
     manifest = strict_json(read_regular(handoff))
-    require(manifest.get("schema") == "ubts.private.physical_native_shadow_factory.v3" and
-            manifest.get("owned_count") == 22 and len(manifest.get("files_sha256", {})) == 22 and
-            manifest.get("deployment_closure_count") == 13 and
+    require(type(manifest) is dict and type(manifest.get("files_sha256")) is dict,
+            "reviewed_physical_package_contract_required")
+    schema = manifest.get("schema")
+    optimized = schema == "ubts.private.physical_native_shadow_factory.v4"
+    if optimized:
+        expected_paths = {
+            "inputs.py", "VENDORED_INPUTS.json", "physical_ingress.py", "physical_factory.py",
+            "observer_rows.py", "common/__init__.py", "common/native_ownership.py",
+            "common/original_cdr.py", "common/sensor_contract.py", "common/sensor_views.py",
+            "kernel/__init__.py", "kernel/fit_workers.py", "kernel/raw_localization.py",
+        }
+        require(type(manifest.get("owned_count")) is int and manifest["owned_count"] == 14 and
+                set(manifest["files_sha256"]) == expected_paths | {"DEPLOY_CLOSURE.json"} and
+                manifest.get("source_revision") == "native_v5_typed_envelope_seal_exact_surface_cache" and
+                manifest.get("parent_manifest_sha256") ==
+                "fb57299a084f4b16a90abb31a627048b4a8b11175bb260089cd0e69ae0aa1ed3",
+                "reviewed_optimized_physical_source_contract_required")
+        for key in ("runtime_authority", "motor_transport", "autonomy_output_enabled",
+                    "physical_body_calibration_braking_REP145_qualified",
+                    "installed_original_callback_or_live_pipeline_qualified"):
+            require(manifest.get(key) is False, "optimized_physical_authority_or_qualification_forbidden:" + key)
+        for key in ("source_frozen", "full_original_SHA_decode_at_every_association_preserved",
+                    "exact_surface_cache_enabled"):
+            require(manifest.get(key) is True, "optimized_physical_reviewed_feature_required:" + key)
+        for key, value in (("selected_source_TTL_ns", 250000000),
+                           ("selected_callback_RAW_TTL_ns", 200000000),
+                           ("initial_IMU_horizon_ns", 500000000)):
+            require(type(manifest.get(key)) is int and manifest[key] == value,
+                    "optimized_physical_original_time_limit_required:" + key)
+    else:
+        require(schema == "ubts.private.physical_native_shadow_factory.v3" and
+                manifest.get("owned_count") == 22 and len(manifest["files_sha256"]) == 22,
+                "reviewed_physical_package_contract_required")
+    require(type(manifest.get("deployment_closure_count")) is int and
+            manifest["deployment_closure_count"] == 13 and
             manifest.get("runtime_authority") is False and
             manifest.get("after_last_association_final_scalar_fence") is True,
             "reviewed_physical_package_contract_required")
@@ -535,14 +567,22 @@ def load_physical_package(path, expected_sha):
     require(closure.get("schema") == "ubts.private.physical_native_shadow_deployment_closure.v1" and
             closure.get("count") == 13 and len(closure["files_sha256"]) == 13,
             "minimal_physical_deployment_closure_required")
+    if optimized:
+        require(type(closure.get("files_sha256")) is dict and
+                set(closure["files_sha256"]) == expected_paths,
+                "exact_optimized_physical_deployment_paths_required")
     for name, expected in closure["files_sha256"].items():
         relative = Path(name)
-        require(not relative.is_absolute() and ".." not in relative.parts and
+        require(type(name) is str and len(name) <= 256 and "\\" not in name and
+                not relative.is_absolute() and ".." not in relative.parts and
+                type(expected) is str and re.fullmatch("[0-9a-f]{64}", expected) is not None and
+                (path / relative).resolve(strict=True).is_relative_to(path) and
                 expected == manifest["files_sha256"].get(name) and sha_file(path / relative) == expected,
                 "physical_deployment_source_changed:" + name)
     require(not any(name in sys.modules for name in ("physical_factory", "physical_ingress", "inputs")),
             "isolated_physical_module_loader_required")
     sys.path.insert(0, str(path))
+    return optimized
 
 
 def make_adapter(args):
@@ -561,7 +601,11 @@ def make_adapter(args):
         scan_publisher_gid=bytes.fromhex(args.scan_gid), imu_publisher_gid=bytes.fromhex(args.imu_gid),
         observer_contract_sha256=args.observer_contract_sha256)
     receiver.reset()  # before Popen and before original callback delivery
-    return StreamObserverRows(receiver, PhysicalNativeShadowFactory(receiver, contract),
+    cache_enabled = getattr(args, "physical_surface_cache_enabled", False)
+    require(type(cache_enabled) is bool, "reviewed_physical_surface_cache_flag_required")
+    factory = (PhysicalNativeShadowFactory(receiver, contract, exact_surface_cache_enabled=True)
+               if cache_enabled else PhysicalNativeShadowFactory(receiver, contract))
+    return StreamObserverRows(receiver, factory,
                               observer_contract_sha256=args.observer_contract_sha256)
 
 
@@ -593,7 +637,7 @@ def main(argv=None):
                 "explicit_original_publisher_GID16_required")
     require(args.scan_gid != args.imu_gid, "distinct_original_sensor_GIDs_required")
     verify_stream_manifest(args.stream_manifest, args.stream_manifest_sha256, args)
-    load_physical_package(args.package, args.package_manifest_sha256)
+    args.physical_surface_cache_enabled = load_physical_package(args.package, args.package_manifest_sha256)
     binary = Path(args.observer_bin).resolve(strict=True)
     require(sha_file(binary) == args.observer_binary_sha256 and os.access(binary, os.X_OK),
             "root_verified_persistent_observer_binary_required")

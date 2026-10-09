@@ -3,9 +3,11 @@
 This manifest is an inventory, not independent evidence that a compiler ran.
 The isolated build transcript, immutable image and ROOT audit supply that proof.
 """
+import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 
 
 FILES = (
@@ -19,17 +21,22 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--package-manifest-sha256', default=PACKAGE_SHA)
+    args = parser.parse_args(argv)
+    if re.fullmatch('[0-9a-f]{64}', args.package_manifest_sha256) is None:
+        raise ValueError('explicit_reviewed_package_SHA_required')
     root = Path(__file__).resolve().parent
     contract = json.loads((root / "OBSERVER_CONTRACT.json").read_text())
     sources = {name: digest(root / name) for name in FILES}
     assert contract["schema"] == "ubts.actual.native_stream.observer_contract.v1"
     assert all(sources[name] == value for name, value in contract["source_sha256"].items())
-    assert digest(Path("/opt/ubts-shadow/package/HANDOFF.json")) == PACKAGE_SHA
+    assert digest(Path("/opt/ubts-shadow/package/HANDOFF.json")) == args.package_manifest_sha256
     manifest = dict(schema="ubts.actual.native_stream.build.v1", files_sha256=sources,
         observer_contract_sha256=sources["OBSERVER_CONTRACT.json"],
         observer_binary_sha256=digest(root / "bin/actual_cdr_stream"),
-        physical_package_manifest_sha256=PACKAGE_SHA,
+        physical_package_manifest_sha256=args.package_manifest_sha256,
         runtime_authority=False, motor_command_sent=False, autonomy_output_enabled=False,
         mission_admission=False, production_mapping_integration_pending=True)
     raw = (json.dumps(manifest, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()

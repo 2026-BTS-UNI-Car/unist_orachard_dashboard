@@ -102,3 +102,7 @@ services:
 ```
 
 서비스가 허용하는 소켓은 컨테이너 안의 `/run/ubts-native-stream/observe.sock` 한 개입니다. host source는 사용자 홈의 `/home/unist/ubts-native-stream-socket` 또는 이미 준비된 동등한 디렉터리이며 host `/run` 생성이나 sudo를 요구하지 않습니다. 서비스 UID0의 생성 권한과 대시보드의 접근 권한이 확인된 디렉터리를 두 컨테이너에 동일하게 연결합니다. 기존 원본 센서 SHM·다른 owner의 소켓 권한을 바꾸거나 기존 소켓을 지우지 않습니다. host network/IPC는 기존 ROS 입력에 접근하기 위한 설정이며 새로운 센서 드라이버·TF publisher·모터 장치나 제어 소켓을 추가하지 않습니다. 대시보드에 이 소켓이 연결되어 있어야 관찰 Start/Stop이 native 서비스로 전달됩니다. 프로필을 명시해 서비스를 실행한 후에도 상태는 idle이며, 관찰 시작은 별도 사용자 동작입니다.
+
+## 검증한 선택적 처리 최적화
+
+원본 CDR·ownership·시계 경계를 유지하는 typed digest와 정확히 같은 endpoint의 surface 캐시를 별도 `optimized-package`에 제공한다. 기본 `Dockerfile.stream`의 legacy 패키지를 보존한다. 새 `Dockerfile.optimized`는 검증한 cached ARM binary를 재사용하고 명시적인 패키지 SHA를 요구한다. 설치·실패 이력과 검사 명령은 [추가 처리 개선](../../docs/NATIVE_LATENCY_PROGRESS_20261010.md)을 참고한다. 실제 지속 입력과 모터 자율 구동은 아직 합격하지 않았다.

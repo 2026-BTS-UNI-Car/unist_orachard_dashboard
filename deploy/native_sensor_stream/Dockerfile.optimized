@@ -1,0 +1,17 @@
+# Reuse the reviewed, unchanged ARM observer binary; no compiler runs in this build.
+# Only the Python sensor observation package and strict loader are replaced.
+ARG BASE_IMAGE=sha256:c2105ed93c4e48d9ac024d6df7cf6fe7ef09d573fa96cbf92ceb4efae77e62b4
+FROM ${BASE_IMAGE}
+USER 0:0
+LABEL com.docker.compose.project="ubts-private-native-stream" com.docker.compose.service="observer"
+HEALTHCHECK NONE
+ARG PHYSICAL_PACKAGE_SHA
+COPY deploy/native_sensor_stream/optimized-package/ /opt/ubts-shadow/optimized-package/
+RUN rm -rf /opt/ubts-shadow/package && mv /opt/ubts-shadow/optimized-package /opt/ubts-shadow/package
+COPY deploy/native_sensor_stream/stream_runner.py deploy/native_sensor_stream/stream_rows.py deploy/native_sensor_stream/OBSERVER_CONTRACT.json deploy/native_sensor_stream/build_provenance.py deploy/native_sensor_stream/native_observation_service.py /opt/ubts-native-stream/
+COPY dashboard_server/__init__.py dashboard_server/native_owner_lifecycle.py /opt/ubts-native-stream/dashboard_server/
+RUN /usr/bin/python3 -B /opt/ubts-native-stream/build_provenance.py --package-manifest-sha256 "${PHYSICAL_PACKAGE_SHA}"
+ENV ROS_DOMAIN_ID=0 UBTS_MAP_FIT_WORKERS=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ROS_LOG_DIR=/tmp/ubts-native-stream/log
+RUN /bin/bash -c 'source /opt/ros/iron/setup.bash && /opt/ubts-native-stream/bin/actual_cdr_stream && /usr/bin/python3 -B /opt/ubts-native-stream/stream_runner.py && /usr/bin/python3 -B /opt/ubts-native-stream/native_observation_service.py'
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["/usr/bin/python3", "-B", "/opt/ubts-native-stream/stream_runner.py"]

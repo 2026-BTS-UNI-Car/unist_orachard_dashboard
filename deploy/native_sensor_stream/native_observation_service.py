@@ -42,7 +42,8 @@ def main(argv=None):
         observer_contract_sha256=m['observer_contract_sha256'],observer_binary_sha256=m['observer_binary_sha256'],
         scan_gid=args.scan_gid,imu_gid=args.imu_gid)
     stream_runner.verify_stream_manifest(manifest,hashlib.sha256(manifest.read_bytes()).hexdigest(),bound)
-    stream_runner.load_physical_package('/opt/ubts-shadow/package',bound.package_manifest_sha256)
+    bound.physical_surface_cache_enabled = stream_runner.load_physical_package(
+        '/opt/ubts-shadow/package',bound.package_manifest_sha256)
     binary=root/'bin/actual_cdr_stream'
     stream_runner.require(stream_runner.sha_file(binary)==bound.observer_binary_sha256,'compiled_observer_SHA_required')
     # Warm imports before accepting requests; no ROS context/node or receiver.
