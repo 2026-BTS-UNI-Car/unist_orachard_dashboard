@@ -29,7 +29,8 @@ class AutonomySettings:
                     reason='encoderless_autonomy_pending_physical_validation',
                     message='실차 자율주행 준비 중 · LiDAR·IMU 위치 추정과 제동 검증 필요',
                     speed_units='percent_of_configured_cruise', calibrated_speed_m_s=None,
-                    preparation=preparation)
+                    preparation=preparation,
+                    body_feedback=live.get('body_feedback') if isinstance(live,dict) else None)
 
     def set_speed(self, value):
         percent = self.validate(value)

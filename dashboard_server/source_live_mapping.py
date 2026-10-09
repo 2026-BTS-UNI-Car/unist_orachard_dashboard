@@ -12,7 +12,9 @@ import os
 import threading
 import time
 import uuid
+import bisect
 import numpy as np
+from .body_feedback import BodyFeedbackObserver, FeedbackContext, LaserPosePair, NativeImuYaw
 from .live_mapping import LiveMapping
 from .continuous_mapping import ContinuousMapping
 from .tile_transport import StreamingOccupancyMap
@@ -22,6 +24,11 @@ from .occupancy_map import atomic_json
 class SourceLiveMapping(LiveMapping):
     def __init__(self,state_dir,start_worker=True):
         self.engine=None;self.cell_snapshot=None
+        self.body_feedback=BodyFeedbackObserver()
+        self._feedback_previous=None
+        self._feedback_sequence=0
+        self._feedback_session='web_ws_subscriptions:'+uuid.uuid4().hex
+        self._feedback_adapter={}
         super().__init__(state_dir,start_worker=False)
         self.engine=ContinuousMapping()
         if not self.version:self.map=self.engine.map
@@ -59,13 +66,21 @@ class SourceLiveMapping(LiveMapping):
             try:
                 async with websockets.connect(url,max_queue=2,max_size=2**20,open_timeout=3,close_timeout=1) as socket:
                     self.connections[kind]='connected'
+                    if kind in ('scan','imu'):
+                        with self.processing_lock,self.lock:
+                            self._invalidate_feedback('sensor_subscription_connected',new_session=True)
                     while self.tracking and not self.stop_event.is_set():
-                        try:packet=json.loads(await asyncio.wait_for(socket.recv(),.25))
+                        try:
+                            wire=await asyncio.wait_for(socket.recv(),.25)
+                            receipt_ns=time.monotonic_ns()
+                            packet=json.loads(wire)
                         except asyncio.TimeoutError:continue
                         if kind=='gps' and packet.get('stream_seq'):
                             await socket.send(json.dumps({'ack':packet['stream_seq']}))
                         if packet.get('type')!=kind:continue
-                        row=(packet,time.monotonic())
+                        if kind in ('scan','imu'):
+                            packet={**packet,'_mapping_ws_receipt_ns':receipt_ns}
+                        row=(packet,receipt_ns*1e-9)
                         with self.inbox_lock:
                             if not self.tracking:continue
                             self.latest[kind]=row;self.source_times[kind]=row[1];self.received_counts[kind]+=1
@@ -75,15 +90,21 @@ class SourceLiveMapping(LiveMapping):
                                 self.pending_scans.append(row);last_stamp=packet.get('stamp')
                         self.wakeup.set()
             except (OSError,ValueError,websockets.exceptions.WebSocketException):
+                if kind in ('scan','imu'):
+                    with self.processing_lock,self.lock:
+                        self._invalidate_feedback('sensor_subscription_disconnected',new_session=True)
                 self.connections[kind]='reconnecting';await asyncio.sleep(.5)
 
     def _run(self):
         while not self.stop_event.is_set():
             self.wakeup.wait(.1 if self.tracking else .5);self.wakeup.clear()
             if not self.tracking:continue
-            with self.inbox_lock:
-                if not self.pending_scans:continue
-                scan=self.pending_scans[0];history=list(self.imu_history);gps=self.latest.get('gps')
+            with self.processing_lock,self.lock:
+                if not self.tracking:continue
+                source_identity=(self.engine,self.work_generation,self._feedback_session)
+                with self.inbox_lock:
+                    if not self.pending_scans:continue
+                    scan=self.pending_scans[0];history=list(self.imu_history);gps=self.latest.get('gps')
             def delta(row):
                 try:
                     stamp=row[0]['raw']['stamp'];return abs(stamp['sec']+stamp['nanosec']*1e-9-scan[0]['stamp'])
@@ -94,17 +115,41 @@ class SourceLiveMapping(LiveMapping):
             with self.inbox_lock:
                 if self.pending_scans and self.pending_scans[0] is scan:self.pending_scans.popleft()
             try:
-                if gps and time.monotonic()-gps[1]<1:self.engine.gps(gps[0])
-                self.ingest(scan,imu)
+                with self.processing_lock:
+                    # Stop/reset may have happened after dequeue. Both GPS and
+                    # scan admission share the same original worker identity.
+                    with self.lock:
+                        if source_identity!=(self.engine,self.work_generation,self._feedback_session):continue
+                        if not self.tracking:continue
+                    if gps and time.monotonic()-gps[1]<1:self.engine.gps(gps[0])
+                    self.ingest(scan,imu,source_identity=source_identity)
             except (KeyError,ValueError,TypeError,OverflowError) as error:
-                with self.lock:
+                with self.processing_lock,self.lock:
+                    if source_identity!=(self.engine,self.work_generation,self._feedback_session):continue
+                    self._invalidate_feedback('source_input_or_localizer_error')
                     if self.tracking:self.state='waiting_for_sensors';self.reason=str(error);self._publish()
             except Exception as error:
                 # A bad observation cannot silently kill the single worker.
-                with self.lock:
+                with self.processing_lock,self.lock:
+                    if source_identity!=(self.engine,self.work_generation,self._feedback_session):continue
+                    self._invalidate_feedback('source_input_or_localizer_error')
                     self.state='worker_error';self.reason=type(error).__name__+': '+str(error)[:160];self._publish()
 
-    def ingest(self,scan,imu,now=None):
+    def ingest(self,scan,imu,now=None,*,source_identity=None):
+        with self.processing_lock:
+            with self.lock:
+                identity=(self.engine,self.work_generation,self._feedback_session)
+                if source_identity is not None and source_identity!=identity:return False
+            try:return self._ingest(scan,imu,now)
+            except Exception:
+                # Keep admission and exception handling within one processing
+                # fence. An old observation cannot erase a newer generation.
+                with self.lock:
+                    if identity==(self.engine,self.work_generation,self._feedback_session):
+                        self._invalidate_feedback('source_input_or_localizer_error')
+                raise
+
+    def _ingest(self,scan,imu,now=None):
         now=time.monotonic() if now is None else now
         frame,received=scan;raw_scan=frame.get('raw_scan')
         if not raw_scan:raise ValueError('waiting_for_original_LaserScan_bridge')
@@ -130,11 +175,139 @@ class SourceLiveMapping(LiveMapping):
                     self.state=('drawing' if draw else 'paused') if eligible else 'waiting_for_geometry'
                     self.reason=None if eligible else result['reason']
                     if eligible:self.last_progress=time.monotonic()
+                    try:self._observe_feedback(frame,received,result,engine,history)
+                    except Exception as error:
+                        # Diagnostic failure inhibits feedback, never interrupts
+                        # an already localized/rasterized map or renews old data.
+                        self._invalidate_feedback('feedback_observer_error')
+                        self._feedback_adapter['error_class']=type(error).__name__
                     self.diagnostic={**engine.diagnostic,'source_queue_dropped':self.dropped_source_scans,
                         'receipt_to_map_ms':round((time.monotonic()-received)*1000,2)}
                     self._publish()
                 return result['accepted']
             finally:self.processing=False
+
+    def _invalidate_feedback(self,reason,new_session=False):
+        # Caller holds the same processing fence as pose publication. This is
+        # a WEB subscription session, never a DDS publisher or native RAW epoch.
+        self._feedback_previous=None
+        self.body_feedback.invalidate(reason)
+        if new_session:
+            self._feedback_session='web_ws_subscriptions:'+uuid.uuid4().hex
+            self._feedback_sequence=0
+
+    @staticmethod
+    def _original_ns(message):
+        try:
+            stamp=message['header']['stamp'];sec=stamp['sec'];ns=stamp['nanosec']
+            if type(sec) is not int or type(ns) is not int or sec<0 or not 0<=ns<1_000_000_000:
+                return None
+            value=sec*1_000_000_000+ns
+            return value if value<=2**63-1 else None
+        except (KeyError,TypeError):return None
+
+    @staticmethod
+    def _web_receipt_ns(packet,received):
+        value=packet.get('_mapping_ws_receipt_ns')
+        if type(value) is int and 0<=value<=2**63-1:return value
+        # Direct/offline callers retain their original WEB tuple clock. This
+        # conversion is explicitly not a native DDS callback timestamp.
+        if type(received) in (int,float) and math.isfinite(received) and 0<=received<2**63/1e9:
+            return int(received*1e9)
+        return None
+
+    def _cursor_imu_diagnostic(self,engine,scan_stamp_ns,context,history):
+        cursor=engine.source
+        # Reproduce source_stamp(scan)'s actual cursor key operation. Multiplying
+        # the combined epoch nanoseconds rounds differently at modern epochs.
+        scan_cursor_stamp=scan_stamp_ns//1_000_000_000+(scan_stamp_ns%1_000_000_000)*1e-9
+        index=bisect.bisect_right(cursor.stamps,scan_cursor_stamp)-1
+        if index<0:return None
+        selected=cursor.imus[index]
+        selected_ns=self._original_ns(selected)
+        if selected_ns is None or selected_ns>scan_stamp_ns:return None
+        # Join the actual cursor-selected original, not the front-end nearest
+        # IMU (which may be in the future). Missing original frame stays missing.
+        originals=[]
+        for packet,received in history:
+            native=self.native_imu(packet)
+            if native is None or self._original_ns(native)!=selected_ns:continue
+            # A timestamp is not payload identity. Conflicting originals or
+            # duplicate receipts cannot prove which observation was selected.
+            if native!=selected:return None
+            originals.append((packet,received))
+        if len(originals)!=1:return None
+        for packet,received in originals:
+            raw=packet.get('raw',{})
+            native=self.native_imu(packet)
+            if native is None or self._original_ns(native)!=selected_ns:continue
+            frame=raw.get('frame_id')
+            if type(frame) is not str or not frame.strip():return None
+            receipt_ns=self._web_receipt_ns(packet,received)
+            if receipt_ns is None:return None
+            try:
+                availability=raw.get('availability',{})
+                if any((availability.get(k) or {}).get('available') is False for k in ('orientation','angular_velocity')):
+                    return None
+                covariance=raw.get('covariance',{})
+                if any((covariance.get(k) or [0])[0]<0 for k in ('orientation','angular_velocity')):
+                    return None
+                q=[raw['orientation'][k] for k in 'xyzw']
+                gyro=[raw['angular_velocity'][k] for k in 'xyz']
+                if any(type(v) not in (int,float) or not math.isfinite(v) for v in q+gyro):return None
+                norm=math.sqrt(sum(v*v for v in q))
+                if not .9<norm<1.1:return None
+                x,y,z,w=(v/norm for v in q)
+                rate=2*(x*z-w*y)*gyro[0]+2*(y*z+w*x)*gyro[1]+(1-2*(x*x+y*y))*gyro[2]
+                if not math.isfinite(rate):return None
+            except (KeyError,TypeError,ValueError,OverflowError):return None
+            return NativeImuYaw(context,selected_ns,receipt_ns,rate,
+                native=False,gravity_projected=False,mount_verified=False,imu_frame=frame)
+        return None
+
+    def _observe_feedback(self,frame,received,result,engine,history):
+        self._feedback_sequence+=1
+        self._feedback_adapter=dict(mode='web_ws_sensor_plane_diagnostic',
+            native_CDR_GID_RAW_context_available=False,source_clock_verified=False,
+            receiver_session_is_publisher_epoch=False,body_control_eligible=False)
+        if (result.get('accepted') is not True or result.get('map_eligible') is not True
+                or result.get('motion_prior') is not False or result.get('path_break') is not False):
+            self._invalidate_feedback('registration_rejected_prior_or_relocalized');return
+        raw_scan=frame.get('raw_scan',{})
+        stamp_ns=self._original_ns(raw_scan);receipt_ns=self._web_receipt_ns(frame,received)
+        laser_frame=raw_scan.get('header',{}).get('frame_id')
+        if stamp_ns is None or receipt_ns is None or type(laser_frame) is not str or not laser_frame.strip():
+            self._invalidate_feedback('original_scan_clock_or_frame_missing');return
+        try:pose=tuple(float(v) for v in result['pose'])
+        except (KeyError,TypeError,ValueError,OverflowError):
+            self._invalidate_feedback('invalid_geometric_pose');return
+        if len(pose)!=3 or not all(math.isfinite(v) for v in pose):
+            self._invalidate_feedback('invalid_geometric_pose');return
+        context=FeedbackContext(self._feedback_session,self.map_epoch,self.work_generation,
+            'ros_header_unverified','python_monotonic_web_ws',engine.frame,laser_frame)
+        current=(self._feedback_sequence,stamp_ns,receipt_ns,pose,context)
+        previous=self._feedback_previous
+        if previous is None:
+            self.body_feedback.invalidate('first_geometric_pose_priming')
+            self._feedback_previous=current;return
+        if (context!=previous[4] or stamp_ns<=previous[1] or receipt_ns<=previous[2]
+                or stamp_ns-previous[1]>250_000_000 or abs(pose[2]-previous[3][2])>=math.pi):
+            self._invalidate_feedback('sensor_pose_pair_discontinuous')
+            self._feedback_previous=current;return
+        pair=LaserPosePair(context,previous[0],current[0],previous[1],stamp_ns,
+            previous[2],receipt_ns,previous[3],pose,accepted=True,map_eligible=True,
+            independent_localization_validated=False,planar_supported=False,
+            source_clock_verified=False,path_break=False,motion_prior=False)
+        imu=self._cursor_imu_diagnostic(engine,stamp_ns,context,history)
+        self.body_feedback.observe(pair,imu,source_now_ns=time.time_ns(),receipt_now_ns=time.monotonic_ns())
+        self._feedback_adapter.update(selected_imu_stamp_ns=None if imu is None else imu.source_stamp_ns,
+            selected_imu_frame=None if imu is None else imu.imu_frame,
+            candidate_vertical_gyro_rad_s=None if imu is None else imu.yaw_rad_s)
+        self._feedback_previous=current
+
+    def feedback_status(self):
+        with self.lock:
+            return {**self.body_feedback.snapshot(),'adapter':dict(self._feedback_adapter)}
 
     @staticmethod
     def native_imu(packet):
@@ -153,6 +326,7 @@ class SourceLiveMapping(LiveMapping):
             version=self.version,map_epoch=self.map_epoch,tile_epoch=f'{self.map_epoch}:0:0',view_epoch=f'{self.map_epoch}:0',
             scan_count=self.map.scan_count,**info)
         self.snapshot['diagnostic']=dict(self.diagnostic)
+        self.snapshot['body_feedback']=self.feedback_status()
         if self.persistence:
             self.snapshot['persistence']=dict(self.persistence)
             if self.persistence.get('native_cells'):self.snapshot['native_checkpoint']='last_native_map.json'
@@ -172,11 +346,13 @@ class SourceLiveMapping(LiveMapping):
             last_progress_age_s=None if self.last_progress is None else now-self.last_progress,
             last_attempt_age_s=None if self.last_attempt is None else now-self.last_attempt,
             source_age_s={k:max(0.,now-v) for k,v in times.items()},received=counts,
-            connections=dict(self.connections),diagnostic=dict(self.diagnostic),runtime_authority=False)
+            connections=dict(self.connections),diagnostic=dict(self.diagnostic),
+            body_feedback=self.feedback_status(),runtime_authority=False)
 
     def status(self,since=None,transport=None,tile_since=None,tile_epoch=None,segment=None):
         data=self.cell_snapshot
-        if self.restored_snapshot is not None:return super().status(since)
+        if self.restored_snapshot is not None:
+            return {**super().status(since),'body_feedback':self.feedback_status()}
         if data is None:return dict(self.snapshot)
         try:revision=int(tile_since) if tile_epoch==data['tile_epoch'] else -1
         except (ValueError,TypeError):revision=-1
@@ -195,6 +371,7 @@ class SourceLiveMapping(LiveMapping):
             if operation=='start' and self.active:return self.status(transport='tiles')
             with self.processing_lock,self.lock:
                 if operation=='reset':
+                    self._invalidate_feedback('mapping_reset',new_session=True)
                     if self.map.scan_count:self.map.save_checkpoint(self.state_dir/f'previous-{self.map_epoch}.json')
                     self.engine.closed=True;self.engine=ContinuousMapping();self.map=self.engine.map
                     self.pose=np.zeros(3);self.map_epoch=uuid.uuid4().hex;self.work_generation+=1
@@ -202,8 +379,10 @@ class SourceLiveMapping(LiveMapping):
                     self.restored_snapshot=None;self.persistence={};self.last_progress=None;self.last_attempt=None
                 elif operation=='start':
                     if self.state=='needs_reset':raise ValueError('새 지도를 눌러 위치 추정을 다시 시작하세요')
+                    self._invalidate_feedback('mapping_started',new_session=True)
                     self.active=self.tracking=True;self.state='waiting_for_sensors';self.wakeup.set()
                 elif operation=='stop':
+                    self._invalidate_feedback('mapping_stopped',new_session=True)
                     self.active=self.tracking=False
                     if self.state!='needs_reset':self.state='paused'
                 else:raise ValueError('unknown_map_operation')
