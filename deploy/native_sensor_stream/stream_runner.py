@@ -65,20 +65,25 @@ class _StreamResource:
         self.threads = []
         self.stdout_done, self.stderr_done = threading.Event(), threading.Event()
         self.worker_done, self.stop_requested = threading.Event(), threading.Event()
+        self.admission_failed = threading.Event()
         self.explicit_stop = self.unknown = self.joined = self.closed = False
         self.terminate_attempted = self.kill_attempted = self.adapter_stop_attempted = False
         self.lines_received = self.lines_processed = self.stdout_bytes = self.stderr_bytes = 0
         self.queue_peak = self.diagnostics = self.publications = 0
         self.discarded_after_cleanup = 0
+        self.discarded_after_failure = 0
+        self.drained_chunks_after_failure = self.drained_bytes_after_failure = 0
         self.stderr = bytearray()
         self.first_error = None
         self.protocol = None
         self.adapter_final = None
         self.adapter_live = None
+        self.adapter_fault_status_error = None
 
     def fail(self, error):
         with self.lock:
             self.first_error = self.first_error or reason(error)
+            self.admission_failed.set()
         self.context.fail(error)
 
     def activate(self):
@@ -126,17 +131,33 @@ class _StreamResource:
                 raw = self.child.stdout.readline(MAX_LINE + 1)
                 if not raw:
                     break
-                require(type(raw) is bytes and len(raw) <= MAX_LINE and raw.endswith(b"\n"),
-                        "native_stdout_line_capacity_or_unterminated")
+                require(type(raw) is bytes and len(raw) <= MAX_LINE + 1,
+                        "bounded_native_stdout_read_required")
+                valid_line = len(raw) <= MAX_LINE and raw.endswith(b"\n")
+                overflow = False
                 with self.lock:
                     self.stdout_bytes += len(raw)  # visibility only, no cumulative cap
-                    self.lines_received += 1
-                try:
-                    self.rows.put_nowait(raw)
-                except queue.Full:
-                    raise ValueError("native_stdout_processing_capacity_exceeded")
-                with self.lock:
-                    self.queue_peak = max(self.queue_peak, self.rows.qsize())
+                    self.lines_received += int(valid_line)
+                    draining = (self.admission_failed.is_set() or self.worker_done.is_set() or
+                                (self.context.cancelled and not self.explicit_stop))
+                    if valid_line and not draining:
+                        try:
+                            self.rows.put_nowait(raw)
+                        except queue.Full:
+                            overflow = True
+                        self.queue_peak = max(self.queue_peak, self.rows.qsize())
+                if not valid_line and not self.admission_failed.is_set():
+                    self.fail(ValueError("native_stdout_line_capacity_or_unterminated"))
+                elif overflow:
+                    self.fail(ValueError("native_stdout_processing_capacity_exceeded"))
+                # A failed worker cannot relieve its queue. Continue bounded
+                # reads through EOF so producer writes can finish and SIGTERM
+                # can be observed. These bytes never reach the adapter/history.
+                # Oversized lines are drained as bounded fragments, never joined.
+                if draining or not valid_line or overflow:
+                    with self.lock:
+                        self.drained_chunks_after_failure += 1
+                        self.drained_bytes_after_failure += len(raw)
         except BaseException as error:
             self.fail(error)
         finally:
@@ -163,7 +184,7 @@ class _StreamResource:
     def work(self):
         try:
             while True:
-                if self.context.cancelled and not self.explicit_stop:
+                if self.admission_failed.is_set() or (self.context.cancelled and not self.explicit_stop):
                     break  # fault: no next-generation publication or admission
                 try:
                     raw = self.rows.get(timeout=.02)
@@ -173,6 +194,10 @@ class _StreamResource:
                             raise ValueError("native_stream_unexpected_EOF")
                         break
                     continue
+                if self.admission_failed.is_set():
+                    with self.lock:
+                        self.discarded_after_failure += 1
+                    break
                 # The EXACT original bytes reach the adapter. No parse/reencode
                 # of CDR/header/GID/RAW takes place in this runner.
                 if self.explicit_stop:
@@ -196,11 +221,21 @@ class _StreamResource:
                             "physical_stream_HOLD_only_required")
                     with self.lock:
                         self.diagnostics += 1
-                    if self.context.publish(diagnostic, item["evidence"]):
-                        with self.lock:
+                        # Serialize publication with the first fault latch,
+                        # including the interval before context.fail cancels.
+                        if not self.admission_failed.is_set() and self.context.publish(diagnostic, item["evidence"]):
                             self.publications += 1
         except BaseException as error:
             self.fail(error)
+            try:
+                # Fault timing belongs to this failed row, not the last
+                # successful diagnostic. Capture only bounded adapter status.
+                live_status = bounded_status(self.adapter.status())
+                with self.lock:
+                    self.adapter_live = live_status
+            except BaseException as status_error:
+                with self.lock:
+                    self.adapter_fault_status_error = reason(status_error)
         finally:
             self.worker_done.set()
 
@@ -271,7 +306,10 @@ class _StreamResource:
                 if child is None:
                     self.protocol = dict(ok=True, owner_cleanup=True, process_started=False,
                                          ready_observed=False, data_ready_before_stop=False)
-                else:
+                if self.admission_failed.is_set():
+                    # Pipe drainage cannot qualify discarded CDR/DONE or data.
+                    self.protocol = dict(self.protocol, ok=False, protocol_qualified=False)
+                if child is not None:
                     require(self.protocol.get("ok") is True and self.protocol.get("owner_cleanup") is True,
                             "native_stream_protocol_unqualified:" + str(self.protocol.get("error"))[:128])
             except BaseException as error:
@@ -317,6 +355,9 @@ class _StreamResource:
                 native_stdout_bytes=self.stdout_bytes, native_stderr_bytes=self.stderr_bytes,
                 queue_depth=self.rows.qsize(), queue_peak=self.queue_peak, queue_limit=QUEUE_ROWS,
                 queued_rows_discarded_after_cleanup=self.discarded_after_cleanup,
+                queued_rows_discarded_after_failure=self.discarded_after_failure,
+                stdout_chunks_drained_after_failure=self.drained_chunks_after_failure,
+                stdout_bytes_drained_after_failure=self.drained_bytes_after_failure,
                 diagnostics=self.diagnostics, publications=self.publications,
                 stderr_tail=self.stderr.decode("utf8", errors="replace"),
                 stderr_retained_bytes=len(self.stderr), stderr_limit=STDERR_BYTES,
@@ -326,6 +367,7 @@ class _StreamResource:
                 terminate_attempted=self.terminate_attempted, kill_attempted=self.kill_attempted,
                 protocol=None if self.protocol is None else bounded_status(self.protocol),
                 adapter_last_processed_row=None if self.adapter_live is None else bounded_status(self.adapter_live),
+                adapter_fault_status_error=self.adapter_fault_status_error,
                 adapter_final=None if self.adapter_final is None else bounded_status(self.adapter_final),
                 raw_rows_archived=False,
                 runtime_authority=False, motor_command_sent=False,

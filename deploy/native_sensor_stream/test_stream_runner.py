@@ -31,8 +31,13 @@ class FakePipe:
         self.items.put(raw)
 
     def readline(self, limit):
-        raw = self.items.get()
-        return b"" if raw is None else raw[:limit]
+        raw = self.remainder or self.items.get()
+        if raw is None:
+            return b""
+        newline = raw.find(b"\n")
+        end = min(limit, len(raw) if newline < 0 else newline + 1)
+        self.remainder = raw[end:]
+        return raw[:end]
 
     def read(self, limit):
         raw = self.remainder or self.items.get()
@@ -136,6 +141,61 @@ class FakeAdapter:
     def status(self):
         return dict(ready_observed=self.ready, ended=self.ended,
                     sample_rows=self.samples, line_rows=self.rows)
+
+
+class BackpressureProcess(FakeProcess):
+    """A bounded pipe writer cannot inspect SIGTERM during its blocked write."""
+    def __init__(self):
+        super().__init__(initial=False)
+        self.stdout.items = queue.Queue(maxsize=2)
+        self.release_burst, self.writes_done = threading.Event(), threading.Event()
+        self.signal_stop, self.killed = threading.Event(), threading.Event()
+        self.blocked_write = threading.Event()
+        self.payload = b'{"kind":"sample","padding":"' + b"x" * 96000 + b'"}\n'
+        self.writer = threading.Thread(target=self.produce, daemon=False)
+        self.writer.start()
+
+    def write_bounded(self, raw):
+        while not self.killed.is_set():
+            try:
+                self.stdout.items.put(raw, timeout=.01)
+                return True
+            except queue.Full:
+                self.blocked_write.set()
+        return False
+
+    def produce(self):
+        for raw in (b'{"kind":"begin"}\n', b'{"kind":"ready"}\n',
+                    b'{"kind":"explode"}\n'):
+            if not self.write_bounded(raw):
+                return
+        self.release_burst.wait(2)
+        for _ in range(64):
+            if not self.write_bounded(self.payload):
+                return
+        self.writes_done.set()
+        # Like the C++ callback, check the Stop flag only after writes return.
+        self.signal_stop.wait(2)
+        if not self.killed.is_set() and self.write_bounded(b'{"kind":"done"}\n'):
+            self.exit(0)
+
+    def terminate(self):
+        self.terminate_calls += 1
+        self.signal_stop.set()
+
+    def kill(self):
+        self.kill_calls += 1
+        self.killed.set()
+        self.exit_code = -9
+        # Unblock the controlled fixture even if its reader has already failed.
+        while True:
+            try:
+                self.stdout.items.get_nowait()
+            except queue.Empty:
+                break
+        self.stdout.items.put_nowait(None)
+        self.stderr.feed(None)
+        self.exited.set()
 
 
 class StreamRunnerTests(unittest.TestCase):
@@ -269,6 +329,163 @@ class StreamRunnerTests(unittest.TestCase):
         finally:
             self.assertFalse(owner.stop(1).owned)
 
+    def test_worker_failure_snapshots_current_adapter_timing_and_preserves_cause(self):
+        for status_failure in (False, True):
+            with self.subTest(status_failure=status_failure):
+                owner, adapters, children = self.fixture()
+                try:
+                    owner.start("fault-current-status")
+                    self.wait_for(lambda: adapters[0].ready)
+                    original_status = adapters[0].status
+                    timing = dict(stages_ns={'numeric_fit': 123}, failed_scalar_check='selected_lower_IMU')
+
+                    def status_after_fault():
+                        if adapters[0].last_raw == b'{"kind":"explode"}\n':
+                            if status_failure:
+                                raise ValueError('injected unavailable fault status')
+                            return dict(original_status(), factory_failure_timing=timing,
+                                        fault='original adapter fault')
+                        return original_status()
+
+                    adapters[0].status = status_after_fault
+                    children[0].stdout.feed(b'{"kind":"explode"}\n')
+                    self.wait_for(lambda: owner.resource.worker_done.is_set())
+                    status = owner.status()['stream']
+                    self.assertIn('injected original protocol fault', status['first_error'])
+                    if status_failure:
+                        self.assertIn('injected unavailable fault status', status['adapter_fault_status_error'])
+                    else:
+                        self.assertEqual(status['adapter_last_processed_row']['factory_failure_timing'], timing)
+                        status['adapter_last_processed_row']['factory_failure_timing']['stages_ns']['numeric_fit'] = -1
+                        self.assertEqual(owner.status()['stream']['adapter_last_processed_row']
+                                         ['factory_failure_timing']['stages_ns']['numeric_fit'], 123)
+                        self.assertIsNone(status['adapter_fault_status_error'])
+                finally:
+                    self.assertFalse(owner.stop(1).owned)
+                self.assertIn('injected original protocol fault', owner.status()['stream']['first_error'])
+                self.assertFalse(owner.status()['stream']['protocol']['ok'])
+
+    def test_fault_drain_relieves_pipe_backpressure_without_qualifying_protocol(self):
+        adapter, child = FakeAdapter(), BackpressureProcess()
+        owner = runner_module.NativeStreamRunner(lambda: adapter, lambda: child,
+                                                  identity=lambda: "time:[fake-owned]")
+        try:
+            owner.start("faulting-original-stream")
+            self.wait_for(lambda: owner.status()["stream"]["first_error"] is not None)
+            first_error = owner.status()["stream"]["first_error"]
+            self.assertIn("injected original protocol fault", first_error)
+            self.wait_for(lambda: owner.resource.worker_done.is_set())
+            self.assertFalse(owner.resource.stdout_done.is_set())
+            child.release_burst.set()
+            # This models SIGTERM while an already-entered callback still has
+            # >16 pipe writes to finish. Its flag alone cannot unblock writes.
+            stopped = owner.stop(2)
+            self.assertFalse(stopped.owned)
+            self.assertEqual(stopped.state, "failed")
+            child.writer.join(1)
+            self.assertFalse(child.writer.is_alive())
+            self.assertTrue(child.writes_done.is_set())
+            self.assertEqual((child.poll(), child.terminate_calls, child.kill_calls), (0, 1, 0))
+            final = owner.status()["stream"]
+            self.assertEqual(final["first_error"], first_error)
+            self.assertEqual(final["stdout_chunks_drained_after_failure"], 65)
+            self.assertEqual(final["stdout_bytes_drained_after_failure"],
+                             64 * len(child.payload) + len(b'{"kind":"done"}\n'))
+            self.assertEqual((adapter.rows, final["diagnostics"], final["publications"]), (3, 0, 0))
+            self.assertEqual(final["queue_depth"], 0)
+            self.assertLessEqual(final["queue_peak"], runner_module.QUEUE_ROWS)
+            self.assertTrue(final["readers_joined"])
+            self.assertTrue(final["resources_closed"])
+            self.assertFalse(final["protocol"]["ok"])
+            self.assertFalse(final["protocol"]["protocol_qualified"])
+            self.assertFalse(final["raw_rows_archived"])
+            self.assertEqual((child.stdout.close_calls, child.stderr.close_calls), (1, 1))
+        finally:
+            child.release_burst.set()
+            child.signal_stop.set()
+            owner.stop(1)
+            if child.writer.is_alive():
+                child.kill()
+            child.writer.join(1)
+
+    def test_controlled_pipe_requires_drain_even_after_SIGTERM(self):
+        child = BackpressureProcess()
+        try:
+            child.release_burst.set()
+            self.assertTrue(child.blocked_write.wait(1))
+            child.terminate()
+            with self.assertRaises(subprocess.TimeoutExpired):
+                child.wait(.02)
+            # Only bounded reads relieve the blocked original write.
+            chunks = 0
+            while child.stdout.readline(runner_module.MAX_LINE + 1):
+                chunks += 1
+            self.assertEqual(chunks, 68)
+            self.assertEqual(child.wait(1), 0)
+            self.assertEqual(child.kill_calls, 0)
+        finally:
+            child.release_burst.set()
+            child.signal_stop.set()
+            if child.poll() is None:
+                child.kill()
+            child.writer.join(1)
+
+    def test_oversized_line_drains_bounded_fragments_then_discards_following_rows(self):
+        owner, adapters, children = self.fixture()
+        try:
+            owner.start("oversized-original-stream")
+            self.wait_for(lambda: adapters[0].ready)
+            raw = b"x" * (3 * runner_module.MAX_LINE + 17) + b"\n"
+            children[0].stdout.feed(raw)
+            self.wait_for(lambda: owner.status()["stream"]["stdout_bytes_drained_after_failure"] == len(raw))
+            children[0].stdout.feed(b'{"kind":"sample"}\n')
+            self.wait_for(lambda: owner.status()["stream"]["stdout_chunks_drained_after_failure"] == 5)
+            self.assertEqual(adapters[0].rows, 2)
+            self.assertEqual(owner.status()["stream"]["queue_depth"], 0)
+            self.assertFalse(owner.stop(1).owned)
+            final = owner.status()["stream"]
+            self.assertIn("line_capacity_or_unterminated", final["first_error"])
+            self.assertEqual(final["stdout_chunks_drained_after_failure"], 6)
+            self.assertFalse(final["protocol"]["protocol_qualified"])
+            self.assertEqual(children[0].kill_calls, 0)
+        finally:
+            owner.stop(1)
+
+    def test_fault_latch_inhibits_inflight_result_before_lifecycle_cancel_dispatch(self):
+        owner, adapters, children = self.fixture()
+        owner.start("fault-publication-window")
+        self.wait_for(lambda: adapters[0].ready)
+        adapters[0].block = True
+        children[0].stdout.feed(b'{"kind":"sample"}\n')
+        self.assertTrue(adapters[0].entered.wait(1))
+        resource = owner.resource
+        fault_entered, fault_release = threading.Event(), threading.Event()
+        context_type = type(resource.context)
+        original_fail = context_type.fail
+
+        def delayed_fail(context, error):
+            fault_entered.set()
+            if not fault_release.wait(2):
+                raise RuntimeError("fake fault dispatch release missing")
+            return original_fail(context, error)
+
+        try:
+            with patch.object(context_type, "fail", delayed_fail):
+                children[0].stdout.feed(b"x" * (runner_module.MAX_LINE + 1))
+                self.assertTrue(fault_entered.wait(1))
+                self.assertTrue(resource.admission_failed.is_set())
+                self.assertFalse(resource.context.cancelled)
+                adapters[0].release.set()
+                self.wait_for(lambda: resource.worker_done.is_set())
+                self.assertEqual(resource.publications, 0)
+                self.assertIsNone(owner.status()["owner"]["latest"])
+                fault_release.set()
+                self.wait_for(lambda: resource.context.cancelled)
+        finally:
+            fault_release.set()
+            adapters[0].release.set()
+            self.assertFalse(owner.stop(1).owned)
+
     def test_queue_overflow_and_oversized_line_fail_closed(self):
         for oversized in (False, True):
             with self.subTest(oversized=oversized):
@@ -298,7 +515,9 @@ class StreamRunnerTests(unittest.TestCase):
                 if not oversized:
                     final = owner.status()["stream"]
                     self.assertEqual(final["native_lines_received"], final["native_lines_processed"] +
-                                     final["queued_rows_discarded_after_cleanup"] + 1)
+                                     final["queued_rows_discarded_after_cleanup"] +
+                                     final["queued_rows_discarded_after_failure"] +
+                                     final["stdout_chunks_drained_after_failure"])
 
     def test_stop_inhibits_late_diagnostic_before_worker_join(self):
         owner, adapters, children = self.fixture()

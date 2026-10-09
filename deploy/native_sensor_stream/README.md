@@ -9,7 +9,7 @@
 - **관찰 정지**는 제안 발행을 먼저 억제하고 센서 프로세스·파이프·worker의 종료를 확인합니다. 이는 휠 비상정지와 별개이며, 모터 정지 검증을 대신하지 않습니다. 정지 요청이 곧 종료 완료를 뜻하지 않습니다. `owned=false`와 fault/정리 상태를 확인합니다.
 - 준비 실패·입력 변경·용량 초과는 fault로 중단합니다. 자동 재시작은 없습니다. 원인을 확인하고 이전 owner 정리가 끝난 뒤 명시적으로 다시 시작합니다.
 
-현재 ROOT 확인 범위는 native 센서 서비스의 **IDLE 설치와 기본 미구독**, ARM 기본 비활성 audit, focused pure 77개 통과입니다. WEB 실제 배포·브라우저 관찰 및 지속 관찰 완료는 별도 검증 대상입니다. 물리 주행이나 제동 검증을 완료했다는 뜻이 아닙니다.
+현재 ROOT 확인 범위는 실제 WEB 및 native 서비스 설치, **IDLE 기본 미구독**, ARM 기본 비활성 audit, 관찰 API Start/Stop, 외부 HTTP·JS 배포 확인입니다. focused pure 77개와 native pure 60개가 통과했습니다. 실제 입력은 causal IMU freshness 검증에서 실패한 구간이 있습니다. GUI 브라우저 조작, 지속 관찰, 물리 주행·제동 검증은 완료하지 않았습니다.
 
 관찰 API는 `GET /api/autonomy/observe`, `POST /api/autonomy/observe/start`, `POST /api/autonomy/observe/stop`입니다. Start/Stop은 기존 세션과 동일 Origin을 사용하며 센서값·모터값을 요청 본문에 받지 않습니다. 서비스의 로컬 소켓은 `status/start/stop/input`만 받습니다. 기존 지도와 기록 API는 별개입니다. native 소켓이 설정되지 않은 WebSocket 입력은 원본 native 증거로 승격하지 않고 HOLD합니다.
 
@@ -32,6 +32,10 @@
 이 회복은 operator/manual takeover/geometric STOP이나 이미 latch된 fault를 해제하지 않습니다. 미래 시각·시계 역전·source/context 변경·손상된 입력은 계속 실패로 처리합니다. 또한 **원본 native admission의 stale/future 및 IMU bracket gap은 여전히 fault**입니다. 관찰 계산의 대기 동작을 원본 수신 gate 완화로 해석하지 않습니다.
 
 원본 stream의 각 CDR은 최대 256 KiB, 각 행은 최대 532,480 B입니다. 처리 queue는 16행, stderr 보존은 최근 64 KiB로 제한합니다. 제안 관찰 queue는 8개, evidence는 최근 128개입니다. lifetime 4,096-sample 종료는 적용하지 않지만 용량 초과를 조용히 건너뛰지 않습니다. 큰 입력·순서 위반·GID 변경·원본 native admission 실패·예기치 않은 EOF는 fault가 됩니다. 이 수치는 전체 메모리 사용량의 보증이 아닙니다. 원본 행을 무제한 보관하거나 자동 재생하지 않습니다.
+
+첫 fault 이후에는 admission·제안 발행을 차단하고 stdout을 제한된 크기로 EOF까지 읽어 버립니다. 실패 worker의 큐가 꽉 차도 원본 프로세스의 write와 SIGTERM 처리가 막히지 않게 합니다. 마지막 실제 시험에서 exit 0, 강제 kill 없음, reader/pipe 정리와 owner 해제를 확인했습니다. 읽어 버린 행은 검증된 입력이나 archive가 아니며 native protocol qualification은 계속 false입니다. 첫 fault와 drain 바이트·행 수를 상태에 남깁니다.
+
+fault가 나면 판단 발행은 중단되지만 원본 구독 프로세스는 **관찰 정지** 요청 전까지 drain을 계속할 수 있습니다. fault 뒤에도 반드시 정지를 누르고 `owned=false`를 확인합니다. 실패 계산에서 이미 측정한 timing은 `factory_failure_timing`에 최대 2048B로 보존하고 실패 row 상태를 별도로 표시합니다. 이 값은 실패 시점에 측정된 진단이며 원본 시각이나 TTL, 성공 여부를 바꾸지 않습니다.
 
 ## 기존 기록의 제한된 재생 결과
 

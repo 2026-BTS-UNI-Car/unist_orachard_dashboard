@@ -19,7 +19,7 @@ GPS·PWM·카메라·휠 오도메트리·시뮬레이션 truth는 이 플래너
 | --- | --- |
 | Jetson WEB | 새 이미지 적용, health healthy |
 | 웹 이미지 | `sha256:3d7cd5f794dcf9cbb747040a97d63a7c72e0b2ade95edb99d22d381cf34c488d` |
-| native 센서 이미지 | `sha256:14c1705ef2ebf69b88b95aef08015a4504ee9695171dd83efabd34514fd69fac` |
+| native 센서 이미지 | `sha256:c2105ed93c4e48d9ac024d6df7cf6fe7ef09d573fa96cbf92ceb4efae77e62b4` |
 | 기존 서비스 | WEB 이외 독립 12개 CID/시작 시각/설정 유지 |
 | 기존 지도·속도 설정 | 지도 파일 12개와 설정 바이트 동일, 지도 470 scans·queue 0 유지 |
 | 실제 관찰 API | Start/Stop 및 12회 상태 조회 확인, 적용 0·authority false |
@@ -33,17 +33,21 @@ GPS·PWM·카메라·휠 오도메트리·시뮬레이션 truth는 이 플래너
 
 ## 실제 입력에서 발견한 미해결 문제
 
-이번 최종 실제 API 시험은 `native_original_ingress_rejected:stale_or_future_native_source`로 입력을 거부했다. 최종 시험의 유효 이동 diagnostic은 0회다. 이전 별도 시험에서는 39회 diagnostic 후 `imu_bracket_gap_exceeded`, 다른 시험에서는 3회 후 최종 검증 실패가 발생했다. 서로 다른 버전/시험의 성공 구간을 합쳐 지속 실행 성공으로 표시하지 않는다.
+마지막 실제 API 시험은 2회 이동 diagnostic 후 `physical_shadow_final_fence_failed:final_physical_native_receipt_deadline`로 입력을 거부했다. 실패 row의 timing을 새로 보존해, 선택된 원본 causal IMU RAW age가 209.29ms로 200ms 제한을 9.29ms 넘었음을 확인했다. 그때 numeric fit은 15.45ms, prepare total은 23.40ms였고 추가 commit association·receiver 검증 비용도 기록했다. 12회 상태 조회 동안 적용 출력은 0이었다. 이 timing은 원본 시각과 gate를 바꾸지 않은 진단이다.
 
-최종 센서 프로세스는 강제 종료(exit -9)가 필요했다. pipe/worker 종료와 owner 해제는 확인했지만 native 프로토콜을 통한 정상 ROS 정리 증명은 실패했다. 모터 적용값은 계속 0이었다. **지속 native 입력, 부하 중 지연, 실제 위치·진행방향·정지 정확도는 미검증이다.**
+직전 별도 시험에서는 4회 후 `stale_causal_imu_receipt`, 이전 버전에서는 39회 후 `imu_bracket_gap_exceeded`, 다른 시험에서는 3회 후 최종 검증 실패, 또 다른 버전에서는 0회와 `stale_or_future_native_source`가 발생했다. 서로 다른 버전/시험의 성공 구간을 합쳐 지속 실행 성공으로 표시하지 않는다.
 
-현재 driver 코드의 기본 IMU 요청은 20Hz이며 명목 간격은 50ms다. 기존 60ms bracket 검사까지 여유가 작다. driver에 50Hz 요청 설정 경로가 있으나 이번에는 driver를 변경하지 않았고 실제 50Hz 달성도 확인하지 않았다. 다음 시험에서 원본 Header 간격·RAW age·실패 pair의 시간 여유를 먼저 측정해야 한다. TTL을 늘리거나 누락 IMU를 합성해 통과시키지 않는다.
+이전 버전은 exit -9 강제 종료가 필요했다. 실패 후 worker가 읽기를 멈추면 stdout 역압으로 자식 write가 막힐 수 있는 경로를 수정했다. drain 수정 후 두 실제 시험 모두 exit 0·kill 없음·queue 0·reader/pipe 정리·owner 해제를 확인했다. 첫 입력 오류는 보존했고, 읽어 버린 CDR/DONE을 검증 완료로 승격하지 않아 native protocol qualification은 false다. fault 뒤에도 원본 producer는 명시적인 관찰 정지 전까지 drain을 계속할 수 있으므로 Stop과 owner 해제를 확인해야 한다. 모터 적용값은 계속 0이었다. **지속 native 입력, 부하 중 지연, 실제 위치·진행방향·정지 정확도는 미검증이다.**
+
+별도 C++ 원본 수신 5초 시험은 41 scan·64 IMU, 정상 operator DONE 및 ROS 정리 flag, 전용 컨테이너 삭제와 기존 13개 서비스 유지를 확인했다. 이 짧은 시험에서 LiDAR Header 간격 p95 101.74ms, callback 시점 Header age p95 107.77ms, callback부터 host 완료 행 수신까지 p95 5.94ms였다. IMU 간격 p95 52.91ms·최대 58.01ms, Header age p95 5.43ms였다. 완료 행 지연에는 CDR 가공·stdout·Docker 전송이 포함된다. Python fit은 실행하지 않았으며 ARM 빌드와 동시에 수행한 짧은 표본이므로 장시간 수신·계산 성능의 검증은 아니다.
+
+현재 driver 코드의 기본 IMU 요청은 20Hz이며 명목 간격은 50ms다. 기존 60ms bracket 검사까지 여유가 작다. driver에 50Hz 요청 설정 경로가 있으나 이번에는 driver를 변경하지 않았고 실제 50Hz 달성도 확인하지 않았다. 다음 시험에서 실패 pair의 시간 여유와 FIFO 대기·동일 입력 반복 검증·fit 비용을 분리해 개선해야 한다. TTL을 늘리거나 누락 IMU를 합성해 통과시키지 않는다.
 
 ## 기록 재생과 검증 범위
 
 10월 3일 기록 7개의 **첫 120스캔씩**, 총 840스캔만 비교했다. 전체 녹화 검토가 아니다. 원본 JSON Header와 인과 IMU를 보존했고 offline receipt는 합성임을 명시했다. 지도 적분은 0회, HOLD 34회·STOP 806회·비영 제안 0회였다. STOP 수는 최초 latch가 반복된 횟수를 포함한다. 모든 환경 분류·주행 적합성은 판단 불충분이다. 이 재생은 final native 입력 경로의 검증이 아니다.
 
-최신 판단기·관찰·앱/API/UI·client·활성 속도 연결 77개, 기존 body/live/continuous/preflight 37개, native stream 순수 테스트 53개가 각각 통과했다. native ARM 빌드·기본 비실행 검사·source/binary inventory와 선택적 Compose 설정 검사도 통과했다. 서로 다른 suite의 중복 여부를 확인하지 않고 고유 테스트 합계를 만들지 않는다.
+최신 판단기·관찰·앱/API/UI·client·활성 속도 연결 77개, 기존 body/live/continuous/preflight 37개, 최종 native stream 순수 테스트 60개가 각각 통과했다. fault 후 역압·발행 차단과 실패 timing 보존 회귀를 포함한다. native ARM 빌드·기본 비실행 검사·source/binary inventory와 선택적 Compose 설정 검사도 통과했다. 서로 다른 suite의 중복 여부를 확인하지 않고 고유 테스트 합계를 만들지 않는다.
 
 ## 다음 작업
 

@@ -102,6 +102,22 @@ class StreamObserverRows:
         self.waiting_reason = 'waiting_for_original_start_IMU'
         self._last_original_raw = self._last_original_system = None
         self._proposal_input = None
+        self.factory_failure_timing = None
+        self.factory_failure_timing_error = None
+
+    def _retain_factory_failure_timing(self, answer):
+        # Preserve only the already measured failed attempt, not raw inputs or
+        # a replacement comparison clock. Diagnostic failure cannot mask cause.
+        if self.factory_failure_timing is not None or self.factory_failure_timing_error is not None:
+            return
+        try:
+            value = answer.get('diagnostic_stage_timing')
+            require(type(value) is dict, 'failed_factory_timing_unavailable')
+            raw = json.dumps(value, allow_nan=False, separators=(',', ':'))
+            require(len(raw.encode('utf-8')) <= 2048, 'failed_factory_timing_capacity')
+            self.factory_failure_timing = json.loads(raw)
+        except Exception as error:
+            self.factory_failure_timing_error = str(error)[:128]
 
     def _context(self):
         i = self.ingress
@@ -321,16 +337,21 @@ class StreamObserverRows:
             owned = self.factory.prepare(prepared.prepared)
             if self._stopping.is_set():
                 break
+            if isinstance(owned, dict):
+                self._retain_factory_failure_timing(owned)
             require(not isinstance(owned, dict), 'physical_internal_fit_rejected:' + str(owned))
             answer = self.factory.commit(owned)
             if self._stopping.is_set():
                 break
-            require(answer.get('diagnostic') is not None and answer.get('body_velocity_mps') is None and
+            valid_answer = (answer.get('diagnostic') is not None and answer.get('body_velocity_mps') is None and
                     all(answer.get(k) is False for k in ('motor_command_sent', 'runtime_authority',
                         'autonomy_output_enabled', 'execution_eligible', 'physical_autonomy_qualified')) and
                     all(type(answer.get(k)) in (int, float) and answer[k] == 0 for k in
                         ('applied_linear_mps', 'applied_yaw_rate_rad_s', 'proposed_linear_mps',
-                         'proposed_yaw_rate_rad_s')),
+                         'proposed_yaw_rate_rad_s')))
+            if not valid_answer:
+                self._retain_factory_failure_timing(answer)
+            require(valid_answer,
                     'physical_shadow_final_fence_failed:' + str(answer.get('reason','unknown'))[:256])
             diagnostic = dict(answer, diagnostic=asdict(answer['diagnostic']))
             evidence = dict(observer_seq=row['seq'], original_CDR_sha256=row['original_CDR_sha256'],
@@ -416,6 +437,8 @@ class StreamObserverRows:
                 startup_scans_unadmitted=self.bootstrap_scans_unadmitted,
                 waiting_reason=self.waiting_reason,
                 diagnostic_count=self.diagnostics, pending_pair=self.ingress.pending is not None,
+                factory_failure_timing=copy.deepcopy(self.factory_failure_timing),
+                factory_failure_timing_error=self.factory_failure_timing_error,
                 runtime_authority=False, motor_command_sent=False, mission_admission=False)
 
     def finish(self, exit_code, operator_stop):

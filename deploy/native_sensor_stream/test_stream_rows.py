@@ -216,6 +216,58 @@ class StreamRowsTests(unittest.TestCase):
         self.assertTrue(result['owner_cleanup'])
         self.assertTrue(result['data_ready_before_stop'])
 
+    def test_failed_real_factory_timing_is_retained_without_data_qualification(self):
+        self.start()
+        self.sample(IMU_TYPE, START)
+        self.sample(LASER_TYPE, START)
+        self.sample(IMU_TYPE, START+50_000_000)
+        self.sample(IMU_TYPE, START+100_000_000)
+        original_commit = self.factory.commit
+
+        def expire_before_commit(prepared):
+            self.clock.ns += 210_000_000
+            return original_commit(prepared)
+
+        with patch('physical_factory.registration', return_value=dict(
+                accepted=True, xy=(.01, 0.), yaw=.002, coverage=.9, rmse_m=.02)), \
+                patch.object(self.factory, 'commit', side_effect=expire_before_commit):
+            with self.assertRaisesRegex(ValueError, 'physical_shadow_final_fence_failed:stale_or_future_native_receipt'):
+                self.sample(LASER_TYPE, START+100_000_000)
+        status = self.adapter.status()
+        timing = status['factory_failure_timing']
+        self.assertEqual(timing['schema'], 'ubts.physical.shadow.bounded_stage_timing.v1')
+        self.assertGreater(timing['stages_ns']['numeric_fit'], 0)
+        self.assertGreater(timing['stages_ns']['commit_initial_association'], 0)
+        self.assertIsNone(timing['failed_scalar_check'])  # failure preceded final scalar stage
+        self.assertIsNone(status['factory_failure_timing_error'])
+        self.assertEqual(self.factory.snapshot().version, 0)
+        self.assertEqual(status['diagnostic_count'], 0)
+        timing['stages_ns']['numeric_fit'] = -1
+        self.assertGreater(self.adapter.status()['factory_failure_timing']['stages_ns']['numeric_fit'], 0)
+        finished = self.adapter.finish(0, True)
+        self.assertFalse(finished['ok'])
+        self.assertFalse(finished['owner_cleanup'])
+        self.assertIn('stale_or_future_native_receipt', self.adapter.fault)
+        self.assertIsNotNone(self.adapter.status()['factory_failure_timing'])
+
+    def test_failed_timing_capacity_cannot_replace_original_factory_reason(self):
+        self.start()
+        self.sample(IMU_TYPE, START)
+        self.sample(LASER_TYPE, START)
+        self.sample(IMU_TYPE, START+50_000_000)
+        self.sample(IMU_TYPE, START+100_000_000)
+        failure = dict(diagnostic=None, reason='stale_causal_imu_receipt',
+                       diagnostic_stage_timing={'unbounded': 'x'*2049})
+        with patch('physical_factory.registration', return_value=dict(
+                accepted=True, xy=(.01, 0.), yaw=.002, coverage=.9, rmse_m=.02)), \
+                patch.object(self.factory, 'commit', return_value=failure):
+            with self.assertRaisesRegex(ValueError, 'physical_shadow_final_fence_failed:stale_causal_imu_receipt'):
+                self.sample(LASER_TYPE, START+100_000_000)
+        status = self.adapter.status()
+        self.assertIsNone(status['factory_failure_timing'])
+        self.assertEqual(status['factory_failure_timing_error'], 'failed_factory_timing_capacity')
+        self.assertEqual(status['diagnostic_count'], 0)
+
     def test_over4096_real_ingress_samples_preserve_finite_receiver_ownership(self):
         self.start()
         for i in range(4100):
