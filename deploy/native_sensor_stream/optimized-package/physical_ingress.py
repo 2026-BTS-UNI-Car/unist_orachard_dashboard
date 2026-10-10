@@ -103,6 +103,16 @@ class _ScanExpiryWait:
     envelope: object = None
 
 
+@dataclass(frozen=True)
+class _OriginalCallbackExpiryWait:
+    reason: str
+    generation: int
+    _owner: object
+    input_ready: bool = False
+    prepared: object = None
+    envelope: object = None
+
+
 class PhysicalOriginalIngress(OriginalIngress):
     """Bounded original ownership, causal IMUs and ONE pending native scan pair.
 
@@ -158,6 +168,9 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._expiry_wait_outcome = None
         self.scan_expiry_wait_count = 0
         self.scan_expiry_wait_timing = None
+        self._callback_expiry_wait = None
+        self.original_callback_expiry_wait_count = 0
+        self.original_callback_expiry_wait_timing = None
         self._preparation_expiry_proof = None
         self._consumed_expiry_proof = None
         self._receiver_expiry_proof = self._receiver_expiry_wait = None
@@ -182,6 +195,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._callback_context = None
         self._gap_exception = self._gap_wait_outcome = None
         self._expiry_wait_outcome = None
+        self._callback_expiry_wait = None
         self._preparation_expiry_proof = None
         self._consumed_expiry_proof = None
         self._receiver_expiry_proof = self._receiver_expiry_wait = None
@@ -263,6 +277,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         """
         with self.lock:
             generation = self.generation
+            now = None
             try:
                 require(ros_type in (LASER_TYPE, IMU_TYPE), 'physical_scan_and_imu_only')
                 self._receipt(callback_receipt, generation)
@@ -278,9 +293,19 @@ class PhysicalOriginalIngress(OriginalIngress):
                     if self._positive_scan_expiry(ages) and self._scan_expiry_option():
                         return self._quarantine_scan_expiry(original_cdr, callback_receipt,
                             callback_ros_system_now_ns, publisher_gid, now)
-                require(0 <= now.receipt_ns-callback_receipt.ns < RECEIPT_AGE_NS,
+                callback_ages = (now.receipt_ns-callback_receipt.ns,
+                                 now.source_ns-callback_ros_system_now_ns)
+                if ros_type == IMU_TYPE and self._scan_expiry_option() and (
+                        callback_ages[0] >= RECEIPT_AGE_NS or callback_ages[1] >= SOURCE_AGE_NS):
+                    return self._quarantine_imu_callback_expiry(original_cdr, callback_receipt,
+                        callback_ros_system_now_ns, publisher_gid, now, stage='callback_admission')
+                if not (0 <= callback_ages[0] < RECEIPT_AGE_NS and
+                        0 <= callback_ages[1] < SOURCE_AGE_NS):
+                    self._retain_callback_failure_timing(ros_type, original_cdr, callback_receipt,
+                        callback_ros_system_now_ns, now, 'callback_admission')
+                require(0 <= callback_ages[0] < RECEIPT_AGE_NS,
                         'stale_or_future_original_callback_RAW')
-                require(0 <= now.source_ns-callback_ros_system_now_ns < SOURCE_AGE_NS,
+                require(0 <= callback_ages[1] < SOURCE_AGE_NS,
                         'stale_or_future_original_callback_system_time')
                 if self._last_delivery_raw is not None:
                     require(callback_receipt.ns >= self._last_delivery_raw and
@@ -293,9 +318,152 @@ class PhysicalOriginalIngress(OriginalIngress):
                 return self._consume(ros_type, original_cdr, callback_receipt,
                                      generation, publisher_gid)
             except Exception as error:
+                if now is not None:
+                    self._retain_callback_failure_timing(ros_type,original_cdr,callback_receipt,
+                        callback_ros_system_now_ns,now,'callback_admission')
                 return self._invalidate(str(error))
             finally:
                 self._callback_context = None
+
+    def _callback_timing(self, ros_type, cdr, receipt, callback_system, clock, stage):
+        wire = decode(cdr, ros_type)
+        return dict(schema='ubts.native.original_callback_age.v1', stage=stage, ros_type=ros_type,
+            original_CDR_sha256=hashlib.sha256(cdr).hexdigest(), header_ns=wire.header.stamp_ns,
+            callback_RAW_ns=receipt.ns, callback_SYSTEM_ns=callback_system,
+            comparison=dict(source_ns=clock.source_ns, RAW_ns=clock.receipt_ns,
+                source_session=clock.source_session, raw_domain=clock.raw_domain,
+                sample_sequence=clock.sample_sequence),
+            ages=dict(Header_age_ns=clock.source_ns-wire.header.stamp_ns,
+                callback_RAW_age_ns=clock.receipt_ns-receipt.ns,
+                callback_SYSTEM_age_ns=clock.source_ns-callback_system),
+            SOURCE_TTL_ns=SOURCE_AGE_NS, RAW_TTL_ns=RECEIPT_AGE_NS, data_qualified=False)
+
+    def _retain_callback_failure_timing(self, ros_type, cdr, receipt, callback_system, clock, stage):
+        if self.admission_failure_timing is not None or self.admission_failure_timing_error is not None:
+            return
+        try:
+            value = self._callback_timing(ros_type,cdr,receipt,callback_system,clock,stage)
+            raw = json.dumps(value,allow_nan=False,separators=(',',':'))
+            require(len(raw.encode()) <= 2048,'admission_failure_timing_capacity')
+            self.admission_failure_timing=json.loads(raw)
+        except Exception as error:
+            self.admission_failure_timing_error=str(error)[:128]
+
+    def _validated_observed_imu(self, cdr, receipt, callback_system, gid, clock, *, envelope=None):
+        self._receipt(receipt,self.generation)
+        require(type(clock) is PhysicalClockReading and clock.source_session == self.clock_session and
+                clock.raw_domain == self.domain and clock.source_ns == self._last_system and
+                clock.receipt_ns == self._last_eval_raw and clock.sample_sequence == self._system_sample_sequence and
+                _ns(clock.source_ns) and _ns(clock.receipt_ns) and _ns(clock.sample_sequence) and
+                clock.clock_kind == SYSTEM_CLOCK and clock.provenance_domain == PHYSICAL_DOMAIN,
+                'exact_existing_observed_imu_clock_required')
+        require(type(gid) is bytes and gid == self.expected_gids[1] and _ns(callback_system),
+                'exact_original_imu_callback_required')
+        wire=decode(cdr,IMU_TYPE)
+        require(type(wire) is WireImu and wire.header.frame_id == self.imu_frame,'original_imu_frame_mismatch')
+        require(wire.header.stamp_ns <= callback_system,'source_header_future_at_original_native_callback')
+        q,qc,angular,ac,_linear,_lc=(tuple(float(x) for x in group) for group in wire.groups)
+        groups=dict(quaternion=q,orientation_covariance=qc,angular_velocity=angular,
+                    angular_velocity_covariance=ac)
+        for name,value in (('orientation',_imu_group(groups,'quaternion','orientation_covariance',4)),
+                           ('angular_velocity',_imu_group(groups,'angular_velocity','angular_velocity_covariance',3))):
+            require(value.valid and value.available,'imu_'+name+'_'+value.reason)
+        floor=self._observed_imu_header_floor
+        if envelope is None:
+            require(floor is None or wire.header.stamp_ns > floor,'observed_original_Header_rewind')
+        else:
+            self.validate_owned(envelope)
+            require(envelope.original_cdr == cdr and envelope.receipt is receipt and
+                    envelope.publisher_gid == gid and wire.header.stamp_ns == floor,
+                    'exact_current_observed_imu_required')
+        ages=(clock.receipt_ns-receipt.ns,clock.source_ns-callback_system,clock.source_ns-wire.header.stamp_ns)
+        require(all(type(v) is int and v >= 0 for v in ages),'future_observed_original_imu_or_callback')
+        if self._last_delivery_raw is not None:
+            require(receipt.ns >= self._last_delivery_raw and callback_system >= self._last_delivery_source,
+                    'original_native_callback_delivery_regressed')
+        if self.imus:
+            require(wire.header.stamp_ns > self.imus[-1].wire.header.stamp_ns and
+                    gid == self.imus[-1].publisher_gid,'original_imu_order_or_publisher_changed')
+        return wire,ages
+
+    def _quarantine_imu_callback_expiry(self, cdr, receipt, callback_system, gid, clock,
+                                      *, stage, envelope=None):
+        with self.lock:
+            wire,ages=self._validated_observed_imu(cdr,receipt,callback_system,gid,clock,envelope=envelope)
+            require(self._scan_expiry_option() and (ages[0] >= RECEIPT_AGE_NS or ages[1] >= SOURCE_AGE_NS),
+                    'typed_positive_original_imu_callback_expiry_required')
+            require(self._active is None,'active_prepare_cannot_be_expiry_quarantined')
+            for owner,_digest in tuple(self._owners.values()):self.validate_owned(owner)
+            if self.prepared is not None:
+                require(self._digest_prepared(self.prepared) == self._prepared_digest,
+                        'original_prepared_ownership_changed')
+            require(type(self.original_callback_expiry_wait_count) is int and _ns(self.original_callback_expiry_wait_count+1),'original_callback_wait_counter_exhausted')
+            timing=self._callback_timing(IMU_TYPE,cdr,receipt,callback_system,clock,stage)
+            require(len(json.dumps(timing,allow_nan=False,separators=(',',':')).encode()) <= 2048,
+                    'original_callback_wait_timing_capacity')
+            self._observed_imu_header_floor=self._gap_imu_floor=wire.header.stamp_ns
+            self._gap_scan_floor=self._observed_scan_header_floor
+            self._last_delivery_raw,self._last_delivery_source=receipt.ns,callback_system
+            self.previous=self.pending=self.prepared=self._active=None
+            self._prepared_digest=None
+            self.imus.clear();self._owners.clear();self.callback_provenance.clear()
+            self._gap_exception=self._gap_wait_outcome=None
+            self._expiry_wait_outcome=None
+            self._preparation_expiry_proof=self._consumed_expiry_proof=None
+            self._receiver_expiry_proof=self._receiver_expiry_wait=self._final_expiry_proof=None
+            self._first_pair=True
+            self.original_callback_expiry_wait_count+=1
+            self.original_callback_expiry_wait_timing=timing
+            result=_OriginalCallbackExpiryWait('waiting_for_fresh_pair_after_positive_original_imu_callback_expiry',
+                                               self.generation,self)
+            self._callback_expiry_wait=result
+            return result
+
+    def is_owned_original_callback_expiry_wait(self,value):
+        with self.lock:
+            return (type(value) is _OriginalCallbackExpiryWait and value is self._callback_expiry_wait and
+                value._owner is self and value.generation == self.generation and self.fault is None and
+                value.reason == 'waiting_for_fresh_pair_after_positive_original_imu_callback_expiry' and
+                value.input_ready is False and value.prepared is None and value.envelope is None and
+                self.previous is None and self.pending is None and self.prepared is None and
+                self._active is None and not self._owners and not self.imus)
+
+    def _consume_imu(self,cdr,receipt,generation,publisher_gid):
+        # Default OFF retains the parent implementation. Enabled mode repeats
+        # callback age at the parent's existing second sample, never restamps.
+        if not self._scan_expiry_option():
+            return super()._consume_imu(cdr,receipt,generation,publisher_gid)
+        envelope=None
+        try:
+            envelope=self._issue(cdr,IMU_TYPE,receipt,generation,publisher_gid)
+            clock=self._evaluate()
+            with self.lock:
+                self.validate_owned(envelope)
+                callback=self.callback_provenance[id(envelope)][1]
+                raw_age=clock.receipt_ns-receipt.ns
+                system_age=clock.source_ns-callback.independent_ros_system_now_ns
+                if raw_age >= RECEIPT_AGE_NS or system_age >= SOURCE_AGE_NS:
+                    return self._quarantine_imu_callback_expiry(cdr,receipt,
+                        callback.independent_ros_system_now_ns,publisher_gid,clock,
+                        stage='imu_retention',envelope=envelope)
+                require(raw_age >= 0 and system_age >= 0,'future_observed_original_imu_or_callback')
+                wire=envelope.wire
+                if wire.header.frame_id != self.imu_frame:raise ValueError('original_imu_frame_mismatch')
+                if wire.header.stamp_ns > clock.source_ns:raise ValueError('imu_not_causally_available')
+                if self.imus and wire.header.stamp_ns <= self.imus[-1].wire.header.stamp_ns:
+                    raise ValueError('original_imu_source_sequence_regressed')
+                if self.imus and publisher_gid != self.imus[-1].publisher_gid:
+                    raise ValueError('original_imu_publisher_changed')
+                cutoff=clock.source_ns-IMU_HORIZON_NS
+                while self.imus and self.imus[0].wire.header.stamp_ns < cutoff:self.imus.popleft()
+                if wire.header.stamp_ns >= cutoff:self.imus.append(envelope)
+                return self._outcome('original_imu_retained',envelope=envelope)
+        except Exception as error:
+            with self.lock:
+                if generation != self.generation:return self._outcome('late_callback_discarded',envelope=envelope)
+                if self.fault is not None:return self._outcome(self.fault,envelope=envelope)
+                result=self._invalidate(str(error))
+                return Outcome(result.reason,result.generation,envelope=envelope)
 
     def _issue(self, cdr, ros_type, receipt, generation, publisher_gid):
         context = self._callback_context

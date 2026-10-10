@@ -19,12 +19,12 @@
     "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
     "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
     "physical_factory.py": "258e930e35d5498e7843c4efea609d25d3fe5fcfbedcb4fd586bc5993032d44a",
-    "physical_ingress.py": "526e6155899a5b444f3273742134a629e1c752a07a8ee482740e0cecd5f64181"
+    "physical_ingress.py": "a62995e2a20c11c74e69cc44f0b0a0ffac95713fdcd858506ddc2d50b798ffdb"
   },
   "offline_inspector_optional_file": "inspect_capture.py",
   "original_native_Cpp_observer_required_separately": true,
-  "parent_manifest_sha256": "68bd1239327ca8701004fd284484223b1ddfabd9105ace933ee8ead9ec1ed5a7",
+  "parent_manifest_sha256": "f6753a0da7f36d672df88da4023a6402581166cb2d24d25de11948baf7b85e0f",
   "schema": "ubts.private.physical_native_shadow_deployment_closure.v1",
   "source_only_no_installed_live_pipeline_qualification": true,
-  "source_revision": "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait"
+  "source_revision": "native_v19_exact_cache_original_callback_expiry_wait"
 }

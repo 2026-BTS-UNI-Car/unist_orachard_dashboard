@@ -337,6 +337,31 @@ class StreamObserverRows:
             if self._map_adapter is not None:self._map_adapter.invalidate_gap('native_original_pair_wait')
         return True
 
+    def _accept_owned_original_callback_expiry_wait(self, outcome):
+        if not (self._feature("startup_expiry_discard_enabled") or
+                self._feature("current_expiry_reanchor_enabled")):
+            return False
+        require(callable(getattr(self.ingress, "is_owned_original_callback_expiry_wait", None)),
+                "reviewed_native_original_callback_expiry_wait_validator_required")
+        if not self.ingress.is_owned_original_callback_expiry_wait(outcome):
+            return False
+        require(not self._stopping.is_set() and self._context() == self._binding,
+                'native_stream_source_context_changed_or_stopped')
+        with self.factory.lock:
+            require(not self.factory.stop_intent.is_set() and self.factory.fault is None and
+                    self.factory._pending is None and self.factory._pending_digest is None,
+                    'one_clean_factory_before_original_callback_expiry_wait_required')
+            require(self.ingress.is_owned_original_callback_expiry_wait(outcome) and not self._stopping.is_set(),
+                    'native_stream_original_callback_expiry_wait_revoked')
+            self._proposal_input=None
+            self.waiting_reason=outcome.reason
+            if self._map_adapter is not None:self._map_adapter.invalidate_gap('native_original_pair_wait')
+            require(self.ingress.is_owned_original_callback_expiry_wait(outcome) and
+                    self._context() == self._binding and not self._stopping.is_set() and
+                    not self.factory.stop_intent.is_set(),
+                    "native_stream_original_callback_expiry_wait_revoked")
+        return True
+
     def bind_process(self, pid, time_namespace):
         with self._lock:
             require(self.expected_pid is None and self.begin is None and not self.ended,
@@ -573,6 +598,8 @@ class StreamObserverRows:
         require(self.ingress.fault is None, 'native_original_ingress_rejected:' + outcome.reason)
         if self._accept_owned_scan_expiry_wait(outcome):
             return ()
+        if self._accept_owned_original_callback_expiry_wait(outcome):
+            return ()
         self.admitted_samples[ros_type] += 1
         records = []
         while self.ingress.pending is not None and not self._stopping.is_set():
@@ -741,6 +768,8 @@ class StreamObserverRows:
                 imu_gap_reanchor_count=getattr(self.ingress, "gap_reanchor_count", 0),
                 startup_expiry_discard_enabled=self._feature("startup_expiry_discard_enabled"),
                 current_expiry_reanchor_enabled=self._feature("current_expiry_reanchor_enabled"),
+                original_callback_expiry_wait_count=getattr(self.ingress, "original_callback_expiry_wait_count", 0),
+                original_callback_expiry_wait_timing=copy.deepcopy(getattr(self.ingress, "original_callback_expiry_wait_timing", None)),
                 scan_expiry_wait_count=getattr(self.ingress, "scan_expiry_wait_count", 0),
                 scan_expiry_wait_timing=copy.deepcopy(getattr(self.ingress, "scan_expiry_wait_timing", None)),
                 postconsumed_causal_raw_expiry_reanchor_enabled=self._factory_expiry_feature(),

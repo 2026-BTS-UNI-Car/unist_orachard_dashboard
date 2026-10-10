@@ -13,11 +13,11 @@
     "keyframe_registration.py": "08b2cec0b7122ba785c7fab0ebd4893dd647a73daeb4f7f42f9f70a8284a8ad4",
     "native_map_owner.py": "a266567bd979aee3b80ad5c3e5e8619e3c98fa2325c4eaaa9d1d9309e5c8f88e",
     "native_map_transport.py": "66ea3c171a0a6c5704d402329af56b219d6b2c6555c0abebc8d8acad0de28f7a",
-    "stream_rows_map.py": "2cc6ed2f6051a00160b84643de5b4f4da328bf07f6b87d07dff2651dc9fedac8"
+    "stream_rows_map.py": "6d8c22e77fc981ce86bbed4e572f08ca4605bf8b42a3fd935936523646068212"
   },
   "motor_command_sent": false,
   "parent_map_handoff_sha256": "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9",
-  "parent_package_sha256": "f6753a0da7f36d672df88da4023a6402581166cb2d24d25de11948baf7b85e0f",
+  "parent_package_sha256": "5ab6b3d1339521d41a21dde76c97f031c23386e499f00e8fd4f41a4ab7baedf6",
   "runtime_qualified": false,
   "schema": "ubts.private.native_map_source.v1"
 }

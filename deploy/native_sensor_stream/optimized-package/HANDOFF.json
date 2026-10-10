@@ -7,7 +7,7 @@
   "deployment_closure_count": 13,
   "exact_surface_cache_enabled": true,
   "files_sha256": {
-    "DEPLOY_CLOSURE.json": "a8cb5579e8abbe8ca3d4ef28d260970ce8aab30d8f82ba77fe9ae5cb83eed362",
+    "DEPLOY_CLOSURE.json": "e47d053f3712b3467c8b2fa3fedf3cca12fd3afe7ff632efbcf7ac9618b3ca09",
     "VENDORED_INPUTS.json": "83d9cfe43aaa667de3d4b3739b9a6491596c3d02a45938e201b5e148beac9ba2",
     "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "common/native_ownership.py": "c705c627390735226d5aafed8322de37e1c8d53ad5f71151e144a843f87dd8c6",
@@ -20,7 +20,7 @@
     "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
     "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
     "physical_factory.py": "258e930e35d5498e7843c4efea609d25d3fe5fcfbedcb4fd586bc5993032d44a",
-    "physical_ingress.py": "526e6155899a5b444f3273742134a629e1c752a07a8ee482740e0cecd5f64181"
+    "physical_ingress.py": "a62995e2a20c11c74e69cc44f0b0a0ffac95713fdcd858506ddc2d50b798ffdb"
   },
   "final_scalar_causal_raw_expiry_reanchor_enabled": true,
   "full_original_SHA_decode_at_every_association_preserved": true,
@@ -29,8 +29,9 @@
   "initial_IMU_horizon_ns": 500000000,
   "installed_original_callback_or_live_pipeline_qualified": false,
   "motor_transport": false,
+  "original_callback_expiry_policy": "typed_IMU_WAIT_admission_and_retention_same_sample_original_clocks",
   "owned_count": 14,
-  "parent_manifest_sha256": "78ba87427acbd534de90bbca68e960bd0335cb82a15e352b690aa9ca2e821b1e",
+  "parent_manifest_sha256": "f6753a0da7f36d672df88da4023a6402581166cb2d24d25de11948baf7b85e0f",
   "physical_body_calibration_braking_REP145_qualified": false,
   "positive_age_expiry_policy": "typed_owned_WAIT_same_sample_SOURCE_RAW_no_TTL_change",
   "postconsumed_causal_raw_expiry_reanchor_enabled": true,
@@ -43,6 +44,6 @@
   "selected_callback_RAW_TTL_ns": 200000000,
   "selected_source_TTL_ns": 250000000,
   "source_frozen": true,
-  "source_revision": "native_v17_exact_cache_owned_positive_age_expiry_wait",
+  "source_revision": "native_v19_exact_cache_original_callback_expiry_wait",
   "startup_expiry_discard_enabled": true
 }
