@@ -25,6 +25,7 @@ from std_msgs.msg import String
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from scripts.recording_durability import atomic_json, PeriodicFsync, sync_directory, policy as durability_policy
 from dashboard_server.imu_processing import (
     IMU_TIMELINE_SCHEMA,
     imu_processing_status,
@@ -58,10 +59,7 @@ def log(event: str, **fields: Any) -> None:
 
 
 def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(f"{path.suffix}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    atomic_json(path, payload)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -122,6 +120,7 @@ class RecordingState:
         self.media_queue = None
         self.finalizing = False
         self.finalizing_id = None
+        self.durability = None
         self.write_status("start")
 
     def status(self) -> dict[str, Any]:
@@ -136,6 +135,8 @@ class RecordingState:
                 "state": "finalizing" if self.finalizing else "recording" if active else "idle",
                 "active": bool(active) or self.finalizing,
                 "finalizing": self.finalizing,
+                "mapping_sidecar_cleanup_pending": bool(self.mapping_writer and self.mapping_writer.stop.is_set() and self.mapping_writer.thread.is_alive()),
+                "durability": {**durability_policy(), "sidecar_worker": self.durability.status() if self.durability else None},
                 "recording_id": active.get("id") or self.finalizing_id,
                 "kind": active.get("kind"),
                 "include_imu": bool(active.get("include_imu", True))
@@ -318,11 +319,16 @@ class RecordingState:
             if self.finalizing or self.active:
                 return {"ok": False, "state": "finalizing" if self.finalizing else "already_recording",
                         "error": "recording_busy"}
+            if self.durability is not None and (self.durability.status()['worker_alive'] or self.durability.status()['owned_descriptors']):
+                return {"ok": False, "state": "durability_cleanup_pending", "error": "previous_sidecar_fsync_still_owned"}
+            if self.mapping_writer is not None and self.mapping_writer.thread.is_alive():
+                return {"ok": False, "state": "durability_cleanup_pending", "error": "previous_mapping_writer_still_owned"}
             recording_id = (
                 f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{kind}"
             )
             root = self.archive_dir / recording_id
             root.mkdir(parents=True, exist_ok=False)
+            sync_directory(root.parent)
             include_imu = bool(include_imu)
             include_gps = bool(include_gps)
             topics = self.topics_for(
@@ -335,6 +341,7 @@ class RecordingState:
                 "include_gps": include_gps,
                 "include_motor": True,
                 "state": "recording",
+                "durability": durability_policy(),
                 "started_at": iso_now(),
                 "topics": topics,
                 "archive_path": str(root),
@@ -386,6 +393,12 @@ class RecordingState:
             started_epoch = time.time()
             started_steady = time.monotonic()
             self.motor_timeline.start(root, started_steady, started_epoch)
+            self.durability = PeriodicFsync()
+            if self.gps_log is not None:
+                self.durability.register('gps', self.gps_log)
+            if self.motor_timeline.log is not None:
+                self.durability.register('motor', self.motor_timeline.log)
+            self.durability.start()
             self.active = {
                 **metadata,
                 "path": str(root),
@@ -412,16 +425,20 @@ class RecordingState:
                 return {"ok": True, "state": "finalizing", "recording_id": self.finalizing_id}
             active = dict(self.active or {})
             proc = self.process
+            mapping_writer = self.mapping_writer
             if self.active:
                 self.active["stopping"] = True
                 self.finalizing = True
                 self.finalizing_id = active.get('id')
         if not active:
+            if mapping_writer is not None and mapping_writer.stop.is_set():
+                self._close_mapping_sidecar(mapping_writer)
             self.write_status("stop_idle")
             return {"ok": True, "state": "idle", "status": self.status()}
         self.camera_idle_event.wait(
             timeout=max(0.1, float(self.args.camera_archive_flush_timeout_s))
         )
+        durability_closed = self.durability.close() if self.durability else True
         with self.lock:
             self.active = None
             self.process = None
@@ -447,7 +464,9 @@ class RecordingState:
         metadata = read_json(root / "metadata.json")
         metadata.update(
             {
-                "state": "archived",
+                "state": "archived",  # legacy normal-Stop label, not a bag readproof
+                "durability": {**durability_policy(), "sidecar_worker": self.durability.status() if self.durability else None,
+                               "sidecar_worker_closed": durability_closed},
                 "finished_at": finished_at,
                 "duration_s": duration_s,
                 "timeline": {
@@ -483,9 +502,12 @@ class RecordingState:
         write_json_atomic(
             root / "timeline.json", self.timeline_payload(active, metadata, duration_s)
         )
-        if self.mapping_writer:
-            self.mapping_writer.close()
-            self.mapping_writer = None
+        if mapping_writer is not None:
+            mapping_result = self._close_mapping_sidecar(mapping_writer)
+            metadata['durability']['mapping_sidecar_worker_closed'] = mapping_result['durability']['worker_closed']
+            metadata['durability']['mapping_sidecar_complete'] = mapping_result['complete']
+            metadata['durability']['mapping_sidecar_error'] = mapping_result['error']
+            write_json_atomic(root / 'metadata.json', metadata)
         if active.get('kind') in ('camera','both'):
             from scripts.recording_postprocess import enqueue
             result = enqueue(root, self.media_queue)
@@ -502,6 +524,13 @@ class RecordingState:
             "recording_id": active.get("id"),
             "status": self.status(),
         }
+
+    def _close_mapping_sidecar(self, writer):
+        result = writer.close()
+        with self.lock:
+            if self.mapping_writer is writer and not writer.thread.is_alive():
+                self.mapping_writer = None
+        return result
 
     def timeline_payload(
         self, active: dict[str, Any], metadata: dict[str, Any], duration_s: float
