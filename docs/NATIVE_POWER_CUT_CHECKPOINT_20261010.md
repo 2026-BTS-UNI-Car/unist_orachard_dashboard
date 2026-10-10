@@ -18,3 +18,5 @@ Jetson에 원본 센서 송신자 재연결과 HOLD 원인 표시를 설치했�
 근거: `native-start-rebinding-root-20261010/CURRENT_CHECKPOINT.json`, `FINAL_CLOSED_RUNTIME.stdout.json`, `DIAGNOSTIC_RECORDING.stdout.json`. 최신 TODO는 이 결과를 기준으로 하고 과거 체크포인트는 이력으로 보존합니다. 이번 시뮬레이션 저장소 변경은 문서·TODO이며 runtime 변경은 아닙니다.
 
 남은 작업: 실시간 지도 계산과 입력 조회 지연 분리 계측·개선, 강제 차단 녹화 복구, BODY/IMU/LiDAR·제동 실측, 유효 GNSS와 온라인 지도 보정, 10월 3일 전체 기록 및 9월 10일 과수원 정확도, 새 과수원·가지·벽·마지막 열 검증, 시뮬레이션 실행 경로의 별도 최적화, 지속 30fps와 느린 회선 재생 검증.
+
+전원 종료 대비 추가 저장도 완료했습니다. 이번 지도 이력 186개와 원본 scan을 포함한 9,861,745바이트를 Jetson·PC·NAS에 보존하고 SHA256 일치를 확인했습니다. Jetson 파일과 배포 체크포인트는 fsync 및 디렉터리 동기화를 완료했습니다. NAS 증거 묶음은 `UBTS/checkpoints/20261010-native-r23/EVIDENCE_MANIFEST.json`에 있습니다. 현재 기록은 기존 41개와 진단 1개로 총 42개이며 녹화기는 idle입니다. 서비스 재시작 정책은 unless-stopped입니다. 자동 모터 출력 OFF와 새 관찰 Start에서 원본 송신자를 재발견하는 설정을 확인했습니다. 이 저장은 완료된 기록·체크포인트 보호이며 진행 중 녹화의 강제 차단 복구 보장은 아닙니다.
