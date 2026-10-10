@@ -73,7 +73,7 @@ class StreamObserverRows:
     Post-Stop original lines still undergo byte/header/GID/sequence validation,
     but never enter the receiver, fit or publish another diagnostic.
     """
-    def __init__(self, ingress, factory, *, observer_contract_sha256):
+    def __init__(self, ingress, factory, *, observer_contract_sha256, gnss_dispatcher=None):
         require(type(ingress) is PhysicalOriginalIngress,
                 'physical_original_ingress_required')
         require(type(factory) is PhysicalNativeShadowFactory and factory.ingress is ingress,
@@ -85,6 +85,10 @@ class StreamObserverRows:
                 type(ingress.clock_session) is str and
                 re.fullmatch('[0-9a-f]{32}', ingress.clock_session) is not None,
                 'receiver_reset_before_native_spawn_required')
+        require(gnss_dispatcher is None or (callable(getattr(gnss_dispatcher,'receive',None)) and
+                callable(getattr(gnss_dispatcher,'bind_begin',None)) and callable(getattr(gnss_dispatcher,'stop',None))),
+                'optional_owned_GPS_dispatcher_required')
+        self._gnss_dispatcher=gnss_dispatcher
         self.ingress, self.factory = ingress, factory
         self.observer_contract_sha256 = observer_contract_sha256
         self._binding = self._context()
@@ -96,6 +100,10 @@ class StreamObserverRows:
         self.fault = None
         self.rows = self.total_original_bytes = self.total_line_bytes = self._next_seq = 0
         self.samples = {LASER_TYPE: 0, IMU_TYPE: 0}
+        # Delivery accounting is independent of optional GNSS quality/admission.
+        self.gps_samples = {'/gps/data': 0, '/gps/fix': 0}
+        self.gps_unavailable_rows = 0
+        self.gps_done_counts_validated = False
         self.admitted_samples = {LASER_TYPE: 0, IMU_TYPE: 0}
         self.diagnostics = 0
         self.bootstrap_scans_unadmitted = 0
@@ -364,6 +372,7 @@ class StreamObserverRows:
     def stop(self):
         # Events become visible before any original ownership mutex is acquired.
         self._stopping.set()
+        if self._gnss_dispatcher is not None:self._gnss_dispatcher.stop()
         self.factory.stop_intent.set()
         self.ingress.stop()
 
@@ -396,7 +405,7 @@ class StreamObserverRows:
                         'native_observer_mission_admission_forbidden')
                 require(self.total_line_bytes <= MAX_COUNTER - len(raw_line),
                         'native_stream_byte_counter_exhausted')
-                if row.get('kind') != 'original_cdr':
+                if row.get('kind') not in ('original_cdr','original_gnss_cdr'):
                     require(len(raw_line) <= MAX_METADATA_BYTES,
                             'bounded_native_stream_metadata_required')
                 answer = self._receive(row)
@@ -430,6 +439,7 @@ class StreamObserverRows:
                     _hex(row.get('expected_IMU_GID'), 16) == self.ingress.expected_gids[1],
                     'reviewed_native_observer_publisher_binding_required')
             self.begin = row  # bounded metadata only; NOT publisher epoch
+            if self._gnss_dispatcher is not None:self._gnss_dispatcher.bind_begin(row)
             return ()
         if self.begin is None and kind == 'done' and row['seq'] == 0:
             # Native initialization can fail before BEGIN. Preserve that bounded
@@ -443,6 +453,7 @@ class StreamObserverRows:
                     type(row.get('IMU_samples')) is int and row['IMU_samples'] == 0 and
                     row.get('physical_autonomy_qualified') is False,
                     'invalid_native_observer_startup_fault_metadata')
+            self._validate_gps_done_counts(row)
             self.fault = 'native_observer_startup_fault:' + error
             raise ValueError(self.fault)
         require(self.begin is not None, 'native_observer_begin_missing')
@@ -476,10 +487,44 @@ class StreamObserverRows:
                     row['IMU_samples'] == self.samples[IMU_TYPE] and
                     _ns(row.get('observed_elapsed_ns')),
                     'native_observer_delivery_count_or_elapsed_mismatch')
+            self.gps_done_counts_validated = self._validate_gps_done_counts(row)
             self._done = True
             return ()
+        if kind in ('original_gnss_cdr','gnss_unavailable'):
+            return self._gps(row)
         require(kind == 'original_cdr', 'native_observer_row_kind_invalid')
         return self._original(row)
+
+    def _validate_gps_done_counts(self, row):
+        # Old physical-only observers omitted both fields. New observers emit
+        # both even when GNSS is OFF; supplied fields always require exact types.
+        keys = ('GPS_data_samples', 'GPS_fix_samples')
+        if self._gnss_dispatcher is None and not any(key in row for key in keys):
+            return False
+        require(all(_counter(row.get(key)) for key in keys) and
+                row['GPS_data_samples'] == self.gps_samples['/gps/data'] and
+                row['GPS_fix_samples'] == self.gps_samples['/gps/fix'],
+                'native_observer_GPS_delivery_count_mismatch')
+        return True
+
+    def _gps(self, row):
+        require(self._gnss_dispatcher is not None, 'optional_GPS_dispatch_not_enabled')
+        if row['kind'] == 'gnss_unavailable':
+            require(self.gps_unavailable_rows < MAX_COUNTER,
+                    'native_stream_GPS_delivery_counter_exhausted')
+            answer = self._gnss_dispatcher.receive(row)
+            self.gps_unavailable_rows += 1
+        else:
+            # Topic is framing needed to compare the producer's per-type count;
+            # CDR/quality/GID exclusions remain the optional dispatcher's concern.
+            topic = row.get('topic')
+            require(type(topic) is str and topic in self.gps_samples,
+                    'native_observer_GPS_delivery_topic_invalid')
+            require(self.gps_samples[topic] < MAX_COUNTER,
+                    'native_stream_GPS_delivery_counter_exhausted')
+            answer = self._gnss_dispatcher.receive(row)
+            self.gps_samples[topic] += 1
+        return answer
 
     def _original(self, row):
         ros_type = row.get('ros_type')
@@ -724,6 +769,10 @@ class StreamObserverRows:
     def status(self):
         with self._lock:
             return dict(schema='ubts.physical.native_stream_status.v1',
+                optional_GNSS=None if self._gnss_dispatcher is None else self._gnss_dispatcher.status(),
+                optional_GNSS_delivery=dict(enabled=self._gnss_dispatcher is not None,
+                    original_samples=dict(self.gps_samples), unavailable_rows=self.gps_unavailable_rows,
+                    DONE_counts_validated=self.gps_done_counts_validated),
                 ready_observed=self.ready, data_ready_before_stop=self._ready_before_stop,
                 stopped=self._stopping.is_set(), ended=self.ended, fault=self.fault,
                 next_sequence=self._next_seq, sample_rows=self.rows,

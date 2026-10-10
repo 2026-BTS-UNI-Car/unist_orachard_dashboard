@@ -358,9 +358,11 @@ class NativeMapSession:
     runner owns Stop and its absolute join deadline. Unknown map workers stay
     attached and reject another source. Only explicit new_map erases history.
     """
-    def __init__(self, adapter_factory, *, map_epoch):
+    def __init__(self, adapter_factory, *, map_epoch,pose_ledger_enabled=False):
         require(callable(adapter_factory) and type(map_epoch) is str and
                 re.fullmatch('[0-9a-f]{32}', map_epoch), 'native_map_session_constructor_required')
+        require(type(pose_ledger_enabled) is bool,'typed_pose_ledger_default_OFF_required')
+        self._pose_ledger_enabled=pose_ledger_enabled
         self._factory = adapter_factory
         self._epoch = map_epoch
         self._adapter = None
@@ -373,7 +375,7 @@ class NativeMapSession:
             require(self._closed, 'previous_native_map_worker_join_required')
             if self._adapter is None:
                 self._adapter = self._factory(factory, enabled=True, map_epoch=self._epoch,
-                    accepted_native_chain_enabled=True, batched_rays_enabled=True)
+                    accepted_native_chain_enabled=True, batched_rays_enabled=True,pose_ledger_enabled=self._pose_ledger_enabled)
                 self.transport = NativeMapTransport(self._adapter, push_only=True)
             else:
                 self._adapter.attach_factory(factory, explicit=True)

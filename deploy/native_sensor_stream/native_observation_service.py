@@ -18,10 +18,16 @@ import time
 from types import SimpleNamespace
 
 
+GNSS_SOURCE_SHA='2516c532fc19e0da758cd5a53ac3bf07dc26cdefacf086ec0567b0fd77f387b7'
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument('--serve',action='store_true')
     parser.add_argument('--enable-native-map',action='store_true')
+    parser.add_argument('--enable-native-gnss',action='store_true')
+    parser.add_argument('--gps-data-gid')
+    parser.add_argument('--gps-fix-gid')
     for name in ('socket-path','scan-gid','imu-gid'):
         parser.add_argument('--'+name)
     args=parser.parse_args(argv)
@@ -48,13 +54,21 @@ def main(argv=None):
         '/opt/ubts-shadow/package',bound.package_manifest_sha256,
         reviewed_features=bound.physical_reviewed_features)
     bound.native_map_enabled = args.enable_native_map
-    bound.native_map_manifest_sha256 = '556c90c0186c71dfd73110d000984214a31e4b6fdc0e8953f5873d76d5e03a69'
+    bound.native_gnss_enabled=args.enable_native_gnss
+    if args.enable_native_gnss:
+        import re
+        stream_runner.require(args.enable_native_map and all(type(g) is str and re.fullmatch('[0-9a-f]{32}',g) and g!='0'*32
+            for g in (args.gps_data_gid,args.gps_fix_gid)) and args.gps_data_gid!=args.gps_fix_gid,'explicit_optional_GPS_GIDs_required')
+        bound.gps_data_gid,bound.gps_fix_gid=args.gps_data_gid,args.gps_fix_gid
+        bound.native_gnss_manifest_sha256=GNSS_SOURCE_SHA
+        stream_runner.load_native_gnss_sources(root,GNSS_SOURCE_SHA)
+    bound.native_map_manifest_sha256 = '63bf050b0fedd56bb8b361c05f9970e011ec4b5d099fbd1d744a16ba9fbd1a5f'
     if args.enable_native_map:
         stream_runner.load_native_map_sources(root, bound.native_map_manifest_sha256)
         from committed_native_map import CommittedNativeMapAdapter
         from native_map_transport import NativeMapSession
         import uuid
-        bound.native_map_session = NativeMapSession(CommittedNativeMapAdapter, map_epoch=uuid.uuid4().hex)
+        bound.native_map_session = NativeMapSession(CommittedNativeMapAdapter, map_epoch=uuid.uuid4().hex,pose_ledger_enabled=args.enable_native_gnss)
     retained_map = getattr(bound, 'native_map_session', None)
     binary=root/'bin/actual_cdr_stream'
     stream_runner.require(stream_runner.sha_file(binary)==bound.observer_binary_sha256,'compiled_observer_SHA_required')
@@ -65,7 +79,8 @@ def main(argv=None):
     from physical_factory import PhysicalNativeShadowFactory
     assert Clock and ClockType and LinuxRawClock and PhysicalNativeShadowFactory and stream_rows
     runner=stream_runner.NativeStreamRunner(lambda:stream_runner.make_adapter(bound),lambda:subprocess.Popen(
-        [str(binary),'--observe-until-stop','--expected-scan-gid',args.scan_gid,'--expected-imu-gid',args.imu_gid],
+        ([str(binary),'--observe-until-stop','--expected-scan-gid',args.scan_gid,'--expected-imu-gid',args.imu_gid]+
+         (['--expected-gps-data-gid',args.gps_data_gid,'--expected-gps-fix-gid',args.gps_fix_gid] if args.enable_native_gnss else [])),
         stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,shell=False),
         map_session=getattr(bound, 'native_map_session', None))
     stop=threading.Event()
@@ -101,6 +116,14 @@ def main(argv=None):
                     stream_runner.require(len(request)<=4096 and request.count(b'\n')==1 and request.endswith(b'\n'),
                         'bounded_sensor_owner_request')
                     value=stream_runner.strict_json(request)
+                    if type(value) is dict and value.get('op')=='map_pose_history':
+                        stream_runner.require(args.enable_native_gnss and set(value)<={'op','offset','sha256','include_scans'} and
+                            retained_map is not None and retained_map._closed and retained_map._adapter is not None,
+                            'joined_owned_map_history_export_required')
+                        result=retained_map._adapter.pose_ledger.chunk(value.get('offset',0),
+                            include_scans=value.get('include_scans',False),expected_sha256=value.get('sha256'))
+                        conn.sendall((json.dumps(result,allow_nan=False,separators=(',',':'))+'\n').encode())
+                        continue
                     map_request = type(value) is dict and value.get('op') in ('map_status','map_tiles','map_release')
                     map_new = type(value) is dict and value.get('op') == 'map_new'
                     stream_runner.require(map_request or map_new or (type(value) is dict and set(value)=={'op'} and

@@ -730,8 +730,9 @@ def load_native_map_sources(path, expected_sha):
             "native_map_source_manifest_SHA_required")
     manifest = strict_json(read_regular(root / "NATIVE_MAP_SOURCE.json", 16384))
     names = {"native_map_owner.py", "committed_native_map.py", "stream_rows_map.py", "native_map_transport.py",
-             "keyframe_registration.py", "batched_map_owner.py", "batched_rays.py"}
-    require(manifest.get("schema") == "ubts.private.native_map_source.v1" and
+             "keyframe_registration.py", "batched_map_owner.py", "batched_rays.py", "native_pose_ledger.py"}
+    require(manifest.get("schema") == "ubts.private.native_map_source.v2" and
+            manifest.get("parent_map_source_sha256") == "556c90c0186c71dfd73110d000984214a31e4b6fdc0e8953f5873d76d5e03a69" and
             set(manifest.get("files_sha256", {})) == names and
             manifest.get("parent_package_sha256") == "5ab6b3d1339521d41a21dde76c97f031c23386e499f00e8fd4f41a4ab7baedf6" and
             manifest.get("parent_map_handoff_sha256") == "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9" and
@@ -742,6 +743,23 @@ def load_native_map_sources(path, expected_sha):
         module = sys.modules.get(Path(name).stem)
         if module is not None:
             require(Path(module.__file__).resolve() == root / name, "native_map_module_identity_required")
+    return True
+
+
+def load_native_gnss_sources(root,expected_manifest_sha256):
+    manifest=Path(root)/'NATIVE_GNSS_SOURCE.json'
+    require(sha_file(manifest)==expected_manifest_sha256,'exact_reviewed_GNSS_source_manifest_required')
+    value=strict_json(read_regular(manifest,16384))
+    require(value.get('schema')=='ubts.private.native_GNSS_source.v1' and
+        value.get('runtime_authority') is False and value.get('native_GNSS_pipeline_qualified') is False and
+        value.get('fused_occupancy_qualified') is False,'unqualified_GNSS_source_contract_required')
+    expected={'native_gnss_fusion.py','gnss_constraints.py','native_gnss_dispatch.py','native_pose_ledger.py'}
+    require(type(value.get('files_sha256')) is dict and set(value['files_sha256'])==expected,'exact_GNSS_module_closure_required')
+    for name,digest in value['files_sha256'].items():
+        require(type(digest) is str and re.fullmatch('[0-9a-f]{64}',digest) and
+            sha_file(Path(root)/name)==digest,'GNSS_source_SHA_changed')
+        module=sys.modules.get(Path(name).stem)
+        require(module is None or Path(module.__file__).resolve()==Path(root).resolve()/name,'GNSS_module_identity_changed')
     return True
 
 
@@ -790,6 +808,9 @@ def make_adapter(args):
     factory = PhysicalNativeShadowFactory(receiver, contract, **factory_options)
     map_enabled = getattr(args, "native_map_enabled", False)
     require(type(map_enabled) is bool, "typed_native_map_default_OFF_required")
+    gnss_enabled=getattr(args,'native_gnss_enabled',False)
+    require(type(gnss_enabled) is bool and (not gnss_enabled or map_enabled),'GPS_requires_explicit_native_map')
+    if gnss_enabled:load_native_gnss_sources(Path(__file__).parent,args.native_gnss_manifest_sha256)
     if map_enabled:
         load_native_map_sources(Path(__file__).parent, args.native_map_manifest_sha256)
         import uuid
@@ -799,11 +820,15 @@ def make_adapter(args):
         from native_map_transport import NativeMapSession
         session = getattr(args, 'native_map_session', None)
         if session is None:
-            session = NativeMapSession(CommittedNativeMapAdapter, map_epoch=uuid.uuid4().hex)
+            session = NativeMapSession(CommittedNativeMapAdapter, map_epoch=uuid.uuid4().hex,pose_ledger_enabled=gnss_enabled)
             args.native_map_session = session
         native_map = session.bind_factory(factory)  # explicit owner Start; independent resume registration
+        gnss=None
+        if gnss_enabled:
+            from native_gnss_dispatch import NativeGNSSDispatch
+            gnss=NativeGNSSDispatch(native_map,{'/gps/data':args.gps_data_gid,'/gps/fix':args.gps_fix_gid})
         adapter = MapRows(receiver, factory, observer_contract_sha256=args.observer_contract_sha256,
-                          map_adapter=native_map)
+                          map_adapter=native_map,gnss_dispatcher=gnss)
         adapter.native_map_transport = session.transport
         adapter.native_map_session = session
         return adapter

@@ -47,7 +47,7 @@ def context(x):
 def digest(x):
     meta={f.name:getattr(x,f.name) for f in fields(x) if f.name!='ranges'}
     h=hashlib.sha256(json.dumps(meta,sort_keys=True,allow_nan=False).encode())
-    for r in x.ranges: h.update(struct.pack('<d',r))
+    h.update(struct.pack('<'+str(len(x.ranges))+'d',*x.ranges))
     return h.digest()
 
 

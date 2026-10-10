@@ -37,6 +37,8 @@ volatile std::sig_atomic_t stop_requested=0;
 void stop_signal(int signal) noexcept {stop_requested=signal;}
 constexpr const char * SCAN="/scan", * IMU="/imu/data_raw";
 constexpr const char * SCAN_TYPE="sensor_msgs/msg/LaserScan", * IMU_TYPE="sensor_msgs/msg/Imu";
+constexpr const char * GPS_DATA="/gps/data", * GPS_FIX="/gps/fix";
+constexpr const char * GPS_DATA_TYPE="std_msgs/msg/String", * GPS_FIX_TYPE="sensor_msgs/msg/NavSatFix";
 void require(bool v,const char * reason){if(!v)throw std::runtime_error(reason);}
 void install_stop_handlers(){
   struct sigaction stop{};stop.sa_handler=stop_signal;stop.sa_flags=0;
@@ -95,6 +97,20 @@ struct Reader {
     at+=pad;const auto * p=bytes+at;at+=count;return p;}
   uint32_t u32(){const auto * p=take(4,4);return little?uint32_t(p[0])|(uint32_t(p[1])<<8)|(uint32_t(p[2])<<16)|(uint32_t(p[3])<<24):
     uint32_t(p[3])|(uint32_t(p[2])<<8)|(uint32_t(p[1])<<16)|(uint32_t(p[0])<<24);}
+  Header parse_gps(bool fix){
+    Header h{0,0,"",0,0};
+    if(!fix){const auto n=u32();require(n>=2&&n<=32768,"bounded_original_GPS_String_required");
+      const auto * p=take(n);require(p[n-1]==0&&std::memchr(p,0,n-1)==nullptr,"original_GPS_String_invalid");
+    }else{uint32_t s=u32(),ns=u32();std::memcpy(&h.sec,&s,4);h.nanosec=ns;
+      require(h.sec>=0&&ns<1000000000u,"original_GPS_header_invalid");
+      const auto n=u32();require(n>=2&&n<=129,"bounded_original_GPS_frame_required");const auto * p=take(n);
+      require(p[n-1]==0&&std::memchr(p,0,n-1)==nullptr,"original_GPS_frame_invalid");
+      h.frame=std::string(reinterpret_cast<const char*>(p),n-1);
+      take(1);take(2,2);take(3*8,8);take(9*8,8);take(1);
+    }
+    require(at<=size&&size-at<=3,"unsupported_original_GPS_CDR_tail");
+    while(at<size)require(bytes[at++]==0,"nonzero_original_GPS_CDR_tail");return h;
+  }
   Header parse(bool scan){uint32_t s=u32(),ns=u32();int32_t sec;std::memcpy(&sec,&s,4);
     require(sec>=0&&ns<1000000000u,"original_header_stamp_invalid");
     uint32_t length=u32();require(length>=2&&length<=129,"bounded_original_frame_required");const auto * f=take(length);
@@ -143,9 +159,12 @@ rclcpp::NodeOptions options(){rclcpp::NodeOptions value;
     .clock_type(RCL_SYSTEM_TIME).append_parameter_override("use_sim_time",false);return value;}
 class Observer final:public rclcpp::Node {
  public:
-  Observer(Output & output,std::string scan_gid,std::string imu_gid,std::string rmw,std::string domain)
+  Observer(Output & output,std::string scan_gid,std::string imu_gid,std::string rmw,std::string domain,
+    std::string gps_data_gid,std::string gps_fix_gid,std::string session,std::string time_ns)
   :Node("ubts_private_actual_cdr_"+std::to_string(getpid()),options()),output_(output),scan_gid_(std::move(scan_gid)),
-    imu_gid_(std::move(imu_gid)),rmw_(std::move(rmw)),domain_(std::move(domain)){
+    imu_gid_(std::move(imu_gid)),rmw_(std::move(rmw)),domain_(std::move(domain)),
+    gps_data_gid_(std::move(gps_data_gid)),gps_fix_gid_(std::move(gps_fix_gid)),
+    session_(std::move(session)),time_ns_(std::move(time_ns)){
     rclcpp::QoS qos(rclcpp::KeepLast(8));qos.best_effort().durability_volatile();rclcpp::SubscriptionOptions sub;
     sub.use_default_callbacks=false;
     for(bool scan:{true,false}){const char * topic=scan?SCAN:IMU,*type=scan?SCAN_TYPE:IMU_TYPE;
@@ -153,9 +172,17 @@ class Observer final:public rclcpp::Node {
       auto subscription=std::make_shared<OriginalSubscription>(get_node_base_interface().get(),library,topic,type,qos,sub,
         [this,scan](const rclcpp::SerializedMessage & m,const rclcpp::MessageInfo & i,int64_t raw,int64_t wall){receive(scan,m,i,raw,wall);},fault);
       get_node_topics_interface()->add_subscription(subscription,sub.callback_group);subscriptions_[scan?0:1]=subscription;}
+    if(!gps_data_gid_.empty())for(bool fix:{false,true}){
+      const char * topic=fix?GPS_FIX:GPS_DATA,*type=fix?GPS_FIX_TYPE:GPS_DATA_TYPE;
+      auto library=rclcpp::get_typesupport_library(type,"rosidl_typesupport_cpp");
+      auto subscription=std::make_shared<OriginalSubscription>(get_node_base_interface().get(),library,topic,type,qos,sub,
+        [this,fix](const rclcpp::SerializedMessage & m,const rclcpp::MessageInfo & i,int64_t raw,int64_t wall){receive_gps(fix,m,i,raw,wall);},gps_transport_fault_);
+      get_node_topics_interface()->add_subscription(subscription,sub.callback_group);subscriptions_[fix?3:2]=subscription;
+    }
   }
   std::string fault;std::array<uint64_t,2> counts{{0,0}};std::array<int64_t,2> last{{-1,-1}};
   std::array<std::string,2> graph_nodes,graph_namespaces;
+  std::array<uint64_t,2> gps_counts{{0,0}};
   Clock::time_point deadline=Clock::time_point::max();
   void close_subscriptions(){for(auto & subscription:subscriptions_)subscription.reset();}
   bool graph_matches(){return graph_one(SCAN,SCAN_TYPE,scan_gid_)&&graph_one(IMU,IMU_TYPE,imu_gid_);}
@@ -166,6 +193,37 @@ class Observer final:public rclcpp::Node {
     require(!v.node_name().empty()&&!v.node_namespace().empty()&&v.topic_type()==type,"actual_graph_node_or_type_invalid");
     auto endpoint=v.endpoint_gid();require(endpoint.size()==16&&hex(endpoint.data(),endpoint.size())==gid,"actual_graph_GID_changed");
     const std::size_t index=std::strcmp(topic,SCAN)==0?0:1;graph_nodes[index]=v.node_name();graph_namespaces[index]=v.node_namespace();return true;}
+  void receive_gps(bool fix,const rclcpp::SerializedMessage & message,const rclcpp::MessageInfo & info,int64_t raw,int64_t wall){
+    if(stop_requested||Clock::now()>=deadline)return;
+    try{const auto & data=message.get_rcl_serialized_message();const auto & details=info.get_rmw_message_info();
+      require(data.buffer&&data.buffer_length>=4&&data.buffer_length<=65536,"bounded_original_GPS_CDR_required");
+      require(details.publisher_gid.implementation_identifier&&rmw_==details.publisher_gid.implementation_identifier,"GPS_callback_RMW_changed");
+      const auto actual=hex(details.publisher_gid.data,RMW_GID_STORAGE_SIZE);
+      require(actual==(fix?gps_fix_gid_:gps_data_gid_),"GPS_callback_GID_changed");
+      const char * topic=fix?GPS_FIX:GPS_DATA,*type=fix?GPS_FIX_TYPE:GPS_DATA_TYPE;
+      auto endpoints=get_publishers_info_by_topic(topic);
+      require(endpoints.size()==1&&endpoints.front().topic_type()==type,"GPS_sole_typed_publisher_required");
+      const auto endpoint=endpoints.front().endpoint_gid();
+      require(endpoint.size()==16&&hex(endpoint.data(),16)==actual,"GPS_graph_GID_changed");
+      Reader reader(data.buffer,data.buffer_length);const Header h=reader.parse_gps(fix);
+      const int64_t ros_now=get_clock()->now().nanoseconds();require(ros_now>=0,"GPS_system_clock_negative");
+      require(gps_counts[fix?1:0]<COUNTER_MAX,"GPS_count_capacity");
+      output_.emit("\"kind\":\"original_gnss_cdr\",\"topic\":"+json_string(topic)+",\"ros_type\":"+json_string(type)+
+        ",\"observer_pid\":"+std::to_string(getpid())+",\"observer_process_session\":"+json_string(session_)+
+        ",\"time_namespace\":"+json_string(time_ns_)+",\"rmw_implementation\":"+json_string(rmw_)+
+        ",\"callback_monotonic_raw_ns\":"+std::to_string(raw)+",\"RAW_schema\":\"linux.clock_monotonic_raw.integer_ns.v1\",\"RAW_domain\":"+json_string(domain_)+
+        ",\"receipt_clock_realtime_ns\":"+std::to_string(wall)+",\"observer_system_ros_now_ns\":"+std::to_string(ros_now)+
+        ",\"original_header_present\":"+(fix?"true":"false")+",\"original_header_stamp_ns\":"+(fix?std::to_string(h.ns()):"null")+
+        ",\"publisher_gid_hex\":"+json_string(actual)+",\"rmw_source_timestamp_ns\":"+std::to_string(details.source_timestamp)+
+        ",\"rmw_received_timestamp_ns\":"+std::to_string(details.received_timestamp)+",\"original_CDR_bytes\":"+std::to_string(data.buffer_length)+
+        ",\"original_CDR_sha256\":"+json_string(sha(data.buffer,data.buffer_length))+",\"original_CDR_hex\":"+json_string(hex(data.buffer,data.buffer_length))+
+        ",\"mission_admission\":false,\"proposed_linear_mps\":0,\"proposed_yaw_rate_rad_s\":0");
+      ++gps_counts[fix?1:0];
+    }catch(const std::exception & e){
+      // Optional GPS failure never changes LiDAR/IMU READY or their fault latch.
+      output_.emit("\"kind\":\"gnss_unavailable\",\"error\":"+json_string(std::string(e.what()).substr(0,128))+",\"mission_admission\":false");
+    }
+  }
   void receive(bool scan,const rclcpp::SerializedMessage & message,const rclcpp::MessageInfo & info,int64_t raw,int64_t wall){
     if(stop_requested||Clock::now()>=deadline)return;const auto & data=message.get_rcl_serialized_message();
     require(data.buffer&&data.buffer_length>=4&&data.buffer_length<=MAX_CDR,"original_CDR_capacity");
@@ -193,7 +251,8 @@ class Observer final:public rclcpp::Node {
     last[index]=h.ns();++counts[index];require(age>=0&&age<=5000000000ll,"original_header_not_current_system_time");
   }
   Output & output_;std::string scan_gid_,imu_gid_,rmw_,domain_;
-  std::array<std::shared_ptr<OriginalSubscription>,2> subscriptions_;
+  std::array<std::shared_ptr<OriginalSubscription>,4> subscriptions_;
+  std::string gps_data_gid_,gps_fix_gid_,session_,time_ns_,gps_transport_fault_;
 };
 } // namespace
 
@@ -203,10 +262,14 @@ int main(int argc,char ** argv){
     executor_destroyed=false,shutdown=false;
   std::string error,domain,rmw;std::shared_ptr<Observer> node;
   std::unique_ptr<rclcpp::executors::SingleThreadedExecutor> executor;
-  std::array<uint64_t,2> counts{{0,0}};int64_t started_raw=0,elapsed=0;
+  std::array<uint64_t,2> counts{{0,0}},gps_counts{{0,0}};int64_t started_raw=0,elapsed=0;
   try{
-    require(argc==6&&std::strcmp(argv[1],"--observe-until-stop")==0&&std::strcmp(argv[2],"--expected-scan-gid")==0&&
+    require((argc==6||argc==10)&&std::strcmp(argv[1],"--observe-until-stop")==0&&std::strcmp(argv[2],"--expected-scan-gid")==0&&
       std::strcmp(argv[4],"--expected-imu-gid")==0&&gid_string(argv[3])&&gid_string(argv[5])&&std::strcmp(argv[3],argv[5])!=0,"fixed_explicit_stream_CLI_required");
+    std::string gps_data,gps_fix;
+    if(argc==10){require(std::strcmp(argv[6],"--expected-gps-data-gid")==0&&std::strcmp(argv[8],"--expected-gps-fix-gid")==0&&
+      gid_string(argv[7])&&gid_string(argv[9])&&std::strcmp(argv[7],argv[9])!=0,"explicit_optional_GPS_GIDs_required");
+      gps_data=argv[7];gps_fix=argv[9];}
     const char * distro=std::getenv("ROS_DISTRO"),* ros_domain=std::getenv("ROS_DOMAIN_ID");
     require(distro&&std::strcmp(distro,"iron")==0&&ros_domain&&std::strcmp(ros_domain,"0")==0,"actual_Iron_domain0_environment_required");
     install_stop_handlers();domain=raw_domain();const std::string time_ns=time_namespace();std::array<uint8_t,16> random{};
@@ -215,7 +278,7 @@ int main(int argc,char ** argv){
     rclcpp::init(0,nullptr,rclcpp::InitOptions(),rclcpp::SignalHandlerOptions::None);initialized=true;
     const char * implementation=rmw_get_implementation_identifier();
     require(implementation&&std::strlen(implementation)<=128,"actual_RMW_identifier_required");rmw=implementation;
-    node=std::make_shared<Observer>(output,argv[3],argv[5],rmw,domain);
+    node=std::make_shared<Observer>(output,argv[3],argv[5],rmw,domain,gps_data,gps_fix,session,time_ns);
     executor=std::make_unique<rclcpp::executors::SingleThreadedExecutor>();executor->add_node(node);
     const auto started=Clock::now();started_raw=clock_ns(CLOCK_MONOTONIC_RAW);
     require(started<=Clock::time_point::max()-std::chrono::seconds(READY_SECONDS),"startup_deadline_overflow");
@@ -225,6 +288,8 @@ int main(int argc,char ** argv){
       ",\"pid\":"+std::to_string(getpid())+",\"uid\":"+std::to_string(geteuid())+",\"gid\":"+std::to_string(getegid())+
       ",\"time_namespace\":"+json_string(time_ns)+",\"RAW_domain\":"+json_string(domain)+",\"rmw_implementation\":"+json_string(rmw)+
       ",\"GID_storage_bytes\":16,\"expected_scan_GID\":"+json_string(argv[3])+",\"expected_IMU_GID\":"+json_string(argv[5])+
+      ",\"optional_GNSS_enabled\":"+(gps_data.empty()?"false":"true")+",\"expected_GPS_data_GID\":"+json_string(gps_data)+
+      ",\"expected_GPS_fix_GID\":"+json_string(gps_fix)+
       ",\"header_clock_origin\":\"original_publisher_unmodified\",\"observer_clock_type\":\"RCL_SYSTEM_TIME\",\"use_sim_time\":false,\"clock_topic_created\":false,\"publishers_created\":false,\"mission_admission\":false");
     auto candidate=Clock::time_point{};auto next_graph=started;
     while(!stop_requested){
@@ -251,7 +316,7 @@ int main(int argc,char ** argv){
     try{executor->cancel();if(node)executor->remove_node(node);}catch(const std::exception & e){cleanup_error(e);}
     executor.reset();executor_destroyed=true;
   }
-  if(node){counts=node->counts;node->close_subscriptions();subscriptions_destroyed=true;node.reset();destroyed=true;}
+  if(node){counts=node->counts;gps_counts=node->gps_counts;node->close_subscriptions();subscriptions_destroyed=true;node.reset();destroyed=true;}
   if(initialized){try{shutdown=rclcpp::shutdown();}catch(const std::exception & e){cleanup_error(e);}}
   try{if(started_raw)elapsed=checked_difference(clock_ns(CLOCK_MONOTONIC_RAW),started_raw);
     require(elapsed>=0,"observation_RAW_clock_regressed");}catch(const std::exception & e){cleanup_error(e);}
@@ -261,6 +326,7 @@ int main(int argc,char ** argv){
     ",\"termination_reason\":"+json_string(error.empty()&&stop_requested?"operator_stop":"fault")+
     ",\"ready_observed\":"+(ready?"true":"false")+",\"error\":"+json_string(error)+
     ",\"scan_samples\":"+std::to_string(counts[0])+",\"IMU_samples\":"+std::to_string(counts[1])+
+    ",\"GPS_data_samples\":"+std::to_string(gps_counts[0])+",\"GPS_fix_samples\":"+std::to_string(gps_counts[1])+
     ",\"ROS_executor_destroyed\":"+(executor_destroyed?"true":"false")+
     ",\"ROS_subscriptions_destroyed\":"+(subscriptions_destroyed?"true":"false")+
     ",\"ROS_node_destroyed\":"+(destroyed?"true":"false")+",\"ROS_shutdown_completed\":"+(shutdown?"true":"false")+

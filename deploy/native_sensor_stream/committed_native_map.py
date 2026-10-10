@@ -54,9 +54,12 @@ def seal_digest(s):
 class CommittedNativeMapAdapter:
     def __init__(self,factory, *, enabled=False,map_epoch=None,
                  map_frame='unverified_native_laser_local',on_display_commit=None,
-                 recovery_max_wall_s=1.5,accepted_native_chain_enabled=False,**map_budgets):
+                 recovery_max_wall_s=1.5,accepted_native_chain_enabled=False,pose_ledger_enabled=False,**map_budgets):
         require(type(enabled) is bool,'typed_map_adapter_default_OFF_required')
         require(type(accepted_native_chain_enabled) is bool,'typed_native_chain_default_OFF_required')
+        require(type(pose_ledger_enabled) is bool,'typed_pose_ledger_default_OFF_required')
+        from native_pose_ledger import CommittedPoseLedger
+        self.pose_ledger=CommittedPoseLedger(enabled=pose_ledger_enabled)
         self.__accepted_native_chain_enabled=accepted_native_chain_enabled
         self._capture_last=None;self._chain_token=None;self._chain_pose=None;self._chain_digest=None;self._mapped_chain=None
         require(type(factory) is PhysicalNativeShadowFactory,'exact_native_factory_required')
@@ -110,6 +113,7 @@ class CommittedNativeMapAdapter:
                 require(callable(on_display_commit),'display_callback_required');self._callback=on_display_commit
             self._fault=None;self._encoder_fault=None;self._serial+=1;self._pending=None
             self._map.start(self._context,explicit=True)
+            self.pose_ledger.start_after_join(explicit=True)
             with self._fence:self._stop.clear()
             self._thread=threading.Thread(target=self._run,name='native-historical-map',daemon=False)
             try:self._thread.start()
@@ -123,6 +127,7 @@ class CommittedNativeMapAdapter:
     def stop(self,reason='operator_stop'):
         token(reason)
         with self._fence:self._stop.set()
+        self.pose_ledger.inhibit()
         self._map.stop(reason)
         with self._cv:self._serial+=1;self._pending=None;self._clear_chain();self._cv.notify_all()
         return self.status()
@@ -137,6 +142,7 @@ class CommittedNativeMapAdapter:
         joined=not ambiguous and (thread is None or not thread.is_alive())
         # An unknown worker is retained; never advertise detached ownership.
         if joined:
+            self.pose_ledger.close_after_join()
             with self._cv:self._thread=None;self._launch_ambiguous=False;self._pending=None;self._working=None;self._working_digest=None
         return dict(joined=joined,worker_alive=thread is not None and thread.is_alive(),
                     worker_state_known=not ambiguous,owned_worker_retained=not joined,
@@ -179,6 +185,7 @@ class CommittedNativeMapAdapter:
         value=self._map.status()
         with self._cv:
             value.update(adapter='same_commit_immutable_seal_async_historical',adapter_fault=self._fault,
+                committed_pose_ledger=self.pose_ledger.status(),
                 accepted_native_chain_enabled=self.accepted_native_chain_enabled,
                 encoder_fault=self._encoder_fault,worker_alive=self._thread is not None and self._thread.is_alive(),
                 worker_launch_unproven=self._launch_ambiguous,pending_latest=int(self._pending is not None),in_flight=int(self._working is not None),
@@ -375,6 +382,13 @@ class CommittedNativeMapAdapter:
         with self._fence:
             if cancelled():return
             published=self._map.commit(ticket,**now)
+            if published and not cancelled():
+                state=self._map._state
+                chain=seal.chain_token or ('registered:'+str(serial))
+                self.pose_ledger.append_committed(seal.frame,state.pose,state.version,chain,seal.current_cdr,
+                    validate=lambda: not cancelled() and self._map._state is state and
+                        state.frame is not None and digest(state.frame)==digest(seal.frame) and
+                        self._validate_frame(seal.frame))
         if not published:return
         self._keyframe=(self._map._state.version,seal.frame.scan_cdr_sha256[1],
                         self._map._state.pose,freeze_geometry(geometry),seal.current_cdr)

@@ -1,0 +1,12 @@
+{
+  "files_sha256": {
+    "gnss_constraints.py": "6b58228bd36aaff0d110a19dc3a2d72c441470d33166872959819211f58369e8",
+    "native_gnss_dispatch.py": "e45a23a10ed08b27df3e5f734bb58438f4851238e1ca7cb391d69c7ce1703e57",
+    "native_gnss_fusion.py": "877b5390f8eef64fc8046097f81f7f3322f2999134face428caceb084bd9a5f8",
+    "native_pose_ledger.py": "837ed99d5fc332e1b6bf831bd9f242792d194546fba0fc8fe451d3c32a0def62"
+  },
+  "fused_occupancy_qualified": false,
+  "native_GNSS_pipeline_qualified": false,
+  "runtime_authority": false,
+  "schema": "ubts.private.native_GNSS_source.v1"
+}
