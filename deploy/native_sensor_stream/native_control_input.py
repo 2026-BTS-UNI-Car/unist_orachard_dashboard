@@ -76,9 +76,41 @@ class NativeControlInputAdapter:
         with self._lock:
             return dict(schema='ubts.native_control_input.v1',enabled=self.enabled,stopped=self._stop.is_set(),
                 state='HOLD',reason=self._reason,accepted_commits=self._captures,
+                body_reason=(self._last_diagnostic.get('reason')
+                    if type(self._last_diagnostic) is dict else None),
+                missing_operational_bindings=self._missing_operational_bindings(),
                 latest=copy.deepcopy(self._last_diagnostic),latest_is_historical=True,physical_autonomy_qualified=False,
                 calibration_certified=False,runtime_authority=False,motor_command_sent=False,
                 operational_frame_available=False)
+    def _missing_operational_bindings(self):
+        # Diagnostic inventory only. Do not invoke a provider, sample clocks,
+        # or turn trusted declarations into certification/admission.
+        missing=[]
+        for label,value,cls in (
+            ('measured_laser_mount',self.mount,MeasuredLaserMount),
+            ('measured_drive_and_braking_profile',self.profile,MeasuredProfile),
+            ('control_timing',self.timing,TimingLimits),
+            ('BODY_feedback_timing',self.feedback_timing,FeedbackTiming),
+            ('measured_swept_footprint',self.footprint,MeasuredFootprint)):
+            try:available=type(value) is cls and value.valid() is True
+            except Exception:available=False
+            if not available:missing.append(label)
+        if type(self.profile) is not MeasuredProfile or self.profile.braking_measured is not True:
+            missing.append('measured_braking_envelope')
+        if not callable(self.evidence_provider):missing.append('physical_evidence_provider')
+        evidence=None if self._accepted is None else self._accepted[2]
+        for label,field in (
+            ('BODY_and_IMU_mount_evidence','body_mount_verified'),
+            ('native_BODY_validation','native_body_velocity_validated'),
+            ('braking_evidence','braking_verified'),
+            ('emergency_stop_evidence','emergency_stop_verified'),
+            ('source_pipeline_evidence','source_pipeline_validated'),
+            ('swept_space_evidence','swept_provider_validated'),
+            ('motor_configuration_evidence','motor_configuration_reviewed')):
+            if type(evidence) is not ActivationEvidence or getattr(evidence,field) is not True:
+                missing.append(label)
+        return missing
+
     def _configured(self):
         require(self._configuration==(self.enabled,self.record_replay,self.mount,self.profile,self.timing,
                  self.feedback_timing,self.footprint,self.evidence_provider) and

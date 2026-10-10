@@ -18,6 +18,8 @@ import time
 from types import SimpleNamespace
 
 
+GRAPH_SOURCE_SHA='5d0ce1ea41f9408b8088272bd8689d483b50863cf3af31199960df90df2d2052'
+
 GNSS_SOURCE_SHA='595c2c2a1af5b8dc82fa5d0e0133618f78896edb10ad33f88ccb66094424d8de'
 
 
@@ -27,6 +29,7 @@ def main(argv=None):
     parser.add_argument('--enable-native-map',action='store_true')
     parser.add_argument('--enable-native-gnss',action='store_true')
     parser.add_argument('--enable-native-control-input',action='store_true')
+    parser.add_argument('--resolve-original-gids-on-start',action='store_true')
     parser.add_argument('--gps-data-gid')
     parser.add_argument('--gps-fix-gid')
     for name in ('socket-path','scan-gid','imu-gid'):
@@ -40,7 +43,7 @@ def main(argv=None):
     root=Path(__file__).resolve().parent
     stream_runner.require(os.geteuid()==0 and os.environ.get('ROS_DISTRO')=='iron' and
         os.environ.get('ROS_DOMAIN_ID')=='0','actual_native_environment_required')
-    stream_runner.require(args.socket_path and args.scan_gid and args.imu_gid,'explicit_service_inputs_required')
+    stream_runner.require(args.socket_path and (args.resolve_original_gids_on_start or (args.scan_gid and args.imu_gid)),'explicit_service_inputs_required')
     target=Path(args.socket_path)
     stream_runner.require(target.parent==Path('/run/ubts-native-stream') and
         target.name=='observe.sock','owned_local_sensor_socket_required')
@@ -54,14 +57,14 @@ def main(argv=None):
     bound.physical_surface_cache_enabled = stream_runner.load_physical_package(
         '/opt/ubts-shadow/package',bound.package_manifest_sha256,
         reviewed_features=bound.physical_reviewed_features)
-    bound.native_control_input_sha256 = 'e4cc1634c6b89088be803446bf384331f7d0c46a6473685ea84dda15f41272ff'
+    bound.native_control_input_sha256 = '1af69f9e3cb098c482d2cbf42849865ffc425c5bf83e901904e9939bb47f9d12'
     bound.native_control_input_enabled = args.enable_native_control_input
     bound.native_map_enabled = args.enable_native_map
     bound.native_gnss_enabled=args.enable_native_gnss
     if args.enable_native_gnss:
         import re
-        stream_runner.require(args.enable_native_map and all(type(g) is str and re.fullmatch('[0-9a-f]{32}',g) and g!='0'*32
-            for g in (args.gps_data_gid,args.gps_fix_gid)) and args.gps_data_gid!=args.gps_fix_gid,'explicit_optional_GPS_GIDs_required')
+        stream_runner.require((args.resolve_original_gids_on_start and args.enable_native_map) or (args.enable_native_map and all(type(g) is str and re.fullmatch('[0-9a-f]{32}',g) and g!='0'*32
+            for g in (args.gps_data_gid,args.gps_fix_gid)) and args.gps_data_gid!=args.gps_fix_gid),'explicit_optional_GPS_GIDs_required')
         bound.gps_data_gid,bound.gps_fix_gid=args.gps_data_gid,args.gps_fix_gid
         bound.native_gnss_manifest_sha256=GNSS_SOURCE_SHA
         stream_runner.load_native_gnss_sources(root,GNSS_SOURCE_SHA)
@@ -81,11 +84,42 @@ def main(argv=None):
     from common.native_ownership import LinuxRawClock
     from physical_factory import PhysicalNativeShadowFactory
     assert Clock and ClockType and LinuxRawClock and PhysicalNativeShadowFactory and stream_rows
-    runner=stream_runner.NativeStreamRunner(lambda:stream_runner.make_adapter(bound),lambda:subprocess.Popen(
-        ([str(binary),'--observe-until-stop','--expected-scan-gid',args.scan_gid,'--expected-imu-gid',args.imu_gid]+
-         (['--expected-gps-data-gid',args.gps_data_gid,'--expected-gps-fix-gid',args.gps_fix_gid] if args.enable_native_gnss else [])),
-        stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,shell=False),
-        map_session=getattr(bound, 'native_map_session', None))
+    if args.resolve_original_gids_on_start:
+        graph_source=root/'ORIGINAL_GRAPH_SOURCE.json'
+        stream_runner.require(stream_runner.sha_file(graph_source)==GRAPH_SOURCE_SHA,
+            'reviewed_original_graph_manifest_required')
+        graph_manifest=stream_runner.strict_json(graph_source.read_bytes())
+        stream_runner.require(graph_manifest.get('schema')=='ubts.private.original_graph_sources.v1' and
+            graph_manifest.get('default_OFF') is True and
+            set(graph_manifest.get('files_sha256',{}))=={'original_topic_graph.py','original_graph_runner.py'},
+            'exact_original_graph_source_closure_required')
+        for name,digest in graph_manifest['files_sha256'].items():
+            stream_runner.require(stream_runner.sha_file(root/name)==digest,'original_graph_source_changed')
+        from original_topic_graph import OriginalTopicResolver
+        from original_graph_runner import OriginalGraphStreamRunner
+        contract=stream_runner.strict_json((root/'OBSERVER_CONTRACT.json').read_bytes())
+        resolver=OriginalTopicResolver(contract,include_gps=args.enable_native_gnss)
+        def graph_adapter(binding):
+            values=dict(vars(bound))
+            values.update(scan_gid=binding.gid('/scan'),imu_gid=binding.gid('/imu/data_raw'))
+            if args.enable_native_gnss:
+                values.update(gps_data_gid=binding.gid('/gps/data'),gps_fix_gid=binding.gid('/gps/fix'))
+            return stream_runner.make_adapter(SimpleNamespace(**values))
+        def graph_process(binding):
+            argv=[str(binary),'--observe-until-stop','--expected-scan-gid',binding.gid('/scan'),
+                '--expected-imu-gid',binding.gid('/imu/data_raw')]
+            if args.enable_native_gnss:
+                argv+=['--expected-gps-data-gid',binding.gid('/gps/data'),
+                    '--expected-gps-fix-gid',binding.gid('/gps/fix')]
+            return subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,shell=False)
+        runner=OriginalGraphStreamRunner(graph_adapter,graph_process,resolver,
+            map_session=getattr(bound,'native_map_session',None))
+    else:
+        runner=stream_runner.NativeStreamRunner(lambda:stream_runner.make_adapter(bound),lambda:subprocess.Popen(
+            ([str(binary),'--observe-until-stop','--expected-scan-gid',args.scan_gid,'--expected-imu-gid',args.imu_gid]+
+             (['--expected-gps-data-gid',args.gps_data_gid,'--expected-gps-fix-gid',args.gps_fix_gid] if args.enable_native_gnss else [])),
+            stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,shell=False),
+            map_session=getattr(bound, 'native_map_session', None))
     stop=threading.Event()
     for sig in (signal.SIGTERM,signal.SIGINT):
         signal.signal(sig,lambda _sig,_frame:stop.set())
