@@ -170,8 +170,10 @@ class CommittedNativeMapAdapter:
             return self._map.new_map(self._context,explicit=True)
 
     def invalidate_gap(self,reason='native_pair_gap'):
-        with self._cv:self._serial+=1;self._pending=None;self._clear_chain();self._cv.notify_all()
-        return self._map.invalidate_gap(reason)
+        # WAIT revokes the same generation before any publication can proceed.
+        with self._fence:
+            with self._cv:self._serial+=1;self._pending=None;self._clear_chain();self._cv.notify_all()
+            return self._map.invalidate_gap(reason)
 
     def status(self):
         value=self._map.status()

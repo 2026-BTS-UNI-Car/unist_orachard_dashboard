@@ -1,30 +1,30 @@
 {
-  "schema": "ubts.private.physical_native_shadow_deployment_closure.v1",
+  "Python_packages": [
+    "numpy",
+    "scipy"
+  ],
+  "ROS_SYSTEM_TIME_provider_required_from_live_launcher": true,
+  "ROS_or_SIM_python_modules_required": false,
+  "count": 13,
   "files_sha256": {
-    "inputs.py": "1845848056f63fb51b4a570adbc49a432ebb5615902a7a31350c5c0fc28d23c8",
-    "VENDORED_INPUTS.json": "268c01c9fb83f7b834299359bab25bab576b884588bb430acc6ecda2654e15f9",
-    "physical_ingress.py": "cca2931d4ff52d3fcf196ad0efbdd3d835096f8a440ec72c475607c2d6a6b570",
-    "physical_factory.py": "7cbc3a0e52855ee90f60ec50a9ebf5ddb3571549b16134596ad93106c8f9b382",
-    "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
+    "VENDORED_INPUTS.json": "83d9cfe43aaa667de3d4b3739b9a6491596c3d02a45938e201b5e148beac9ba2",
     "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "common/native_ownership.py": "c705c627390735226d5aafed8322de37e1c8d53ad5f71151e144a843f87dd8c6",
     "common/original_cdr.py": "6eb6929782063888880a827d2ef652d820cd0ebdc3ee8e83cc01ed8aabb341d3",
     "common/sensor_contract.py": "39242c55cc8c259d1cf6acaa744a17f9912d7a277281959adfefa9676da08275",
     "common/sensor_views.py": "40718ec325826ffc63995c9409f56cf928991d5fad7a4a0e3a0678d1c745796c",
+    "inputs.py": "c0e583d8fae53adbe32813ed32ef28c38881229823ab1274a4aee6090cfb913c",
     "kernel/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "kernel/fit_workers.py": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c",
-    "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9"
+    "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
+    "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
+    "physical_factory.py": "258e930e35d5498e7843c4efea609d25d3fe5fcfbedcb4fd586bc5993032d44a",
+    "physical_ingress.py": "526e6155899a5b444f3273742134a629e1c752a07a8ee482740e0cecd5f64181"
   },
-  "count": 13,
-  "Python_packages": [
-    "numpy",
-    "scipy"
-  ],
-  "ROS_or_SIM_python_modules_required": false,
-  "ROS_SYSTEM_TIME_provider_required_from_live_launcher": true,
-  "original_native_Cpp_observer_required_separately": true,
   "offline_inspector_optional_file": "inspect_capture.py",
-  "source_only_no_installed_live_pipeline_qualification": true,
+  "original_native_Cpp_observer_required_separately": true,
   "parent_manifest_sha256": "68bd1239327ca8701004fd284484223b1ddfabd9105ace933ee8ead9ec1ed5a7",
+  "schema": "ubts.private.physical_native_shadow_deployment_closure.v1",
+  "source_only_no_installed_live_pipeline_qualification": true,
   "source_revision": "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait"
 }

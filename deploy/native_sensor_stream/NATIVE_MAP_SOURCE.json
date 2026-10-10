@@ -9,15 +9,15 @@
   "files_sha256": {
     "batched_map_owner.py": "b4b5c98bba0e40e788acbf281b35f03e3ef321077345a249f664efdf741347bc",
     "batched_rays.py": "6ed11dad002cc0e276d2f8734e1027c291e19e7a166f54550eb5331f82fbb629",
-    "committed_native_map.py": "437f74b6b1d668d9a6333a84523d001d0c7013b8a1a97df61460a870730de337",
+    "committed_native_map.py": "bc403228c27bfa29f9dc375759d264178f25e7423a35129271c5f5bf84a67262",
     "keyframe_registration.py": "08b2cec0b7122ba785c7fab0ebd4893dd647a73daeb4f7f42f9f70a8284a8ad4",
-    "native_map_owner.py": "4d23f41dda496e833458fa53af542b54f5b423c936487dc37c01150951fe18e1",
+    "native_map_owner.py": "a266567bd979aee3b80ad5c3e5e8619e3c98fa2325c4eaaa9d1d9309e5c8f88e",
     "native_map_transport.py": "66ea3c171a0a6c5704d402329af56b219d6b2c6555c0abebc8d8acad0de28f7a",
-    "stream_rows_map.py": "2b1a8e5a9095c23769a4d43688534cd091bf6d1f0cb630162c061d12146215e9"
+    "stream_rows_map.py": "2cc6ed2f6051a00160b84643de5b4f4da328bf07f6b87d07dff2651dc9fedac8"
   },
   "motor_command_sent": false,
   "parent_map_handoff_sha256": "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9",
-  "parent_package_sha256": "4669f543c358ca563c854dbddd70ca889d64f1837e012f29cc4dbc4f5a87818e",
+  "parent_package_sha256": "f6753a0da7f36d672df88da4023a6402581166cb2d24d25de11948baf7b85e0f",
   "runtime_qualified": false,
   "schema": "ubts.private.native_map_source.v1"
 }

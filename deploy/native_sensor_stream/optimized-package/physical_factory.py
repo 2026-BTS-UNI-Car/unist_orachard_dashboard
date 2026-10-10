@@ -321,6 +321,8 @@ class PhysicalNativeShadowFactory:
                 final_clock.raw_domain == self.ingress.domain and
                 self.ingress.generation == self._generation,
                 'final_physical_clock_epoch_changed')
+        if self.preparation_causal_raw_expiry_reanchor_enabled:
+            self._check_positive_age_expiry(original,final_clock,'commit_final_scalar_fence',pending=False)
         newest = original.imu_originals[-1]
         checks = (
             ('scan', original.current.wire.header.stamp_ns, original.current.receipt.ns),
@@ -386,8 +388,12 @@ class PhysicalNativeShadowFactory:
         self._owned(original, pending=pending)
         clock = self.ingress._evaluate()
         require(type(clock) is PhysicalClockReading, 'physical_system_clock_required')
+        if self.preparation_causal_raw_expiry_reanchor_enabled:
+            stage = preparation_stage or ('commit_consumed_association' if not pending else
+                                          'commit_initial_association')
+            self._check_positive_age_expiry(original,clock,stage,pending=pending)
         if preparation_stage is not None and self.preparation_causal_raw_expiry_reanchor_enabled:
-            require(pending and preparation_stage in ('prepare_association','postfit_association'),
+            require(pending and preparation_stage in ('prepare_association','postfit_association','commit_initial_association'),
                     'exact_factory_preparation_stage_required')
             attempt = self._preparation_attempt = (object(),self._preparation_anchor,original,clock,preparation_stage)
             samples, pairing = self.ingress._association(original.previous, original.current,
@@ -408,19 +414,69 @@ class PhysicalNativeShadowFactory:
                 'original_causal_sensor_IMU_changed')
         return clock, pairing
 
+    def _check_positive_age_expiry(self, original, clock, stage, *, pending):
+        if not self.ingress._has_positive_age_expiry(self.ingress._positive_pair_ages(original,clock)):
+            return
+        self._owned(original,pending=pending)
+        if self._preparation_anchor is None:
+            require(self._pending is not None,'owned_positive_age_diagnostic_required')
+            self._preparation_anchor = (original,self.ingress._prepared_digest,
+                self._state,self._state.version,self._state.latest,
+                (self._pending,self._pending._capability,self._pending_digest))
+        attempt = self._preparation_attempt = (object(),self._preparation_anchor,original,clock,stage)
+        self.ingress._raise_preparation_raw_expiry(self,attempt,original,
+                                                  original.imu_samples,original.pairing,clock)
+
     def _validate_preparation_expiry_attempt(self, attempt, original, clock):
-        self._owned(original)
+        require(type(attempt) is tuple and len(attempt) == 5,'owned_factory_preparation_attempt_required')
+        receiver_prepare = attempt[4] in ('receiver_prepare_association','receiver_prepare_end_association')
+        consumed = attempt[4] in ('commit_consumed_association','commit_final_scalar_fence')
+        self._owned(original,pending=not (consumed or receiver_prepare))
         anchor = self._preparation_anchor
         require(type(self) is PhysicalNativeShadowFactory and
                 self.preparation_causal_raw_expiry_reanchor_enabled is True and
-                type(anchor) is tuple and len(anchor) == 5 and anchor[0] is original and
-                anchor[1] == self.ingress._prepared_digest and anchor[2] is self._state and
+                type(anchor) is tuple and len(anchor) == 6 and anchor[0] is original and
+                 (receiver_prepare or anchor[1] == self.ingress._prepared_digest) and anchor[2] is self._state and
                 anchor[3] == self._state.version and anchor[4] is self._state.latest and
-                self._pending is None and self._pending_digest is None and
                 type(attempt) is tuple and len(attempt) == 5 and attempt is self._preparation_attempt and
                 attempt[1] is anchor and attempt[2] is original and attempt[3] is clock and
-                attempt[4] in ('prepare_association','postfit_association'),
+                 attempt[4] in ('prepare_association','postfit_association','commit_initial_association',
+                     'commit_receiver_association','commit_receiver_end_scalar',
+                     'commit_consumed_association','commit_final_scalar_fence',
+                     'receiver_prepare_association','receiver_prepare_end_association'),
                 'owned_factory_preparation_attempt_required')
+        diagnostic = anchor[5]
+        if receiver_prepare:
+            require(type(diagnostic) is tuple and len(diagnostic) == 4 and
+                    diagnostic[0] is self.ingress._active and diagnostic[0] is not None and
+                    diagnostic[1][0] is original.previous and diagnostic[1][1] is original.current and
+                    diagnostic[2] == original.imu_originals and
+                    diagnostic[3] == anchor[1] == self.ingress._digest_prepared(original) and
+                    self.ingress.previous is original.current and self.ingress.prepared is None and
+                    self._pending is None and self._pending_digest is None,
+                    'owned_receiver_preparation_positive_age_attempt_required')
+        elif attempt[4].startswith('commit_'):
+            require(type(diagnostic) is tuple and len(diagnostic) == 3 and
+                    type(diagnostic[0]) is PreparedPhysicalDiagnostic and diagnostic[0] is self._pending and
+                    diagnostic[0]._owner is self and diagnostic[0].original_inputs is original and
+                    diagnostic[0]._capability is diagnostic[1] and diagnostic[2] == self._pending_digest and
+                    type(self._final_pending_seal) is tuple and len(self._final_pending_seal) == 5 and
+                    self._final_pending_seal[0] is diagnostic[0] and
+                    self._final_pending_seal[1] is diagnostic[1] and
+                    self._final_pending_seal[2] is self._state and
+                    self._final_pending_seal[3] == self._state.version and
+                    self._final_pending_seal[4] is self._state.latest,
+                    'owned_commit_initial_diagnostic_attempt_required')
+            require(hashlib.sha256(repr(diagnostic[0].record).encode()+
+                self.ingress._digest_prepared(original).encode()).hexdigest() == diagnostic[2],
+                'original_physical_diagnostic_changed')
+            if consumed:
+                require(self.ingress.prepared is None and self.ingress._prepared_digest is None and
+                        self.ingress._first_pair is False and self.ingress.previous is original.current,
+                        'exact_consumed_original_pair_required')
+        else:
+            require(diagnostic is None and self._pending is None and self._pending_digest is None,
+                    'one_clean_factory_preparation_attempt_required')
 
     def _abandon_preparation_raw_expiry(self, error):
         attempt = self._preparation_attempt
@@ -431,25 +487,28 @@ class PhysicalNativeShadowFactory:
                 0 <= self.preparation_raw_expiry_wait_count < (1<<63)-1,
                 'preparation_RAW_expiry_counter_exhausted')
         lower = original.imu_originals[original.pairing.end_indices[0]]
-        timing = dict(schema='ubts.native.preparation_causal_RAW_expiry_wait.v1',
+        timing = dict(schema='ubts.native.owned_positive_age_expiry_wait.v1',
             stage=stage, source_sequence=lower.source_sequence,
             comparison=dict(source_ns=clock.source_ns,RAW_ns=clock.receipt_ns),
             lower_header_ns=lower.wire.header.stamp_ns,lower_callback_RAW_ns=lower.receipt.ns,
             lower_SOURCE_age_ns=clock.source_ns-lower.wire.header.stamp_ns,
             lower_RAW_age_ns=clock.receipt_ns-lower.receipt.ns,
             SOURCE_TTL_ns=SOURCE_AGE_NS,RAW_TTL_ns=RECEIPT_AGE_NS,
-            diagnostic_version=self._state.version,data_qualified=False)
+            diagnostic_version=self._state.version,data_qualified=False,
+            checked_ages=self.ingress._positive_pair_ages(original,clock))
         import json
-        require(len(json.dumps(timing,allow_nan=False,separators=(',',':')).encode()) <= 1024,
+        require(len(json.dumps(timing,allow_nan=False,separators=(',',':')).encode()) <= 2048,
                 'preparation_RAW_expiry_timing_capacity')
         self.ingress._quarantine_preparation_raw_expiry(error,self,attempt)
         require(not self.stop_intent.is_set() and self.fault is None and self.ingress.fault is None,
                 'physical_shadow_STOP_latched')
+        self._pending = self._pending_digest = self._final_pending_seal = None
         self._preparation_anchor = self._preparation_attempt = None
+        self._consumed_attempt = self._receiver_attempt = self._receiver_clock = self._final_attempt = None
         self.preparation_raw_expiry_wait_count += 1
         self.preparation_raw_expiry_wait_timing = timing
         self._preparation_wait = _PreparationCausalRawExpiryWait(
-            'waiting_for_fresh_scan_after_preparation_causal_RAW_expiry',
+            'waiting_for_fresh_two_scan_pair_after_positive_original_age_expiry',
             self._generation,self,self._state.version)
         return self._preparation_wait
 
@@ -643,7 +702,7 @@ class PhysicalNativeShadowFactory:
                 require(self._pending is None, 'one_physical_diagnostic_in_flight_required')
                 if self.preparation_causal_raw_expiry_reanchor_enabled:
                     self._preparation_anchor = (original,self.ingress._prepared_digest,
-                        self._state,self._state.version,self._state.latest)
+                        self._state,self._state.version,self._state.latest,None)
                 with self.ingress.lock:
                     _clock, pairing = self._timed('prepare_association', self._clock_and_pair, original, preparation_stage='prepare_association')
                     self._timing['imu_count'] = len(original.imu_originals)
@@ -678,7 +737,8 @@ class PhysicalNativeShadowFactory:
                             'native_diagnostic_quality_bounds_required')
                     self._pending = PreparedPhysicalDiagnostic(original, record, self, object())
                     self._pending_digest = hashlib.sha256(repr(record).encode()+original_digest.encode()).hexdigest()
-                    if self.final_scalar_causal_raw_expiry_reanchor_enabled:
+                    if (self.final_scalar_causal_raw_expiry_reanchor_enabled or
+                            self.preparation_causal_raw_expiry_reanchor_enabled):
                         self._final_pending_seal = (self._pending,self._pending._capability,
                             self._state,self._state.version,self._state.latest)
                     return self._pending
@@ -704,7 +764,15 @@ class PhysicalNativeShadowFactory:
                     require(type(prepared) is PreparedPhysicalDiagnostic and prepared is self._pending
                             and prepared._owner is self, 'owned_physical_diagnostic_capability_required')
                     original = prepared.original_inputs
-                    self._timed('commit_initial_association', self._clock_and_pair, original)
+                    if self.preparation_causal_raw_expiry_reanchor_enabled:
+                        self._preparation_anchor = (original,self.ingress._prepared_digest,
+                            self._state,self._state.version,self._state.latest,
+                            (prepared,prepared._capability,self._pending_digest))
+                        self._timed('commit_initial_association', self._clock_and_pair, original,
+                            preparation_stage='commit_initial_association')
+                        self._preparation_anchor = self._preparation_attempt = None
+                    else:
+                        self._timed('commit_initial_association', self._clock_and_pair, original)
                     require(hashlib.sha256(repr(prepared.record).encode()+
                         self.ingress._digest_prepared(original).encode()).hexdigest() == self._pending_digest,
                         'original_physical_diagnostic_changed')
@@ -742,7 +810,14 @@ class PhysicalNativeShadowFactory:
                     self._state = next_state  # one final immutable pointer swap
                     self._pending = self._pending_digest = self._final_pending_seal = None
                     return response
+            except _ValidatedPreparationCausalRawExpiry as error:
+                try:
+                    with self.ingress.lock:
+                        return self._abandon_preparation_raw_expiry(error)
+                except Exception as invalid:
+                    return self._fail(invalid)
             except Exception as error:
                 return self._fail(error)
             finally:
+                self._preparation_anchor = self._preparation_attempt = None
                 self._timing['stages_ns']['commit_total'] = time.perf_counter_ns()-total_start

@@ -2,7 +2,7 @@
 import hashlib,json
 from pathlib import Path
 HERE=Path(__file__).resolve().parent
-VENDORED_INPUTS_SHA='268c01c9fb83f7b834299359bab25bab576b884588bb430acc6ecda2654e15f9'
+VENDORED_INPUTS_SHA='83d9cfe43aaa667de3d4b3739b9a6491596c3d02a45938e201b5e148beac9ba2'
 OBSERVER_SHA='93cbe9221f7d0b3d06079c04e35c4633cfa454c2c80233cb893629907af97563'
 
 def verify():

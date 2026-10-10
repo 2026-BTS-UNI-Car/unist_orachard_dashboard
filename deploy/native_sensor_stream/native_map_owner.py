@@ -330,12 +330,16 @@ class NativeAcceptedMapOwner:
                 require(registered_bridge is None,'bridge_without_history_rejected')
                 pose=self._compose((0.,0.,0.),frame.current_to_previous)
             elif continuous and type(registered_bridge) is AcceptedContiguousNativeChain:
-                pose=self._bridge(registered_bridge,frame,base)
+                with self._lock:
+                    if self._stop.is_set() or not self._active or serial!=self._serial or base is not self._state:return None
+                    pose=self._bridge(registered_bridge,frame,base)
             elif not continuous:
                 if registered_bridge is None:
                     with self._lock:self._reason='waiting_registered_native_bridge'
                     return None
-                pose=self._bridge(registered_bridge,frame,base)
+                with self._lock:
+                    if self._stop.is_set() or not self._active or serial!=self._serial or base is not self._state:return None
+                    pose=self._bridge(registered_bridge,frame,base)
             else:
                 if not (frame.sequence==base.frame.sequence+1 and
                         frame.scan_stamps_ns[0]==base.frame.scan_stamps_ns[1] and
@@ -358,7 +362,9 @@ class NativeAcceptedMapOwner:
             for key in hits:cells[key]=new
             if len(cells)>self._capacity:self.invalidate_gap('native_map_capacity');return None
             require(digest(frame)==stamp and self._validator(frame) is True,'native_frame_changed_during_map_prepare')
-            if registered_bridge is not None:self._bridge(registered_bridge,frame,base)
+            with self._lock:
+                if self._stop.is_set() or not self._active or serial!=self._serial or base is not self._state:return None
+                if registered_bridge is not None:self._bridge(registered_bridge,frame,base)
             bstamp=hashlib.sha256(repr(registered_bridge).encode()).digest() if registered_bridge is not None else None
             require(base.version < MAX_NS,'native_map_version_exhausted')
             rows=tuple((x,y,c.kind,c.source_ns,c.receipt_ns) for (x,y),c in sorted(cells.items()))

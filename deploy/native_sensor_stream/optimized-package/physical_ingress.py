@@ -533,7 +533,37 @@ class PhysicalOriginalIngress(OriginalIngress):
                     self.previous is None and self.pending is None and self.prepared is None and
                     self._active is None and not self._owners and not self.imus)
 
-    def prepare(self):
+    def _check_receiver_prepare_positive_age(self, pair, originals, clock, token, first, owner, stage):
+        if owner is None:
+            return
+        from physical_factory import PhysicalNativeShadowFactory
+        require(type(owner) is PhysicalNativeShadowFactory and owner.ingress is self and
+                owner.preparation_causal_raw_expiry_reanchor_enabled is True,
+                'exact_positive_age_receiver_factory_required')
+        current = pair[1]
+        lower = next((v for v in reversed(originals)
+                      if v.wire.header.stamp_ns <= current.wire.header.stamp_ns),None)
+        values = (current,) if lower is None or not originals else (current,lower,originals[-1])
+        if not any(clock.source_ns-v.wire.header.stamp_ns >= SOURCE_AGE_NS or
+                   clock.receipt_ns-v.receipt.ns >= RECEIPT_AGE_NS for v in values):
+            return
+        # Failure-only provisional descriptor: original envelopes are retained,
+        # but this is NEVER installed/admitted as a PreparedInputs capability.
+        samples = tuple(ImuSample(v.wire.header.stamp_ns,v.receipt.ns,v.wire.header.frame_id,
+            tuple(float(x) for x in v.wire.groups[0]),tuple(float(x) for x in v.wire.groups[2]),
+            tuple(float(x) for x in v.wire.groups[1]),tuple(float(x) for x in v.wire.groups[3]))
+            for v in originals)
+        pairing = pair_imu(samples,pair[0].wire.header.stamp_ns,current.wire.header.stamp_ns,
+            frame_id=self.imu_frame,receipt_now_ns=clock.receipt_ns,max_roll_pitch_rad=None)
+        require(pairing.reason == 'bracketed_available_imu',pairing.reason)
+        original = PreparedInputs(self.generation,*pair,originals,samples,pairing,clock,first)
+        with self.lock:
+            digest = self._digest_prepared(original)
+            owner._preparation_anchor = (original,digest,owner._state,owner._state.version,
+                owner._state.latest,(token,pair,originals,digest))
+            owner._check_positive_age_expiry(original,clock,stage,pending=False)
+
+    def prepare(self, *, positive_age_factory=None):
         """Freeze only original interpolation brackets plus newest context.
 
         The500ms horizon remains the initial retention/selection bound. An
@@ -553,6 +583,8 @@ class PhysicalOriginalIngress(OriginalIngress):
                 originals = tuple(self.imus)
                 first = self._first_pair
             clock = self._evaluate()
+            self._check_receiver_prepare_positive_age(pair,originals,clock,token,first,
+                positive_age_factory,'receiver_prepare_association')
             originals = tuple(e for e in originals
                 if e.wire.header.stamp_ns >= clock.source_ns-IMU_HORIZON_NS)
             samples, pairing = self._association(*pair, originals, clock,
@@ -569,6 +601,8 @@ class PhysicalOriginalIngress(OriginalIngress):
             prepared = PreparedInputs(generation, *pair, selected, selected_samples,
                                       selected_pairing, clock, first)
             end_clock = self._evaluate()
+            self._check_receiver_prepare_positive_age(pair,selected,end_clock,token,first,
+                positive_age_factory,'receiver_prepare_end_association')
             check_samples, check_pairing = self._association(*pair, selected, end_clock)
             require(check_samples == selected_samples and check_pairing == selected_pairing,
                     'minimal_original_brackets_changed')
@@ -579,6 +613,13 @@ class PhysicalOriginalIngress(OriginalIngress):
                 self._prepared_digest = self._digest_prepared(prepared)
                 return self._outcome('prepared_original_inputs_no_motion_factory',
                     prepared=prepared, input_ready=not first)
+        except _ValidatedPreparationCausalRawExpiry as error:
+            try:
+                with self.lock:
+                    require(positive_age_factory is not None,'owned_receiver_positive_age_factory_required')
+                    return positive_age_factory._abandon_preparation_raw_expiry(error)
+            except Exception as invalid:
+                return self._invalidate(str(invalid))
         except _ValidatedImuGap as error:
             with self.lock:
                 if generation != self.generation:
@@ -791,7 +832,25 @@ class PhysicalOriginalIngress(OriginalIngress):
         except Exception as error:
             self.receiver_end_scalar_failure_timing_error = str(error)[:128]
 
-    def _consumed_raw_expiry_guards(self, original, samples, pairing, clock):
+    def _positive_pair_ages(self, original, clock):
+        lower = original.imu_originals[original.pairing.end_indices[0]]
+        newest = original.imu_originals[-1]
+        values = [('scan',original.current,SOURCE_AGE_NS,RECEIPT_AGE_NS),
+                  ('selected_lower_IMU',lower,SOURCE_AGE_NS,RECEIPT_AGE_NS),
+                  ('captured_newest_IMU',newest,SOURCE_AGE_NS,RECEIPT_AGE_NS)]
+        values += [('captured_IMU_'+str(i),v,IMU_HORIZON_NS+1,None)
+                   for i,v in enumerate(original.imu_originals)]
+        return tuple((name,clock.source_ns-v.wire.header.stamp_ns,
+                      clock.receipt_ns-v.receipt.ns,source_limit,raw_limit)
+                     for name,v,source_limit,raw_limit in values)
+
+    @staticmethod
+    def _has_positive_age_expiry(ages):
+        return any(source_age >= source_limit or
+                   (raw_limit is not None and raw_age >= raw_limit)
+                   for _,source_age,raw_age,source_limit,raw_limit in ages)
+
+    def _consumed_raw_expiry_guards(self, original, samples, pairing, clock, *, positive_age=False):
         # This is a classification of the EXISTING association sample, not a
         # second clock observation or a weaker association. Check every other
         # boundary before the single positive selected-lower RAW exception.
@@ -847,6 +906,28 @@ class PhysicalOriginalIngress(OriginalIngress):
             for name, group in (('orientation', _imu_group(groups,'quaternion','orientation_covariance',4)),
                     ('angular_velocity', _imu_group(groups,'angular_velocity','angular_velocity_covariance',3))):
                 require(group.valid and group.available, 'imu_'+name+'_'+group.reason)
+        if positive_age:
+            # This branch abandons custody, never admits expired inputs. Only
+            # age ceilings change classification; all original gates above and
+            # exact interpolation/group equality remain required.
+            actual_samples = tuple(ImuSample(v.wire.header.stamp_ns,v.receipt.ns,
+                v.wire.header.frame_id,tuple(float(x) for x in v.wire.groups[0]),
+                tuple(float(x) for x in v.wire.groups[2]),
+                tuple(float(x) for x in v.wire.groups[1]),
+                tuple(float(x) for x in v.wire.groups[3])) for v in originals)
+            actual_pairing = pair_imu(actual_samples,previous.wire.header.stamp_ns,
+                current.wire.header.stamp_ns,frame_id=self.imu_frame,
+                receipt_now_ns=clock.receipt_ns,max_roll_pitch_rad=None)
+            require(actual_samples == samples and actual_pairing == pairing and
+                    pairing.reason == 'bracketed_available_imu',
+                    'original_causal_sensor_IMU_changed')
+            ages = self._positive_pair_ages(original,clock)
+            require(all(source_age >= 0 and raw_age >= 0
+                        for _,source_age,raw_age,_,_ in ages),
+                    'future_original_cannot_be_positive_age_wait')
+            require(self._has_positive_age_expiry(ages),
+                    'exact_positive_owned_pair_age_expiry_required')
+            return
         self._scan_fresh(current, clock)
         require(0 <= clock.source_ns-self.callback_provenance[id(current)][1].independent_ros_system_now_ns
                 < SOURCE_AGE_NS, 'stale_or_future_original_callback_system_time')
@@ -863,7 +944,7 @@ class PhysicalOriginalIngress(OriginalIngress):
         require(type(owner) is PhysicalNativeShadowFactory and owner.ingress is self,
                 'exact_preparation_physical_factory_required')
         owner._validate_preparation_expiry_attempt(attempt, original, clock)
-        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock, positive_age=True)
         owner._validate_preparation_expiry_attempt(attempt, original, clock)
         error = _ValidatedPreparationCausalRawExpiry('selected_lower_causal_RAW_positive_expiry')
         self._preparation_expiry_proof = (error, owner, attempt, original, samples, pairing, clock)
@@ -876,7 +957,7 @@ class PhysicalOriginalIngress(OriginalIngress):
                 'owned_preparation_RAW_expiry_proof_required')
         _,_,_,original,samples,pairing,clock = proof
         owner._validate_preparation_expiry_attempt(attempt, original, clock)
-        self._consumed_raw_expiry_guards(original, samples, pairing, clock)
+        self._consumed_raw_expiry_guards(original, samples, pairing, clock, positive_age=True)
         owner._validate_preparation_expiry_attempt(attempt, original, clock)
         # Preserve every observed Header floor; older captured originals must
         # never lower floors advanced by valid unadmitted priming observations.
@@ -996,6 +1077,8 @@ class PhysicalOriginalIngress(OriginalIngress):
                         or self._prepared_digest != self._digest_prepared(prepared)):
                     return self._outcome('unowned_or_stale_prepared_discarded')
             clock = self._evaluate()
+            if owner.preparation_causal_raw_expiry_reanchor_enabled:
+                owner._check_positive_age_expiry(prepared,clock,'commit_receiver_association',pending=True)
             try:
                 samples, pairing = self._association(prepared.previous, prepared.current,
                     prepared.imu_originals, clock,
@@ -1004,6 +1087,8 @@ class PhysicalOriginalIngress(OriginalIngress):
                 with self.lock:
                     return self._quarantine_receiver_commit_raw_expiry(error, owner, attempt)
             end_clock = self._evaluate()
+            if owner.preparation_causal_raw_expiry_reanchor_enabled:
+                owner._check_positive_age_expiry(prepared,end_clock,'commit_receiver_end_scalar',pending=True)
             self._scan_fresh(prepared.current, end_clock)
             if not 0 <= end_clock.source_ns-pairing.rate_stamp_ns < SOURCE_AGE_NS:
                 raise ValueError('stale_causal_imu_source')
@@ -1034,6 +1119,8 @@ class PhysicalOriginalIngress(OriginalIngress):
                 return self._outcome('first_pair_new_epoch' if prepared.first_pair_in_epoch
                     else 'inputs_only_reviewed_typed_localizer_factory_missing',
                     input_ready=not prepared.first_pair_in_epoch)
+        except _ValidatedPreparationCausalRawExpiry:
+            raise  # exact factory-owned proof is classified before receiver latch
         except Exception as error:
             with self.lock:
                 if generation != self.generation:

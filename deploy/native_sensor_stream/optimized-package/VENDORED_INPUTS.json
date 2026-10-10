@@ -78,10 +78,11 @@
       "candidate_direct_source_manifest_sha256": "949e689e105fec506549ef7585b5601f17e367e9c3dc4b73351333878e043d79",
       "constructor_default_off": true,
       "only_private_cache_and_two_surface_calls_changed": false,
-      "candidate_sha256": "7cbc3a0e52855ee90f60ec50a9ebf5ddb3571549b16134596ad93106c8f9b382",
+      "candidate_sha256": "152e4e2349c5264f90f02aabf7239505054cf2cc84e91e81fbfcd7084dc40c74",
       "postconsumed_positive_lower_RAW_expiry_candidate": true,
       "constructor_default_OFF": true,
-      "preparation_positive_lower_RAW_expiry_candidate": true
+      "preparation_positive_lower_RAW_expiry_candidate": true,
+      "commit_initial_positive_lower_RAW_expiry_candidate": true
     },
     "physical_ingress.py": {
       "parent_source_sha256": "5caee0f91716a8b45a9cc2f35b85ecc7644cecda6a02fc8bdc79480c1ffe00a1",

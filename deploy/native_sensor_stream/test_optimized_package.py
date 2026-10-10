@@ -174,7 +174,7 @@ class OptimizedPackageTests(unittest.TestCase):
 
     def test_real_frozen_final_scalar_package_validates_without_importing_sensor_or_ROS_modules(self):
         package = Path(__file__).resolve().with_name('optimized-package')
-        expected = '4669f543c358ca563c854dbddd70ca889d64f1837e012f29cc4dbc4f5a87818e'
+        expected = '78ba87427acbd534de90bbca68e960bd0335cb82a15e352b690aa9ca2e821b1e'
         self.assertEqual(runner.sha_file(package / 'HANDOFF.json'), expected)
         with patch.object(sys, 'path', sys.path.copy()):
             features = {}

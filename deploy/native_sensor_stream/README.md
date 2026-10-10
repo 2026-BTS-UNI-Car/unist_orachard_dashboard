@@ -1,5 +1,7 @@
 현재 설치·검증 범위: [최종 IMU 만료 복구와 지도 작업 분리](../../docs/NATIVE_FINAL_SCALAR_RECOVERY_PROGRESS_20261010.md). GPS 통합 지도와 실차 모터 자율주행은 미완료입니다.
 
+현재 V17 센서 경로와 기본 OFF 자율주행 supervisor 구현·제한은 [현재 상태](../../docs/native_map_gap_fence_default_OFF_supervisor_20261010.md)에 기록했습니다. 아래 내용은 보존된 이전 체크포인트입니다.
+
 현재 Jetson에 설치된 비동기 지도 생성·웹 표시와 남은 오류는 [설치 검증 기록](../../docs/NATIVE_ASYNC_MAP_INSTALL_20261010.md)에 정리했습니다. 아래 내용은 이전 체크포인트의 기록입니다.
 
 # Native 센서 관찰 서비스

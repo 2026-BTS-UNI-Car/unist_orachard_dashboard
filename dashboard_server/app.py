@@ -179,7 +179,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path.startswith('/api/live/') or path.startswith('/api/autonomy/native-map/') or path in ('/api/autonomy','/api/autonomy/preflight','/api/autonomy/observe'):
+        if path.startswith('/api/live/') or path.startswith('/api/autonomy/native-map/') or path in ('/api/autonomy','/api/autonomy/preflight','/api/autonomy/observe','/api/autonomy/supervisor'):
             self._live_request(parsed)
         elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
@@ -283,6 +283,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             elif path=='/api/autonomy' and not action:
                 live=self.live_mapping.task_status() if hasattr(self.live_mapping,'task_status') else {'state':'unavailable'}
                 result=self.autonomy_settings.status(live)
+                result={**result,'supervisor':self.autonomy_supervisor.status()}
             elif path=='/api/autonomy/preflight' and not action:
                 from dashboard_server.field_preflight import report
                 result=report(ROOT/'config/field_autonomy_preparation.json',self.live_mapping.task_status())
@@ -334,8 +335,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         raise ValueError('active_observation_speed_requires_0_to_30_percent')
                     result=self.autonomy_settings.set_speed(percent)
                     if observing:observer.set_cruise_percent(percent)
-            elif path=='/api/autonomy/start' and action:
-                self._send_json({**self.autonomy_settings.status(),'ok':False},409);return
+            elif path=='/api/autonomy/supervisor' and not action:
+                result=self.autonomy_supervisor.status()
+            elif path in ('/api/autonomy/start','/api/autonomy/stop') and action:
+                result=self._native_autonomy_action(path.rsplit('/',1)[-1],payload)
+                if path.endswith('/start') and not result.get('active'):
+                    self._send_json({**result,'ok':False},409);return
             elif path=='/api/live/map' and not action:
                 query=parse_qs(parsed.query)
                 if query.get('transport',[None])[0]=='tiles':
@@ -388,6 +393,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             from dashboard_server.mapping_operations import MappingConflict
             self._send_json({'ok':False,'error':str(error)},409 if isinstance(error,MappingConflict) or str(error)=='mapping_epoch_changed_refresh_before_action' else 400)
+
+    def _native_autonomy_action(self,action,payload):
+        # Actual arming remains local and requires the existing authenticated session.
+        origin=self.headers.get('Origin')
+        if (not origin or urlparse(origin).netloc!=self.headers.get('Host') or
+                self.client_address[0] not in ('127.0.0.1','::1')):
+            raise ValueError('explicit_local_same_origin_operator_required')
+        session=self._ensure_session(create=False)
+        if not session:raise ValueError('authenticated_local_operator_required')
+        if action=='stop':
+            if payload:raise ValueError('autonomy_stop_accepts_no_control_or_sensor_inputs')
+            return self.autonomy_supervisor.stop()
+        if set(payload)!={'operator_arm','deadman'} or payload.get('operator_arm') is not True or payload.get('deadman') is not True:
+            raise ValueError('explicit_operator_arm_and_deadman_required')
+        return self.autonomy_supervisor.start(session,explicit=True,cruise_percent=self.autonomy_settings.percent)
 
     def _autonomy_observe_status(self):
         result=self.autonomy_observation.status()
@@ -463,6 +483,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path not in operations:
             self.send_error(404)
             return
+        supervisor=getattr(self,'autonomy_supervisor',None)
+        if supervisor is not None and (supervisor.status().get('active') or supervisor.status().get('loop_cleanup_pending')):
+            handoff=supervisor.manual_takeover()
+            if path!='/api/rover/stop' and not handoff.get('loop_joined'):
+                self._send_json({'ok':False,'error':'autonomy_manual_handoff_cleanup_pending'},409);return
         self._send_json(request({**payload, "op": operations[path], "owner": session}))
 
     def log_message(self, fmt, *args):
@@ -1218,6 +1243,11 @@ class DashboardServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def server_close(self):
+        supervisor=getattr(self,'autonomy_supervisor',None)
+        if supervisor is not None:
+            closed=supervisor.close()
+            if not closed.get('loop_joined'):
+                raise RuntimeError('autonomy_supervisor_cleanup_unproven')
         try:
             with self.autonomy_observe_lock:
                 try:
@@ -1230,7 +1260,7 @@ class DashboardServer(ThreadingHTTPServer):
             super().server_close()
 
 
-def create_server(host: str, port: int, config: str | None = None) -> ThreadingHTTPServer:
+def create_server(host: str, port: int, config: str | None = None, *, autonomy_bindings=None) -> ThreadingHTTPServer:
     DashboardHandler.provider = TelemetryProvider(config)
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
@@ -1247,12 +1277,19 @@ def create_server(host: str, port: int, config: str | None = None) -> ThreadingH
     if native_path:
         from dashboard_server.native_observation_client import NativeObservationClient
         DashboardHandler.native_observation_client=NativeObservationClient(native_path)
+    from dashboard_server.native_autonomy_application import NativeAutonomyApplication
+    def native_session_valid(token):
+        with _SESSION_LOCK:
+            _prune_sessions();return token in _SESSIONS
+    DashboardHandler.autonomy_supervisor=NativeAutonomyApplication(
+        DashboardHandler.native_observation_client,session_valid=native_session_valid,bindings=autonomy_bindings)
     DashboardHandler.autonomy_observe_lock=threading.RLock()
     DashboardHandler.autonomy_observation=AutonomyObservation(
         planner=RecordBasedAutonomy(),input_provider=DashboardHandler.native_observation_client.input
             if DashboardHandler.native_observation_client is not None else DashboardHandler.live_mapping.observation_input)
     dashboard_log("server.create", host=host, port=port, session_ttl_s=SESSION_TTL_S)
     server=DashboardServer((host, port), DashboardHandler)
+    server.autonomy_supervisor=DashboardHandler.autonomy_supervisor
     server.autonomy_observation=DashboardHandler.autonomy_observation
     server.native_observation_client=DashboardHandler.native_observation_client
     server.autonomy_observe_lock=DashboardHandler.autonomy_observe_lock

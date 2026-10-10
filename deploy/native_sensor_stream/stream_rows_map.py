@@ -581,9 +581,12 @@ class StreamObserverRows:
             if originals and originals[-1].wire.header.stamp_ns < current.wire.header.stamp_ns:
                 self.waiting_reason = 'waiting_for_original_end_IMU'
                 break  # existing pending pair remains the one exact pair
-            prepared = self.ingress.prepare()
+            prepared = (self.ingress.prepare(positive_age_factory=self.factory)
+                        if self._factory_preparation_feature() else self.ingress.prepare())
             if self._stopping.is_set():
                 break
+            if self._accept_owned_preparation_raw_expiry_wait(prepared):
+                return ()
             if self._accept_owned_gap_wait(prepared):
                 break
             require(prepared.prepared is not None,
@@ -600,6 +603,8 @@ class StreamObserverRows:
                       else self._map_adapter.commit(owned))
             if self._stopping.is_set():
                 break
+            if self._accept_owned_preparation_raw_expiry_wait(answer):
+                return ()
             if self._accept_owned_final_scalar_raw_expiry_wait(answer):
                 return ()
             if self._accept_owned_receiver_commit_raw_expiry_wait(answer):

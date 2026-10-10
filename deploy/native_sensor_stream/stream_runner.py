@@ -593,6 +593,10 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "68bd1239327ca8701004fd284484223b1ddfabd9105ace933ee8ead9ec1ed5a7",
             "native_v15_exact_cache_preparation_causal_raw_expiry_wait":
                 "b6b8e500cf49481177610f877b837be66ab1c71b5d273fe5326fc887c2b31f48",
+            "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait":
+                "4669f543c358ca563c854dbddd70ca889d64f1837e012f29cc4dbc4f5a87818e",
+            "native_v17_exact_cache_owned_positive_age_expiry_wait":
+                "78ba87427acbd534de90bbca68e960bd0335cb82a15e352b690aa9ca2e821b1e",
             "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait":
                 "4de382364c247de7b3ad05e819b2272e1de50a57d0d9e1c0ffe7d2e12ac85cf4",
         }
@@ -611,7 +615,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                         "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
                          "native_private_strict_nearest_gates_default_OFF",
                         "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait"):
             require(manifest.get("admission_timing_only") is False and
                     manifest.get("imu_gap_timing_only") is False and
                     manifest.get("preserved_timing_hooks") is True,
@@ -623,7 +627,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
         if revision in ("native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
                         "native_private_strict_nearest_gates_default_OFF",
                         "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait"):
             key = "postconsumed_causal_raw_expiry_reanchor_enabled"
             require(manifest.get(key) is True,
                     "reviewed_optimized_physical_consumed_RAW_expiry_feature_required")
@@ -676,7 +680,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "reviewed_strict_nearest_gates_default_OFF_contract_required")
         features["strict_nearest_gates_enabled"] = True
     if optimized and revision in ("native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait"):
         require(manifest.get("receiver_commit_causal_raw_expiry_reanchor_enabled") is True,
                 "reviewed_receiver_commit_RAW_recovery_feature_required")
         features["receiver_commit_causal_raw_expiry_reanchor_enabled"] = True
@@ -688,18 +692,25 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "a27cad5b3ae16bfac181199ccbc931b8f41192d2ded02039030b0cd0138d371c",
                 "reviewed_combined_strict_nearest_contract_required")
         features["strict_nearest_gates_enabled"] = True
-    if optimized and revision in ("native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
+    if optimized and revision in ("native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait"):
         require(manifest.get("final_scalar_causal_raw_expiry_reanchor_enabled") is True and
                 manifest.get("strict_nearest_gates_enabled", False) is False,
                 "reviewed_final_scalar_RAW_recovery_feature_required")
         features["final_scalar_causal_raw_expiry_reanchor_enabled"] = True
-    if optimized and revision in ("native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait"):
+    if optimized and revision in ("native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait"):
         require(manifest.get("receiver_end_scalar_causal_raw_expiry_wait_enabled") is True,
                 "reviewed_receiver_end_scalar_RAW_recovery_required")
-    if optimized and revision == "native_v15_exact_cache_preparation_causal_raw_expiry_wait":
+    if optimized and revision in ("native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait"):
         require(manifest.get("preparation_causal_raw_expiry_reanchor_enabled") is True,
                 "reviewed_preparation_RAW_recovery_required")
         features["preparation_causal_raw_expiry_reanchor_enabled"] = True
+    if optimized and revision in ("native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait"):
+        require(manifest.get("commit_initial_causal_raw_expiry_wait_enabled") is True,
+                "reviewed_commit_initial_RAW_recovery_required")
+    if optimized and revision == "native_v17_exact_cache_owned_positive_age_expiry_wait":
+        require(manifest.get("positive_age_expiry_policy") ==
+                "typed_owned_WAIT_same_sample_SOURCE_RAW_no_TTL_change",
+                "reviewed_owned_positive_age_wait_policy_required")
     sys.path.insert(0, str(path))
     if reviewed_features is not None:
         reviewed_features.update(features)  # only after the complete closure and isolation proof
@@ -716,7 +727,7 @@ def load_native_map_sources(path, expected_sha):
              "keyframe_registration.py", "batched_map_owner.py", "batched_rays.py"}
     require(manifest.get("schema") == "ubts.private.native_map_source.v1" and
             set(manifest.get("files_sha256", {})) == names and
-            manifest.get("parent_package_sha256") == "4669f543c358ca563c854dbddd70ca889d64f1837e012f29cc4dbc4f5a87818e" and
+            manifest.get("parent_package_sha256") == "f6753a0da7f36d672df88da4023a6402581166cb2d24d25de11948baf7b85e0f" and
             manifest.get("parent_map_handoff_sha256") == "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9" and
             manifest.get("runtime_qualified") is False and manifest.get("motor_command_sent") is False and
             manifest.get("execution_eligible") is False, "exact_unqualified_native_map_sources_required")

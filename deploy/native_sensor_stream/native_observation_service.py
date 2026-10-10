@@ -48,7 +48,7 @@ def main(argv=None):
         '/opt/ubts-shadow/package',bound.package_manifest_sha256,
         reviewed_features=bound.physical_reviewed_features)
     bound.native_map_enabled = args.enable_native_map
-    bound.native_map_manifest_sha256 = '682391b127ce637755e7f2dfde2b732d07fc04ac995b85d0a7d281040aab54d5'
+    bound.native_map_manifest_sha256 = '9fa01a12d615a8849cfca54a6b5dfcb860d8740611a1e9427cd9ac584b08eb02'
     if args.enable_native_map:
         stream_runner.load_native_map_sources(root, bound.native_map_manifest_sha256)
         from committed_native_map import CommittedNativeMapAdapter
