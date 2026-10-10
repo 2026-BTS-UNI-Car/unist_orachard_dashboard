@@ -2,7 +2,7 @@
 # Pass an exact reviewed Iron ARM image; no production role is switched here.
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
-ARG PHYSICAL_PACKAGE_SHA=5ab6b3d1339521d41a21dde76c97f031c23386e499f00e8fd4f41a4ab7baedf6
+ARG PHYSICAL_PACKAGE_SHA=e62315334c1accf2b4cd8c129f08694597ee787a28fd270a042a94466509860b
 COPY deploy/native_sensor_stream/observer-src/ /opt/ubts-native-stream/observer-src/
 RUN /bin/bash -c 'source /opt/ros/iron/setup.bash && cmake -S /opt/ubts-native-stream/observer-src -B /opt/ubts-native-stream-build-gnss -DCMAKE_BUILD_TYPE=Release && cmake --build /opt/ubts-native-stream-build-gnss --parallel 1 && install -D -m 0755 /opt/ubts-native-stream-build-gnss/actual_cdr_stream /opt/ubts-native-stream/bin/actual_cdr_stream'
 COPY deploy/native_sensor_stream/optimized-package/ /opt/ubts-shadow/package/
@@ -10,6 +10,8 @@ COPY deploy/native_sensor_stream/stream_runner.py deploy/native_sensor_stream/st
 COPY deploy/native_sensor_stream/batched_map_owner.py deploy/native_sensor_stream/batched_rays.py deploy/native_sensor_stream/committed_native_map.py deploy/native_sensor_stream/keyframe_registration.py deploy/native_sensor_stream/native_map_owner.py deploy/native_sensor_stream/native_map_transport.py deploy/native_sensor_stream/stream_rows_map.py deploy/native_sensor_stream/native_pose_ledger.py deploy/native_sensor_stream/NATIVE_MAP_SOURCE.json /opt/ubts-native-stream/
 COPY deploy/native_sensor_stream/native_gnss_fusion.py deploy/native_sensor_stream/gnss_constraints.py deploy/native_sensor_stream/native_gnss_dispatch.py deploy/native_sensor_stream/NATIVE_GNSS_SOURCE.json deploy/native_sensor_stream/export_native_pose_history.py deploy/native_sensor_stream/replay_native_gnss.py deploy/native_sensor_stream/raster_native_gnss_posterior.py /opt/ubts-native-stream/
 COPY dashboard_server/__init__.py dashboard_server/native_owner_lifecycle.py /opt/ubts-native-stream/dashboard_server/
+COPY deploy/native_sensor_stream/native_control_input.py /opt/ubts-native-stream/
+COPY dashboard_server/body_feedback.py dashboard_server/encoderless_drive_preview.py dashboard_server/native_autonomy_supervisor.py dashboard_server/record_based_autonomy.py /opt/ubts-native-stream/dashboard_server/
 RUN /usr/bin/python3 -B /opt/ubts-native-stream/build_provenance.py --package-manifest-sha256 "${PHYSICAL_PACKAGE_SHA}" && /bin/bash -c 'source /opt/ros/iron/setup.bash && /opt/ubts-native-stream/bin/actual_cdr_stream && /usr/bin/python3 -B /opt/ubts-native-stream/stream_runner.py && /usr/bin/python3 -B /opt/ubts-native-stream/native_observation_service.py'
 # Inherit the reviewed parent's fixed ROS/thread environment and inert default.
 CMD ["/usr/bin/python3", "-B", "/opt/ubts-native-stream/native_observation_service.py"]

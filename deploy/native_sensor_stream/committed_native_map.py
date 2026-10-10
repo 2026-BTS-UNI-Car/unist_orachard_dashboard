@@ -74,6 +74,7 @@ class CommittedNativeMapAdapter:
         self._cv=threading.Condition(threading.RLock());self._fence=threading.Lock()
         self._stop=threading.Event();self._stop.set();self._thread=None;self._launch_ambiguous=False
         self._pending=None;self._working=None;self._working_digest=None
+        self._recovery_work=None;self._proposal_sequence_floor=0
         self._issued_bridge=None;self._bridge_digest=None;self._keyframe=None;self._keyframe_digest=None
         self._capture_sequence=0;self._serial=0;self._fault=None;self._encoder_fault=None
         self._counts=dict(captured=0,processed=0,replaced=0,cancelled=0,bridge_attempts=0,bridges=0,accepted_native_chain_bridges=0)
@@ -178,7 +179,17 @@ class CommittedNativeMapAdapter:
     def invalidate_gap(self,reason='native_pair_gap'):
         # WAIT revokes the same generation before any publication can proceed.
         with self._fence:
-            with self._cv:self._serial+=1;self._pending=None;self._clear_chain();self._cv.notify_all()
+            with self._cv:
+                work=self._recovery_work
+                # A repeated typed WAIT cannot renew input or interrupt the
+                # same immutable historical registration. Other invalidations
+                # and all later raster/publication phases retain cancellation.
+                preserve=(reason=='native_original_pair_wait' and not self._stop.is_set() and
+                    work is not None and work[0] is self._working and work[1] is self._map._state and
+                    work[2] is self._keyframe and work[3]==self._serial)
+                if not preserve:self._serial+=1
+                self._proposal_sequence_floor=self._capture_sequence
+                self._pending=None;self._clear_chain();self._cv.notify_all()
             return self._map.invalidate_gap(reason)
 
     def status(self):
@@ -317,7 +328,7 @@ class CommittedNativeMapAdapter:
                 self.stop('native_historical_map_worker_fault')
             finally:
                 with self._cv:
-                    self._working=None;self._working_digest=None
+                    self._working=None;self._working_digest=None;self._recovery_work=None
                     self._issued_bridge=None;self._bridge_digest=None
                     self._counts['processed']+=1
                     self._last_work=dict(wall_ms=(time.perf_counter()-began)*1000,
@@ -366,7 +377,15 @@ class CommittedNativeMapAdapter:
                     k[0]==base.version and k[1]==base.frame.scan_cdr_sha256[1],
                     'registered_keyframe_generation_changed')
             self._counts['bridge_attempts']+=1
-            fit=register_keyframe(k[3],geometry,cancelled=cancelled,max_wall_s=self._recovery_budget)
+            with self._cv:
+                if cancelled():return
+                self._recovery_work=(seal,base,k,serial)
+            try:
+                fit=register_keyframe(k[3],geometry,cancelled=cancelled,max_wall_s=self._recovery_budget)
+            finally:
+                # No exception to WAIT cancellation while preparing rays or
+                # committing a map-owner ticket whose serial was revoked.
+                with self._cv:self._recovery_work=None
             require(keyframe_digest(k)==self._keyframe_digest,'retained_keyframe_geometry_changed')
             if not fit['accepted']:
                 self._map.invalidate_gap(fit['reason']);return
@@ -418,7 +437,10 @@ class CommittedNativeMapAdapter:
                     not self.factory.stop_intent.is_set() and self._context==
                     self._factory_context(self.factory,*self._context[4:]),'native_source_unavailable')
                 clock=self.ingress._evaluate()
-                return self._map.proposal_snapshot(source_now_ns=clock.source_ns,receipt_now_ns=clock.receipt_ns)
+                with self._fence:
+                    frame=self._map._state.frame
+                    if frame is None or frame.sequence<=self._proposal_sequence_floor:return None
+                    return self._map.proposal_snapshot(source_now_ns=clock.source_ns,receipt_now_ns=clock.receipt_ns)
             except Exception:
                 self.invalidate_gap('native_source_unavailable');return None
 

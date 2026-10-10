@@ -73,7 +73,7 @@ class StreamObserverRows:
     Post-Stop original lines still undergo byte/header/GID/sequence validation,
     but never enter the receiver, fit or publish another diagnostic.
     """
-    def __init__(self, ingress, factory, *, observer_contract_sha256, map_adapter=None, gnss_dispatcher=None):
+    def __init__(self, ingress, factory, *, observer_contract_sha256, map_adapter=None, gnss_dispatcher=None, control_adapter=None):
         require(type(ingress) is PhysicalOriginalIngress,
                 'physical_original_ingress_required')
         require(type(factory) is PhysicalNativeShadowFactory and factory.ingress is ingress,
@@ -95,6 +95,12 @@ class StreamObserverRows:
                 callable(getattr(gnss_dispatcher,'bind_begin',None)) and callable(getattr(gnss_dispatcher,'stop',None))),
                 'optional_owned_GPS_dispatcher_required')
         self._gnss_dispatcher=gnss_dispatcher
+        if control_adapter is not None:
+            from native_control_input import NativeControlInputAdapter
+            require(type(control_adapter) is NativeControlInputAdapter and
+                    control_adapter.factory is factory and control_adapter.ingress is ingress,
+                    'same_owned_native_control_adapter_required')
+        self._control_adapter = control_adapter
         self.ingress, self.factory = ingress, factory
         self.observer_contract_sha256 = observer_contract_sha256
         self._binding = self._context()
@@ -117,6 +123,7 @@ class StreamObserverRows:
         self._last_original_raw = self._last_original_system = None
         self._observed_header_floors = {LASER_TYPE: None, IMU_TYPE: None}
         self._proposal_input = None
+        self._invalidate_control()
         self.factory_failure_timing = None
         self.factory_failure_timing_error = None
         self.admission_failure_timing = None
@@ -228,6 +235,7 @@ class StreamObserverRows:
             require(validator(outcome) and not self._stopping.is_set(),
                     'native_stream_receiver_RAW_expiry_wait_revoked')
             self._proposal_input = None
+            self._invalidate_control()
             self.waiting_reason = outcome.reason
             map_adapter = getattr(self, '_map_adapter', None)
             if map_adapter is not None:
@@ -252,6 +260,7 @@ class StreamObserverRows:
             require(validator(outcome) and not self._stopping.is_set(),
                     'native_stream_preparation_RAW_expiry_wait_revoked')
             self._proposal_input = None
+            self._invalidate_control()
             self.waiting_reason = outcome.reason
             map_adapter = getattr(self, '_map_adapter', None)
             if map_adapter is not None:
@@ -276,6 +285,7 @@ class StreamObserverRows:
             require(validator(outcome) and not self._stopping.is_set(),
                     'native_stream_final_scalar_RAW_expiry_wait_revoked')
             self._proposal_input = None
+            self._invalidate_control()
             self.waiting_reason = outcome.reason
             map_adapter = getattr(self, '_map_adapter', None)
             if map_adapter is not None:
@@ -300,6 +310,7 @@ class StreamObserverRows:
             require(validator(outcome) and not self._stopping.is_set(),
                     'native_stream_consumed_RAW_expiry_wait_revoked')
             self._proposal_input = None
+            self._invalidate_control()
             self.waiting_reason = outcome.reason
             if self._map_adapter is not None:self._map_adapter.invalidate_gap('native_original_pair_wait')
         return True
@@ -320,6 +331,7 @@ class StreamObserverRows:
             require(self.ingress.is_owned_gap_wait(outcome) and not self._stopping.is_set(),
                     'native_stream_IMU_gap_wait_revoked')
             self._proposal_input = None
+            self._invalidate_control()
             self.waiting_reason = outcome.reason
             if self._map_adapter is not None:self._map_adapter.invalidate_gap('native_original_pair_wait')
         return True
@@ -341,6 +353,7 @@ class StreamObserverRows:
             require(self.ingress.is_owned_scan_expiry_wait(outcome) and not self._stopping.is_set(),
                     'native_stream_scan_expiry_wait_revoked')
             self._proposal_input=None
+            self._invalidate_control()
             self.waiting_reason=outcome.reason
             if self._map_adapter is not None:self._map_adapter.invalidate_gap('native_original_pair_wait')
         return True
@@ -362,6 +375,7 @@ class StreamObserverRows:
             require(self.ingress.is_owned_original_callback_expiry_wait(outcome) and not self._stopping.is_set(),
                     'native_stream_original_callback_expiry_wait_revoked')
             self._proposal_input=None
+            self._invalidate_control()
             self.waiting_reason=outcome.reason
             if self._map_adapter is not None:self._map_adapter.invalidate_gap('native_original_pair_wait')
             require(self.ingress.is_owned_original_callback_expiry_wait(outcome) and
@@ -385,6 +399,7 @@ class StreamObserverRows:
         self._stopping.set()
         if self._gnss_dispatcher is not None:self._gnss_dispatcher.stop()
         self.factory.stop_intent.set()
+        if self._control_adapter is not None:self._control_adapter.stop()
         self.ingress.stop()
 
     def _fail(self, error):
@@ -450,6 +465,8 @@ class StreamObserverRows:
                     _hex(row.get('expected_IMU_GID'), 16) == self.ingress.expected_gids[1],
                     'reviewed_native_observer_publisher_binding_required')
             self.begin = row  # bounded metadata only; NOT publisher epoch
+            if self._control_adapter is not None:
+                self._control_adapter.bind_epoch(row['observer_process_session'])
             if self._gnss_dispatcher is not None:self._gnss_dispatcher.bind_begin(row)
             return ()
         if self.begin is None and kind == 'done' and row['seq'] == 0:
@@ -671,7 +688,9 @@ class StreamObserverRows:
             if isinstance(owned, dict):
                 self._retain_factory_failure_timing(owned)
             require(not isinstance(owned, dict), 'physical_internal_fit_rejected:' + str(owned))
-            answer = (self.factory.commit(owned) if self._map_adapter is None
+            answer = (self._control_adapter.commit(owned, map_adapter=self._map_adapter)
+                      if self._control_adapter is not None else
+                      self.factory.commit(owned) if self._map_adapter is None
                       else self._map_adapter.commit(owned))
             if self._stopping.is_set():
                 break
@@ -745,6 +764,34 @@ class StreamObserverRows:
                                                  allow_nan=False)))
         return tuple(records)
 
+    def _invalidate_control(self):
+        adapter = getattr(self, '_control_adapter', None)
+        if adapter is not None:
+            adapter.invalidate_gap('native_original_pair_wait')
+
+    def control_input(self):
+        """Same-ingress committed native sensor input, never an actuator permit.
+
+        CDR/GID association is retained from capture, not rebuilt from the WEB
+        proposal. Fresh read clocks do not change original sensor stamps.
+        Unmounted input yields only laser diagnostics and BODY/swept HOLD.
+        """
+        with self._lock:
+            adapter = self._control_adapter
+            if adapter is None:
+                return dict(enabled=False, input=None, state='HOLD',
+                    reason='native_control_input_default_OFF', runtime_authority=False,
+                    motor_command_sent=False, operational_frame_available=False)
+            current = None
+            if not self._stopping.is_set() and self.fault is None:
+                try:
+                    current = adapter.input(source_now_ns=self.ingress.source_now(),
+                                            receipt_now_ns=self.ingress.raw.sample().ns)
+                except (ValueError, TypeError):
+                    # No capability or retained pose can rescue a failed read.
+                    adapter.invalidate_gap('control_input_unavailable')
+            return dict(adapter.status(), input=current)
+
     def proposal_input(self):
         """Latest native-derived planning input only; no body/actuator permit.
 
@@ -781,6 +828,7 @@ class StreamObserverRows:
     def status(self):
         with self._lock:
             return dict(schema='ubts.physical.native_stream_status.v1',
+                native_control_input=None if self._control_adapter is None else self._control_adapter.status(),
                 optional_GNSS=None if self._gnss_dispatcher is None else self._gnss_dispatcher.status(),
                 optional_GNSS_delivery=dict(enabled=self._gnss_dispatcher is not None,
                     original_samples=dict(self.gps_samples), unavailable_rows=self.gps_unavailable_rows,

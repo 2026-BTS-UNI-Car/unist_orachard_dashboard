@@ -62,6 +62,8 @@ class NativeObservationClient:
     def map_tiles(self, cursor=None):return self._request('map_tiles',cursor=cursor)
     def map_release(self, lease):return self._request('map_release',lease=lease)
     def map_new(self, map_epoch):return self._request('map_new',map_epoch=map_epoch)
+    def control_input(self):
+        return self._request('control_input')
     def input(self):
         result=self._request('input')
         return result.get('input') if result.get('ok') is True else None

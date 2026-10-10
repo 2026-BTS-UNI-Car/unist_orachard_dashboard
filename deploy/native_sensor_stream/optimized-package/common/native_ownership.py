@@ -163,6 +163,23 @@ def _envelope_digest(e):
     _digest_atom(digest, b'original_cdr', e.original_cdr)
     return digest.hexdigest()
 
+def _decoded_projection(wire):
+    """Owned immutable decoder value; no exposed Wire/Header object is retained.
+
+    Each original envelope gets its own projection after its original CDR decode.
+    Validation still hashes original CDR and every envelope field on every call.
+    This only avoids reparsing the exact same bytes into temporary dataclasses.
+    """
+    if type(wire.header) is not Header:
+        raise ValueError('unowned_or_changed_original_envelope')
+    header = (wire.header.sec, wire.header.nanosec, wire.header.frame_id)
+    if type(wire) is WireScan:
+        return (WireScan, header, wire.metadata_f32_bytes, wire.range_f32_bytes,
+                wire.intensity_f32_bytes, wire.endianness)
+    if type(wire) is WireImu:
+        return (WireImu, header, wire.groups_f64_bytes, wire.endianness)
+    raise ValueError('unowned_or_changed_original_envelope')
+
 class OriginalIngress:
     """Single-process owned envelopes, bounded64 IMUs and pending ONE pair.
 
@@ -284,7 +301,8 @@ class OriginalIngress:
             envelope = Envelope(SCHEMA, topic, ros_type, 'original_received_CDR1', wire.endianness, cdr,
                 cdr_sha(cdr), wire, receipt, self.process_session, self.pid,
                 self.clock_session, self.sequence, generation, self.profile_revision, publisher_gid)
-            self._owners[id(envelope)] = (envelope, _envelope_digest(envelope))
+            self._owners[id(envelope)] = (envelope, (_envelope_digest(envelope),
+                                                       _decoded_projection(wire)))
             while len(self._owners) > MAX_OWNERS:
                 self._owners.popitem(last=False)
             return envelope
@@ -300,8 +318,9 @@ class OriginalIngress:
                     or envelope.profile_revision != self.profile_revision
                     or envelope.receipt.domain != self.domain
                     or envelope.original_sha256 != cdr_sha(envelope.original_cdr)
-                    or owned[1] != _envelope_digest(envelope)
-                    or envelope.wire != decode(envelope.original_cdr, envelope.ros_type)):
+                    or type(owned[1]) is not tuple or len(owned[1]) != 2
+                    or owned[1][0] != _envelope_digest(envelope)
+                    or owned[1][1] != _decoded_projection(envelope.wire)):
                 raise ValueError('unowned_or_changed_original_envelope')
             return envelope
 

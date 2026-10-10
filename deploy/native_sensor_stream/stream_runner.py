@@ -599,6 +599,8 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "78ba87427acbd534de90bbca68e960bd0335cb82a15e352b690aa9ca2e821b1e",
             "native_v19_exact_cache_original_callback_expiry_wait":
                 "f6753a0da7f36d672df88da4023a6402581166cb2d24d25de11948baf7b85e0f",
+            "native_v20_owned_original_CDR_projection_reuse":
+                "5ab6b3d1339521d41a21dde76c97f031c23386e499f00e8fd4f41a4ab7baedf6",
             "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait":
                 "4de382364c247de7b3ad05e819b2272e1de50a57d0d9e1c0ffe7d2e12ac85cf4",
         }
@@ -617,7 +619,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                         "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
                          "native_private_strict_nearest_gates_default_OFF",
                         "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
             require(manifest.get("admission_timing_only") is False and
                     manifest.get("imu_gap_timing_only") is False and
                     manifest.get("preserved_timing_hooks") is True,
@@ -629,7 +631,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
         if revision in ("native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
                         "native_private_strict_nearest_gates_default_OFF",
                         "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
             key = "postconsumed_causal_raw_expiry_reanchor_enabled"
             require(manifest.get(key) is True,
                     "reviewed_optimized_physical_consumed_RAW_expiry_feature_required")
@@ -638,9 +640,18 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                     "physical_body_calibration_braking_REP145_qualified",
                     "installed_original_callback_or_live_pipeline_qualified"):
             require(manifest.get(key) is False, "optimized_physical_authority_or_qualification_forbidden:" + key)
-        for key in ("source_frozen", "full_original_SHA_decode_at_every_association_preserved",
-                    "exact_surface_cache_enabled"):
+        for key in ("source_frozen", "exact_surface_cache_enabled"):
             require(manifest.get(key) is True, "optimized_physical_reviewed_feature_required:" + key)
+        if revision == "native_v20_owned_original_CDR_projection_reuse":
+            require(manifest.get("full_original_SHA_decode_at_every_association_preserved") is False,
+                    "owned_projection_reuse_decode_claim_required")
+            for key in ("owned_original_CDR_projection_reuse_preserved",
+                        "full_original_SHA_envelope_digest_at_every_association_preserved",
+                        "original_strict_decode_on_each_issue_preserved"):
+                require(manifest.get(key) is True, "owned_projection_reuse_contract_required:" + key)
+        else:
+            require(manifest.get("full_original_SHA_decode_at_every_association_preserved") is True,
+                    "optimized_physical_reviewed_feature_required:full_original_SHA_decode_at_every_association_preserved")
         for key, value in (("selected_source_TTL_ns", 250000000),
                            ("selected_callback_RAW_TTL_ns", 200000000),
                            ("initial_IMU_horizon_ns", 500000000)):
@@ -682,7 +693,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "reviewed_strict_nearest_gates_default_OFF_contract_required")
         features["strict_nearest_gates_enabled"] = True
     if optimized and revision in ("native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
         require(manifest.get("receiver_commit_causal_raw_expiry_reanchor_enabled") is True,
                 "reviewed_receiver_commit_RAW_recovery_feature_required")
         features["receiver_commit_causal_raw_expiry_reanchor_enabled"] = True
@@ -694,26 +705,26 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "a27cad5b3ae16bfac181199ccbc931b8f41192d2ded02039030b0cd0138d371c",
                 "reviewed_combined_strict_nearest_contract_required")
         features["strict_nearest_gates_enabled"] = True
-    if optimized and revision in ("native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait"):
+    if optimized and revision in ("native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
         require(manifest.get("final_scalar_causal_raw_expiry_reanchor_enabled") is True and
                 manifest.get("strict_nearest_gates_enabled", False) is False,
                 "reviewed_final_scalar_RAW_recovery_feature_required")
         features["final_scalar_causal_raw_expiry_reanchor_enabled"] = True
-    if optimized and revision in ("native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait"):
+    if optimized and revision in ("native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
         require(manifest.get("receiver_end_scalar_causal_raw_expiry_wait_enabled") is True,
                 "reviewed_receiver_end_scalar_RAW_recovery_required")
-    if optimized and revision in ("native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait"):
+    if optimized and revision in ("native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
         require(manifest.get("preparation_causal_raw_expiry_reanchor_enabled") is True,
                 "reviewed_preparation_RAW_recovery_required")
         features["preparation_causal_raw_expiry_reanchor_enabled"] = True
-    if optimized and revision in ("native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait"):
+    if optimized and revision in ("native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
         require(manifest.get("commit_initial_causal_raw_expiry_wait_enabled") is True,
                 "reviewed_commit_initial_RAW_recovery_required")
-    if optimized and revision in ("native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait"):
+    if optimized and revision in ("native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
         require(manifest.get("positive_age_expiry_policy") ==
                 "typed_owned_WAIT_same_sample_SOURCE_RAW_no_TTL_change",
                 "reviewed_owned_positive_age_wait_policy_required")
-    if optimized and revision == "native_v19_exact_cache_original_callback_expiry_wait":
+    if optimized and revision in ("native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
         require(manifest.get("original_callback_expiry_policy") ==
                 "typed_IMU_WAIT_admission_and_retention_same_sample_original_clocks",
                 "reviewed_original_callback_expiry_wait_policy_required")
@@ -734,7 +745,7 @@ def load_native_map_sources(path, expected_sha):
     require(manifest.get("schema") == "ubts.private.native_map_source.v2" and
             manifest.get("parent_map_source_sha256") == "556c90c0186c71dfd73110d000984214a31e4b6fdc0e8953f5873d76d5e03a69" and
             set(manifest.get("files_sha256", {})) == names and
-            manifest.get("parent_package_sha256") == "5ab6b3d1339521d41a21dde76c97f031c23386e499f00e8fd4f41a4ab7baedf6" and
+            manifest.get("parent_package_sha256") == "e62315334c1accf2b4cd8c129f08694597ee787a28fd270a042a94466509860b" and
             manifest.get("parent_map_handoff_sha256") == "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9" and
             manifest.get("runtime_qualified") is False and manifest.get("motor_command_sent") is False and
             manifest.get("execution_eligible") is False, "exact_unqualified_native_map_sources_required")
@@ -806,6 +817,15 @@ def make_adapter(args):
     if features.get("strict_nearest_gates_enabled") is True:
         factory_options["strict_nearest_gates_enabled"] = True
     factory = PhysicalNativeShadowFactory(receiver, contract, **factory_options)
+    control_enabled = getattr(args, 'native_control_input_enabled', False)
+    require(type(control_enabled) is bool, 'typed_native_control_default_OFF_required')
+    control = None
+    if control_enabled:
+        require(sha_file(Path(__file__).parent/'native_control_input.py') == args.native_control_input_sha256,
+                'exact_native_control_input_source_required')
+        from native_control_input import NativeControlInputAdapter
+        # Diagnostic-only default: no invented mount, braking or body evidence.
+        control = NativeControlInputAdapter(factory, enabled=True)
     map_enabled = getattr(args, "native_map_enabled", False)
     require(type(map_enabled) is bool, "typed_native_map_default_OFF_required")
     gnss_enabled=getattr(args,'native_gnss_enabled',False)
@@ -828,12 +848,12 @@ def make_adapter(args):
             from native_gnss_dispatch import NativeGNSSDispatch
             gnss=NativeGNSSDispatch(native_map,{'/gps/data':args.gps_data_gid,'/gps/fix':args.gps_fix_gid})
         adapter = MapRows(receiver, factory, observer_contract_sha256=args.observer_contract_sha256,
-                          map_adapter=native_map,gnss_dispatcher=gnss)
+                          map_adapter=native_map,gnss_dispatcher=gnss,control_adapter=control)
         adapter.native_map_transport = session.transport
         adapter.native_map_session = session
         return adapter
     return StreamObserverRows(receiver, factory,
-                              observer_contract_sha256=args.observer_contract_sha256)
+                              observer_contract_sha256=args.observer_contract_sha256,control_adapter=control)
 
 
 def main(argv=None):

@@ -7,13 +7,13 @@
   "ROS_or_SIM_python_modules_required": false,
   "count": 13,
   "files_sha256": {
-    "VENDORED_INPUTS.json": "83d9cfe43aaa667de3d4b3739b9a6491596c3d02a45938e201b5e148beac9ba2",
+    "VENDORED_INPUTS.json": "14415175bb6b61bef8b4c1edc59d3d2e3117efc16f846e9be0de5a4d3b2661ff",
     "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "common/native_ownership.py": "c705c627390735226d5aafed8322de37e1c8d53ad5f71151e144a843f87dd8c6",
+    "common/native_ownership.py": "f07087080ab4ee1786a4d1a439128603b9c78f8901948452a2dac8b189b155bc",
     "common/original_cdr.py": "6eb6929782063888880a827d2ef652d820cd0ebdc3ee8e83cc01ed8aabb341d3",
     "common/sensor_contract.py": "39242c55cc8c259d1cf6acaa744a17f9912d7a277281959adfefa9676da08275",
     "common/sensor_views.py": "40718ec325826ffc63995c9409f56cf928991d5fad7a4a0e3a0678d1c745796c",
-    "inputs.py": "c0e583d8fae53adbe32813ed32ef28c38881229823ab1274a4aee6090cfb913c",
+    "inputs.py": "27ba8fa513df4fb0a8a47ce7e89cd4bf3ae4927e694f9fa81d22190a999345af",
     "kernel/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "kernel/fit_workers.py": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c",
     "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
@@ -23,8 +23,8 @@
   },
   "offline_inspector_optional_file": "inspect_capture.py",
   "original_native_Cpp_observer_required_separately": true,
-  "parent_manifest_sha256": "f6753a0da7f36d672df88da4023a6402581166cb2d24d25de11948baf7b85e0f",
+  "parent_manifest_sha256": "5ab6b3d1339521d41a21dde76c97f031c23386e499f00e8fd4f41a4ab7baedf6",
   "schema": "ubts.private.physical_native_shadow_deployment_closure.v1",
   "source_only_no_installed_live_pipeline_qualification": true,
-  "source_revision": "native_v19_exact_cache_original_callback_expiry_wait"
+  "source_revision": "native_v20_owned_original_CDR_projection_reuse"
 }

@@ -10,6 +10,8 @@ import hashlib
 import json
 import math
 import threading
+import secrets
+import time
 
 MAX_ROWS=4096
 MAX_ORIGINAL_BYTES=16*1024*1024
@@ -41,6 +43,7 @@ class CommittedPoseLedger:
         self.lock=threading.RLock();self.cancel=threading.Event()
         self.entries=[];self.original_bytes=0;self.reason=None;self.joined=False
         self._exports={};self._floors={};self.gnss=[];self.gnss_bytes=0;self.gnss_complete=True
+        self._live_prefix=None
 
     def inhibit(self):self.cancel.set()
 
@@ -48,7 +51,7 @@ class CommittedPoseLedger:
         require(explicit is True,'explicit_pose_ledger_start_required')
         with self.lock:
             require(self.joined or (not self.entries and not self.cancel.is_set()),'previous_pose_ledger_join_required')
-            self.joined=False;self._exports.clear();self.cancel.clear()
+            self.joined=False;self._exports.clear();self._live_prefix=None;self.cancel.clear()
 
     def close_after_join(self):
         self.inhibit()
@@ -150,6 +153,95 @@ class CommittedPoseLedger:
         return dict(ok=True,schema='ubts.native.committed_pose_export.chunk.v1',sha256=sha,total_bytes=len(raw),
             offset=offset,next_offset=None if offset+len(part)==len(raw) else offset+len(part),
             data_base64=base64.b64encode(part).decode('ascii'),runtime_authority=False,motor_command_sent=False)
+
+    def open_live_prefix(self):
+        """Pin one immutable prefix, independent of future map/GPS appends.
+
+        Only reference copying is under the append lock. Index encoding, seal
+        validation and chunk encoding run on the existing UDS request loop,
+        outside native callbacks and the asynchronous map worker. No new thread,
+        clock sampling, original timestamp renewal or cell mutation occurs.
+        """
+        require(self.enabled, 'native_pose_ledger_default_OFF')
+        now=time.monotonic()  # Client resource lease only, never a source clock.
+        with self.lock:
+            require(self._live_prefix is None or now>=self._live_prefix[0],
+                    'one_pinned_live_history_prefix_required')
+            poses=tuple(self.entries);gps=tuple(self.gnss)
+            reason=self.reason;gps_complete=self.gnss_complete
+            token=secrets.token_hex(16)
+            # Pending pin blocks concurrent opens while encoding outside lock.
+            pin=(now+60.,token,poses,gps,None,None)
+            self._live_prefix=pin
+        try:
+            index=canonical(dict(schema='ubts.native.live_pose_history.index.v1',
+                snapshot_scope='fixed_prefix_at_open',current_run_complete=False,
+                pose_entry_sha256=[entry.seal.hex() for entry in poses],
+                GNSS_entry_sha256=[seal.hex() for _raw,seal in gps],
+                complete_retained_history=reason is None,ledger_reason=reason,
+                complete_retained_quality_GNSS_history=gps_complete,
+                source_stamps_unchanged=True,host_ROS_stamps_are_receiver_epoch=False,
+                GNSS_correction_applied_to_cells=False,fused_occupancy_qualified=False,
+                runtime_authority=False,motor_command_sent=False,autonomy_output_enabled=False))
+            require(len(index)<=1024*1024,'bounded_live_history_index_required')
+            digest=hashlib.sha256(index).hexdigest()
+            with self.lock:
+                require(self._live_prefix is pin,'live_history_prefix_revoked')
+                self._live_prefix=(*pin[:4],index,digest)
+            return dict(ok=True,snapshot=token,index_sha256=digest,index_bytes=len(index),
+                pose_rows=len(poses),quality_GNSS_pairs=len(gps),snapshot_scope='fixed_prefix_at_open',
+                current_run_complete=False,source_stamps_unchanged=True,
+                GNSS_correction_applied_to_cells=False,fused_occupancy_qualified=False,
+                runtime_authority=False,motor_command_sent=False)
+        except BaseException:
+            with self.lock:
+                if self._live_prefix is pin:self._live_prefix=None
+            raise
+
+    def live_prefix_chunk(self,snapshot,*,kind='index',entry=0,offset=0,expected_sha256=None):
+        require(type(snapshot) is str and len(snapshot)==32 and
+                type(kind) is str and kind in ('index','pose','GNSS') and
+                type(entry) is int and entry>=0 and type(offset) is int and offset>=0,
+                'typed_live_history_chunk_required')
+        with self.lock:
+            pin=self._live_prefix
+            require(pin is not None and time.monotonic()<pin[0] and snapshot==pin[1] and pin[4] is not None,
+                    'owned_unexpired_live_history_prefix_required')
+        # Never hold the append lock across CDR digest or base64/JSON work.
+        if kind=='index':
+            require(entry==0,'live_history_index_entry_zero_required')
+            raw,digest=pin[4],pin[5]
+        elif kind=='pose':
+            require(entry<len(pin[2]),'live_history_pose_index_out_of_range')
+            original=pin[2][entry]
+            raw=len(original.metadata).to_bytes(8,'big')+original.metadata+original.original_cdr
+            digest=original.seal.hex()
+            require(hashlib.sha256(raw).hexdigest()==digest,'retained_committed_pose_changed')
+            metadata=json.loads(original.metadata)
+            require(hashlib.sha256(original.original_cdr).hexdigest()==metadata['scan_sha256'],
+                    'retained_original_scan_changed')
+        else:
+            require(entry<len(pin[3]),'live_history_GNSS_index_out_of_range')
+            raw,sealed=pin[3][entry];digest=sealed.hex()
+            require(hashlib.sha256(raw).hexdigest()==digest,'retained_original_GPS_changed')
+        require(type(expected_sha256) is str and expected_sha256==digest and offset<=len(raw),
+                'frozen_live_history_entry_SHA_required')
+        part=raw[offset:offset+CHUNK_BYTES]
+        with self.lock:
+            require(self._live_prefix is pin and time.monotonic()<pin[0],
+                    'live_history_prefix_revoked')
+        return dict(ok=True,schema='ubts.native.live_pose_history.chunk.v1',snapshot=snapshot,
+            kind=kind,entry=entry,sha256=digest,total_bytes=len(raw),offset=offset,
+            next_offset=None if offset+len(part)==len(raw) else offset+len(part),
+            data_base64=base64.b64encode(part).decode('ascii'),
+            source_stamps_unchanged=True,runtime_authority=False,motor_command_sent=False)
+
+    def release_live_prefix(self,snapshot):
+        with self.lock:
+            require(type(snapshot) is str and self._live_prefix is not None and
+                    snapshot==self._live_prefix[1],'owned_live_history_prefix_required')
+            self._live_prefix=None
+        return dict(ok=True,released=True,runtime_authority=False,motor_command_sent=False)
 
     def status(self):
         with self.lock:return dict(enabled=self.enabled,rows=len(self.entries),original_bytes=self.original_bytes,

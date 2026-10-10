@@ -1,115 +1,120 @@
 {
-  "schema": "ubts.private.physical_shadow_vendored_inputs.v1",
-  "upstream_original_factory_handoff_sha256": "eec251a97b2803571c31019fa24776340faafdf3df70491631cc31f89d33bcc3",
-  "native_observer_handoff_sha256": "93cbe9221f7d0b3d06079c04e35c4633cfa454c2c80233cb893629907af97563",
+  "ROS_imports": false,
+  "SIM_profile_or_runtime_imports": false,
   "files_sha256": {
-    "common/native_ownership.py": "c705c627390735226d5aafed8322de37e1c8d53ad5f71151e144a843f87dd8c6",
+    "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "common/native_ownership.py": "f07087080ab4ee1786a4d1a439128603b9c78f8901948452a2dac8b189b155bc",
     "common/original_cdr.py": "6eb6929782063888880a827d2ef652d820cd0ebdc3ee8e83cc01ed8aabb341d3",
     "common/sensor_contract.py": "39242c55cc8c259d1cf6acaa744a17f9912d7a277281959adfefa9676da08275",
     "common/sensor_views.py": "40718ec325826ffc63995c9409f56cf928991d5fad7a4a0e3a0678d1c745796c",
-    "common/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "kernel/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "kernel/fit_workers.py": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c",
-    "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
-    "kernel/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9"
   },
-  "upstream_sources": {
-    "common/original_cdr.py": {
-      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-producer-boundary-candidate-20261007\\original_cdr.py",
-      "source_sha256": "6eb6929782063888880a827d2ef652d820cd0ebdc3ee8e83cc01ed8aabb341d3",
-      "copied_exact_bytes": true
-    },
-    "fixtures.py": {
-      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-producer-boundary-candidate-20261007\\cdr_fixtures.py",
-      "source_sha256": "4881b1c59b5cca904875e225b1566f0303090bba8646a96d5e0f0cf441ea07ef",
-      "copied_exact_bytes": false,
-      "independent_room_fixture_added_from": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-original-mission-factory-candidate-20261008\\test_factory.py"
-    },
-    "common/sensor_contract.py": {
-      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-mission-atomic-state-v2-candidate-20261007\\baseline_v1\\frozen_mission\\frozen_dependencies\\sim\\ubts\\encoderless\\sensor_contract.py",
-      "source_sha256": "39242c55cc8c259d1cf6acaa744a17f9912d7a277281959adfefa9676da08275",
-      "copied_exact_bytes": true
-    },
-    "kernel/__init__.py": {
-      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-original-mission-factory-candidate-20261008\\kernel\\__init__.py",
-      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "copied_exact_bytes": true
-    },
-    "kernel/raw_localization.py": {
-      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-original-mission-factory-candidate-20261008\\kernel\\raw_localization.py",
-      "source_sha256": "027cc2445931a3e072e9eb5f3df8647e2c36c3e477093c8b287f8392c2923d47",
-      "copied_exact_bytes": false,
-      "parent_native_kernel_sha256": "027cc2445931a3e072e9eb5f3df8647e2c36c3e477093c8b287f8392c2923d47",
-      "candidate_sha256": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
-      "candidate_source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-fit-review-20261010\\factory-integration\\kernel\\raw_localization.py",
-      "candidate_direct_source_manifest_sha256": "949e689e105fec506549ef7585b5601f17e367e9c3dc4b73351333878e043d79",
-      "exact_surface_cache_numerical_candidate": true,
-      "no_fit_equation_or_gate_removed": true,
-      "private_factory_native_float64_cache_path": true
-    },
-    "kernel/fit_workers.py": {
-      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-original-mission-factory-candidate-20261008\\kernel\\fit_workers.py",
-      "source_sha256": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c",
-      "copied_exact_bytes": true
-    },
-    "common/native_ownership.py": {
-      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-producer-boundary-candidate-20261007\\original_ingress.py",
-      "source_sha256": "20ee55fe03b4116264cc8f14df1f241677c25b953c5978dc6930b4dc2d8f757b",
-      "copied_exact_bytes": false,
-      "selected_primitives_verbatim_except_doc/imports_and_removed_inapplicable_SIM_methods": false,
-      "physical_diagnostic_SOURCE_AGE_NS": 250000000,
-      "SOURCE_AGE_is_diagnostic_not_actuator_deadline": true,
-      "semantics_preserving_digest_encoding_candidate": true,
-      "parent_native_ownership_sha256": "f330f555d71b85ff0b90717b360307333e6ec5f6a242d97b3932b4561b6637be",
-      "candidate_sha256": "c705c627390735226d5aafed8322de37e1c8d53ad5f71151e144a843f87dd8c6",
-      "no_decode_or_ownership_check_removed": true
-    },
-    "common/sensor_views.py": {
-      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-mission-atomic-state-v2-candidate-20261007\\baseline_v1\\frozen_mission\\frozen_dependencies\\sim\\ubts\\encoderless\\shadow_pipeline.py",
-      "source_sha256": "00195f8e654a5040a80b754a8766ba466b57ecaf194841bf716fbac00a91a2a8",
-      "copied_exact_bytes": false,
-      "selected_primitives_verbatim_except_doc/imports_and_removed_inapplicable_SIM_methods": true
-    },
-    "physical_factory.py": {
-      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-fit-review-20261010\\factory-integration\\physical_factory.py",
-      "source_sha256": "9d45ae25eb7a6aa4194e0ac1162d0c338d933051e364e435d6afcae95c58d7c7",
-      "parent_source_sha256": "9d45ae25eb7a6aa4194e0ac1162d0c338d933051e364e435d6afcae95c58d7c7",
-      "copied_exact_bytes": false,
-      "candidate_copied_exact_from_reviewed_hook": false,
-      "candidate_direct_source_manifest_sha256": "949e689e105fec506549ef7585b5601f17e367e9c3dc4b73351333878e043d79",
-      "constructor_default_off": true,
-      "only_private_cache_and_two_surface_calls_changed": false,
-      "candidate_sha256": "152e4e2349c5264f90f02aabf7239505054cf2cc84e91e81fbfcd7084dc40c74",
-      "postconsumed_positive_lower_RAW_expiry_candidate": true,
-      "constructor_default_OFF": true,
-      "preparation_positive_lower_RAW_expiry_candidate": true,
-      "commit_initial_positive_lower_RAW_expiry_candidate": true
-    },
-    "physical_ingress.py": {
-      "parent_source_sha256": "5caee0f91716a8b45a9cc2f35b85ecc7644cecda6a02fc8bdc79480c1ffe00a1",
-      "candidate_sha256": "cca2931d4ff52d3fcf196ad0efbdd3d835096f8a440ec72c475607c2d6a6b570",
-      "copied_exact_bytes": false,
-      "admission_timing_only": false,
-      "existing_failed_clock_used_without_resample": true,
-      "all_original_gates_and_final_fences_preserved": true,
-      "imu_gap_timing_only": false,
-      "existing_failed_association_clock_used_without_resample": true,
-      "numeric_groups_behind_gap_not_qualified": true,
-      "expected_IMU_gap_reanchor_candidate": true,
-      "constructor_default_off": true,
-      "preserved_timing_hooks": true,
-      "startup_and_current_positive_expiry_candidate": true,
-      "constructor_defaults_OFF": true,
-      "observed_Header_floors_include_unadmitted_valid_rows": true,
-      "postconsumed_positive_lower_RAW_expiry_candidate": true,
-      "constructor_default_OFF": true,
-      "preparation_positive_lower_RAW_expiry_candidate": true
-    }
-  },
+  "native_observer_handoff_sha256": "93cbe9221f7d0b3d06079c04e35c4633cfa454c2c80233cb893629907af97563",
   "production_external_python_packages": [
     "numpy",
     "scipy"
   ],
-  "ROS_imports": false,
-  "SIM_profile_or_runtime_imports": false,
-  "test_fixture_sha256": "bef9f343f8cfcb7682f4b79a5d964c4fa5e122412f4fbd201c148ea2a3e3c056"
+  "schema": "ubts.private.physical_shadow_vendored_inputs.v1",
+  "test_fixture_sha256": "bef9f343f8cfcb7682f4b79a5d964c4fa5e122412f4fbd201c148ea2a3e3c056",
+  "upstream_original_factory_handoff_sha256": "eec251a97b2803571c31019fa24776340faafdf3df70491631cc31f89d33bcc3",
+  "upstream_sources": {
+    "common/native_ownership.py": {
+      "SOURCE_AGE_is_diagnostic_not_actuator_deadline": true,
+      "candidate_sha256": "f07087080ab4ee1786a4d1a439128603b9c78f8901948452a2dac8b189b155bc",
+      "copied_exact_bytes": false,
+      "full_original_SHA_decode_at_every_association_preserved": false,
+      "full_original_SHA_envelope_digest_at_every_association_preserved": true,
+      "no_decode_or_ownership_check_removed": false,
+      "original_strict_decode_on_each_issue_preserved": true,
+      "owned_original_CDR_projection_reuse_preserved": true,
+      "parent_native_ownership_sha256": "c705c627390735226d5aafed8322de37e1c8d53ad5f71151e144a843f87dd8c6",
+      "physical_diagnostic_SOURCE_AGE_NS": 250000000,
+      "projection_source_handoff_sha256": "cdd799986b43cd083ab6e71d94a395ca01e9002bf4bd3102d8c471af40bbbedf",
+      "selected_primitives_verbatim_except_doc/imports_and_removed_inapplicable_SIM_methods": false,
+      "semantics_preserving_digest_encoding_candidate": true,
+      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-producer-boundary-candidate-20261007\\original_ingress.py",
+      "source_sha256": "20ee55fe03b4116264cc8f14df1f241677c25b953c5978dc6930b4dc2d8f757b"
+    },
+    "common/original_cdr.py": {
+      "copied_exact_bytes": true,
+      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-producer-boundary-candidate-20261007\\original_cdr.py",
+      "source_sha256": "6eb6929782063888880a827d2ef652d820cd0ebdc3ee8e83cc01ed8aabb341d3"
+    },
+    "common/sensor_contract.py": {
+      "copied_exact_bytes": true,
+      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-mission-atomic-state-v2-candidate-20261007\\baseline_v1\\frozen_mission\\frozen_dependencies\\sim\\ubts\\encoderless\\sensor_contract.py",
+      "source_sha256": "39242c55cc8c259d1cf6acaa744a17f9912d7a277281959adfefa9676da08275"
+    },
+    "common/sensor_views.py": {
+      "copied_exact_bytes": false,
+      "selected_primitives_verbatim_except_doc/imports_and_removed_inapplicable_SIM_methods": true,
+      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-mission-atomic-state-v2-candidate-20261007\\baseline_v1\\frozen_mission\\frozen_dependencies\\sim\\ubts\\encoderless\\shadow_pipeline.py",
+      "source_sha256": "00195f8e654a5040a80b754a8766ba466b57ecaf194841bf716fbac00a91a2a8"
+    },
+    "fixtures.py": {
+      "copied_exact_bytes": false,
+      "independent_room_fixture_added_from": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-original-mission-factory-candidate-20261008\\test_factory.py",
+      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-producer-boundary-candidate-20261007\\cdr_fixtures.py",
+      "source_sha256": "4881b1c59b5cca904875e225b1566f0303090bba8646a96d5e0f0cf441ea07ef"
+    },
+    "kernel/__init__.py": {
+      "copied_exact_bytes": true,
+      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-original-mission-factory-candidate-20261008\\kernel\\__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "kernel/fit_workers.py": {
+      "copied_exact_bytes": true,
+      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-original-mission-factory-candidate-20261008\\kernel\\fit_workers.py",
+      "source_sha256": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c"
+    },
+    "kernel/raw_localization.py": {
+      "candidate_direct_source_manifest_sha256": "949e689e105fec506549ef7585b5601f17e367e9c3dc4b73351333878e043d79",
+      "candidate_sha256": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
+      "candidate_source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-fit-review-20261010\\factory-integration\\kernel\\raw_localization.py",
+      "copied_exact_bytes": false,
+      "exact_surface_cache_numerical_candidate": true,
+      "no_fit_equation_or_gate_removed": true,
+      "parent_native_kernel_sha256": "027cc2445931a3e072e9eb5f3df8647e2c36c3e477093c8b287f8392c2923d47",
+      "private_factory_native_float64_cache_path": true,
+      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-original-mission-factory-candidate-20261008\\kernel\\raw_localization.py",
+      "source_sha256": "027cc2445931a3e072e9eb5f3df8647e2c36c3e477093c8b287f8392c2923d47"
+    },
+    "physical_factory.py": {
+      "candidate_copied_exact_from_reviewed_hook": false,
+      "candidate_direct_source_manifest_sha256": "949e689e105fec506549ef7585b5601f17e367e9c3dc4b73351333878e043d79",
+      "candidate_sha256": "152e4e2349c5264f90f02aabf7239505054cf2cc84e91e81fbfcd7084dc40c74",
+      "commit_initial_positive_lower_RAW_expiry_candidate": true,
+      "constructor_default_OFF": true,
+      "constructor_default_off": true,
+      "copied_exact_bytes": false,
+      "only_private_cache_and_two_surface_calls_changed": false,
+      "parent_source_sha256": "9d45ae25eb7a6aa4194e0ac1162d0c338d933051e364e435d6afcae95c58d7c7",
+      "postconsumed_positive_lower_RAW_expiry_candidate": true,
+      "preparation_positive_lower_RAW_expiry_candidate": true,
+      "source_absolute_path": "D:\\Develop\\UBTS\\orchard-realdata-audit\\20261003-field\\native-navigation-20261007\\native-fit-review-20261010\\factory-integration\\physical_factory.py",
+      "source_sha256": "9d45ae25eb7a6aa4194e0ac1162d0c338d933051e364e435d6afcae95c58d7c7"
+    },
+    "physical_ingress.py": {
+      "admission_timing_only": false,
+      "all_original_gates_and_final_fences_preserved": true,
+      "candidate_sha256": "cca2931d4ff52d3fcf196ad0efbdd3d835096f8a440ec72c475607c2d6a6b570",
+      "constructor_default_OFF": true,
+      "constructor_default_off": true,
+      "constructor_defaults_OFF": true,
+      "copied_exact_bytes": false,
+      "existing_failed_association_clock_used_without_resample": true,
+      "existing_failed_clock_used_without_resample": true,
+      "expected_IMU_gap_reanchor_candidate": true,
+      "imu_gap_timing_only": false,
+      "numeric_groups_behind_gap_not_qualified": true,
+      "observed_Header_floors_include_unadmitted_valid_rows": true,
+      "parent_source_sha256": "5caee0f91716a8b45a9cc2f35b85ecc7644cecda6a02fc8bdc79480c1ffe00a1",
+      "postconsumed_positive_lower_RAW_expiry_candidate": true,
+      "preparation_positive_lower_RAW_expiry_candidate": true,
+      "preserved_timing_hooks": true,
+      "startup_and_current_positive_expiry_candidate": true
+    }
+  }
 }
