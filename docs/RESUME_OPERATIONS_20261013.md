@@ -28,6 +28,7 @@ Jetson 방화벽 문제가 아니었다. PC는 `U+Net0588_5G`(게이트웨이 MA
 ## 4. 녹화 내구성 설치와 녹화기 수정
 
 - 설치 이미지 `sha256:bd48a6a1…`(부모 `54a5b97d…`), 컨테이너 `f57b3460…`. 덮은 파일: `data_recorder_service.py`, `mapping_sensor_writer.py`, `recording_durability.py`, `inspect_interrupted_recording.py`, `recording_postprocess.py`, `gnss_time_sync.py`, `recording_clock_audit.py`. 기존 compose 파일 14개에 override 1개만 추가(이전 배포 절차와 동일).
+- 줄바꿈 주의: 설치된 `recording_postprocess.py`(SHA `83314d19…`)는 작업 사본이 CRLF로 저장된 상태에서 복사됐다. CR을 제거하면 커밋 blob(`dffca414…`)과 동일함을 Jetson에서 확인했다. 나머지 7개 설치 파일은 커밋 blob과 바이트 동일. 다음 빌드부터는 LF 형식이 들어간다.
 - 롤백: `~/ubts-releases/recorder-durability-cleanup-clock-20261013/INSTALL_RESULT.json`의 `rollback_command`(override 없는 기존 compose 목록으로 recreate), 기존 `/app/scripts` 백업 `backup-20261013T012058/`.
 - ARM 테스트 110개 통과(skip 15). 웹 `TelemetryProvider` 테스트는 녹화기 이미지 안의 오래된 웹 모듈 대상이라 제외했다. 1·2차 시도는 테스트 경로 문제로 교체 전에 안전 중단됐다.
 - 추가 수정: (a) 정지 시 mapping sidecar를 먼저 닫아 metadata를 한 번만 기록(기존 HEAD에서 실패하던 마감 테스트 통과), (b) `/gps/data` 구독 depth 1→10(같은 epoch의 NAV-PVT/HPPOSLLH 중 하나가 덮어써져 PVT·UTC 근거가 빠지던 문제), (c) `gps.jsonl`에서 NAV-PVT에 별도 0.2초 레인.
