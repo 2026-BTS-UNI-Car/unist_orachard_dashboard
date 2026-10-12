@@ -173,13 +173,15 @@ class OptimizedPackageTests(unittest.TestCase):
         self.assertNotIn('physical_factory', sys.modules)
 
     def test_real_frozen_final_scalar_package_validates_without_importing_sensor_or_ROS_modules(self):
+        # The in-tree package is the reviewed v21 revision (parent: installed v20 e6231533...).
         package = Path(__file__).resolve().with_name('optimized-package')
-        expected = '78ba87427acbd534de90bbca68e960bd0335cb82a15e352b690aa9ca2e821b1e'
+        expected = '87859742812894e69dede8f537906e8bd743560ae01eed556d778445efd960fa'
         self.assertEqual(runner.sha_file(package / 'HANDOFF.json'), expected)
         with patch.object(sys, 'path', sys.path.copy()):
             features = {}
             self.assertIs(runner.load_physical_package(package, expected, reviewed_features=features), True)
-            self.assertEqual(features, dict(dict.fromkeys(FEATURES+(FACTORY_FEATURE,RECEIVER_FEATURE,FINAL_FEATURE), True), **{NEAREST_FEATURE:False,'preparation_causal_raw_expiry_reanchor_enabled':True}))
+            self.assertEqual(features, dict(dict.fromkeys(FEATURES+(FACTORY_FEATURE,RECEIVER_FEATURE,FINAL_FEATURE)+
+                runner.V21_REANCHOR_FEATURES, True), **{NEAREST_FEATURE:False,'preparation_causal_raw_expiry_reanchor_enabled':True}))
             self.assertEqual(Path(sys.path[0]), package.resolve())
         self.assertNotIn('physical_factory', sys.modules)
         self.assertNotIn('physical_ingress', sys.modules)
