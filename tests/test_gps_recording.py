@@ -86,6 +86,21 @@ class GpsRosTests(unittest.TestCase):
                 self.assertEqual(rows[0]['sample'][key],sample[key])
             self.assertFalse(rows[1]['sample']['valid'])
 
+    def test_back_to_back_pvt_keeps_its_own_sidecar_lane(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state=self.make_state(temp)
+            at=time.time()
+            base=dict(schema=GPS_SCHEMA,valid=True,quality=1,latitude=35.57,longitude=129.19,received_at=at,
+                gps_time='2026-10-10T06:56:28+00:00')
+            path=Path(temp)/'gps.jsonl'
+            with path.open('w') as state.gps_log:
+                for protocol in ('UBX_NAV_HPPOSLLH','UBX_NAV_PVT','UBX_NAV_HPPOSLLH','UBX_NAV_PVT'):
+                    state.observe_gps(SimpleNamespace(data=json.dumps(dict(base,protocol=protocol))))
+            state.gps_log=None
+            rows=[json.loads(line)['sample']['protocol'] for line in path.read_text().splitlines()]
+            # Same epoch pair kept; repeats inside 0.2 s are still thinned per protocol.
+            self.assertEqual(rows,['UBX_NAV_HPPOSLLH','UBX_NAV_PVT'])
+
     def test_recording_start_stop_persists_gps_manifest(self):
         with tempfile.TemporaryDirectory() as temp:
             state=self.make_state(temp); state.active=None

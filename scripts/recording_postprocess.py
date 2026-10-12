@@ -24,6 +24,8 @@ import uuid
 
 SCHEMA = "orchard.media_queue.v2"
 TERMINAL = {"complete", "failed", "cancelled"}
+CLEANUP_SCHEMA = "orchard.media_workspace_cleanup.v1"
+ATTEMPT = re.compile(r"[a-f0-9]{32}")
 
 
 def read_json(path):
@@ -93,6 +95,216 @@ def verify_sources(archive, expected):
         raise ValueError("raw_source_changed")
 
 
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(4 * 1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _remove(paths, workspace, removed):
+    for path, digest, reason in paths:
+        size = path.stat().st_size
+        path.unlink()
+        removed.append(dict(path=path.relative_to(workspace).as_posix(), bytes=size, sha256=digest, reason=reason))
+
+
+def _remove_empty_dirs(root):
+    if not root.is_dir() or root.is_symlink():
+        return
+    for path in sorted((p for p in root.rglob("*") if p.is_dir() and not p.is_symlink()), reverse=True):
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+    try:
+        root.rmdir()
+    except OSError:
+        pass
+
+
+def complete_export(path, protected):
+    """Frames of a complete camera export of the current raw files, else None."""
+    import zipfile
+    path = Path(path)
+    if not path.is_file() or path.is_symlink():
+        return None
+    try:
+        with zipfile.ZipFile(path) as bundle:
+            value = json.loads(bundle.read("manifest.json"))
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+        return None
+    sources = value.get("source_sha256")
+    if (value.get("schema") != "ubts.native_camera_export.v1" or value.get("complete") is not True
+            or value.get("all_frames_exported") is not True or not value.get("frames")
+            or not isinstance(sources, dict) or not sources
+            or any(protected.get(name) != digest for name, digest in sources.items())):
+        return None
+    return value["frames"]
+
+
+def frame_container_matches(path, frames):
+    """True when every video packet is, in order, an exported original JPEG."""
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "packet=data_hash", "-show_data_hash", "SHA256", "-of", "csv=p=0", str(path)],
+                           capture_output=True, text=True, timeout=3600)
+    packets = [line.split(":", 1)[-1].strip().lower() for line in probe.stdout.splitlines() if line.strip()]
+    expected = [row["sha256"] for row in frames]
+    # The VFR muxer appends one terminal repeat of the last frame (hold time).
+    return probe.returncode == 0 and bool(expected) and packets in (expected, expected + expected[-1:])
+
+
+def _frame_copies(package, frames, record, reason):
+    """Build-input copies proven by content: frames/*.jpg and native_frames.mkv."""
+    removable = []
+    expected = {row["file"]: row for row in frames or ()}
+    folder = package / "frames"
+    if frames and folder.is_dir() and not folder.is_symlink():
+        for path in sorted(folder.iterdir()):
+            row = expected.get("frames/" + path.name)
+            if path.is_file() and not path.is_symlink() and row and path.stat().st_size == row["bytes"]:
+                digest = file_sha256(path)
+                if digest == row["sha256"]:
+                    removable.append((path, digest, reason + "_original_frame_copy"))
+                    continue
+            record["retained"].append(dict(path=path.relative_to(package.parent).as_posix(),
+                                           reason="frame_not_proven_identical"))
+    container = package / "native_frames.mkv"
+    if frames and container.is_file() and not container.is_symlink():
+        if frame_container_matches(container, frames):
+            removable.append((container, file_sha256(container), reason + "_original_frame_container"))
+        else:
+            record["retained"].append(dict(path="package/native_frames.mkv", reason="packets_not_proven_identical"))
+    return removable
+
+
+def _finish(workspace, package, record, removable):
+    _remove(removable, workspace, record["removed"])
+    _remove_empty_dirs(package)
+    listed = {row["path"] for row in record["retained"]} | {row["path"] for row in record["removed"]}
+    leftovers = [p for p in sorted(workspace.rglob("*")) if p.is_file() and not p.is_symlink()
+                 and p.relative_to(workspace).as_posix() not in listed
+                 and p.name not in ("progress.json", "source_sha256.json", "cleanup.json")]
+    record["retained"] += [dict(path=p.relative_to(workspace).as_posix(), reason="unverified_purpose") for p in leftovers]
+    record["retained_bytes"] = sum((workspace / row["path"]).stat().st_size for row in record["retained"]
+                                   if (workspace / row["path"]).is_file())
+    record["removed_bytes"] = sum(row["bytes"] for row in record["removed"])
+    record["state"] = "pruned" if record["removed"] else "nothing_removed"
+    atomic_json(workspace / "cleanup.json", record)
+
+
+def prune_completed_workspace(archive, workspace, protected):
+    """Drop only proven-redundant intermediates of an attempt that installed.
+
+    package/ HLS files go when byte-identical to the installed adaptive_video
+    asset/manifest; source.zip goes when the installed manifest records its
+    SHA256 and it is a complete export of the current raw files (a lossless
+    repack of the MCAP camera messages); frames/*.jpg and native_frames.mkv go
+    only when their bytes/packets equal those exported frames. Logs,
+    progress/source_sha256 evidence and unknown files stay. Returns
+    (summary, export_frames) so superseded attempts can be checked too.
+    """
+    from dashboard_server.adaptive_video import manifest
+    archive, workspace = Path(archive), Path(workspace)
+    record = dict(schema=CLEANUP_SCHEMA, attempt=workspace.name, policy="completed_attempt",
+                  removed=[], retained=[], at=time.time())
+    installed = manifest(archive)
+    if installed is None or workspace.is_symlink() or workspace.parent.is_symlink():
+        record.update(state="retained", reason="installed_manifest_unavailable")
+        atomic_json(workspace / "cleanup.json", record)
+        return dict(state=record["state"], reason=record["reason"]), None
+    root = archive / "adaptive_video"
+    removable = []
+    package = workspace / "package"
+    if package.is_dir() and not package.is_symlink():
+        package_manifest = package / "adaptive_video.json"
+        installed_manifest_sha = file_sha256(root / "adaptive_video.json")
+        if package_manifest.is_file() and file_sha256(package_manifest) == installed_manifest_sha:
+            for name, row in installed["assets"].items():
+                candidate = package / name
+                if not candidate.is_file() or candidate.is_symlink():
+                    continue
+                digest = file_sha256(candidate)
+                if digest == row["sha256"] and file_sha256(root / name) == digest:
+                    removable.append((candidate, digest, "duplicate_of_installed_adaptive_asset"))
+                else:
+                    record["retained"].append(dict(path=f"package/{name}", reason="differs_from_installed_asset"))
+            removable.append((package_manifest, installed_manifest_sha, "duplicate_of_installed_adaptive_manifest"))
+        else:
+            record["retained"].append(dict(path="package", reason="package_manifest_differs_from_installed"))
+    export = workspace / "source.zip"
+    frames = None
+    if export.is_file() and not export.is_symlink():
+        digest = file_sha256(export)
+        frames = complete_export(export, protected) if digest == installed.get("camera_export_sha256") else None
+        if frames:
+            removable.append((export, digest, "regenerable_export_recorded_by_installed_manifest"))
+        else:
+            record["retained"].append(dict(path="source.zip", reason="not_a_verified_build_input"))
+    if package.is_dir() and not package.is_symlink():
+        removable += _frame_copies(package, frames, record, "build_input")
+    _finish(workspace, package, record, removable)
+    return dict(state=record["state"], removed_bytes=record["removed_bytes"],
+                retained_bytes=record["retained_bytes"], removed_files=len(record["removed"])), frames
+
+
+def prune_superseded_attempts(archive, current, protected, frames=None):
+    """A later successful attempt supersedes earlier failed or interrupted ones.
+
+    Only content-proven redundant files go: a complete export of the current
+    raw files, and frame copies/containers equal to exported original frames.
+    Partial exports, partial encodes, logs and unknown files stay (their size
+    is recorded). Completed attempts and the current attempt are not touched.
+    No other attempt can be running: one queue owner holds the flock and runs
+    one child at a time.
+    """
+    archive, current = Path(archive), Path(current)
+    work_root = archive / "generated_video_work"
+    summary = []
+    if work_root.is_symlink() or not work_root.is_dir():
+        return summary
+    for other in sorted(work_root.iterdir()):
+        if (other == current or other.is_symlink() or not other.is_dir()
+                or not ATTEMPT.fullmatch(other.name)):
+            continue
+        progress = read_json(other / "progress.json")
+        if progress.get("stage") == "complete":
+            continue
+        earlier = read_json(other / "cleanup.json")
+        record = dict(schema=CLEANUP_SCHEMA, attempt=other.name, policy="superseded_attempt",
+                      superseded_by=current.name, previous_stage=progress.get("stage"),
+                      removed=[], retained=[], at=time.time(),
+                      history=([*earlier.get("history", []), {k: v for k, v in earlier.items() if k != "history"}][-8:]
+                               if earlier.get("schema") == CLEANUP_SCHEMA else []))
+        removable = []
+        export = other / "source.zip"
+        own = complete_export(export, protected)
+        if own:
+            removable.append((export, file_sha256(export), "complete_export_of_current_raw_superseded"))
+        package = other / "package"
+        if package.is_dir() and not package.is_symlink():
+            removable += _frame_copies(package, own or frames, record, "superseded")
+        _finish(other, package, record, removable)
+        summary.append(dict(attempt=other.name, previous_stage=record["previous_stage"],
+                            removed_bytes=record["removed_bytes"], retained_bytes=record["retained_bytes"]))
+    return summary
+
+
+def cleanup_after_success(archive, workspace, protected):
+    """Cleanup never changes the outcome of an installed, verified video."""
+    result, frames = {}, None
+    try:
+        result["workspace"], frames = prune_completed_workspace(archive, workspace, protected)
+    except Exception as error:
+        result["workspace"] = dict(state="cleanup_error", error=str(error)[:200])
+    try:
+        result["superseded"] = prune_superseded_attempts(archive, workspace, protected, frames)
+    except Exception as error:
+        result["superseded"] = dict(state="cleanup_error", error=str(error)[:200])
+    return result
+
+
 def process(archive, attempt):
     """Constrained child only; incomplete attempts stay as evidence."""
     from scripts.export_recording_camera import export
@@ -129,7 +341,8 @@ def process(archive, attempt):
                 if digest.hexdigest() != row["sha256"]:
                     raise ValueError("existing_adaptive_asset_changed")
             verify_sources(archive, protected)
-            report("complete", already_installed=True, raw_source_preserved=True)
+            cleanup = dict(superseded=prune_superseded_attempts(archive, workspace, protected))
+            report("complete", already_installed=True, raw_source_preserved=True, cleanup=cleanup)
             return
         report("exporting_native_frames")
         exported = export(archive, workspace / "source.zip")
@@ -142,7 +355,10 @@ def process(archive, attempt):
         verify_sources(archive, protected)
         result = install(workspace / "package", archive.parent)
         verify_sources(archive, protected)
-        report("complete", result=result, raw_source_preserved=True, **media,
+        # Failed/interrupted attempts keep their files as evidence; only a
+        # verified installation releases its own redundant intermediates.
+        cleanup = cleanup_after_success(archive, workspace, protected)
+        report("complete", result=result, raw_source_preserved=True, cleanup=cleanup, **media,
                duration_s=prepared.get('duration_s'), encode_elapsed_s=prepared.get('build_elapsed_s'))
     except Exception as error:
         report("failed", error=str(error)[:300])

@@ -152,20 +152,23 @@ class TrustedWiringTests(unittest.TestCase):
         node=assignments[0]
         self.assertIn('proposal_input',ast.dump(node.value))
         self.assertNotIn('latest',ast.dump(node.value))
+        # The input expression is gated by the exact `available` assignment.
+        gates=[n for n in ast.walk(tree) if isinstance(n,ast.Assign) and
+               any(isinstance(t,ast.Name) and t.id=='available' for t in n.targets)]
+        self.assertEqual(len(gates),1)
+        exact=compile(ast.fix_missing_locations(ast.Module(body=[gates[0],node],type_ignores=[])),
+                      '<exact-input-expression>','exec')
         # Exact service expression retains None during WAIT despite old history.
         owner=SimpleNamespace(owned=True,cancelled=False,first_failure_reason=None,latest={'old':True})
         adapter=SimpleNamespace(proposal_input=lambda:None)
         namespace={'owner':owner,'adapter':adapter,'result':{}}
-        exec(compile(ast.fix_missing_locations(ast.Module(body=[node],type_ignores=[])),
-                     '<exact-input-expression>','exec'),namespace)
+        exec(exact,namespace)
         self.assertIsNone(namespace['result']['input'])
         adapter.proposal_input=lambda:{'fresh_pair':True}
-        exec(compile(ast.fix_missing_locations(ast.Module(body=[node],type_ignores=[])),
-                     '<exact-input-expression>','exec'),namespace)
+        exec(exact,namespace)
         self.assertEqual(namespace['result']['input'],{'fresh_pair':True})
         owner.cancelled=True
-        exec(compile(ast.fix_missing_locations(ast.Module(body=[node],type_ignores=[])),
-                     '<exact-input-expression>','exec'),namespace)
+        exec(exact,namespace)
         self.assertIsNone(namespace['result']['input'])
 
     def test_default_main_and_service_remain_inert_without_package_IO(self):

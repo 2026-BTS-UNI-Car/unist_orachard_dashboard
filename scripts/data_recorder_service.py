@@ -114,6 +114,7 @@ class RecordingState:
         self.gps_clock_epoch_watermark = None
         self.gps_write_error = None
         self.next_gps_sample_at = 0.0
+        self.next_gps_pvt_sample_at = 0.0
         self.gps_log = None
         self.motor_timeline = MotorTimeline(args.rover_status_topic)
         self.mapping_writer = None
@@ -382,6 +383,7 @@ class RecordingState:
             self.gps_frame_count = self.gps_valid_count = 0
             self.gps_write_error = None
             self.next_gps_sample_at = 0.0
+            self.next_gps_pvt_sample_at = 0.0
             self.gps_log = (
                 (root / "gps.jsonl").open("w", encoding="utf-8")
                 if include_gps
@@ -461,6 +463,9 @@ class RecordingState:
         duration_s = round(
             time.time() - float(active.get("started_monotonic", time.time())), 2
         )
+        # Close the mapping sidecar first so the archived metadata is written
+        # once, already carrying the sidecar's closure result.
+        mapping_result = self._close_mapping_sidecar(mapping_writer) if mapping_writer is not None else None
         metadata = read_json(root / "metadata.json")
         metadata.update(
             {
@@ -493,6 +498,10 @@ class RecordingState:
                 },
             }
         )
+        if mapping_result is not None:
+            metadata['durability']['mapping_sidecar_worker_closed'] = mapping_result['durability']['worker_closed']
+            metadata['durability']['mapping_sidecar_complete'] = mapping_result['complete']
+            metadata['durability']['mapping_sidecar_error'] = mapping_result['error']
         write_json_atomic(root / "metadata.json", metadata)
         write_json_atomic(
             root / "preview_scan.json",
@@ -502,12 +511,6 @@ class RecordingState:
         write_json_atomic(
             root / "timeline.json", self.timeline_payload(active, metadata, duration_s)
         )
-        if mapping_writer is not None:
-            mapping_result = self._close_mapping_sidecar(mapping_writer)
-            metadata['durability']['mapping_sidecar_worker_closed'] = mapping_result['durability']['worker_closed']
-            metadata['durability']['mapping_sidecar_complete'] = mapping_result['complete']
-            metadata['durability']['mapping_sidecar_error'] = mapping_result['error']
-            write_json_atomic(root / 'metadata.json', metadata)
         if active.get('kind') in ('camera','both'):
             from scripts.recording_postprocess import enqueue
             result = enqueue(root, self.media_queue)
@@ -712,14 +715,21 @@ class RecordingState:
                     self.gps_clock_latest = {}
                     self.gps_clock_last_at = None
             active = self.active
+            # The receiver emits NAV-PVT (UTC/velocity) and HPPOSLLH for the
+            # same epoch back to back; give NAV-PVT its own 0.2 s lane so the
+            # sidecar keeps both instead of whichever arrived first.
+            pvt = sample.get('protocol') == 'UBX_NAV_PVT'
             if (
                 not active
                 or not active.get("include_gps", True)
                 or active.get("stopping")
-                or (now < self.next_gps_sample_at)
+                or (now < (self.next_gps_pvt_sample_at if pvt else self.next_gps_sample_at))
             ):
                 return
-            self.next_gps_sample_at = now + 0.2
+            if pvt:
+                self.next_gps_pvt_sample_at = now + 0.2
+            else:
+                self.next_gps_sample_at = now + 0.2
             started = float(active.get("started_monotonic", time.time()))
             if received < started or received > time.time() + 1:
                 return
@@ -1100,8 +1110,16 @@ class RecorderNode(Node):
         self.create_subscription(
             MagneticField, args.imu_mag_topic, self.state.observe_magnetic, camera_qos
         )
+        # Depth 1 overwrote one of each back-to-back NAV-PVT/HPPOSLLH pair,
+        # starving the UTC-carrying NAV-PVT (start-clock evidence went stale).
+        gps_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
         self.create_subscription(
-            String, "/gps/data", self.state.observe_gps, camera_qos
+            String, "/gps/data", self.state.observe_gps, gps_qos
         )
         self.create_subscription(
             String, args.rover_status_topic, self.state.observe_motor, 10

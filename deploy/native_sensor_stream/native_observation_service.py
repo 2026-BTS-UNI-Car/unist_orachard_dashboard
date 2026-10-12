@@ -5,6 +5,7 @@ socket; it does not start sensor subscriptions until an explicit start request.
 Input is the latest native-derived planning snapshot, never wheel odometry.
 """
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -21,6 +22,64 @@ from types import SimpleNamespace
 GRAPH_SOURCE_SHA='5d0ce1ea41f9408b8088272bd8689d483b50863cf3af31199960df90df2d2052'
 
 GNSS_SOURCE_SHA='595c2c2a1af5b8dc82fa5d0e0133618f78896edb10ad33f88ccb66094424d8de'
+
+
+def bind_observation_socket(target):
+    """Bind the local socket; recover only a provably stale leftover.
+
+    Ownership is an exclusive flock on a sibling lock file, held for the whole
+    service lifetime and released by the kernel on any exit. An existing path
+    is removed only while holding that lock, only if it is still the same
+    socket inode, and only if connect() is refused, i.e. nobody listens on it
+    (power loss, SIGKILL, host reboot). A live listener, a non-socket path, an
+    inconclusive probe or a lock held elsewhere is never touched.
+    Returns (server, lock_fd, recovery_or_None).
+    """
+    import fcntl
+    target=Path(target)
+    lock_fd=os.open(target.with_name(target.name+'.lock'),os.O_RDWR|os.O_CREAT|os.O_CLOEXEC|os.O_NOFOLLOW,0o600)
+    try:
+        if not stat.S_ISREG(os.fstat(lock_fd).st_mode):
+            raise ValueError('native_socket_lock_not_regular_file')
+        try:
+            fcntl.flock(lock_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError('native_socket_owner_already_running') from None
+        recovery=None
+        try:
+            before=target.lstat()
+        except FileNotFoundError:
+            before=None
+        if before is not None:
+            if not stat.S_ISSOCK(before.st_mode):
+                raise ValueError('native_socket_path_not_a_socket')
+            probe=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+            probe.settimeout(.5)
+            try:
+                probe.connect(str(target))
+            except ConnectionRefusedError:
+                pass
+            except OSError as error:
+                raise ValueError('native_socket_probe_inconclusive_'+errno.errorcode.get(error.errno,'timeout')) from None
+            else:
+                raise ValueError('native_socket_live_listener_present')
+            finally:
+                probe.close()
+            current=target.lstat()
+            if not stat.S_ISSOCK(current.st_mode) or current.st_ino!=before.st_ino:
+                raise ValueError('native_socket_changed_during_recovery')
+            target.unlink()
+            recovery=dict(stale_socket_removed=True,inode=before.st_ino,mtime=before.st_mtime)
+        server=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+        try:
+            server.bind(str(target))
+        except BaseException:
+            server.close()
+            raise
+        return server,lock_fd,recovery
+    except BaseException:
+        os.close(lock_fd)
+        raise
 
 
 def main(argv=None):
@@ -123,10 +182,14 @@ def main(argv=None):
     stop=threading.Event()
     for sig in (signal.SIGTERM,signal.SIGINT):
         signal.signal(sig,lambda _sig,_frame:stop.set())
-    server=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+    server=lock_fd=None
     inode=None
     try:
-        server.bind(str(target))  # Never unlink another owner's existing socket.
+        # Never unlink another owner's socket: only a lock-proven stale one.
+        server,lock_fd,recovery=bind_observation_socket(target)
+        if recovery is not None:
+            print(json.dumps(dict(state='recovered_stale_socket',**recovery,runtime_authority=False,
+                motor_command_sent=False)),flush=True)
         os.chmod(target,0o666)  # RPC is observation-only; no motor capability.
         inode=target.lstat().st_ino
         server.listen(4)
@@ -231,11 +294,17 @@ def main(argv=None):
                         pass
     finally:
         runner.stop(3)
-        server.close()
+        if server is not None:
+            server.close()
         if inode is not None:
-            current=target.lstat()
-            if stat.S_ISSOCK(current.st_mode) and current.st_ino==inode:
+            try:
+                current=target.lstat()
+            except FileNotFoundError:
+                current=None
+            if current is not None and stat.S_ISSOCK(current.st_mode) and current.st_ino==inode:
                 target.unlink()
+        if lock_fd is not None:
+            os.close(lock_fd)  # Released only after our own socket is gone.
         print(json.dumps(dict(state='stopped',status=runner.status(),runtime_authority=False,
             motor_command_sent=False,autonomy_output_enabled=False)),flush=True)
     return 0 if not runner.lifecycle.status().owned else 1
