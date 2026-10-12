@@ -103,14 +103,79 @@
 - 소유를 증명할 수 없는 v21 WAIT는 `unowned_native_<label>_wait`로 실패한다.
 - 상태 카운터, 연속 횟수(streak), 시간 기록(≤2KB)으로 모든 WAIT를 볼 수 있다.
 
-### 4.3 고정값(pin)
+### 4.3 고정값(pin)과 설치
+
+- 설치(2026-10-13 08:07 KST): native 이미지 `29c89fb1…`.
+  - 부모 `b54eeee4…`에 지도 모듈 6개, `stream_rows*`, `stream_runner`, `NATIVE_MAP_SOURCE.json`, 서비스, 패키지 4개 파일을 overlay했다.
+  - `BUILD_PROVENANCE.json`은 이미지 안에서 다시 생성했다.
+  - ARM 테스트 16개 모듈이 모두 통과했다.
+  - 기존 컨테이너는 `ubts-native-sensor-observation-retained-map-continuity-v21-20261013-20261013T080730`으로 보존했다.
+  - 롤백: `~/ubts-releases/native-map-v21-20261013/INSTALL_RESULT.json`.
 
 - `NATIVE_MAP_SOURCE.json` SHA `6d0093fd…`. 서비스 고정값도 같이 바꿨다.
 - `stream_runner` loader가 v21을 수락한다.
 - `Dockerfile.gnss*`의 `PHYSICAL_PACKAGE_SHA`는 `87859742…`.
 - `BUILD_PROVENANCE.json`은 설치 overlay 안에서 `build_provenance.py`로 다시 만든다.
 
-## 5. 재생 결과(같은 기록·같은 기준)
+## 5. 결과(같은 기록·같은 기준)
+
+### 5.1 재생(6개 기록, 1배속, Jetson 2 CPU·512MiB)
+
+| 기록 | 세션 장애 base3 → cand4 → cand5 | 지도 발행 세대 base3 / cand4 / cand5 | 지도 지연 p50 base3 → cand5 | 최장 정지 base3 / cand5 |
+|---|---|---|---|---|
+| 035952 | 14 → 14 → **0** | 8 / 56 / 57 | 616 → 128ms | 467 / 459s |
+| 040927 | 10 → 9 → **0** | 5 / 38 / 40 | 629 → 87ms | 520 / 517s |
+| 042200 | 0 → 0 → 0 | 3 / 49 / 46 | 698 → 84ms | 46 / 46s |
+| 042301 | 6 → 4 → **0** | 1 / 46 / 8 | 420 → 122ms | 684 / 683s |
+| 045553 | 55 → 54 → **0** | 4 / 25 / 68 | 828 → 156ms | 741 / 735s |
+| 051127 | 18 → 18 → **0** | 7 / 124 / 49 | 587 → 89ms | 898 / 897s |
+
+- cand4 = 지도 처리·bridge 개선만, cand5 = cand4 + v21.
+- cand5에서는 6개 기록 모두 세션 1개로 끝까지 이어졌다. v21 WAIT 횟수: 정합 거부 121, 시간 지난 IMU 공백 20.
+- 단계 시간(cand4·cand5): prepare 30–40ms(기존 148ms), 표시 인코딩 8–10ms(기존 100–180ms).
+- 정확도(ICP 참조 대비, 지도가 그려진 구간)
+  - 인접 세대 RPE 중앙값 2–8mm.
+  - bridge·긴 구간 RPE 최대 5.7cm·0.5°.
+  - 가까운/먼 점 smear는 참조 pose와 비슷한 수준(`native-replay/out/ACCURACY_base3_cand4.json`).
+- **남은 문제: 연속성.** 재생에서는 한 번 1초 안팎의 직진 공백 bridge가 실패하면, 이후 공백이 커져 기록 끝까지 다시 잇지 못한다.
+  - 재생 입력(bag)은 IMU 메시지를 약 1.9% 잃었다. 그래서 IMU 공백 WAIT가 live보다 3배 이상 많다(WAIT 분석: bag 035952 공백 232회 vs 완전 스트림 시뮬레이션 74회).
+  - 따라서 재생의 공백 빈도는 실차보다 비관적이다.
+
+### 5.2 진행 중 정합 취소 수정(commit `10bbf67`)
+
+- 재생에서 bridge 정합(ARM 54 seed, 수백 ms) 도중 commit 단계 typed WAIT(`native_fit_not_committed`)가 정합을 취소해 공백이 더 길어지는 현상을 확인했다.
+- clean factory의 typed WAIT일 때만 기존 pair WAIT와 같이 진행 중 정합을 보존한다.
+- factory 고장·Stop·다른 무효화는 여전히 취소한다.
+- cand6(설치본과 동일 코드) 재생 결과는 5.4절에 기록한다.
+
+### 5.3 실차 live 확인(2026-10-13, 정지 상태, 관찰만)
+
+- 설치: native 이미지 `29c89fb1…`(부모 `b54eeee4…`).
+- 실행 조건: rover disarmed·정지를 확인한 뒤 관찰 Start만 했다. 180초 뒤 Stop. 모터 명령 없음.
+- 측정: 브라우저와 같은 500ms 폴링으로 `/api/autonomy/native-map/tiles`를 읽었다(`map-qualification/live_map_latency_probe.py`).
+
+| 항목 | IMU 20Hz | IMU 33Hz |
+|---|---|---|
+| scan 대비 fit | 1,476/1,711 (86.3%) | 1,666/1,695 (**98.3%**) |
+| 세션 장애 | 0 | 0 |
+| IMU 공백 WAIT / 나이 만료 WAIT | 8 / 71 | 0 / 10 |
+| priming으로 버린 scan | 76 | 8 |
+| 지도 세대(웹에서 확인) | 325 | 349 |
+| scan 헤더→웹 수신 p50 / p90 / p99 | 261 / 718 / 1030ms | 248 / 292 / 750ms |
+| 웹에서 본 세대 간격 최대 | 2.0s | 1.0s |
+| 타일 fetch p50 | 16ms | 18ms |
+| 큐 최대(한도 16) | 8 | 9 |
+
+- **IMU 33Hz 전환**: 드라이버 설정만 바꿨다(펌웨어 변경 아님).
+  - 방법: `IMU_SAMPLE_HZ=33` compose override 1개(`~/ubts-releases/imu-rate-20261013/`).
+  - 결과: 실제 발행률 33.0Hz, 읽기 오류 0, 드라이버 CPU 7.5→11.8%.
+  - 롤백: `INSTALL_RESULT.json`의 `rollback_command`.
+  - 근거: WAIT 분석 시뮬레이션. 6개 기록 완전 스트림 기준 fit 91.4→99.2%, WAIT 몰림 분당 16→1.5회. 50Hz 이상은 기존 timing 기록 용량 한계(창 >26 IMU) 때문에 보류.
+- 웹 지연에는 LiDAR 전달 지연(헤더는 sweep 시작, 약 100ms)과 폴링 대기(최대 500ms)가 포함된다.
+- 정지 상태라 이동 중 정합 난이도는 반영되지 않는다. 이동 중 확인은 현장 시험이 필요하다.
+- pose ledger는 3분 만에 보존 용량(16MB, 원본 scan 포함)에 도달해 새 행 추가를 멈췄다(`retained_pose_history_capacity`). 지도 표시와는 무관하며, 기존부터 있던 상한이다.
+
+### 5.4 cand6 재생(설치본과 동일)
 
 (재생 완료 후 기록)
 

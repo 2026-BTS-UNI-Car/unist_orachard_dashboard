@@ -236,7 +236,9 @@ services:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       IMU_I2C_BUS: "${IMU_I2C_BUS:-7}"
       IMU_I2C_ADDRESS: "${IMU_I2C_ADDRESS:-0x4A}"
-      IMU_SAMPLE_HZ: "${IMU_SAMPLE_HZ:-20}"
+      # 33 Hz since 2026-10-13: keeps the 60 ms IMU bracket and RAW age budget of the
+      # native pipeline from expiring at 20 Hz sampling (live stationary: fit 86% -> 98%).
+      IMU_SAMPLE_HZ: "${IMU_SAMPLE_HZ:-33}"
       IMU_FRAME_ID: "${IMU_FRAME_ID:-imu_link}"
       IMU_RAW_TOPIC: "${IMU_RAW_TOPIC:-/imu/data_raw}"
       IMU_MAG_TOPIC: "${IMU_MAG_TOPIC:-/imu/mag}"
