@@ -127,7 +127,7 @@ def main(argv=None):
         bound.gps_data_gid,bound.gps_fix_gid=args.gps_data_gid,args.gps_fix_gid
         bound.native_gnss_manifest_sha256=GNSS_SOURCE_SHA
         stream_runner.load_native_gnss_sources(root,GNSS_SOURCE_SHA)
-    bound.native_map_manifest_sha256 = '22f57a1c02559340f5b3774e7fc54753ee31cb0d4685b4d25d41f6dd734e4731'
+    bound.native_map_manifest_sha256 = 'dff7eb14d18eeb7ddb609d83c486c9c37bc7c13c3cd0ee4d60c0abf7a4e979f5'
     if args.enable_native_map:
         stream_runner.load_native_map_sources(root, bound.native_map_manifest_sha256)
         from committed_native_map import CommittedNativeMapAdapter

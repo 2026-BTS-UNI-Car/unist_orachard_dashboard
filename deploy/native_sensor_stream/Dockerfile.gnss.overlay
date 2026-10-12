@@ -2,7 +2,7 @@
 # Pass an exact reviewed Iron ARM image; no production role is switched here.
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
-ARG PHYSICAL_PACKAGE_SHA=e62315334c1accf2b4cd8c129f08694597ee787a28fd270a042a94466509860b
+ARG PHYSICAL_PACKAGE_SHA=87859742812894e69dede8f537906e8bd743560ae01eed556d778445efd960fa
 COPY deploy/native_sensor_stream/observer-src/ /opt/ubts-native-stream/observer-src/
 COPY deploy/native_sensor_stream/optimized-package/ /opt/ubts-shadow/package/
 COPY deploy/native_sensor_stream/stream_runner.py deploy/native_sensor_stream/stream_rows.py deploy/native_sensor_stream/OBSERVER_CONTRACT.json deploy/native_sensor_stream/build_provenance.py deploy/native_sensor_stream/native_observation_service.py /opt/ubts-native-stream/

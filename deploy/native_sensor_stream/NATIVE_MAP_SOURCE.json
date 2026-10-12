@@ -14,12 +14,12 @@
     "native_map_owner.py": "f0ad36bff100150644bf3a00fc0b4d2486d841663f6952909f5679be148d6a26",
     "native_map_transport.py": "992b34a72d31bf3a30d168518a07d16085cb612468482dd1382c7bf008f6e62d",
     "native_pose_ledger.py": "cbafac757be803d8f0cc1c7fbdd430513c0387c15e2a4852f0ef1a1b9b5d196b",
-    "stream_rows_map.py": "aad346c350a0044f65e72c31afc927e9f23b1408c7299b08a0265e1764d79a59"
+    "stream_rows_map.py": "0f2950904d9514eec7f0f9c885f505502e7d750f9dd6b8ebf6bb2a5a34d9f89d"
   },
   "motor_command_sent": false,
   "parent_map_handoff_sha256": "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9",
   "parent_map_source_sha256": "556c90c0186c71dfd73110d000984214a31e4b6fdc0e8953f5873d76d5e03a69",
-  "parent_package_sha256": "e62315334c1accf2b4cd8c129f08694597ee787a28fd270a042a94466509860b",
+  "parent_package_sha256": "87859742812894e69dede8f537906e8bd743560ae01eed556d778445efd960fa",
   "pose_ledger_default_OFF": true,
   "runtime_qualified": false,
   "schema": "ubts.private.native_map_source.v2"
