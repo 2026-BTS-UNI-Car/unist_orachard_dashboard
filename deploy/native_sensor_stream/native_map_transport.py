@@ -14,6 +14,8 @@ import secrets
 import threading
 import time
 
+import numpy as np
+
 PAGE_BYTES = 128 * 1024
 MAX_TILES = 512
 MAX_CELLS = 250000
@@ -52,6 +54,41 @@ def encode_cells(states):
     return dict(encoding='packed2-v1', cells=base64.b64encode(packed).decode('ascii'))
 
 
+_PACK_WEIGHTS = np.array([1, 4, 16, 64], dtype=np.uint16)
+
+
+def encode_tile_bytes(states):
+    """encode_cells for one 4096-byte tile, same output, without per-cell Python work."""
+    a = np.frombuffer(states, dtype=np.uint8)
+    change = np.flatnonzero(a[1:] != a[:-1]) + 1
+    starts = np.concatenate(([0], change))
+    lengths = np.diff(np.concatenate((starts, [4096])))
+    # Each run adds at least 4 JSON characters, so long run lists never fit.
+    if 4 * len(starts) + 1 <= 1370:
+        runs = np.empty(2 * len(starts), dtype=np.int64)
+        runs[0::2] = a[starts]
+        runs[1::2] = lengths
+        runs = runs.tolist()
+        if len(raw_json(runs)) <= 1370:
+            return dict(encoding='rle2-v1', cells=runs)
+    packed = (a.reshape(-1, 4).astype(np.uint16) * _PACK_WEIGHTS).sum(axis=1).astype(np.uint8).tobytes()
+    return dict(encoding='packed2-v1', cells=base64.b64encode(packed).decode('ascii'))
+
+
+def tile_facts(states):
+    """Exact tile facts from its state bytes: (encoding, count, nonzero box, occupied box) in tile cells."""
+    require(type(states) is bytes and len(states) == 4096, 'native_tile_states_required')
+    a = np.frombuffer(states, dtype=np.uint8).reshape(64, 64)
+    require(int(a.max()) <= 2, 'native_tile_states_required')
+
+    def box(mask):
+        if not mask.any():
+            return None
+        ys, xs = np.flatnonzero(mask.any(axis=1)), np.flatnonzero(mask.any(axis=0))
+        return (int(xs[0]), int(ys[0]), int(xs[-1]), int(ys[-1]))
+    return encode_tile_bytes(states), int(np.count_nonzero(a)), box(a != 0), box(a == 2)
+
+
 class NativeMapTransport:
     def __init__(self, source, *, max_tiles=MAX_TILES, page_bytes=PAGE_BYTES, push_only=False, clock=time.monotonic):
         require(callable(getattr(source, 'display_snapshot', None)) and callable(getattr(source, 'status', None)),
@@ -69,6 +106,9 @@ class NativeMapTransport:
         self._trail = []
         self._trail_compressions = 0
         self._clear_serial = 0
+        # Encoded tiles of the previous complete generation, keyed by their
+        # exact 4096-byte state content. Bounded to one generation's tiles.
+        self._tile_cache = {}
         self.max_tiles, self.page_bytes = max_tiles, page_bytes
 
     def _build(self, snapshot, path=(), compressions=0):
@@ -89,6 +129,59 @@ class NativeMapTransport:
         resolution = snapshot.get('resolution_m')
         require(type(resolution) in (int, float) and math.isfinite(resolution) and .02 <= resolution <= 1,
                 'native_map_resolution_required')
+        if snapshot.get('tiles') is not None:
+            encoded, cell_count, (min_x, min_y, max_x, max_y), occupied_box = self._tiles_from_summaries(snapshot)
+        else:
+            encoded, cell_count, (min_x, min_y, max_x, max_y), occupied_box = self._tiles_from_rows(snapshot)
+        pose = snapshot.get('historical_laser_pose')
+        require(type(pose) is tuple and len(pose) == 3 and all(type(v) in (int, float) and math.isfinite(v) for v in pose),
+                'native_historical_laser_pose_required')
+        source_ns, raw_ns = snapshot.get('latest_scan_source_ns'), snapshot.get('latest_scan_callback_RAW_ns')
+        sha = snapshot.get('latest_scan_CDR_sha256')
+        require(type(source_ns) is int and 0 <= source_ns < 2**63 and type(raw_ns) is int and 0 <= raw_ns < 2**63 and
+                type(sha) is str and re.fullmatch('[0-9a-f]{64}', sha), 'native_original_stamp_required')
+        transition=snapshot.get('registered_context_transition')
+        require(transition is None or (type(transition) is dict and len(raw_json(transition))<=4096 and
+                transition.get('registered_native_bridge') is True and
+                transition.get('physical_accuracy_verified') is False and transition.get('map_epoch')==ctx['map_epoch']),
+                'native_registered_context_transition_required')
+        occupied_bounds = None
+        if occupied_box is not None:
+            occupied_bounds = dict(minX=occupied_box[0]*resolution,
+                minY=occupied_box[1]*resolution,
+                maxX=(occupied_box[2]+1)*resolution,
+                maxY=(occupied_box[3]+1)*resolution)
+        # Identity includes the whole context, not only the map epoch.
+        identity = hashlib.sha256(raw_json(ctx)).hexdigest()
+        header = dict(schema=SCHEMA, tile_epoch=identity, map_epoch=ctx['map_epoch'],
+            context=ctx, tile_version=version, scan_count=version, cell_count=cell_count,
+            tile_size=64, tiles_reset=True, path=list(path), path_append=False,
+            path_representation='accepted_render_pose_vertices_uniform_thinning',
+            path_vertex_limit=PATH_VERTICES, path_compressions=compressions,
+            storage='ternary_native_evidence_v1', retained_historical_generation=True,
+            latest_scan_source_ns=source_ns, latest_scan_callback_RAW_ns=raw_ns,
+            latest_scan_CDR_sha256=sha, pose=dict(x=pose[0], y=pose[1], yaw=pose[2],stamp=source_ns/1e9),
+            registered_context_transition=transition,
+            grid=dict(width=max_x-min_x+1, height=max_y-min_y+1, resolution=resolution,
+                source_resolution=resolution, origin=dict(x=min_x*resolution, y=min_y*resolution),
+                occupied_bounds=occupied_bounds, encoding='tiles-cells-v1', row_order='min_y_first'), **FALSE_FLAGS)
+        # Fixed eight-tile pages stay well below the existing 262144-byte UDS reply cap.
+        pages = [encoded[i:i+8] for i in range(0, len(encoded), 8)]
+        require(len(pages) <= 64, 'native_tile_page_capacity')
+        generation = hashlib.sha256(raw_json([header, encoded])).hexdigest()
+        payloads = []
+        for index, page in enumerate(pages):
+            value = dict(header, tiles=page, page_index=index, page_count=len(pages),
+                tile_count=len(encoded), generation_id=generation,
+                next_cursor=None if index+1 == len(pages) else f'{generation}:{index+1}')
+            raw = raw_json(value)
+            require(len(raw) <= self.page_bytes, 'native_tile_page_bytes')
+            payloads.append(raw)
+        require(sum(map(len, payloads)) <= GENERATION_BYTES, 'native_tile_generation_bytes')
+        return generation, tuple(payloads), json.loads(raw_json(header))
+
+    def _tiles_from_rows(self, snapshot):
+        """Reference path: complete sorted cell rows, every tile re-encoded."""
         cells = snapshot.get('cells')
         require(type(cells) is tuple and 0 < len(cells) <= MAX_CELLS, 'native_map_cells_capacity')
         tiles, previous, occupied = {}, None, []
@@ -110,53 +203,58 @@ class NativeMapTransport:
             min_x, min_y, max_x, max_y = min(min_x, x), min(min_y, y), max(max_x, x), max(max_y, y)
             if kind == 100:
                 occupied.append((x, y))
-        pose = snapshot.get('historical_laser_pose')
-        require(type(pose) is tuple and len(pose) == 3 and all(type(v) in (int, float) and math.isfinite(v) for v in pose),
-                'native_historical_laser_pose_required')
-        source_ns, raw_ns = snapshot.get('latest_scan_source_ns'), snapshot.get('latest_scan_callback_RAW_ns')
-        sha = snapshot.get('latest_scan_CDR_sha256')
-        require(type(source_ns) is int and 0 <= source_ns < 2**63 and type(raw_ns) is int and 0 <= raw_ns < 2**63 and
-                type(sha) is str and re.fullmatch('[0-9a-f]{64}', sha), 'native_original_stamp_required')
-        transition=snapshot.get('registered_context_transition')
-        require(transition is None or (type(transition) is dict and len(raw_json(transition))<=4096 and
-                transition.get('registered_native_bridge') is True and
-                transition.get('physical_accuracy_verified') is False and transition.get('map_epoch')==ctx['map_epoch']),
-                'native_registered_context_transition_required')
-        occupied_bounds = None
+        box = None
         if occupied:
-            occupied_bounds = dict(minX=min(x for x, y in occupied)*resolution,
-                minY=min(y for x, y in occupied)*resolution,
-                maxX=(max(x for x, y in occupied)+1)*resolution,
-                maxY=(max(y for x, y in occupied)+1)*resolution)
-        # Identity includes the whole context, not only the map epoch.
-        identity = hashlib.sha256(raw_json(ctx)).hexdigest()
-        header = dict(schema=SCHEMA, tile_epoch=identity, map_epoch=ctx['map_epoch'],
-            context=ctx, tile_version=version, scan_count=version, cell_count=len(cells),
-            tile_size=64, tiles_reset=True, path=list(path), path_append=False,
-            path_representation='accepted_render_pose_vertices_uniform_thinning',
-            path_vertex_limit=PATH_VERTICES, path_compressions=compressions,
-            storage='ternary_native_evidence_v1', retained_historical_generation=True,
-            latest_scan_source_ns=source_ns, latest_scan_callback_RAW_ns=raw_ns,
-            latest_scan_CDR_sha256=sha, pose=dict(x=pose[0], y=pose[1], yaw=pose[2],stamp=source_ns/1e9),
-            registered_context_transition=transition,
-            grid=dict(width=max_x-min_x+1, height=max_y-min_y+1, resolution=resolution,
-                source_resolution=resolution, origin=dict(x=min_x*resolution, y=min_y*resolution),
-                occupied_bounds=occupied_bounds, encoding='tiles-cells-v1', row_order='min_y_first'), **FALSE_FLAGS)
+            box = (min(x for x, y in occupied), min(y for x, y in occupied),
+                   max(x for x, y in occupied), max(y for x, y in occupied))
         encoded = [dict(x=x, y=y, **encode_cells(states)) for (x, y), states in sorted(tiles.items())]
-        # Fixed eight-tile pages stay well below the existing 262144-byte UDS reply cap.
-        pages = [encoded[i:i+8] for i in range(0, len(encoded), 8)]
-        require(len(pages) <= 64, 'native_tile_page_capacity')
-        generation = hashlib.sha256(raw_json([header, encoded])).hexdigest()
-        payloads = []
-        for index, page in enumerate(pages):
-            value = dict(header, tiles=page, page_index=index, page_count=len(pages),
-                tile_count=len(encoded), generation_id=generation,
-                next_cursor=None if index+1 == len(pages) else f'{generation}:{index+1}')
-            raw = raw_json(value)
-            require(len(raw) <= self.page_bytes, 'native_tile_page_bytes')
-            payloads.append(raw)
-        require(sum(map(len, payloads)) <= GENERATION_BYTES, 'native_tile_generation_bytes')
-        return generation, tuple(payloads), json.loads(raw_json(header))
+        return encoded, len(cells), (min_x, min_y, max_x, max_y), box
+
+    def _tiles_from_summaries(self, snapshot):
+        """Same complete generation from immutable owner tiles.
+
+        Only tiles whose exact state bytes are new since the previous
+        generation are encoded again; unchanged tiles reuse their encoding.
+        """
+        rows, cell_count = snapshot.get('tiles'), snapshot.get('cell_count')
+        # Same reason order as the rows path: an empty generation is a cell-capacity failure.
+        require(type(cell_count) is int and 0 < cell_count <= MAX_CELLS, 'native_map_cells_capacity')
+        require(type(rows) is tuple and 0 < len(rows) <= self.max_tiles, 'native_tile_capacity')
+        cache, fresh, encoded, previous, counted = self._tile_cache, {}, [], None, 0
+        min_x = min_y = 2**63
+        max_x = max_y = -(2**63)
+        box = None
+        for row in rows:
+            require(type(row) is tuple and len(row) == 6, 'native_tile_summary_required')
+            tx, ty, states, count, bounds, occupied = row
+            require(type(tx) is int and type(ty) is int and abs(tx) <= 2**24 and abs(ty) <= 2**24 and
+                    (previous is None or (tx, ty) > previous), 'native_tile_order_or_value')
+            previous = (tx, ty)
+            require(type(states) is bytes and len(states) == 4096, 'native_tile_states_required')
+            # Facts are a pure function of the exact state bytes: computed and
+            # validated once per distinct tile content, then reused.
+            facts = cache.get(states) or fresh.get(states) or tile_facts(states)
+            fresh[states] = facts
+            value, derived_count, local, local_occupied = facts
+            require(local is not None, 'native_tile_states_required')
+            shift = lambda b: None if b is None else (tx*64 + b[0], ty*64 + b[1], tx*64 + b[2], ty*64 + b[3])
+            derived, derived_occupied = shift(local), shift(local_occupied)
+            # The owner's summary must equal the facts derived from its own states.
+            require(count == derived_count, 'native_tile_states_required')
+            require(bounds == derived, 'native_tile_bounds_required')
+            require(occupied == derived_occupied, 'native_tile_occupied_bounds_required')
+            require(all(abs(v) <= 2**30 for v in derived), 'native_cell_order_or_value')
+            counted += count
+            min_x, min_y = min(min_x, derived[0]), min(min_y, derived[1])
+            max_x, max_y = max(max_x, derived[2]), max(max_y, derived[3])
+            if derived_occupied is not None:
+                box = derived_occupied if box is None else (
+                    min(box[0], derived_occupied[0]), min(box[1], derived_occupied[1]),
+                    max(box[2], derived_occupied[2]), max(box[3], derived_occupied[3]))
+            encoded.append(dict(x=tx, y=ty, **value))
+        require(counted == cell_count, 'native_tile_cell_count_mismatch')
+        self._tile_cache = fresh
+        return encoded, cell_count, (min_x, min_y, max_x, max_y), box
 
     def _expire_and_trim(self):
         now = self._clock()

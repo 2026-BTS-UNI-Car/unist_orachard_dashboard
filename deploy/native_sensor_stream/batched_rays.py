@@ -57,8 +57,22 @@ def _keys(codes):
     return result
 
 
+def _decode(codes):
+    x=(codes>>np.uint64(32)).astype(np.uint32).view(np.int32).astype(np.int64)
+    y=(codes&np.uint64(0xffffffff)).astype(np.uint32).view(np.int32).astype(np.int64)
+    return np.column_stack([x,y])
+
+
 def raster_rays(frame,pose,*,resolution_m,max_cells,max_ray_visits,cancelled=None,
                 batch_visits=MAX_BATCH_VISITS):
+    """Return exact (free,hits) grid sets; see raster_ray_cells."""
+    free,hits=raster_ray_cells(frame,pose,resolution_m=resolution_m,max_cells=max_cells,
+        max_ray_visits=max_ray_visits,cancelled=cancelled,batch_visits=batch_visits)
+    return set(map(tuple,free.tolist())),set(map(tuple,hits.tolist()))
+
+
+def raster_ray_cells(frame,pose,*,resolution_m,max_cells,max_ray_visits,cancelled=None,
+                     batch_visits=MAX_BATCH_VISITS):
     """Return exact (free,hits) grid sets for every valid original beam.
 
     max_ray_visits counts major+1 per valid beam exactly as the Python oracle.
@@ -81,8 +95,11 @@ def raster_rays(frame,pose,*,resolution_m,max_cells,max_ray_visits,cancelled=Non
     # packing domain use the unchanged Python arithmetic instead of wrapping.
     pad=math.ceil(frame.range_max/r)+1
     if min(ox,oy)-pad<_I32_MIN or max(ox,oy)+pad>_I32_MAX:
-        return _scalar_rays(frame,pose,r,max_cells,max_ray_visits,cancelled)
-    hits=set();seen=set();endpoints=set();visits=0;batch=[];batch_size=0
+        free,hits=_scalar_rays(frame,pose,r,max_cells,max_ray_visits,cancelled)
+        return (np.array(sorted(free),dtype=np.int64).reshape(-1,2),
+                np.array(sorted(hits),dtype=np.int64).reshape(-1,2))
+    empty=np.zeros(0,dtype=np.uint64)
+    state=dict(seen=empty,hits=empty);endpoints=set();visits=0;batch=[];batch_size=0
     def render(rows):
         _cancel(cancelled)
         if not rows:return
@@ -100,11 +117,13 @@ def raster_rays(frame,pose,*,resolution_m,max_cells,max_ray_visits,cancelled=Non
         x=ox+data[ids,2]*np.where(dx>=dy,n,m)
         y=oy+data[ids,3]*np.where(dx>=dy,m,n)
         codes=(x.astype(np.uint64)<<np.uint64(32))|(y.astype(np.uint64)&np.uint64(0xffffffff))
-        unique=set(int(v) for v in np.unique(codes))
-        if len(seen)+len(unique-seen)>max_cells:raise RayCapacityReached()
-        seen.update(unique)
+        # Sorted unique code arrays replace the Python sets; the cumulative
+        # capacity test still runs after every batch, exactly as before.
+        seen=np.union1d(state['seen'],codes)
+        if len(seen)>max_cells:raise RayCapacityReached()
+        state['seen']=seen
         hit=n==major
-        hits.update(int(v) for v in np.unique(codes[hit]))
+        state['hits']=np.union1d(state['hits'],codes[hit])
         _cancel(cancelled)
     for i,d in enumerate(frame.ranges):
         if not math.isfinite(d) or not max(.05,frame.range_min)<=d<frame.range_max:continue
@@ -129,5 +148,6 @@ def raster_rays(frame,pose,*,resolution_m,max_cells,max_ray_visits,cancelled=Non
             if batch_size==batch_visits:
                 render(batch);batch=[];batch_size=0
     render(batch);_cancel(cancelled)
-    answer=(_keys(seen-hits),_keys(hits));_cancel(cancelled)
+    hits=state['hits']
+    answer=(_decode(np.setdiff1d(state['seen'],hits,assume_unique=True)),_decode(hits));_cancel(cancelled)
     return answer

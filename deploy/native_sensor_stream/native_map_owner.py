@@ -4,6 +4,7 @@ The injected acceptance/bridge validators are trusted adapter boundaries, not
 implemented native admission. Descriptor fields cannot certify sensor custody.
 No IO, threads, clocks, localization solver or source timestamp is created here.
 """
+from collections.abc import Mapping
 from dataclasses import dataclass, replace, fields
 import hashlib
 import json
@@ -104,13 +105,199 @@ class _Cell:
     lineage: tuple = ()
 
 
+def _frozen(array):
+    array.setflags(write=False)
+    return array
+
+
+@dataclass(frozen=True)
+class _Tile:
+    """One immutable 64x64 block of retained evidence (copy-on-write).
+
+    Index (y%64)*64+x%64. states: 0 unknown, 1 free, 2 occupied (the tile
+    transport's ternary display value). lineage indexes the owning view's
+    context table. Bounds are inclusive cell coordinates.
+    """
+    states: np.ndarray
+    source_ns: np.ndarray
+    receipt_ns: np.ndarray
+    lineage: np.ndarray
+    count: int
+    bounds: tuple
+    occupied: tuple | None
+    states_bytes: bytes
+
+
+def _empty_tile():
+    return (np.zeros(4096, np.uint8), np.zeros(4096, np.int64), np.zeros(4096, np.int64),
+            np.full(4096, -1, np.int16), None, None)
+
+
+class _TiledCells(Mapping):
+    """Read-only (x,y)->_Cell view over immutable tiles; unchanged tiles are shared."""
+    __slots__ = ('tiles', 'lineages', '_count')
+
+    def __init__(self, tiles=None, count=0, lineages=()):
+        self.tiles = MappingProxyType({} if tiles is None else tiles)
+        self.lineages = lineages
+        self._count = count
+
+    def _cell(self, tile, index):
+        return _Cell(0 if tile.states[index] == 1 else 100, int(tile.source_ns[index]),
+                     int(tile.receipt_ns[index]), self.lineages[tile.lineage[index]])
+
+    def get(self, key, default=None):
+        tile = self.tiles.get((key[0] >> 6, key[1] >> 6))
+        index = (key[1] & 63) * 64 + (key[0] & 63)
+        if tile is None or not tile.states[index]:
+            return default
+        return self._cell(tile, index)
+
+    def __getitem__(self, key):
+        value = self.get(key)
+        if value is None:
+            raise KeyError(key)
+        return value
+
+    def __contains__(self, key):
+        tile = self.tiles.get((key[0] >> 6, key[1] >> 6))
+        return tile is not None and bool(tile.states[(key[1] & 63) * 64 + (key[0] & 63)])
+
+    def __len__(self):
+        return self._count
+
+    def _tile_items(self, tx, ty, tile):
+        for index in np.flatnonzero(tile.states).tolist():
+            yield (tx * 64 + index % 64, ty * 64 + index // 64), self._cell(tile, index)
+
+    def __iter__(self):
+        for key, _ in self.items():
+            yield key
+
+    def items(self):
+        for (tx, ty), tile in self.tiles.items():
+            yield from self._tile_items(tx, ty, tile)
+
+    def window_items(self, gx, gy, n):
+        """Cells of the tiles overlapping [gx,gx+n)x[gy,gy+n); callers still bound-check."""
+        for tx in range(gx >> 6, ((gx + n - 1) >> 6) + 1):
+            for ty in range(gy >> 6, ((gy + n - 1) >> 6) + 1):
+                tile = self.tiles.get((tx, ty))
+                if tile is not None:
+                    yield from self._tile_items(tx, ty, tile)
+
+    def proposal_window(self, gx, gy, n, lineage, source_now_ns, receipt_now_ns):
+        """Exact vectorized form of the per-cell proposal raster loop."""
+        array = np.full((n, n), -1, dtype=np.int8)
+        oldest = None
+        if lineage not in self.lineages:
+            return array, oldest
+        lid = self.lineages.index(lineage)
+        local = np.arange(4096)
+        for tx in range(gx >> 6, ((gx + n - 1) >> 6) + 1):
+            for ty in range(gy >> 6, ((gy + n - 1) >> 6) + 1):
+                tile = self.tiles.get((tx, ty))
+                if tile is None:
+                    continue
+                x, y = tx * 64 + local % 64, ty * 64 + local // 64
+                age_s, age_r = source_now_ns - tile.source_ns, receipt_now_ns - tile.receipt_ns
+                keep = ((tile.states != 0) & (tile.lineage == lid) & (x >= gx) & (x < gx + n) & (y >= gy) & (y < gy + n) &
+                        (age_s >= 0) & (age_s < SOURCE_AGE_NS) & (age_r >= 0) & (age_r < RAW_AGE_NS))
+                if keep.any():
+                    array[y[keep] - gy, x[keep] - gx] = np.where(tile.states[keep] == 1, 0, 100)
+                    low = int(tile.source_ns[keep].min())
+                    oldest = low if oldest is None else min(oldest, low)
+        return array, oldest
+
+    def with_evidence(self, free_xy, hit_xy, source_ns, receipt_ns, lineage):
+        """New view after one scan: free never overwrites occupied; hits always win.
+
+        free_xy and hit_xy are disjoint unique integer cell arrays. Returns the
+        view and the number of newly observed cells. Only touched tiles copy.
+        """
+        lineages = self.lineages
+        if lineage not in lineages:
+            lineages = lineages + (lineage,)
+        lid = lineages.index(lineage)
+        xy = np.concatenate([np.asarray(free_xy, np.int64).reshape(-1, 2), np.asarray(hit_xy, np.int64).reshape(-1, 2)])
+        hit = np.zeros(len(xy), bool)
+        hit[len(xy) - len(hit_xy):] = True
+        tiles = dict(self.tiles)
+        added = 0
+        if len(xy):
+            tx, ty = xy[:, 0] >> 6, xy[:, 1] >> 6
+            order = np.lexsort((ty, tx))
+            xy, hit, tx, ty = xy[order], hit[order], tx[order], ty[order]
+            index = (xy[:, 1] & 63) * 64 + (xy[:, 0] & 63)
+            change = np.flatnonzero((np.diff(tx) != 0) | (np.diff(ty) != 0)) + 1
+            for a, b in zip(np.concatenate([[0], change]).tolist(), np.concatenate([change, [len(xy)]]).tolist()):
+                key = (int(tx[a]), int(ty[a]))
+                old = tiles.get(key)
+                if old is None:
+                    states, source, receipt, owner, bounds, occupied = _empty_tile()
+                else:
+                    states, source, receipt, owner = (old.states.copy(), old.source_ns.copy(),
+                                                      old.receipt_ns.copy(), old.lineage.copy())
+                    bounds, occupied = old.bounds, old.occupied
+                gi, gh, gxy = index[a:b], hit[a:b], xy[a:b]
+                free_i = gi[~gh]
+                free_i = free_i[states[free_i] != 2]
+                hit_i = gi[gh]
+                added += int(np.count_nonzero(states[free_i] == 0) + np.count_nonzero(states[hit_i] == 0))
+                states[free_i] = 1
+                states[hit_i] = 2
+                for target in (free_i, hit_i):
+                    source[target] = source_ns
+                    receipt[target] = receipt_ns
+                    owner[target] = lid
+                lo, hi = gxy.min(axis=0).tolist(), gxy.max(axis=0).tolist()
+                bounds = ((lo[0], lo[1], hi[0], hi[1]) if bounds is None else
+                          (min(bounds[0], lo[0]), min(bounds[1], lo[1]), max(bounds[2], hi[0]), max(bounds[3], hi[1])))
+                if gh.any():
+                    hxy = gxy[gh]
+                    lo, hi = hxy.min(axis=0).tolist(), hxy.max(axis=0).tolist()
+                    occupied = ((lo[0], lo[1], hi[0], hi[1]) if occupied is None else
+                                (min(occupied[0], lo[0]), min(occupied[1], lo[1]),
+                                 max(occupied[2], hi[0]), max(occupied[3], hi[1])))
+                tiles[key] = _Tile(_frozen(states), _frozen(source), _frozen(receipt), _frozen(owner),
+                                   int(np.count_nonzero(states)), bounds, occupied, states.tobytes())
+        return _TiledCells(tiles, self._count + added, lineages), added
+
+    def tile_rows(self):
+        """Sorted (tx,ty,states,count,bounds,occupied) for the tile transport."""
+        return tuple((tx, ty, t.states_bytes, t.count, t.bounds, t.occupied)
+                     for (tx, ty), t in sorted(self.tiles.items()))
+
+    def rows(self):
+        """Complete (x,y,kind,source_ns,receipt_ns) rows in (x,y) order."""
+        parts = []
+        for (tx, ty), tile in self.tiles.items():
+            index = np.flatnonzero(tile.states)
+            parts.append(np.column_stack([tx * 64 + index % 64, ty * 64 + index // 64,
+                                          np.where(tile.states[index] == 1, 0, 100),
+                                          tile.source_ns[index], tile.receipt_ns[index]]))
+        if not parts:
+            return ()
+        table = np.concatenate(parts)
+        table = table[np.lexsort((table[:, 1], table[:, 0]))]
+        return tuple(tuple(row) for row in table.tolist())
+
+
 @dataclass(frozen=True)
 class _State:
     cells: object
     pose: tuple | None = None
     frame: AcceptedNativeFrame | None = None
     version: int = 0
-    cell_rows: tuple = ()
+
+    @property
+    def cell_rows(self):
+        # Complete sorted rows, built only when a caller asks for them.
+        rows = self.__dict__.get('_rows')
+        if rows is None:
+            rows = self.cells.rows()
+            self.__dict__['_rows'] = rows
+        return rows
 
 
 class _MapCapacityReached(Exception):
@@ -156,7 +343,7 @@ class NativeAcceptedMapOwner:
         self._resolution=float(resolution_m);self._capacity=max_cells;self._width=local_width_cells;self._visits=max_ray_visits
         self._lock=threading.RLock();self._publication_lock=threading.Lock();self._stop=threading.Event()
         self._active=False;self._serial=0;self._context=None
-        self._state=_State(MappingProxyType({}));self._pending=None;self._continuous=False;self._reason='default_off'
+        self._state=_State(_TiledCells());self._pending=None;self._continuous=False;self._reason='default_off'
 
     def start(self, ctx, *, explicit=False):
         ctx=context(ctx)
@@ -204,28 +391,34 @@ class NativeAcceptedMapOwner:
             require(explicit is True and not self._active and self._stop.is_set(),
                     'explicit_stopped_new_map_required')
             self._serial+=1;self._context=ctx;self._pending=None
-            self._state=_State(MappingProxyType({}));self._continuous=False
+            self._state=_State(_TiledCells());self._continuous=False
             self._transition=None;self._reason='explicit_new_map'
             return self.status()
 
     def historical_cells(self):
         with self._lock:
-            return self._state.cell_rows
+            s=self._state
+        # The state is immutable; its rows are built outside the owner lock.
+        return s.cell_rows
 
-    def display_snapshot(self):
+    def display_snapshot(self, *, tiles=False):
         """One complete historical generation; no clock read/live eligibility.
 
         Ternary evidence is not a probability/log-odds grid. An external tile
         transport must preserve that meaning and bound its own serialization.
+        tiles=True hands over the immutable tile summaries instead of sorted
+        cell rows; the transport encodes the same complete generation.
         """
         with self._lock:
-            s=self._state;f=s.frame
-            return dict(schema='ubts.native.laser_local.complete_display.v1',
+            s=self._state;f=s.frame;owner_context=self._context;transition=self._transition
+        # One immutable generation; serialization work runs outside the owner lock.
+        body=dict(tiles=s.cells.tile_rows(),cell_count=len(s.cells)) if tiles else dict(cells=s.cell_rows)
+        return dict(schema='ubts.native.laser_local.complete_display.v1',
                 map_version=s.version,resolution_m=self._resolution,
-                context=dict(zip(CONTEXT,f.context if f else self._context)) if self._context else None,
-                registered_context_transition=self._transition,
+                context=dict(zip(CONTEXT,f.context if f else owner_context)) if owner_context else None,
+                registered_context_transition=transition,
                 historical_laser_pose=s.pose,
-                cells=s.cell_rows,
+                **body,
                 latest_scan_source_ns=f.scan_stamps_ns[1] if f else None,
                 latest_scan_callback_RAW_ns=f.scan_receipts_ns[1] if f else None,
                 latest_scan_CDR_sha256=f.scan_cdr_sha256[1] if f else None,
@@ -294,6 +487,12 @@ class NativeAcceptedMapOwner:
         free.difference_update(hits)
         return free,hits
 
+    def _ray_cells(self, f, pose):
+        """The same free/hit cells as integer arrays for the tile update."""
+        free,hits=self._rays(f,pose)
+        return (np.array(sorted(free),dtype=np.int64).reshape(-1,2),
+                np.array(sorted(hits),dtype=np.int64).reshape(-1,2))
+
     def _bridge(self, b, f, state):
         require(type(b) in (RegisteredNativeBridge,AcceptedContiguousNativeChain) and callable(self._bridge_validator), 'independent_registered_native_bridge_required')
         if type(b) is AcceptedContiguousNativeChain:
@@ -350,16 +549,12 @@ class NativeAcceptedMapOwner:
                     self.invalidate_gap('native_pair_discontinuity');return None
                 require(registered_bridge is None,'unsolicited_bridge_rejected')
                 pose=self._compose(base.pose,frame.current_to_previous)
-            try:free,hits=self._rays(frame,pose)
+            try:free,hits=self._ray_cells(frame,pose)
             except _MapCapacityReached:
                 self.invalidate_gap('native_map_capacity');return None
-            cells=dict(base.cells)
-            new=_Cell(0,frame.scan_stamps_ns[1],frame.scan_receipts_ns[1],frame.context)
-            for key in free:
-                # A later free ray does not renew or erase an old occupied claim.
-                if key not in cells or cells[key].kind==0:cells[key]=new
-            new=_Cell(100,frame.scan_stamps_ns[1],frame.scan_receipts_ns[1],frame.context)
-            for key in hits:cells[key]=new
+            # A later free ray does not renew or erase an old occupied claim.
+            cells,_added=base.cells.with_evidence(free,hits,frame.scan_stamps_ns[1],
+                                                  frame.scan_receipts_ns[1],frame.context)
             if len(cells)>self._capacity:self.invalidate_gap('native_map_capacity');return None
             require(digest(frame)==stamp and self._validator(frame) is True,'native_frame_changed_during_map_prepare')
             with self._lock:
@@ -367,8 +562,7 @@ class NativeAcceptedMapOwner:
                 if registered_bridge is not None:self._bridge(registered_bridge,frame,base)
             bstamp=hashlib.sha256(repr(registered_bridge).encode()).digest() if registered_bridge is not None else None
             require(base.version < MAX_NS,'native_map_version_exhausted')
-            rows=tuple((x,y,c.kind,c.source_ns,c.receipt_ns) for (x,y),c in sorted(cells.items()))
-            next_state=_State(MappingProxyType(cells),pose,replace(frame),base.version+1,rows)
+            next_state=_State(cells,pose,replace(frame),base.version+1)
             nonce=object();ticket=_Ticket(self,serial,nonce)
             prepared=_Prepared(ticket,nonce,serial,base,frame,stamp,registered_bridge,bstamp,next_state)
             with self._lock:
@@ -414,12 +608,9 @@ class NativeAcceptedMapOwner:
             if f.context!=self._context:return None
             n=self._width;r=self._resolution
             gx=math.floor(s.pose[0]/r)-n//2;gy=math.floor(s.pose[1]/r)-n//2
-            array=np.full((n,n),-1,dtype=np.int8);source_floor=[]
-            for (x,y),cell in s.cells.items():
-                if cell.lineage==f.context and gx<=x<gx+n and gy<=y<gy+n and 0<=source_now_ns-cell.source_ns<SOURCE_AGE_NS and 0<=receipt_now_ns-cell.receipt_ns<RAW_AGE_NS:
-                    array[y-gy,x-gx]=cell.kind;source_floor.append(cell.source_ns)
+            array,low=s.cells.proposal_window(gx,gy,n,f.context,source_now_ns,receipt_now_ns)
             # A floor for known cells only. Empty grid stays UNKNOWN; no observation is invented.
-            oldest=min(source_floor) if source_floor else f.scan_stamps_ns[1]
+            oldest=low if low is not None else f.scan_stamps_ns[1]
             frozen=np.frombuffer(array.tobytes(),dtype=np.int8).reshape(array.shape)
             ctx=dict(zip(CONTEXT,self._context))
             pose=dict(x_m=s.pose[0],y_m=s.pose[1],yaw_rad=s.pose[2],sequence=f.sequence,

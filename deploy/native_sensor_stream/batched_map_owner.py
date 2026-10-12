@@ -1,6 +1,7 @@
 """Default-OFF display wrapper; native admission/clock/math remain in oracle."""
 from native_map_owner import NativeAcceptedMapOwner, _MapCapacityReached, require
-from batched_rays import raster_rays, RayCapacityReached, RayRasterCancelled
+from batched_rays import raster_rays, raster_ray_cells, RayCapacityReached, RayRasterCancelled
+import numpy as np
 
 class BatchedNativeAcceptedMapOwner(NativeAcceptedMapOwner):
     def __init__(self,*,batched_rays_enabled=False,**kwargs):
@@ -19,3 +20,11 @@ class BatchedNativeAcceptedMapOwner(NativeAcceptedMapOwner):
             # No partial raster escapes. Original prepare/commit publication
             # fences still observe the already-latched Stop and return None.
             return set(),set()
+    def _ray_cells(self,frame,pose):
+        if not self.__batched_rays_enabled:return super()._ray_cells(frame,pose)
+        try:
+            return raster_ray_cells(frame,pose,resolution_m=self._resolution,
+                max_cells=self._capacity,max_ray_visits=self._visits,cancelled=self._stop.is_set)
+        except RayCapacityReached:raise _MapCapacityReached() from None
+        except RayRasterCancelled:
+            return np.zeros((0,2),dtype=np.int64),np.zeros((0,2),dtype=np.int64)
