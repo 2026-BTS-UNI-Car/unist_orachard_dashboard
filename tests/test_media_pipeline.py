@@ -92,7 +92,11 @@ class NativePipelineTest(unittest.TestCase):
                 manifest = json.loads((archive / 'adaptive_video/adaptive_video.json').read_text())
                 self.assertEqual(manifest['source_topic'], topic)
                 self.assertEqual((manifest['source_width'], manifest['source_height']), (1920, 1080))
-                self.assertEqual(manifest['frame_timing'], 'recorded_camera_receipt_VFR')
+                # Header stamps here equal the receipts and are >=1 ms apart.
+                self.assertEqual(manifest['frame_timing'], 'recorded_camera_header_stamp_VFR')
+                self.assertEqual((manifest['vfr_input']['pts_source'], manifest['vfr_input']['pts_adjusted_frames']),
+                                 ('header_stamp', 0))
+                self.assertEqual(manifest['rotation_deg'], 180)
                 self.assertEqual(manifest['vfr_input']['kind'],'pyav_mjpeg_matroska')
                 self.assertTrue(manifest['vfr_input']['source_jpeg_bytes_preserved'])
                 self.assertEqual(manifest['source_frames'], len(intervals))

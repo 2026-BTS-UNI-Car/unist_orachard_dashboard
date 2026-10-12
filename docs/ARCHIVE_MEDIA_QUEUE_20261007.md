@@ -46,6 +46,21 @@ are retained. The source-sized MP4 uses CRF 18 and is the top HLS representation
 720/480/360/240 representations are added only when the source is large enough.
 No resolution/FPS upscaling or constant 30 FPS conversion is performed. A 1080
 source therefore remains 1080; a 720 source cannot become native 1080.
+Driver MJPEG passthrough frames are stored in sensor orientation and declare
+`rotation=180` in the message format; the export records `rotation_deg` and
+the build applies `hflip,vflip`. Older frames without that flag are upright.
+In a passthrough session the decoded fallback re-encode (`reencoded_bgr_q90`)
+keeps the same sensor orientation and rotation tag, so a payload switch inside
+one recording is exported as one recording (`camera_payload=mixed`, per-kind
+`camera_payload_frames`, `camera_payload_segments`); a real rotation or size
+change is still rejected (`camera_mode_changed_inside_recording`).
+`original_camera_codec_preserved` is true only when every frame is original
+camera JPEG. Presentation timestamps use the message header (capture) stamps
+when they increase by at least 1 ms and agree with the bag receipts within 1 s
+(`frame_timing=recorded_camera_header_stamp_VFR`), else the receipts; receipts
+that fall in the same millisecond are moved to the next millisecond and counted
+(`pts_adjusted_frames`) instead of failing the whole recording. Frames are never
+added or dropped, and receipts remain the timeline alignment clock.
 
 ## Control contract
 

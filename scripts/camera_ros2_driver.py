@@ -11,15 +11,19 @@ import re
 import subprocess
 import sys
 import time
+from functools import cached_property
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path: sys.path.insert(0, str(ROOT))
 
 import cv2
+import numpy as np
 import rclpy
 from scripts.camera_cadence import CameraCadence
+from scripts.camera_mjpeg import (PREVIEW_DECODE_REDUCTIONS, JpegFrame, StageCounters, decoded_image, jpeg_frame,
+                                  one_row_uint8, original_jpeg_format, preview_reduction, reencoded_jpeg_format)
 from scripts.camera_preview_worker import LatestCameraWorker
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -38,6 +42,58 @@ DEFAULT_VIEW_MODES = [
     {"resolution": "1280x1024", "width": 1280, "height": 1024, "fps": [30], "label": "1024p 5:4"},
 ]
 DEFAULT_MODE_BY_RESOLUTION = {item["resolution"]: item for item in DEFAULT_VIEW_MODES}
+DECODE_FLAGS = {1: cv2.IMREAD_COLOR, 2: cv2.IMREAD_REDUCED_COLOR_2, 4: cv2.IMREAD_REDUCED_COLOR_4}
+USB_DEVICE_CACHE_S = 10.0
+# Passthrough -> decoded fallback is a session decision driven only by evidence
+# that the backend cannot pass JPEG through: an open whose buffer is not one
+# uint8 row or whose reads never carry SOI, a streaming reopen caused mostly by
+# invalid passthrough buffers, or a run of opens that deliver buffers but never
+# a valid frame. Read failures and truncated/padded JPEGs alone are not such
+# evidence. A sustained run of valid frames clears it. An engaged fallback is
+# retried on a later reopen after PASSTHROUGH_FALLBACK_RETRY_S, and at once on
+# any camera settings-file write. Fallback keeps the passthrough orientation
+# contract, so a switch inside a recording changes payload provenance only.
+PASSTHROUGH_FALLBACK_AFTER = 3
+PASSTHROUGH_VALID_RUN_RESET = 60
+PASSTHROUGH_INVALID_OPENS_PER_EVIDENCE = 5
+PASSTHROUGH_FALLBACK_RETRY_S = 300.0
+PASSTHROUGH_PALETTES = frozenset({"MJPG", "JPEG"})  # OpenCV returns these unconverted as one row.
+OPEN_JPEG_READS = 3
+READ_FAILURES_BEFORE_REOPEN = 5
+# Passthrough acquisition is paced by the blocking V4L2 read, not by cadence
+# slots. A buffer whose driver timestamp is older than this many frame periods
+# was queued, so the same tick reads again and drains the backlog.
+PASSTHROUGH_MAX_READS_PER_TICK = 4  # OpenCV's V4L2 buffer count.
+PASSTHROUGH_BACKLOG_AGE_PERIODS = 1.5
+# CAP_PROP_POS_MSEC is the dequeued buffer's timestamp (uvcvideo default
+# CLOCK_MONOTONIC). Outside this age window it is not trusted for the stamp.
+V4L2_STAMP_MIN_AGE_S = -0.005
+V4L2_STAMP_MAX_AGE_S = 2.0
+
+
+class OpenProbe(NamedTuple):
+    kind: str  # ok | size_mismatch | unsupported | invalid | read_failed
+    jpeg: Any = None
+    stamp: Any = None
+    reason: Any = None
+
+
+class CaptureStamp(NamedTuple):
+    msg: Any
+    source: str  # v4l2_buffer_monotonic | read_completion
+    age_s: Any  # Buffer age when read (s), None without a trusted timestamp.
+
+
+def fourcc_text(value: Any) -> str | None:
+    """Printable FOURCC of an OpenCV CAP_PROP_FOURCC value, else None."""
+    try:
+        code = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not 0 < code < 1 << 32:
+        return None
+    text = bytes((code >> shift) & 0xFF for shift in (0, 8, 16, 24))
+    return text.decode("ascii") if all(32 <= byte < 127 for byte in text) else None
 
 
 def log(event: str, **fields: Any) -> None:
@@ -272,6 +328,23 @@ def estimate_camera_info(width: int, height: int, frame_id: str, fov_deg: float 
 
 
 class UsbCameraDriver(Node):
+    # Capture-path defaults until an open decides; a capture without
+    # CONVERT_RGB=0 hands every frame to the legacy decoded path unchanged.
+    capture_mode: str | None = "legacy"
+    mode_reason: str | None = None
+    preview_effective: dict[str, Any] | None = None
+    convert_rgb_disabled: bool | None = None
+    fail_invalid = 0  # Invalid passthrough buffers inside the current failure streak.
+    valid_run = 0  # Consecutive valid passthrough frames.
+    passthrough_evidence = 0
+    invalid_open_run = 0
+    passthrough_fallback: dict[str, Any] | None = None
+    last_buffer_ns: int | None = None
+
+    @cached_property
+    def counters(self) -> StageCounters:
+        return StageCounters()
+
     def __init__(self, args):
         super().__init__("ubts_usb_camera_driver")
         self.args = args
@@ -327,6 +400,21 @@ class UsbCameraDriver(Node):
         self.last_wait_log_at = 0.0
         self.last_status_write_at = 0.0
         self.last_publish_at = 0.0
+        self.counters = StageCounters()  # Before any worker thread exists.
+        self.capture_mode = None  # Decided per open: passthrough | fallback | legacy.
+        self.convert_rgb_disabled = None
+        self.passthrough_evidence = 0
+        self.passthrough_evidence_reasons: dict[str, int] = {}
+        self.passthrough_fallback = None
+        self.invalid_open_run = 0
+        self.valid_run = 0
+        self.fail_invalid = 0
+        self.last_invalid_reason: str | None = None
+        self.last_buffer_ns = None
+        self.stamp_sources = {"v4l2_buffer_monotonic": 0, "read_completion": 0}
+        self.last_stamp: dict[str, Any] = {"source": None, "buffer_age_ms": None, "untrusted_reason": None}
+        self.usb_devices_cache: list[dict[str, Any]] | None = None
+        self.usb_devices_cached_at = 0.0
         self.preview_worker = LatestCameraWorker(self.process_preview_frame)
         self.apply_settings_file(force=True)
         self.timer = self.create_timer(1.0 / max(1.0, args.max_tick_fps), self.tick)
@@ -345,20 +433,60 @@ class UsbCameraDriver(Node):
             raw_publish_fps=args.raw_publish_fps,
             compressed_jpeg_quality=args.compressed_jpeg_quality,
             compressed_preview_width=args.compressed_preview_width,
+            mjpeg_passthrough=args.mjpeg_passthrough,
+            preview_decode_reduction=args.preview_decode_reduction,
             auto_usb_recover=args.auto_usb_recover,
             status_file=args.status_file,
             settings_file=args.settings_file,
         )
         self.write_status("start", force=True)
 
-    def state_name(self) -> str:
+    def state_name(self, usb_devices: list[dict[str, Any]] | None = None) -> str:
         if self.cap is not None:
             return "streaming"
-        if usb_video_devices() and not video_nodes():
+        if (usb_video_devices() if usb_devices is None else usb_devices) and not video_nodes():
             return "usb_detected_video_node_missing"
         if video_nodes():
             return "waiting_for_open"
         return "not_found"
+
+    def cached_usb_video_devices(self, force: bool = False) -> list[dict[str, Any]]:
+        # The sysfs walk ran on the capture thread every status write. Forced
+        # writes (open/reopen/recovery/settings transitions) still rescan.
+        now = time.monotonic()
+        if force or self.usb_devices_cache is None or now - self.usb_devices_cached_at >= USB_DEVICE_CACHE_S:
+            self.usb_devices_cache = usb_video_devices()
+            self.usb_devices_cached_at = now
+        return self.usb_devices_cache
+
+    def set_capture_mode(self, mode: str, reason: str | None) -> None:
+        if (mode, reason) != (self.capture_mode, self.mode_reason):
+            log("capture_mode", mode=mode, previous=self.capture_mode, reason=reason, device=self.device or None)
+        self.capture_mode = mode
+        self.mode_reason = reason
+
+    def passthrough_configured(self) -> bool:
+        """The session's recording orientation contract (process flag, never fourcc/mode).
+
+        When configured, /camera/recording/jpeg always carries sensor-orientation
+        pixels with declared rotation (passthrough and decoded fallback alike).
+        When not, the legacy contract (pixels rotated, no tag) is unchanged.
+        """
+        return bool(getattr(getattr(self, "args", None), "mjpeg_passthrough", False))
+
+    def passthrough_requested(self) -> bool:
+        return self.passthrough_configured() and self.request_fourcc == "MJPG"
+
+    def recording_payload(self) -> tuple[str | None, str | None, int | None]:
+        """(payload kind, pixel orientation, declared rotation) of the open capture."""
+        if self.cap is None or self.capture_mode is None:
+            return None, None, None
+        rotation = 180 if self.args.rotate_180 else 0
+        if self.capture_mode == "passthrough":
+            return "original_camera_mjpeg", "sensor_pixels_rotation_declared", rotation
+        if self.capture_mode == "fallback":
+            return f"reencoded_bgr_q{self.native_encoder.quality}", "sensor_pixels_rotation_declared", rotation
+        return "legacy_reencoded_bgr_jpeg", "pixels_rotated_by_driver_untagged", None
 
     def write_status(self, event: str, force: bool = False) -> None:
         now = time.time()
@@ -366,12 +494,15 @@ class UsbCameraDriver(Node):
             return
         self.last_status_write_at = now
         nodes = video_nodes()
-        usb_devices = usb_video_devices()
+        usb_devices = self.cached_usb_video_devices(force)
+        recording_payload, recording_orientation, recording_rotation = self.recording_payload()
+        fallback = self.passthrough_fallback
+        mono = time.monotonic()
         payload = {
             "type": "camera_driver_status",
             "updated_at": now,
             "event": event,
-            "state": self.state_name(),
+            "state": self.state_name(usb_devices),
             "present": bool(nodes),
             "usb_present": bool(usb_devices),
             "opened": self.cap is not None,
@@ -405,6 +536,47 @@ class UsbCameraDriver(Node):
             "compressed_jpeg_quality": self.args.compressed_jpeg_quality,
             "compressed_preview_width": self.args.compressed_preview_width,
             "last_compressed_encode_ms": self.last_compressed_encode_ms,
+            "mode": self.capture_mode,
+            "mjpeg_passthrough": {
+                "requested": self.passthrough_configured(),
+                "eligible": self.passthrough_requested(),
+                # True only while an open capture records original camera JPEG.
+                "active": self.cap is not None and self.capture_mode == "passthrough",
+                "convert_rgb_disabled": self.convert_rgb_disabled,
+                "mode_reason": self.mode_reason,
+                "fallback": None if fallback is None else {
+                    "reason": fallback["reason"],
+                    "engaged_at": fallback["engaged_at"],
+                    "engaged_s": round(mono - fallback["engaged_monotonic"], 1),
+                    "retry_on_reopen_in_s": round(max(0.0, fallback["engaged_monotonic"]
+                                                      + PASSTHROUGH_FALLBACK_RETRY_S - mono), 1),
+                    "clear_by": "camera_settings_file_write_or_reopen_after_retry",
+                },
+                "fallback_evidence_streak": self.passthrough_evidence,
+                "fallback_after": PASSTHROUGH_FALLBACK_AFTER,
+                "fallback_evidence_reasons": dict(self.passthrough_evidence_reasons),
+                "invalid_open_run": self.invalid_open_run,
+                "valid_run": self.valid_run,
+                "valid_run_clears_evidence_after": PASSTHROUGH_VALID_RUN_RESET,
+                "last_invalid_reason": self.last_invalid_reason,
+                "recording_payload": recording_payload,
+                "recording_orientation": recording_orientation,
+                "recording_rotation_deg": recording_rotation,
+            },
+            "preview": {
+                "requested_width": self.args.compressed_preview_width,
+                "decode_reduction_setting": getattr(self.args, "preview_decode_reduction", None),
+                **(self.preview_effective or {"effective_width": None, "effective_height": None, "decode_reduction": None}),
+            },
+            "capture_pacing": None if self.cap is None else (
+                "blocking_read_drain" if self.capture_mode == "passthrough" else "cadence_slots"),
+            "capture_timestamp": {
+                "policy": ("v4l2_buffer_timestamp_to_ros_time_else_read_completion" if self.passthrough_configured()
+                           else "legacy_publish_time"),
+                "sources": dict(self.stamp_sources),
+                **self.last_stamp,
+            },
+            "stage_counters": self.counters.status(),
             "capture_cadence": self.capture_cadence.status(),
             "last_read_ms": self.last_read_ms,
             "last_publish_work_ms": self.last_publish_work_ms,
@@ -448,6 +620,7 @@ class UsbCameraDriver(Node):
             return False
         if not force and self.settings_mtime_ns == stat.st_mtime_ns:
             return False
+        written = not force  # A real write seen by polling, not the startup read.
         self.settings_mtime_ns = stat.st_mtime_ns
         raw = load_json(self.settings_file)
         mode = normalize_mode(
@@ -479,13 +652,84 @@ class UsbCameraDriver(Node):
         self.request_fourcc = str(mode["fourcc"])
         if changed:
             self.capture_cadence = CameraCadence(self.request_fps)
+            self.clear_passthrough_fallback("settings_changed")
             self.last_read_ms = None
             self.last_publish_work_ms = None
             log("settings_changed", **self.current_mode())
             self.close_camera()
             self.next_open_attempt_at = 0.0
             self.write_status("settings_changed", force=True)
-        return changed
+            return True
+        if written and self.clear_passthrough_fallback("settings_file_written") and self.cap is not None \
+                and self.capture_mode == "fallback":
+            # Re-saving unchanged settings is the operator's retry: reopen now
+            # so passthrough is attempted again instead of after the timeout.
+            log("passthrough_retry_reopen", reason="settings_file_written", device=self.device or None)
+            self.close_camera()
+            self.next_open_attempt_at = 0.0
+            self.write_status("settings_written", force=True)
+            return True
+        return False
+
+    def clear_passthrough_fallback(self, reason: str) -> bool:
+        """Drop fallback evidence and any engaged fallback; True when there was some."""
+        had = bool(self.passthrough_fallback is not None or self.passthrough_evidence or self.invalid_open_run)
+        if self.passthrough_fallback is not None:
+            log("passthrough_fallback_cleared", reason=reason, fallback_reason=self.passthrough_fallback["reason"])
+        self.passthrough_fallback = None
+        self.passthrough_evidence = 0
+        self.invalid_open_run = 0
+        return had
+
+    def expire_passthrough_fallback(self) -> None:
+        """A reopen after the retry interval attempts passthrough again.
+
+        One further piece of evidence re-engages the fallback at once, so a
+        camera that cannot pass JPEG through costs one failed open per retry.
+        """
+        fallback = self.passthrough_fallback
+        if fallback is None or time.monotonic() < fallback["engaged_monotonic"] + PASSTHROUGH_FALLBACK_RETRY_S:
+            return
+        log("passthrough_fallback_retry", reason=fallback["reason"], after_s=PASSTHROUGH_FALLBACK_RETRY_S)
+        self.passthrough_fallback = None
+        self.passthrough_evidence = PASSTHROUGH_FALLBACK_AFTER - 1
+        self.invalid_open_run = 0
+
+    def add_passthrough_evidence(self, reason: str) -> None:
+        self.passthrough_evidence += 1
+        self.passthrough_evidence_reasons[reason] = self.passthrough_evidence_reasons.get(reason, 0) + 1
+        self.valid_run = 0
+        log("passthrough_fallback_evidence", reason=reason, streak=self.passthrough_evidence,
+            fallback_after=PASSTHROUGH_FALLBACK_AFTER)
+        if self.passthrough_evidence >= PASSTHROUGH_FALLBACK_AFTER and self.passthrough_fallback is None:
+            self.passthrough_fallback = {"reason": reason, "engaged_at": time.time(),
+                                         "engaged_monotonic": time.monotonic()}
+            log("passthrough_fallback_engaged", reason=reason, retry_after_s=PASSTHROUGH_FALLBACK_RETRY_S)
+
+    def note_valid_passthrough_frame(self) -> None:
+        self.valid_run += 1
+        if self.valid_run >= PASSTHROUGH_VALID_RUN_RESET and self.passthrough_evidence:
+            log("passthrough_fallback_evidence_cleared", valid_run=self.valid_run, streak=self.passthrough_evidence)
+            self.passthrough_evidence = 0
+
+    def note_failed_passthrough_open(self, path: str, probe: OpenProbe) -> None:
+        self.valid_run = 0
+        if probe.kind == "unsupported":
+            self.add_passthrough_evidence(probe.reason)
+        elif probe.kind == "invalid":
+            # Buffers arrive and carry SOI but never validate: not proof by
+            # itself (USB damage), but a persistent run must not loop forever.
+            self.invalid_open_run += 1
+            if self.invalid_open_run >= PASSTHROUGH_INVALID_OPENS_PER_EVIDENCE:
+                self.invalid_open_run = 0
+                self.add_passthrough_evidence("passthrough_opens_without_valid_frame")
+        log("passthrough_open_frame_rejected", device=path, result=probe.kind, reason=probe.reason,
+            streak=self.passthrough_evidence, invalid_open_run=self.invalid_open_run,
+            fallback_after=PASSTHROUGH_FALLBACK_AFTER)
+
+    def record_invalid(self, reason: str) -> None:
+        self.counters.add("invalid_frames", reason=reason)
+        self.last_invalid_reason = reason
 
     def maybe_recover_usb(self) -> None:
         if not self.args.auto_usb_recover or video_nodes():
@@ -520,6 +764,7 @@ class UsbCameraDriver(Node):
             return False
         self.next_open_attempt_at = now + self.args.open_retry_interval_s
         self.close_camera()
+        self.expire_passthrough_fallback()
         seen: set[str] = set()
         supported_seen: list[dict[str, Any]] = []
         for path in candidate_devices(self.args.device):
@@ -543,15 +788,42 @@ class UsbCameraDriver(Node):
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.request_width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.request_height)
             cap.set(cv2.CAP_PROP_FPS, self.request_fps)
+            attempt, capture_reason = self.passthrough_open_plan(cap)
+            convert_rgb_disabled = None
+            if attempt:
+                # A refused CONVERT_RGB=0 leaves OpenCV converting to BGR; an
+                # accepted one is still proven only by the buffers themselves.
+                convert_rgb_disabled = bool(cap.set(cv2.CAP_PROP_CONVERT_RGB, 0))
+                if not convert_rgb_disabled:
+                    attempt, capture_reason = False, "backend_rejected_convert_rgb_0"
             read_started = time.monotonic()
             ok, frame = cap.read()
             read_completed = time.monotonic()
             if not ok or frame is None:
                 cap.release()
                 continue
+            self.counters.add("device_reads")
+            jpeg = stamp = None
+            if attempt:
+                probe = self.open_jpeg(cap, frame, read_completed)
+                read_completed = time.monotonic()
+                if probe.kind not in ("ok", "size_mismatch"):
+                    self.note_failed_passthrough_open(path, probe)
+                    cap.release()
+                    continue
+                jpeg, stamp = probe.jpeg, probe.stamp
+            elif self.passthrough_configured():
+                stamp = self.capture_stamp(cap, read_completed).msg
+                if not decoded_image(frame):
+                    # Raw planes (e.g. YUYV HxWx2) would make cv2.imencode assert.
+                    self.record_invalid("decoded_frame_not_bgr")
+                    log("decoded_open_frame_rejected", device=path, shape=list(getattr(frame, "shape", ()) or ()))
+                    cap.release()
+                    continue
             self.cap = cap
             self.device = path
             self.fail_count = 0
+            self.fail_invalid = 0
             self.frame_count = 0
             self.raw_frame_count = 0
             self.compressed_frame_count = 0
@@ -564,8 +836,13 @@ class UsbCameraDriver(Node):
             self.capture_cadence.succeeded(read_completed)
             self.last_read_ms = round((read_completed - read_started) * 1000.0, 2)
             self.last_error = None
-            self.actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or frame.shape[1])
-            self.actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or frame.shape[0])
+            if jpeg is not None:
+                # Coded size of the delivered frame (SOF); a (1, N) buffer shape
+                # is not an image size. A requested-size frame was fully decoded.
+                self.actual_width, self.actual_height = jpeg.width, jpeg.height
+            else:
+                self.actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or frame.shape[1])
+                self.actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or frame.shape[0])
             self.actual_fps = round(float(cap.get(cv2.CAP_PROP_FPS) or self.request_fps), 2)
             if self.actual_width != self.request_width or self.actual_height != self.request_height:
                 log(
@@ -581,6 +858,16 @@ class UsbCameraDriver(Node):
                 self.cap = None
                 continue
             self.supported_modes = modes or list_camera_modes(path) or supported_seen
+            self.convert_rgb_disabled = convert_rgb_disabled
+            if jpeg is not None:
+                self.invalid_open_run = 0
+                self.set_capture_mode("passthrough", None)
+                self.counters.add("passthrough_frames")
+                self.note_valid_passthrough_frame()
+            elif self.passthrough_configured():
+                self.set_capture_mode("fallback", capture_reason)
+            else:
+                self.set_capture_mode("legacy", capture_reason)
             log(
                 "opened",
                 device=path,
@@ -588,9 +875,12 @@ class UsbCameraDriver(Node):
                 height=self.actual_height,
                 fps=self.actual_fps,
                 fourcc=self.request_fourcc,
+                mode=self.capture_mode,
+                mode_reason=self.mode_reason,
+                convert_rgb_disabled=convert_rgb_disabled,
                 supported_modes=self.supported_modes,
             )
-            self.publish_frame(frame)
+            self.publish_frame(jpeg if jpeg is not None else frame, stamp)
             self.write_status("opened", force=True)
             return True
         if supported_seen:
@@ -603,6 +893,24 @@ class UsbCameraDriver(Node):
         self.write_status("waiting", force=True)
         return False
 
+    def passthrough_open_plan(self, cap) -> tuple[bool, str | None]:
+        """Whether this open sets CONVERT_RGB=0, else the decoded-capture reason."""
+        if not self.passthrough_configured():
+            return False, "passthrough_disabled"
+        if self.request_fourcc != "MJPG":
+            return False, f"fourcc_{self.request_fourcc}_not_mjpg"
+        if self.passthrough_fallback is not None:
+            return False, "passthrough_fallback_engaged"
+        try:
+            negotiated = fourcc_text(cap.get(cv2.CAP_PROP_FOURCC))
+        except Exception:  # Backend without the property: the buffers decide.
+            negotiated = None
+        if negotiated is not None and negotiated not in PASSTHROUGH_PALETTES:
+            # OpenCV silently picks another palette when MJPG is refused; its
+            # unconverted buffers would be raw planes, not JPEG.
+            return False, f"backend_fourcc_{negotiated}_not_mjpg"
+        return True, None
+
     def close_camera(self):
         self.preview_worker.reset()
         if self.cap is not None:
@@ -612,12 +920,22 @@ class UsbCameraDriver(Node):
         self.actual_width = None
         self.actual_height = None
         self.actual_fps = None
+        # Capture-scoped state: a closed camera reports no mode or payload.
+        # Session fallback state and invalid-reason history are kept.
+        self.capture_mode = None
+        self.mode_reason = None
+        self.convert_rgb_disabled = None
+        self.preview_effective = None
+        self.last_buffer_ns = None
 
     def tick(self):
         if self.apply_settings_file():
             return
         if self.cap is None:
             self.open_camera()
+            return
+        if self.capture_mode == "passthrough":
+            self.tick_passthrough()
             return
         read_started = time.monotonic()
         if not self.capture_cadence.claim(read_started):
@@ -626,42 +944,266 @@ class UsbCameraDriver(Node):
         ok, frame = self.cap.read()
         read_completed = time.monotonic()
         self.last_read_ms = round((read_completed - read_started) * 1000.0, 2)
+        stamp = None
+        if ok and frame is not None:
+            self.counters.add("device_reads")
+            if self.capture_mode == "fallback":
+                # Decoded capture inside a passthrough session: buffer timestamp,
+                # and planes that are not BGR count as failed reads.
+                stamp = self.capture_stamp(self.cap, read_completed).msg
+                if not decoded_image(frame):
+                    self.record_invalid("decoded_frame_not_bgr")
+                    frame = None
         if not ok or frame is None:
-            self.fail_count += 1
-            if self.fail_count >= 5:
-                self.last_error = "Camera read failed repeatedly; rescanning"
-                log("reopen", message=self.last_error)
-                self.close_camera()
-                self.write_status("reopen", force=True)
+            self.capture_failed(invalid=False)
             return
         self.fail_count = 0
+        self.fail_invalid = 0
         self.capture_cadence.succeeded(read_completed)
-        self.publish_frame(frame)
+        if stamp is None:
+            self.publish_frame(frame)
+        else:
+            self.publish_frame(frame, stamp)
         self.write_status("streaming")
 
-    def publish_frame(self, frame):
-        work_started = time.monotonic()
-        if self.args.rotate_180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
+    def tick_passthrough(self):
+        """Read-paced acquisition: each blocking read waits for the next buffer.
+
+        No cadence slot gates the read, so a V4L2 backlog left by a stall is
+        drained (bounded per tick) instead of staying queued; every frame keeps
+        its own driver timestamp, so drained frames keep their real spacing.
+        Nothing is duplicated or synthesized.
+        """
+        backlog_age_s = PASSTHROUGH_BACKLOG_AGE_PERIODS / max(1.0, float(self.request_fps))
+        for _ in range(PASSTHROUGH_MAX_READS_PER_TICK):
+            read_started = time.monotonic()
+            ok, frame = self.cap.read()
+            read_completed = time.monotonic()
+            self.last_read_ms = round((read_completed - read_started) * 1000.0, 2)
+            if not ok or frame is None:
+                self.capture_failed(invalid=False)
+                break
+            self.counters.add("device_reads")
+            stamp = self.capture_stamp(self.cap, read_completed)
+            jpeg = self.accept_frame(frame)
+            if jpeg is None:
+                self.capture_failed(invalid=True)
+                if self.cap is None:
+                    break
+            else:
+                self.fail_count = 0
+                self.fail_invalid = 0
+                self.capture_cadence.succeeded(read_completed)
+                self.note_valid_passthrough_frame()
+                self.publish_frame(jpeg, stamp.msg)
+            if stamp.age_s is None or stamp.age_s <= backlog_age_s:
+                break  # A fresh buffer: the queue is drained.
+        if self.cap is not None:
+            self.write_status("streaming")
+
+    def capture_failed(self, invalid: bool) -> None:
+        self.fail_count += 1
+        self.valid_run = 0
+        if invalid:
+            self.fail_invalid += 1
+        if self.fail_count < READ_FAILURES_BEFORE_REOPEN:
+            return
+        # A reopen driven mostly by invalid passthrough buffers is fallback
+        # evidence; a stalled or unplugged device (read failures) is not.
+        evidence = self.capture_mode == "passthrough" and 2 * self.fail_invalid > self.fail_count
+        self.last_error = "Camera read failed repeatedly; rescanning"
+        log("reopen", message=self.last_error, failures=self.fail_count, invalid_buffers=self.fail_invalid,
+            fallback_evidence=evidence)
+        self.close_camera()
+        if evidence:
+            self.add_passthrough_evidence("passthrough_stream_invalid_buffers")
+        self.write_status("reopen", force=True)
+
+    def capture_stamp(self, cap, read_completed: float) -> CaptureStamp:
+        """ROS header stamp of the buffer just read.
+
+        The V4L2 buffer timestamp (CAP_PROP_POS_MSEC, CLOCK_MONOTONIC by
+        default for uvcvideo) is mapped to ROS time with the offset between
+        the ROS clock and time.monotonic() sampled now. Without a plausible,
+        increasing buffer timestamp the read completion time is used instead.
+        """
+        ros_now = self.get_clock().now()
+        mono_now = time.monotonic()
+        offset_ns = int(ros_now.nanoseconds) - round(mono_now * 1e9)
+        try:
+            pos_ms = float(cap.get(cv2.CAP_PROP_POS_MSEC))
+        except Exception:  # A backend or stand-in without the property.
+            pos_ms = math.nan
+        untrusted = None
+        if not math.isfinite(pos_ms) or pos_ms <= 0:
+            untrusted = "v4l2_timestamp_unavailable"
+        else:
+            buffer_ns = round(pos_ms * 1e6)
+            age_s = mono_now - pos_ms / 1000.0
+            if not V4L2_STAMP_MIN_AGE_S <= age_s <= V4L2_STAMP_MAX_AGE_S:
+                untrusted = "v4l2_timestamp_not_monotonic_clock_or_stale"
+            elif self.last_buffer_ns is not None and buffer_ns <= self.last_buffer_ns:
+                untrusted = "v4l2_timestamp_not_increasing"
+        if untrusted is None:
+            self.last_buffer_ns = buffer_ns
+            stamp_ns, source = buffer_ns + offset_ns, "v4l2_buffer_monotonic"
+        else:
+            stamp_ns, source, age_s = round(read_completed * 1e9) + offset_ns, "read_completion", None
+        self.stamp_sources[source] = self.stamp_sources.get(source, 0) + 1
+        self.last_stamp = {"source": source, "buffer_age_ms": None if age_s is None else round(age_s * 1000.0, 2),
+                           "untrusted_reason": untrusted}
+        msg = ros_now.to_msg()
+        msg.sec, msg.nanosec = divmod(int(stamp_ns), 1_000_000_000)
+        return CaptureStamp(msg, source, age_s)
+
+    def open_jpeg(self, cap, frame, read_completed) -> OpenProbe:
+        """First valid frame of a fresh passthrough stream, within a few reads.
+
+        One full decode proves this camera's JPEG matches its SOF size; later
+        frames are checked from headers only. A stream may begin with a partial
+        buffer, so a bad first buffer is not proof against passthrough. Only a
+        buffer that is not one uint8 row, or no SOI on any read, is.
+        """
+        soi_seen, reason = False, None
+        for attempt in range(OPEN_JPEG_READS):
+            if attempt:
+                ok, frame = cap.read()
+                read_completed = time.monotonic()
+                if not ok or frame is None:
+                    return OpenProbe("read_failed", reason="open_read_failed")
+                self.counters.add("device_reads")
+            stamp = self.capture_stamp(cap, read_completed)
+            if not one_row_uint8(frame):
+                self.record_invalid("passthrough_buffer_not_one_uint8_row")
+                return OpenProbe("unsupported", reason="passthrough_buffer_not_one_uint8_row")
+            soi_seen = soi_seen or frame.reshape(-1)[:2].tobytes() == b"\xff\xd8"
+            try:
+                jpeg = jpeg_frame(frame)
+            except ValueError as error:
+                reason = str(error)
+                self.record_invalid(reason)
+                continue
+            if (jpeg.width, jpeg.height) != (self.request_width, self.request_height):
+                return OpenProbe("size_mismatch", jpeg, stamp.msg)  # Never decode an unexpected size.
+            try:
+                image = cv2.imdecode(np.frombuffer(jpeg.data, np.uint8), cv2.IMREAD_COLOR)
+            except cv2.error:
+                image = None
+            if image is None or image.shape[:2] != (jpeg.height, jpeg.width):
+                reason = "jpeg_open_decode_failed"
+                self.record_invalid(reason)
+                continue
+            self.note_trimmed_fill(jpeg)
+            return OpenProbe("ok", jpeg, stamp.msg)
+        if not soi_seen:
+            return OpenProbe("unsupported", reason="passthrough_open_buffers_without_soi")
+        return OpenProbe("invalid", reason=reason)
+
+    def note_trimmed_fill(self, jpeg) -> None:
+        if jpeg.trimmed_fill:
+            self.counters.add("jpeg_fill_trimmed", jpeg.trimmed_fill)
+
+    def accept_frame(self, frame):
+        """Passthrough buffers are validated before they count as a read."""
+        try:
+            jpeg = jpeg_frame(frame)
+            if (jpeg.width, jpeg.height) != (self.actual_width, self.actual_height):
+                raise ValueError("jpeg_dimensions_changed")
+        except ValueError as error:
+            self.record_invalid(str(error))
+            return None
+        self.note_trimmed_fill(jpeg)
+        self.counters.add("passthrough_frames")
+        return jpeg
+
+    def submit_preview(self, frame, work_started, stamp=None):
         self.last_publish_at = time.monotonic()
-        stamp = self.get_clock().now().to_msg()
-        # VideoCapture.read() provides a new owned array. It is never mutated
-        # after this shared handoff to independent native/preview encoders.
-        frame.flags.writeable = False
+        if stamp is None:
+            stamp = self.get_clock().now().to_msg()  # Legacy: publish time.
         raw_interval = 1.0 / max(0.1, float(self.args.raw_publish_fps))
         raw_due = self.raw_submit_count == 0 or self.last_publish_at - self.last_raw_submitted_at >= raw_interval
+        overwritten = self.preview_worker.overwritten
         generation = self.preview_worker.submit(frame, stamp, raw_due, work_started)
+        if self.preview_worker.overwritten != overwritten:
+            self.counters.add("preview_overwritten")
         if raw_due and generation is not None:
             self.raw_submit_count += 1
             self.last_raw_submitted_at = self.last_publish_at
-        if generation is not None and self.recording_pub.get_subscription_count():
-            self.native_encoder.submit(frame, (stamp, generation))
+        return stamp, generation
+
+    def publish_frame(self, frame, stamp=None):
+        work_started = time.monotonic()
+        if isinstance(frame, JpegFrame):
+            # Original camera bytes: no decode, rotate or re-encode on the
+            # capture thread. Preview/raw decode in the latest-only worker.
+            stamp, generation = self.submit_preview(frame, work_started, stamp)
+            if generation is not None and self.recording_pub.get_subscription_count():
+                self.publish_original(frame, stamp, generation)
+        else:
+            sensor = frame
+            if self.args.rotate_180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
+            # VideoCapture.read() provides a new owned array. It is never mutated
+            # after this shared handoff to independent native/preview encoders.
+            frame.flags.writeable = False
+            stamp, generation = self.submit_preview(frame, work_started, stamp)
+            if generation is not None and self.recording_pub.get_subscription_count():
+                if self.capture_mode == "fallback":
+                    # Passthrough session contract: record the sensor-orientation
+                    # frame and declare the rotation; only preview/raw rotate.
+                    sensor.flags.writeable = False
+                    self.native_encoder.submit(sensor, (stamp, generation, "rotation_declared"))
+                else:
+                    self.native_encoder.submit(frame, (stamp, generation))
         self.frame_count += 1
         self.last_publish_work_ms = round((time.monotonic() - work_started) * 1000.0, 2)
 
+    def publish_original(self, jpeg, stamp, generation):
+        message = CompressedImage()
+        message.header.stamp = stamp
+        message.header.frame_id = self.frame_id
+        message.format = original_jpeg_format(jpeg, self.args.rotate_180)
+        message.data = jpeg.data
+        if self.preview_worker.publish_current(generation, lambda: self.recording_pub.publish(message), 'native'):
+            self.counters.add("recording_published", len(jpeg.data))
+
     def process_preview_frame(self, frame, stamp, raw_due, generation):
+        if isinstance(frame, JpegFrame):
+            return self.process_preview_jpeg(frame, stamp, raw_due, generation)
         if not self.preview_worker.is_current(generation):
             return
+        self.publish_preview_image(frame, stamp, generation, None)
+        # Raw BGR remains available for archive snapshots,
+        # but is deliberately bounded. Live viewing consumes the high-rate
+        # compressed ROS2 topic, avoiding roughly 6 MiB of DDS traffic per
+        # 1080p frame.
+        if raw_due and self.preview_worker.is_current(generation):
+            self.publish_raw_image(frame, stamp, generation)
+
+    def decode_upright(self, data, reduction):
+        image = cv2.imdecode(np.frombuffer(data, np.uint8), DECODE_FLAGS[reduction])
+        if image is None:
+            self.counters.add("jpeg_decode_failed")
+            raise ValueError("camera_jpeg_decode_failed")
+        return cv2.rotate(image, cv2.ROTATE_180) if self.args.rotate_180 else image
+
+    def process_preview_jpeg(self, jpeg, stamp, raw_due, generation):
+        if not self.preview_worker.is_current(generation):
+            return
+        # libjpeg scaled decode serves the preview at a fraction of a full
+        # decode, but never below the requested preview width; only the
+        # decoded image is rotated, resized and re-encoded.
+        requested = max(320, int(self.args.compressed_preview_width))
+        reduction = preview_reduction(getattr(self.args, "preview_decode_reduction", "auto"), jpeg.width, requested)
+        preview = self.decode_upright(jpeg.data, reduction)
+        full = preview if reduction == 1 else None
+        self.counters.add("preview_decoded")
+        self.publish_preview_image(preview, stamp, generation, reduction)
+        if raw_due and self.preview_worker.is_current(generation):
+            # Full decode only at the bounded raw cadence (archive snapshots).
+            self.publish_raw_image(full if full is not None else self.decode_upright(jpeg.data, 1), stamp, generation)
+
+    def publish_preview_image(self, frame, stamp, generation, reduction):
         height, width = frame.shape[:2]
         preview = frame
         preview_width = min(width, max(320, int(self.args.compressed_preview_width)))
@@ -670,6 +1212,9 @@ class UsbCameraDriver(Node):
             preview = cv2.resize(frame, (preview_width, preview_height), interpolation=cv2.INTER_AREA)
         else:
             preview_height = height
+        effective = {"effective_width": preview_width, "effective_height": preview_height,
+                     "decode_reduction": reduction,
+                     "source": "decoded_bgr" if reduction is None else "original_jpeg"}
         encode_started = time.perf_counter()
         ok, encoded = cv2.imencode(
             ".jpg",
@@ -689,39 +1234,47 @@ class UsbCameraDriver(Node):
                 self.compressed_pub.publish(compressed)
                 self.preview_info_pub.publish(preview_info)
                 self.compressed_frame_count += 1
-            self.preview_worker.publish_current(generation, publish_preview)
+                # Under the generation gate: a closed camera's stale frame
+                # cannot re-publish the effective preview size.
+                self.preview_effective = effective
+            if self.preview_worker.publish_current(generation, publish_preview):
+                self.counters.add("preview_published")
 
-        # Raw BGR remains available for archive snapshots,
-        # but is deliberately bounded. Live viewing consumes the high-rate
-        # compressed ROS2 topic, avoiding roughly 6 MiB of DDS traffic per
-        # 1080p frame.
-        if raw_due and self.preview_worker.is_current(generation):
-            image = Image()
-            image.header.stamp = stamp
-            image.header.frame_id = self.frame_id
-            image.height = height
-            image.width = width
-            image.encoding = "bgr8"
-            image.is_bigendian = 0
-            image.step = width * 3
-            image.data = frame.tobytes()
-            info = estimate_camera_info(width, height, self.frame_id, self.args.fov_deg)
-            info.header.stamp = stamp
-            def publish_raw():
-                self.image_pub.publish(image)
-                self.info_pub.publish(info)
-                self.raw_frame_count += 1
-                self.last_raw_publish_at = time.monotonic()
-            self.preview_worker.publish_current(generation, publish_raw, 'raw')
+    def publish_raw_image(self, frame, stamp, generation):
+        height, width = frame.shape[:2]
+        image = Image()
+        image.header.stamp = stamp
+        image.header.frame_id = self.frame_id
+        image.height = height
+        image.width = width
+        image.encoding = "bgr8"
+        image.is_bigendian = 0
+        image.step = width * 3
+        image.data = frame.tobytes()
+        info = estimate_camera_info(width, height, self.frame_id, self.args.fov_deg)
+        info.header.stamp = stamp
+        def publish_raw():
+            self.image_pub.publish(image)
+            self.info_pub.publish(info)
+            self.raw_frame_count += 1
+            self.last_raw_publish_at = time.monotonic()
+        if self.preview_worker.publish_current(generation, publish_raw, 'raw'):
+            self.counters.add("raw_published")
 
     def publish_native(self, data, envelope, width, height):
-        stamp, generation = envelope
+        stamp, generation = envelope[:2]
         message = CompressedImage()
         message.header.stamp = stamp
         message.header.frame_id = self.frame_id
-        message.format = f"bgr8; jpeg compressed bgr8; width={width}; height={height}"
+        if len(envelope) > 2:  # Decoded fallback in a passthrough session.
+            message.format = reencoded_jpeg_format(self.native_encoder.quality, self.args.rotate_180, width, height)
+        else:  # Legacy contract, unchanged: pixels already rotated, no tag.
+            message.format = f"bgr8; jpeg compressed bgr8; width={width}; height={height}"
         message.data = data
-        return self.preview_worker.publish_current(generation, lambda: self.recording_pub.publish(message), 'native')
+        accepted = self.preview_worker.publish_current(generation, lambda: self.recording_pub.publish(message), 'native')
+        if accepted:
+            self.counters.add("recording_published", len(data))
+        return accepted
 
     def destroy_node(self):
         self.preview_worker.close()
@@ -764,6 +1317,19 @@ def main() -> int:
         type=int,
         default=int(os.environ.get("CAMERA_COMPRESSED_PREVIEW_WIDTH", "1280")),
     )
+    parser.add_argument(
+        "--mjpeg-passthrough",
+        default=parse_bool(os.environ.get("CAMERA_MJPEG_PASSTHROUGH", "1"), True),
+        action=argparse.BooleanOptionalAction,
+        help="MJPG capture: record the camera's original JPEG bytes (CAP_PROP_CONVERT_RGB=0); falls back to decoded "
+             "capture with the same sensor-orientation + declared-rotation recording contract",
+    )
+    parser.add_argument(
+        "--preview-decode-reduction",
+        default=os.environ.get("CAMERA_PREVIEW_DECODE_REDUCTION", "auto"),
+        help="Passthrough preview JPEG scaled decode: auto|1|2|4 (auto = largest reduction whose width still "
+             "covers --compressed-preview-width; a 1920 source with a 1280 preview decodes full size)",
+    )
     parser.add_argument("--status-interval-s", type=float, default=float(os.environ.get("CAMERA_DRIVER_STATUS_INTERVAL_S", "0.5")))
     parser.add_argument("--open-retry-interval-s", type=float, default=float(os.environ.get("CAMERA_OPEN_RETRY_INTERVAL_S", "1.0")))
     parser.add_argument("--wait-log-interval-s", type=float, default=float(os.environ.get("CAMERA_WAIT_LOG_INTERVAL_S", "8.0")))
@@ -775,6 +1341,9 @@ def main() -> int:
     args.raw_publish_fps = max(0.1, min(30.0, float(args.raw_publish_fps)))
     args.compressed_jpeg_quality = max(40, min(92, int(args.compressed_jpeg_quality)))
     args.compressed_preview_width = max(320, min(3840, int(args.compressed_preview_width)))
+    args.preview_decode_reduction = str(args.preview_decode_reduction).strip().lower()
+    if args.preview_decode_reduction not in PREVIEW_DECODE_REDUCTIONS:
+        parser.error(f"--preview-decode-reduction must be one of {', '.join(PREVIEW_DECODE_REDUCTIONS)}")
     rclpy.init()
     node = UsbCameraDriver(args)
     try:

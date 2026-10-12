@@ -104,8 +104,12 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None,vfr_input=None):
     # is retained for existing FFmpeg 6 tooling, not selected automatically.
     vfr_input=vfr_input or os.environ.get('UBTS_MEDIA_VFR_INPUT','pyav')
     if vfr_input not in ('pyav','concat'):raise ValueError('invalid_media_vfr_input')
+    # Presentation clock: header capture stamps when they qualify, else bag
+    # receipts (burst collisions moved by 1 ms and counted). t_s stays the
+    # archive alignment clock (timeline_offset_s).
     timing=frame_timing(frames)
-    intervals=[frames[i+1]['t_s']-frames[i]['t_s'] for i in range(len(frames)-1)]
+    pts=timing['pts_ms']
+    intervals=[(pts[i+1]-pts[i])*.001 for i in range(len(pts)-1)]
     last_dt=timing['last_dt_s']
     import cv2
     threads=str(max(1,min(2,int(os.environ.get('UBTS_MEDIA_THREADS','2')))))
@@ -118,7 +122,7 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None,vfr_input=None):
         concat=['ffconcat version 1.0']
         for i,row in enumerate(frames):
             concat.extend([f"file '{row['file']}'",'option framerate 1000',
-                f"duration {(intervals[i] if i<len(intervals) else last_dt):.9f}"])
+                f"duration {(intervals[i] if i<len(intervals) else (timing['terminal_pts_ms']-pts[-1])*.001):.9f}"])
         concat.append(f"file '{frames[-1]['file']}'");concat.append('option framerate 1000')
         playlist=output/'frames.ffconcat';playlist.write_text('\n'.join(concat)+'\n')
         input_args=['-safe','0','-f','concat','-i',str(playlist)]
@@ -132,7 +136,9 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None,vfr_input=None):
     # Both public capability branches preserve VFR timestamps and a 1-ms
     # terminal repeat presentation, including perfectly uniform sources.
     input_info.update(**timing_info,terminal_presentation_duration_s=.001,
-                      b_frames=0,hls_timing='VFR_MP4_sample_durations_then_stream_copy')
+                      b_frames=0,hls_timing='VFR_MP4_sample_durations_then_stream_copy',
+                      pts_source=timing['pts_source'],header_stamp_rejected_reason=timing['header_stamp_rejected_reason'],
+                      pts_adjusted_frames=timing['pts_adjusted_frames'],pts_max_adjustment_s=timing['pts_max_adjustment_s'])
     if m.get('rotation_deg')==180:prefix+=['-vf','hflip,vflip']
     # Full source-sized high-quality MP4 is the fallback and top ABR variant.
     native=output/'native.mp4'
@@ -172,12 +178,20 @@ def build(source,output,ffmpeg='ffmpeg',archive_metadata=None,vfr_input=None):
         # fabricate a profile/level CODECS string for arbitrary source sizes.
         master.extend([f"#EXT-X-STREAM-INF:BANDWIDTH={v['bandwidth']},AVERAGE-BANDWIDTH={v['average_bandwidth']},RESOLUTION={v['width']}x{v['height']}",v['playlist']])
     (output/'master.m3u8').write_text('\n'.join(master)+'\n');assetnames.append('master.m3u8')
-    duration=frames[-1]['t_s']-frames[0]['t_s']+last_dt
+    duration=timing['duration_s']
     public=dict(schema='orchard.adaptive_video.v1',complete=True,archive_id=m['archive_id'],
         source_topic=m['source_topic'],source_sha256=m['source_sha256'],source_signatures=m['source_signatures'],camera_export_sha256=digest(source),
-        source_frames=len(frames),source_width=width,source_height=height,fps=(len(frames)-1)/(duration-last_dt) if len(frames)>1 else 1/last_dt,
-        timeline_offset_s=bag_offset+frames[0]['t_s'],duration_s=duration,frame_timing='recorded_camera_receipt_VFR',
+        source_frames=len(frames),source_width=width,source_height=height,
+        fps=(len(frames)-1)/timing['span_s'] if len(frames)>1 else 1/last_dt,
+        timeline_offset_s=bag_offset+frames[0]['t_s'],duration_s=duration,
+        frame_timing=('recorded_camera_header_stamp_VFR' if timing['pts_source']=='header_stamp'
+                      else 'recorded_camera_receipt_VFR'),
         vfr_input=input_info,
+        # Camera provenance from the export. Exports before 2026-10-13 have no
+        # per-kind counts and an unreliable codec flag, so only rotation is kept.
+        **({k:m.get(k) for k in ('rotation_deg','camera_payload','camera_payload_frames',
+                                 'original_camera_codec_preserved')}
+           if 'camera_payload_frames' in m else {'rotation_deg':m.get('rotation_deg')}),
         time_base='archive_metadata.started_at',
         master='master.m3u8',fallback='native.mp4',variants=variants,
         assets={name:dict(bytes=(output/name).stat().st_size,sha256=digest(output/name)) for name in sorted(assetnames)},
