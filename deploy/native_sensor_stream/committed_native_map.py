@@ -210,9 +210,16 @@ class CommittedNativeMapAdapter:
             with self._cv:
                 work=self._recovery_work
                 # A repeated typed WAIT cannot renew input or interrupt the
-                # same immutable historical registration. Other invalidations
-                # and all later raster/publication phases retain cancellation.
-                preserve=(reason=='native_original_pair_wait' and not self._stop.is_set() and
+                # same immutable historical registration. A commit that the
+                # clean factory answered with a typed WAIT instead of a
+                # diagnostic is the same event seen one stage earlier. Other
+                # invalidations (and any factory fault/Stop) and all later
+                # raster/publication phases retain cancellation.
+                f=self.factory
+                typed_wait=(reason=='native_original_pair_wait' or
+                    (reason=='native_fit_not_committed' and f is not None and f.fault is None and
+                     not f.stop_intent.is_set()))
+                preserve=(typed_wait and not self._stop.is_set() and
                     work is not None and work[0] is self._working and work[1] is self._map._state and
                     work[2] is self._keyframe and work[3]==self._serial)
                 if not preserve:self._serial+=1

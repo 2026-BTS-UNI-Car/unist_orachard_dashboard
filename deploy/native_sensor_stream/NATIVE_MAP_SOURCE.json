@@ -9,7 +9,7 @@
   "files_sha256": {
     "batched_map_owner.py": "1009242fe6a235b7f6205d7afbfb088c0199d9979849536fd8cac7595b6f7302",
     "batched_rays.py": "c92818d13224a6730624e82baf5173f4231d6a78552d4c04a2ef61feb53a0b37",
-    "committed_native_map.py": "c1a65a586b910c40739a6365f4f02e3edeaf6022bfc28a05dd9dc1cdc528c3fb",
+    "committed_native_map.py": "27808c22e645e6b1bc8cf71294c1308b68fa2761d37a24b049a770693fcd77f5",
     "keyframe_registration.py": "8dedab3ea1c40ce6f85dd9e2ba9506f59f78e23a109ad3bbb3d9742c1cb129aa",
     "native_map_owner.py": "4b0e2e77094b3de49a5ca56408f2e172fb059a01c7035ad80db906786717af7b",
     "native_map_transport.py": "d03b03552676f9f453b2f08f38486c1b16f80a60d67f351ca81c75bc6b23785a",

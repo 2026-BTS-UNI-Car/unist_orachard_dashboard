@@ -206,6 +206,47 @@ class AdapterBridgePolicy(unittest.TestCase):
             a._retained_geometry(k)
 
 
+class InFlightRegistrationPreserve(unittest.TestCase):
+    """A typed WAIT (pair or commit stage) keeps the in-flight historical registration;
+    a factory fault/Stop or any other invalidation still cancels it."""
+
+    def make(self, fault=None, stopping=False):
+        import threading
+        a = bare_adapter()
+        a._fence, a._cv, a._stop = threading.Lock(), threading.Condition(threading.RLock()), threading.Event()
+        a._serial, a._capture_sequence, a._proposal_sequence_floor = 7, 3, 0
+        a._pending = a._head = None
+        a._capture_last = a._chain_token = a._chain_pose = a._chain_digest = None
+        state, keyframe, working = object(), object(), object()
+        a._working, a._keyframe = working, keyframe
+        a._map = type('M', (), dict(_state=state, invalidate_gap=lambda self, reason: reason))()
+        stop_intent = threading.Event()
+        if stopping:
+            stop_intent.set()
+        a.factory = type('F', (), dict(fault=fault, stop_intent=stop_intent))()
+        a._recovery_work = (working, state, keyframe, 7)
+        return a
+
+    def test_pair_and_clean_commit_stage_wait_preserve(self):
+        for reason in ('native_original_pair_wait', 'native_fit_not_committed'):
+            a = self.make()
+            a.invalidate_gap(reason)
+            self.assertEqual(a._serial, 7, reason)
+            self.assertEqual(a._proposal_sequence_floor, 3)
+
+    def test_fault_stop_and_other_reasons_cancel(self):
+        cases = [(dict(fault='boom'), 'native_fit_not_committed'), (dict(stopping=True), 'native_fit_not_committed'),
+                 ({}, 'control_input_unavailable'), ({}, 'asynchronous_gap')]
+        for kwargs, reason in cases:
+            a = self.make(**kwargs)
+            a.invalidate_gap(reason)
+            self.assertEqual(a._serial, 8, (kwargs, reason))
+        a = self.make()
+        a._stop.set()
+        a.invalidate_gap('native_fit_not_committed')
+        self.assertEqual(a._serial, 8)
+
+
 class TransportSummaryFacts(unittest.TestCase):
     def test_numpy_encoding_equals_reference_encoder(self):
         rng = random.Random(3)
