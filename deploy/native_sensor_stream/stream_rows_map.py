@@ -214,12 +214,20 @@ class StreamObserverRows:
         require(type(feature) is bool, 'exact_factory_final_scalar_recovery_feature_boolean_required')
         return feature
 
+    def _factory_registration_feature(self):
+        feature = getattr(self.factory, 'registration_rejection_reanchor_enabled', False)
+        require(type(feature) is bool, 'exact_factory_registration_recovery_feature_boolean_required')
+        return feature
+
     def _context(self):
         i = self.ingress
         return (i.domain, i.clock_session, i.expected_gids, i.scan_topic, i.imu_topic,
                 i.scan_frame, i.imu_frame, i.profile_revision, i.observer_contract_sha256,
                 self._feature("imu_gap_reanchor_enabled"), self._feature("startup_expiry_discard_enabled"),
-                self._feature("current_expiry_reanchor_enabled"), self._factory_expiry_feature(),
+                self._feature("current_expiry_reanchor_enabled"),
+                self._feature("positive_age_imu_gap_reanchor_enabled"),
+                self._feature("scan_continuity_reanchor_enabled"), self._factory_expiry_feature(),
+                self._factory_registration_feature(),
                 self._factory_preparation_feature(), self._factory_receiver_feature(), self._factory_final_feature(), self._factory_nearest_feature())
 
     def _accept_owned_receiver_commit_raw_expiry_wait(self, outcome):
@@ -383,6 +391,56 @@ class StreamObserverRows:
                     not self.factory.stop_intent.is_set(),
                     "native_stream_original_callback_expiry_wait_revoked")
         return True
+
+    def _accept_v21_wait(self, outcome, feature, validator_name, factory_owned, label, reasons):
+        # V21: same fences as the existing typed WAIT acceptors, in the same order.
+        if not feature:
+            return False
+        owner = self.factory if factory_owned else self.ingress
+        validator = getattr(owner, validator_name, None)
+        require(callable(validator), 'reviewed_native_' + label + '_wait_validator_required')
+        if not validator(outcome):
+            # A v21 WAIT that cannot be proven owned is never silently ignored.
+            require(getattr(outcome, 'reason', None) not in reasons, 'unowned_native_' + label + '_wait')
+            return False
+        require(not self._stopping.is_set() and self._context() == self._binding,
+                'native_stream_source_context_changed_or_stopped')
+        with self.factory.lock:
+            if not factory_owned:
+                require(not self.factory.stop_intent.is_set() and self.factory.fault is None and
+                        self.factory._pending is None and self.factory._pending_digest is None,
+                        'one_clean_factory_before_' + label + '_wait_required')
+            require(validator(outcome) and not self._stopping.is_set(),
+                    'native_stream_' + label + '_wait_revoked')
+            self._proposal_input = None
+            self._invalidate_control()
+            self.waiting_reason = outcome.reason
+            map_adapter = getattr(self, '_map_adapter', None)
+            if map_adapter is not None:
+                invalidate = getattr(map_adapter, 'invalidate_gap', None)
+                require(callable(invalidate), 'native_map_gap_invalidator_required')
+                invalidate('native_original_pair_wait')
+            require(validator(outcome) and self._context() == self._binding and
+                    not self._stopping.is_set() and not self.factory.stop_intent.is_set(),
+                    'native_stream_' + label + '_wait_revoked')
+        return True
+
+    def _accept_owned_registration_rejection_wait(self, outcome):
+        return self._accept_v21_wait(outcome, self._factory_registration_feature(),
+            'is_owned_registration_rejection_wait', True, 'registration_rejection',
+            ('waiting_for_next_scan_after_rejected_native_registration',))
+
+    def _accept_owned_positive_age_imu_gap_wait(self, outcome):
+        return self._accept_v21_wait(outcome, self._feature("positive_age_imu_gap_reanchor_enabled"),
+            'is_owned_positive_age_imu_gap_wait', False, 'positive_age_IMU_gap',
+            ('waiting_for_fresh_scan_after_positive_age_original_IMU_bracket_gap',
+             'waiting_for_fresh_scan_after_positive_age_original_IMU_span_loss'))
+
+    def _accept_owned_scan_continuity_wait(self, outcome):
+        return self._accept_v21_wait(outcome, self._feature("scan_continuity_reanchor_enabled"),
+            'is_owned_scan_continuity_wait', False, 'scan_continuity',
+            ('waiting_for_next_scan_after_missing_original_scan',
+             'waiting_for_fresh_scan_after_pending_pair_replaced_continuity_loss'))
 
     def bind_process(self, pid, time_namespace):
         with self._lock:
@@ -662,6 +720,11 @@ class StreamObserverRows:
             return ()
         if self._accept_owned_original_callback_expiry_wait(outcome):
             return ()
+        if self._accept_owned_scan_continuity_wait(outcome):
+            if self.ingress.previous is not None:
+                # Only the owned missing-scan WAIT keeps the newest scan as the anchor.
+                self.admitted_samples[ros_type] += 1
+            return ()
         self.admitted_samples[ros_type] += 1
         records = []
         while self.ingress.pending is not None and not self._stopping.is_set():
@@ -678,6 +741,8 @@ class StreamObserverRows:
                 return ()
             if self._accept_owned_gap_wait(prepared):
                 break
+            if self._accept_owned_positive_age_imu_gap_wait(prepared):
+                break
             require(prepared.prepared is not None,
                     'physical_original_pair_rejected:' + prepared.reason)
             owned = self.factory.prepare(prepared.prepared)
@@ -685,6 +750,8 @@ class StreamObserverRows:
                 break
             if self._accept_owned_preparation_raw_expiry_wait(owned):
                 return ()
+            if self._accept_owned_registration_rejection_wait(owned):
+                break
             if isinstance(owned, dict):
                 self._retain_factory_failure_timing(owned)
             require(not isinstance(owned, dict), 'physical_internal_fit_rejected:' + str(owned))
@@ -810,6 +877,8 @@ class StreamObserverRows:
                         "native_stream_final_scalar_recovery_configuration_changed")
                 require(self._factory_nearest_feature() == self._binding[-1],
                         "native_stream_strict_nearest_configuration_changed")
+                require(self._factory_registration_feature() == self._binding[-5],
+                        "native_stream_registration_recovery_configuration_changed")
             except Exception as error:
                 self._fail(error)
                 return None
@@ -886,6 +955,24 @@ class StreamObserverRows:
                 consumed_raw_expiry_wait_count=getattr(self.factory, 'consumed_raw_expiry_wait_count', 0),
                 consumed_raw_expiry_wait_timing=copy.deepcopy(getattr(
                     self.factory, 'consumed_raw_expiry_wait_timing', None)),
+                registration_rejection_reanchor_enabled=self._factory_registration_feature(),
+                registration_rejection_wait_count=getattr(self.factory, 'registration_rejection_wait_count', 0),
+                registration_rejection_wait_streak=getattr(self.factory, 'registration_rejection_wait_streak', 0),
+                registration_rejection_wait_max_streak=getattr(self.factory, 'registration_rejection_wait_max_streak', 0),
+                registration_rejection_reason_counts=copy.deepcopy(getattr(
+                    self.factory, 'registration_rejection_reason_counts', None)),
+                registration_rejection_wait_timing=copy.deepcopy(getattr(
+                    self.factory, 'registration_rejection_wait_timing', None)),
+                positive_age_imu_gap_reanchor_enabled=self._feature("positive_age_imu_gap_reanchor_enabled"),
+                positive_age_imu_gap_wait_count=getattr(self.ingress, 'positive_age_imu_gap_wait_count', 0),
+                positive_age_imu_gap_wait_timing=copy.deepcopy(getattr(
+                    self.ingress, 'positive_age_imu_gap_wait_timing', None)),
+                scan_continuity_reanchor_enabled=self._feature("scan_continuity_reanchor_enabled"),
+                scan_continuity_wait_count=getattr(self.ingress, 'scan_continuity_wait_count', 0),
+                scan_continuity_wait_counts=copy.deepcopy(getattr(
+                    self.ingress, 'scan_continuity_wait_counts', None)),
+                scan_continuity_wait_timing=copy.deepcopy(getattr(
+                    self.ingress, 'scan_continuity_wait_timing', None)),
                 runtime_authority=False, motor_command_sent=False, mission_admission=False)
 
     def finish(self, exit_code, operator_stop):

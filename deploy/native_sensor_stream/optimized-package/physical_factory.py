@@ -128,6 +128,36 @@ class _PreparationCausalRawExpiryWait:
     input_ready: bool = False
 
 
+class _ValidatedRegistrationRejection(Exception):
+    """V21: exact kernel rejection of an owned, unpublished prepared pair."""
+
+
+@dataclass(frozen=True)
+class _RegistrationRejectionWait:
+    reason: str
+    generation: int
+    _owner: object
+    diagnostic_version: int
+    input_ready: bool = False
+
+
+# V21 exact allowlist of normal kernel/bound outcomes. Any other exception or
+# result (LinAlgError, invalid angles, oversized scans, unknown reasons, extra
+# result keys, non-finite fits) keeps the existing fatal _fail path.
+REGISTRATION_REJECTION_SCAN_ERRORS = ('insufficient_returns', 'insufficient_observed_surfaces')
+REGISTRATION_REJECTION_RESULTS = ('unsupported_or_inconsistent_registration', 'ambiguous_registration')
+REGISTRATION_REJECTION_BOUND = 'bounded_sensor_frame_fit_required'
+REGISTRATION_REJECTION_REASONS = REGISTRATION_REJECTION_SCAN_ERRORS+REGISTRATION_REJECTION_RESULTS+(
+    REGISTRATION_REJECTION_BOUND,)
+REGISTRATION_REJECTION_RESULT_KEYS = frozenset(('accepted', 'reason', 'fit_rejection_counts',
+    'current_supported_points', 'sampled_point_denominator'))
+REGISTRATION_KERNEL_FAILURES = frozenset(('iteration_insufficient_correspondences', 'search_translation_bound',
+    'search_rotation_bound', 'final_insufficient_correspondences', 'final_insufficient_overlap',
+    'translation_geometrically_degenerate', 'pose_information_degenerate',
+    'excessive_point_to_line_residual', 'IMU_relative_rotation_disagreement'))
+REGISTRATION_REJECTION_WAIT_REASON = 'waiting_for_next_scan_after_rejected_native_registration'
+
+
 class PhysicalNativeShadowFactory:
     """Compute one internally fitted diagnostic, then final ownership fences.
 
@@ -140,7 +170,19 @@ class PhysicalNativeShadowFactory:
                  postconsumed_causal_raw_expiry_reanchor_enabled=False,
                  receiver_commit_causal_raw_expiry_reanchor_enabled=False,
                  final_scalar_causal_raw_expiry_reanchor_enabled=False,
-                 preparation_causal_raw_expiry_reanchor_enabled=False):
+                 preparation_causal_raw_expiry_reanchor_enabled=False,
+                 registration_rejection_reanchor_enabled=False):
+        require(type(registration_rejection_reanchor_enabled) is bool,
+                'typed_registration_rejection_reanchor_option_required')
+        self.__registration_rejection_reanchor_enabled = registration_rejection_reanchor_enabled
+        self._registration_rejection_configuration = registration_rejection_reanchor_enabled
+        self._registration_rejection_attempt = self._registration_rejection_proof = None
+        self._registration_rejection_wait = self._registration_rejection_anchor = None
+        self.registration_rejection_wait_count = 0
+        self.registration_rejection_wait_streak = 0
+        self.registration_rejection_wait_max_streak = 0
+        self.registration_rejection_reason_counts = dict.fromkeys(REGISTRATION_REJECTION_REASONS, 0)
+        self.registration_rejection_wait_timing = None
         require(type(preparation_causal_raw_expiry_reanchor_enabled) is bool,
                 'typed_preparation_causal_RAW_expiry_option_required')
         self.__preparation_causal_raw_expiry_reanchor_enabled = preparation_causal_raw_expiry_reanchor_enabled
@@ -193,6 +235,10 @@ class PhysicalNativeShadowFactory:
     @property
     def preparation_causal_raw_expiry_reanchor_enabled(self):
         return self.__preparation_causal_raw_expiry_reanchor_enabled
+
+    @property
+    def registration_rejection_reanchor_enabled(self):
+        return self.__registration_rejection_reanchor_enabled
 
     @property
     def exact_surface_cache_enabled(self):
@@ -355,6 +401,9 @@ class PhysicalNativeShadowFactory:
         return self.__final_scalar_causal_raw_expiry_reanchor_enabled
 
     def _owned(self, original, *, pending=True):
+        require(type(self.registration_rejection_reanchor_enabled) is bool and
+                self.registration_rejection_reanchor_enabled is self._registration_rejection_configuration,
+                'physical_shadow_registration_recovery_configuration_changed')
         require(type(self.preparation_causal_raw_expiry_reanchor_enabled) is bool and
                 self.preparation_causal_raw_expiry_reanchor_enabled is self._preparation_expiry_configuration,
                 'physical_shadow_preparation_recovery_configuration_changed')
@@ -667,11 +716,165 @@ class PhysicalNativeShadowFactory:
                 self.ingress.prepared is None and self.ingress._active is None and
                 not self.ingress._owners and not self.ingress.imus and not self.ingress.callback_provenance)
 
+    # ---- V21 (a): exact kernel rejection -> owned WAIT, newest validated scan kept ----
+
+    def _registration_rejection_detail(self, *, error=None, result=None, bounded=None):
+        """Return (reason, bounded detail) for an exact allowlisted outcome, else None."""
+        if error is not None:
+            # Exact type: numpy LinAlgError and other ValueError subclasses stay fatal.
+            if (type(error) is ValueError and len(error.args) == 1 and
+                    error.args[0] in REGISTRATION_REJECTION_SCAN_ERRORS):
+                return error.args[0], None
+            return None
+        if result is not None:
+            if not (type(result) is dict and set(result) <= REGISTRATION_REJECTION_RESULT_KEYS and
+                    result.get('accepted') is False and result.get('reason') in REGISTRATION_REJECTION_RESULTS):
+                return None
+            counts = result.get('fit_rejection_counts', {})
+            if not (type(counts) is dict and len(counts) <= len(REGISTRATION_KERNEL_FAILURES) and
+                    all(type(k) is str and k in REGISTRATION_KERNEL_FAILURES and type(v) is int and 0 < v <= 1024
+                        for k, v in counts.items())):
+                return None
+            extra = {k: result[k] for k in ('current_supported_points', 'sampled_point_denominator') if k in result}
+            if not all(type(v) is int and 0 <= v <= 4096 for v in extra.values()):
+                return None
+            return result['reason'], dict(fit_rejection_counts=dict(sorted(counts.items())), **extra)
+        if bounded is not None:
+            xy, yaw = bounded
+            # Non-finite or malformed fits are not normal geometry outcomes: fatal.
+            if not (type(xy) is tuple and len(xy) == 2 and
+                    all(type(v) is float and math.isfinite(v) for v in (*xy, yaw))):
+                return None
+            if math.hypot(*xy) <= .6 and abs(yaw) < math.pi:
+                return None
+            return REGISTRATION_REJECTION_BOUND, dict(translation_m=math.hypot(*xy), yaw_rad=yaw)
+        return None
+
+    def _raise_registration_rejection(self, original, original_digest, state, *, error=None,
+                                      result=None, bounded=None):
+        """Phase 1. Returns (caller re-raises/keeps fatal) unless the outcome is allowlisted."""
+        if self.registration_rejection_reanchor_enabled is not True:
+            return
+        detail = self._registration_rejection_detail(error=error, result=result, bounded=bounded)
+        if detail is None:
+            return
+        reason, kernel_detail = detail
+        with self.ingress.lock:
+            attempt = self._registration_rejection_attempt = (object(), original, original_digest, state,
+                state.version, state.latest, reason, kernel_detail)
+            self._validate_registration_rejection_attempt(attempt)
+            signal = _ValidatedRegistrationRejection(reason)
+            self._registration_rejection_proof = (signal, attempt)
+            raise signal
+
+    def _validate_registration_rejection_attempt(self, attempt):
+        require(type(attempt) is tuple and len(attempt) == 8 and attempt is self._registration_rejection_attempt,
+                'owned_registration_rejection_attempt_required')
+        _token, original, digest, state, version, latest, reason, _detail = attempt
+        require(type(self) is PhysicalNativeShadowFactory and
+                self.registration_rejection_reanchor_enabled is True and
+                reason in REGISTRATION_REJECTION_REASONS, 'owned_registration_rejection_attempt_required')
+        # Stop, faults, configuration, pid/epoch/profile and exact prepared identity+digest.
+        self._owned(original, pending=True)
+        require(type(digest) is str and self.ingress._digest_prepared(original) == digest ==
+                self.ingress._prepared_digest, 'original_bytes_changed_during_diagnostic_fit')
+        for value in (original.previous, original.current)+original.imu_originals+tuple(self.ingress.imus):
+            self.ingress.validate_owned(value)
+        self.ingress._native_scan(original.previous)
+        self.ingress._native_scan(original.current)
+        # Nothing was published: same immutable state/version/latest, no pending fit.
+        require(state is self._state and type(version) is int and version == state.version and
+                0 <= version < (1<<63)-1 and latest is state.latest and
+                self._pending is None and self._pending_digest is None and self._final_pending_seal is None,
+                'unpublished_registration_rejection_required')
+        require(self.ingress.previous is original.current and self.ingress.pending is None and
+                self.ingress._active is None and self.ingress.fault is None and
+                original.previous.publisher_gid == original.current.publisher_gid == self.ingress.expected_gids[0],
+                'exact_rejected_pair_anchor_required')
+
+    def _abandon_registration_rejection(self, error):
+        """Phase 2: proof identity, full guards again, then keep-newest-anchor WAIT."""
+        proof = self._registration_rejection_proof
+        require(type(error) is _ValidatedRegistrationRejection and type(proof) is tuple and len(proof) == 2 and
+                proof[0] is error and proof[1] is self._registration_rejection_attempt,
+                'owned_registration_rejection_proof_required')
+        attempt = proof[1]
+        self._validate_registration_rejection_attempt(attempt)
+        _token, original, digest, _state, version, _latest, reason, kernel_detail = attempt
+        require(type(self.registration_rejection_wait_count) is int and
+                0 <= self.registration_rejection_wait_count < (1<<63)-1 and
+                type(self.registration_rejection_wait_streak) is int and
+                0 <= self.registration_rejection_wait_streak < (1<<63)-1 and
+                type(self.registration_rejection_reason_counts.get(reason)) is int and
+                0 <= self.registration_rejection_reason_counts[reason] < (1<<63)-1,
+                'registration_rejection_counter_exhausted')
+        previous, current = original.previous, original.current
+        timing = dict(schema='ubts.native.registration_rejection_wait.v1', stage='factory_prepare_fit',
+            reason=reason, kernel_detail=kernel_detail,
+            scan_headers_ns=[previous.wire.header.stamp_ns, current.wire.header.stamp_ns],
+            scan_receipts_ns=[previous.receipt.ns, current.receipt.ns],
+            pair_interval_ns=current.wire.header.stamp_ns-previous.wire.header.stamp_ns,
+            imu_original_count=len(original.imu_originals), diagnostic_version=version,
+            anchor='newest_validated_current_scan_retained', consecutive=self.registration_rejection_wait_streak+1,
+            SOURCE_TTL_ns=SOURCE_AGE_NS, RAW_TTL_ns=RECEIPT_AGE_NS, published=False, data_qualified=False)
+        import json
+        require(len(json.dumps(timing, allow_nan=False, separators=(',', ':')).encode()) <= 2048,
+                'registration_rejection_timing_capacity')
+        anchor = self.ingress._release_rejected_registration_keep_anchor(self, attempt, original, digest)
+        require(not self.stop_intent.is_set() and self.fault is None and self.ingress.fault is None,
+                'physical_shadow_STOP_latched')
+        require(anchor is current and self.ingress.previous is current and self.ingress.prepared is None,
+                'exact_rejected_pair_anchor_required')
+        self._pending = self._pending_digest = self._final_pending_seal = None
+        self._preparation_anchor = self._preparation_attempt = None
+        self._consumed_attempt = self._receiver_attempt = self._receiver_clock = self._final_attempt = None
+        self._registration_rejection_attempt = self._registration_rejection_proof = None
+        self.registration_rejection_wait_count += 1
+        self.registration_rejection_wait_streak += 1
+        self.registration_rejection_wait_max_streak = max(self.registration_rejection_wait_max_streak,
+                                                           self.registration_rejection_wait_streak)
+        self.registration_rejection_reason_counts[reason] += 1
+        self.registration_rejection_wait_timing = timing
+        self._registration_rejection_anchor = current
+        self._registration_rejection_wait = _RegistrationRejectionWait(REGISTRATION_REJECTION_WAIT_REASON,
+            self._generation, self, self._state.version)
+        return self._registration_rejection_wait
+
+    def is_owned_registration_rejection_wait(self, value):
+        with self.lock, self.ingress.lock:
+            try:
+                anchor = self._registration_rejection_anchor
+                if not (type(value) is _RegistrationRejectionWait and value is self._registration_rejection_wait and
+                        value._owner is self and value.reason == REGISTRATION_REJECTION_WAIT_REASON and
+                        value.input_ready is False and
+                        value.generation == self._generation == self.ingress.generation and
+                        self.ingress.clock_session == self._session and self._pid == os.getpid() and
+                        self.ingress.profile_revision == self._revision == revision(self.contract) and
+                        value.diagnostic_version == self._state.version and
+                        self.registration_rejection_reanchor_enabled is True and
+                        self._registration_rejection_configuration is True and
+                        self.fault is None and self.ingress.fault is None and not self.stop_intent.is_set() and
+                        self._pending is None and self._pending_digest is None and self._final_pending_seal is None and
+                        self._registration_rejection_attempt is None and self._registration_rejection_proof is None and
+                        self._preparation_anchor is None and self._preparation_attempt is None and
+                        anchor is not None and self.ingress.previous is anchor and self.ingress.pending is None and
+                        self.ingress.prepared is None and self.ingress._active is None and
+                        self.ingress._prepared_digest is None and self.ingress._first_pair is True):
+                    return False
+                self.ingress._native_scan(anchor)
+                for imu in tuple(self.ingress.imus):
+                    self.ingress.validate_owned(imu)
+                return True
+            except Exception:
+                return False
+
     def _fail(self, reason):
         self.fault = self.fault or str(reason)[:160]
         self.stop_intent.set()
         self.ingress.stop()
         self._pending = self._pending_digest = None
+        self._registration_rejection_attempt = self._registration_rejection_proof = None
+        self._registration_rejection_wait = self._registration_rejection_anchor = None
         self._consumed_attempt = self._consumed_wait = None
         self._preparation_anchor = self._preparation_attempt = self._preparation_wait = None
         self._receiver_attempt = self._receiver_clock = self._receiver_wait = None
@@ -708,14 +911,25 @@ class PhysicalNativeShadowFactory:
                     self._timing['imu_count'] = len(original.imu_originals)
                     original_digest = self.ingress._digest_prepared(original)
                 fit_start = time.perf_counter_ns()
-                before = surfaces(scan_points(self._view(original.previous)), surface_cache=self._exact_surface_cache)
-                after = surfaces(scan_points(self._view(original.current)), surface_cache=self._exact_surface_cache)
+                entry_state = self._state  # factory.lock is held: nothing can publish meanwhile
+                try:
+                    before = surfaces(scan_points(self._view(original.previous)), surface_cache=self._exact_surface_cache)
+                    after = surfaces(scan_points(self._view(original.current)), surface_cache=self._exact_surface_cache)
+                except ValueError as error:
+                    # V21 OFF or unlisted: returns and the original exception is re-raised.
+                    self._raise_registration_rejection(original, original_digest, entry_state, error=error)
+                    raise
                 dt = (original.current.wire.header.stamp_ns-original.previous.wire.header.stamp_ns)*1e-9
                 require(0 < dt <= .2, 'bounded_original_physical_pair_interval_required')
                 result = registration(before, after, abs(pairing.yaw_delta_rad), dt, None)
+                if not (type(result) is dict and result.get('accepted') is True):
+                    self._raise_registration_rejection(original, original_digest, entry_state, result=result)
                 require(type(result) is dict and result.get('accepted') is True,
                         'diagnostic_native_fit_rejected:'+str(result.get('reason', 'invalid_result')))
                 xy, yaw = tuple(float(v) for v in result['xy']), float(result['yaw'])
+                if not (len(xy) == 2 and all(math.isfinite(v) for v in (*xy, yaw)) and
+                        math.hypot(*xy) <= .6 and abs(yaw) < math.pi):
+                    self._raise_registration_rejection(original, original_digest, entry_state, bounded=(xy, yaw))
                 require(len(xy) == 2 and all(math.isfinite(v) for v in (*xy, yaw)) and
                         math.hypot(*xy) <= .6 and abs(yaw) < math.pi, 'bounded_sensor_frame_fit_required')
                 self._timing['stages_ns']['numeric_fit'] = time.perf_counter_ns()-fit_start
@@ -746,6 +960,12 @@ class PhysicalNativeShadowFactory:
                 try:
                     with self.ingress.lock:
                         return self._abandon_preparation_raw_expiry(error)
+                except Exception as invalid:
+                    return self._fail(invalid)
+            except _ValidatedRegistrationRejection as error:
+                try:
+                    with self.ingress.lock:
+                        return self._abandon_registration_rejection(error)
                 except Exception as invalid:
                     return self._fail(invalid)
             except Exception as error:
@@ -809,6 +1029,8 @@ class PhysicalNativeShadowFactory:
                     require(not self.stop_intent.is_set(), 'physical_shadow_STOP_latched')
                     self._state = next_state  # one final immutable pointer swap
                     self._pending = self._pending_digest = self._final_pending_seal = None
+                    if self.registration_rejection_reanchor_enabled:
+                        self.registration_rejection_wait_streak = 0  # V21: a published fit ends the streak
                     return response
             except _ValidatedPreparationCausalRawExpiry as error:
                 try:
