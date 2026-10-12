@@ -6,6 +6,7 @@ No historical render completion is a fresh sensor/control/physical certificate.
 """
 from dataclasses import dataclass,replace
 import hashlib
+import math
 import threading
 import time
 import uuid
@@ -15,7 +16,8 @@ from common.native_ownership import PreparedInputs
 from physical_factory import PhysicalNativeShadowFactory, PreparedPhysicalDiagnostic
 from native_map_owner import (NativeAcceptedMapOwner, AcceptedNativeFrame,
                               RegisteredNativeBridge, AcceptedContiguousNativeChain, require, token, digest, MAX_NS)
-from keyframe_registration import scan_geometry, register_keyframe, freeze_geometry, keyframe_digest
+from keyframe_registration import scan_geometry, register_keyframe, freeze_geometry, geometry_digest
+from kernel.raw_localization import Surfaces
 from batched_map_owner import BatchedNativeAcceptedMapOwner
 
 
@@ -39,6 +41,22 @@ class _AcceptedSeal:
     chain_token: str | None = None
     chain_pose: tuple | None = None
     chain_digest: bytes | None = None
+
+
+def keyframe_digest(keyframe):
+    version,sha,pose,raw=keyframe
+    require(hashlib.sha256(raw).hexdigest()==sha,'retained_keyframe_CDR_changed')
+    h=hashlib.sha256(repr((version,sha,pose)).encode());h.update(raw)
+    return h.digest()
+
+
+STAGES=('queue_wait','verify','geometry','register','prepare','commit','keyframe','display')
+# A LiDAR-twist seed centre is only extrapolated across short in-session gaps.
+SEED_CENTER_MAX_GAP_NS=3_000_000_000
+# Bridge retries against one keyframe: free for the first attempts, then
+# exponential backoff in original scan time (no clock read), bounded.
+BRIDGE_FREE_ATTEMPTS=3
+BRIDGE_BACKOFF_BASE_NS,BRIDGE_BACKOFF_MAX_NS=500_000_000,4_000_000_000
 
 
 def seal_digest(s):
@@ -77,7 +95,12 @@ class CommittedNativeMapAdapter:
         self._recovery_work=None;self._proposal_sequence_floor=0
         self._issued_bridge=None;self._bridge_digest=None;self._keyframe=None;self._keyframe_digest=None
         self._capture_sequence=0;self._serial=0;self._fault=None;self._encoder_fault=None
-        self._counts=dict(captured=0,processed=0,replaced=0,cancelled=0,bridge_attempts=0,bridges=0,accepted_native_chain_bridges=0)
+        self._head=None;self._keyframe_geometry=None;self._keyframe_motion=None
+        self._bridge_retry=None;self._capacity_latched=False
+        self._counts=dict(captured=0,processed=0,replaced=0,cancelled=0,bridge_attempts=0,bridges=0,
+                          accepted_native_chain_bridges=0,chain_heads=0,heads_superseded=0,
+                          bridge_backoff_skips=0,capacity_latched_skips=0,shifted_seed_bridges=0)
+        self._stages={k:[0,0,0] for k in STAGES}
         self._last_work={};self._callback=on_display_commit;self._recovery_budget=recovery_max_wall_s
         self._map=BatchedNativeAcceptedMapOwner(enabled=enabled,historical_display_only=True,
             accepted_native_validator=self._validate_frame,
@@ -112,7 +135,7 @@ class CommittedNativeMapAdapter:
                     'previous_map_worker_join_required')
             if on_display_commit is not None:
                 require(callable(on_display_commit),'display_callback_required');self._callback=on_display_commit
-            self._fault=None;self._encoder_fault=None;self._serial+=1;self._pending=None
+            self._fault=None;self._encoder_fault=None;self._serial+=1;self._pending=None;self._head=None
             self._map.start(self._context,explicit=True)
             self.pose_ledger.start_after_join(explicit=True)
             with self._fence:self._stop.clear()
@@ -121,7 +144,7 @@ class CommittedNativeMapAdapter:
             except BaseException:
                 self._launch_ambiguous=True
                 with self._fence:self._stop.set()
-                self._map.stop('map_worker_start_failed');self._pending=None
+                self._map.stop('map_worker_start_failed');self._pending=None;self._head=None
                 raise
             return self.status()
 
@@ -130,7 +153,9 @@ class CommittedNativeMapAdapter:
         with self._fence:self._stop.set()
         self.pose_ledger.inhibit()
         self._map.stop(reason)
-        with self._cv:self._serial+=1;self._pending=None;self._clear_chain();self._cv.notify_all()
+        with self._cv:
+            self._serial+=1;self._pending=None;self._head=None;self._keyframe_motion=None
+            self._clear_chain();self._cv.notify_all()
         return self.status()
 
     def close(self,timeout=1.):
@@ -144,7 +169,7 @@ class CommittedNativeMapAdapter:
         # An unknown worker is retained; never advertise detached ownership.
         if joined:
             self.pose_ledger.close_after_join()
-            with self._cv:self._thread=None;self._launch_ambiguous=False;self._pending=None;self._working=None;self._working_digest=None
+            with self._cv:self._thread=None;self._launch_ambiguous=False;self._pending=None;self._head=None;self._working=None;self._working_digest=None
         return dict(joined=joined,worker_alive=thread is not None and thread.is_alive(),
                     worker_state_known=not ambiguous,owned_worker_retained=not joined,
                     publication_inhibited=self._stop.is_set(),launch_unproven=ambiguous,runtime_authority=False)
@@ -162,6 +187,7 @@ class CommittedNativeMapAdapter:
                     'map_worker_join_before_attach_required')
             self.factory,self.ingress=factory,factory.ingress
             self._context=self._factory_context(factory,*self._context[4:]);self._serial+=1
+            self._keyframe_motion=None
             self._map.invalidate_gap('new_native_source_requires_registration')
             return self.status()
 
@@ -172,6 +198,8 @@ class CommittedNativeMapAdapter:
             epoch=uuid.uuid4().hex if map_epoch is None else token(map_epoch)
             require(epoch!=self._context[4],'new_map_epoch_required')
             self._context=(*self._context[:4],epoch,self._context[5]);self._keyframe=None;self._keyframe_digest=None
+            self._keyframe_geometry=None;self._keyframe_motion=None;self._head=None
+            self._bridge_retry=None;self._capacity_latched=False
             self._clear_chain();self._mapped_chain=None
             self._issued_bridge=None;self._bridge_digest=None;self._serial+=1
             return self._map.new_map(self._context,explicit=True)
@@ -182,14 +210,21 @@ class CommittedNativeMapAdapter:
             with self._cv:
                 work=self._recovery_work
                 # A repeated typed WAIT cannot renew input or interrupt the
-                # same immutable historical registration. Other invalidations
-                # and all later raster/publication phases retain cancellation.
-                preserve=(reason=='native_original_pair_wait' and not self._stop.is_set() and
+                # same immutable historical registration. A commit that the
+                # clean factory answered with a typed WAIT instead of a
+                # diagnostic is the same event seen one stage earlier. Other
+                # invalidations (and any factory fault/Stop) and all later
+                # raster/publication phases retain cancellation.
+                f=self.factory
+                typed_wait=(reason=='native_original_pair_wait' or
+                    (reason=='native_fit_not_committed' and f is not None and f.fault is None and
+                     not f.stop_intent.is_set()))
+                preserve=(typed_wait and not self._stop.is_set() and
                     work is not None and work[0] is self._working and work[1] is self._map._state and
                     work[2] is self._keyframe and work[3]==self._serial)
                 if not preserve:self._serial+=1
                 self._proposal_sequence_floor=self._capture_sequence
-                self._pending=None;self._clear_chain();self._cv.notify_all()
+                self._pending=None;self._head=None;self._clear_chain();self._cv.notify_all()
             return self._map.invalidate_gap(reason)
 
     def status(self):
@@ -199,9 +234,12 @@ class CommittedNativeMapAdapter:
                 committed_pose_ledger=self.pose_ledger.status(),
                 accepted_native_chain_enabled=self.accepted_native_chain_enabled,
                 encoder_fault=self._encoder_fault,worker_alive=self._thread is not None and self._thread.is_alive(),
-                worker_launch_unproven=self._launch_ambiguous,pending_latest=int(self._pending is not None),in_flight=int(self._working is not None),
-                pending_limit=1,keyframes_retained=int(self._keyframe is not None),keyframe_limit=1,
+                worker_launch_unproven=self._launch_ambiguous,pending_latest=int(self._pending is not None or self._head is not None),in_flight=int(self._working is not None),
+                pending_limit=2,pending_chain_head=int(self._head is not None),chain_head_limit=1,
+                capacity_latched=self._capacity_latched,bridge_retry=dict(self._bridge_retry) if self._bridge_retry else None,
+                keyframes_retained=int(self._keyframe is not None),keyframe_limit=1,
                 counters=dict(self._counts),last_work=dict(self._last_work),
+                stage_timing_ms={k:[n,round(t/1e6/n,2) if n else 0.,round(m/1e6,2)] for k,(n,t,m) in self._stages.items()},
                 independent_keyframe_bridge_implemented=True,bridge_global_uniqueness_verified=False,
                 source_policy_ns=250_000_000,callback_RAW_policy_ns=200_000_000,
                 render_completion_is_fresh_input=False)
@@ -294,9 +332,23 @@ class CommittedNativeMapAdapter:
     def _enqueue(self,seal):
         with self._cv:
             if not self._stop.is_set():
+                if self.accepted_native_chain_enabled:
+                    token_before=self._chain_token
+                    seal=self._extend_chain(seal)
+                    mapped=self._mapped_chain
+                    if seal.chain_token!=token_before and (mapped is None or mapped[0]!=seal.chain_token):
+                        # The first seal after a native gap is the one nearest the
+                        # retained keyframe: keep it for registration even while
+                        # later seals of the same chain replace the latest slot.
+                        if self._head is not None:self._counts['heads_superseded']+=1
+                        # Older-chain seals cannot follow a newer head.
+                        if self._pending is not None:self._counts['replaced']+=1;self._pending=None
+                        self._head=(seal,seal_digest(seal),self._serial,time.perf_counter_ns())
+                        self._counts['chain_heads']+=1
+                        self._counts['captured']+=1;self._cv.notify_all()
+                        return
                 if self._pending is not None:self._counts['replaced']+=1
-                if self.accepted_native_chain_enabled:seal=self._extend_chain(seal)
-                self._pending=(seal,seal_digest(seal),self._serial)
+                self._pending=(seal,seal_digest(seal),self._serial,time.perf_counter_ns())
                 self._counts['captured']+=1;self._cv.notify_all()
 
     def _extend_chain(self,seal):
@@ -313,13 +365,22 @@ class CommittedNativeMapAdapter:
         self._capture_last=f
         return replace(seal,chain_token=self._chain_token,chain_pose=self._chain_pose,chain_digest=self._chain_digest)
 
+    def _stage(self,name,began_ns):
+        value=time.perf_counter_ns()-began_ns;entry=self._stages[name]
+        entry[0]+=1;entry[1]+=value;entry[2]=max(entry[2],value)
+        return time.perf_counter_ns()
+
     def _run(self):
         while True:
             with self._cv:
-                self._cv.wait_for(lambda:self._stop.is_set() or self._pending is not None)
+                self._cv.wait_for(lambda:self._stop.is_set() or self._pending is not None or self._head is not None)
                 if self._stop.is_set():return
-                seal,stamp,serial=self._pending;self._pending=None
+                if self._head is not None:
+                    seal,stamp,serial,queued=self._head;self._head=None
+                else:
+                    seal,stamp,serial,queued=self._pending;self._pending=None
                 self._working=seal;self._working_digest=stamp
+            self._stage('queue_wait',queued)
             began=time.perf_counter();cpu=time.thread_time()
             try:
                 self._process(seal,serial)
@@ -335,12 +396,74 @@ class CommittedNativeMapAdapter:
                                          thread_CPU_ms=(time.thread_time()-cpu)*1000)
                     self._cv.notify_all()
 
+    def _seed_center(self,frame):
+        """Constant-twist extrapolation from the keyframe to this scan.
+
+        Only accepted adjacent LiDAR fits (keyframe pair and this pair) give
+        the twist; it moves a second seed grid, never a pose or evidence.
+        Same source context only, and only across a short gap: a Stop, a new
+        source or a long gap gives no centre (identity grid only).
+        """
+        motion=self._keyframe_motion
+        if motion is None:return None
+        context,stamps0,delta0=motion
+        gap_ns=frame.scan_stamps_ns[1]-stamps0[1]
+        if context!=frame.context or not 0<gap_ns<=SEED_CENTER_MAX_GAP_NS:return None
+        rates=[]
+        for stamps,delta in ((stamps0,delta0),(frame.scan_stamps_ns,frame.current_to_previous)):
+            dt=(stamps[1]-stamps[0])/1e9
+            if dt>0:rates.append(tuple(float(v)/dt for v in delta))
+        if not rates:return None
+        vx,vy,w=(sum(r[i] for r in rates)/len(rates) for i in range(3))
+        gap=gap_ns/1e9;theta=w*gap
+        # SE(2) exponential of the constant body twist over the gap.
+        if abs(theta)<1e-9:a,b=gap,0.
+        else:a,b=math.sin(theta)/w,(1.-math.cos(theta))/w
+        center=(a*vx-b*vy,b*vx+a*vy,theta)
+        return center if all(math.isfinite(v) for v in center) else None
+
+    def _bridge_allowed(self,k,frame):
+        """Bounded retries of one keyframe in original scan time; never a clock read."""
+        retry=self._bridge_retry
+        if retry is None or retry['keyframe_version']!=k[0]:return True
+        return frame.scan_stamps_ns[1]>=retry['next_scan_ns']
+
+    def _bridge_failed(self,k,frame,reason):
+        retry=self._bridge_retry
+        if retry is None or retry['keyframe_version']!=k[0]:
+            retry=dict(keyframe_version=k[0],failures=0,next_scan_ns=0,last_reason=None)
+        retry['failures']+=1;retry['last_reason']=reason
+        extra=retry['failures']-BRIDGE_FREE_ATTEMPTS
+        wait=0 if extra<0 else min(BRIDGE_BACKOFF_MAX_NS,BRIDGE_BACKOFF_BASE_NS<<min(extra,8))
+        retry['next_scan_ns']=frame.scan_stamps_ns[1]+wait
+        self._bridge_retry=retry
+
+    def _retained_geometry(self,k):
+        """Surfaces of the retained keyframe, derived once from its original CDR.
+
+        The frozen geometry is sealed by its own digest; each attempt gets a
+        fresh wrapper so a field rebinding cannot persist across attempts.
+        """
+        cached=self._keyframe_geometry
+        if cached is None or cached[0] is not k:
+            geometry=freeze_geometry(scan_geometry(k[3],k[1])[1])
+            cached=self._keyframe_geometry=(k,geometry,geometry_digest(geometry))
+        _k,g,seal=cached
+        require(geometry_digest(g)==seal,'retained_keyframe_geometry_changed')
+        return Surfaces(g.points,g.normals,g.tree,g.denominator,g.dense,g.dense_tree),seal
+
     def _process(self,seal,serial):
         def cancelled():return self._stop.is_set() or serial!=self._serial
         if cancelled():self._counts['cancelled']+=1;return
+        if self._capacity_latched:
+            # Terminal until an explicit new map; status keeps the reason.
+            self._counts['capacity_latched_skips']+=1;return
+        t=time.perf_counter_ns()
         require(self._validate_frame(seal.frame),'accepted_seal_changed')
         # Re-decode the immutable snapshot, not a consumed Prepared capability.
-        wire,geometry=scan_geometry(seal.current_cdr,seal.frame.scan_cdr_sha256[1])
+        require(hashlib.sha256(seal.current_cdr).hexdigest()==seal.frame.scan_cdr_sha256[1],'exact_keyframe_CDR_required')
+        wire=decode(seal.current_cdr,LASER_TYPE)
+        require(type(wire) is WireScan,'original_keyframe_scan_required')
         require(hashlib.sha256(seal.previous_cdr).hexdigest()==seal.frame.scan_cdr_sha256[0] and
             hashlib.sha256(seal.lower_imu_cdr).hexdigest()==seal.frame.imu_cdr_sha256,
             'captured_original_CDR_changed')
@@ -354,7 +477,8 @@ class CommittedNativeMapAdapter:
             struct.pack('<'+str(wire.count)+'d',*map(float,wire.ranges))==
             struct.pack('<'+str(len(seal.frame.ranges))+'d',*seal.frame.ranges),
             'captured_projection_does_not_match_original_CDR')
-        base=self._map._state;bridge=None
+        t=self._stage('verify',t)
+        base=self._map._state;bridge=None;shifted_bridge=False
         needs_bridge=base.frame is not None and (not self._map.status()['pose_continuity'] or
             seal.frame.context!=base.frame.context or seal.frame.sequence!=base.frame.sequence+1 or
             seal.frame.scan_cdr_sha256[0]!=base.frame.scan_cdr_sha256[1])
@@ -376,19 +500,33 @@ class CommittedNativeMapAdapter:
             require(keyframe_digest(k)==self._keyframe_digest and
                     k[0]==base.version and k[1]==base.frame.scan_cdr_sha256[1],
                     'registered_keyframe_generation_changed')
+            if not self._bridge_allowed(k,seal.frame):
+                self._counts['bridge_backoff_skips']+=1;return
+            target,target_seal=self._retained_geometry(k)
+            geometry=scan_geometry(seal.current_cdr,seal.frame.scan_cdr_sha256[1])[1]
+            center=self._seed_center(seal.frame)
+            t=self._stage('geometry',t)
             self._counts['bridge_attempts']+=1
             with self._cv:
                 if cancelled():return
                 self._recovery_work=(seal,base,k,serial)
             try:
-                fit=register_keyframe(k[3],geometry,cancelled=cancelled,max_wall_s=self._recovery_budget)
+                fit=register_keyframe(target,geometry,cancelled=cancelled,max_wall_s=self._recovery_budget,
+                                      seed_center=center)
             finally:
                 # No exception to WAIT cancellation while preparing rays or
                 # committing a map-owner ticket whose serial was revoked.
                 with self._cv:self._recovery_work=None
-            require(keyframe_digest(k)==self._keyframe_digest,'retained_keyframe_geometry_changed')
+            t=self._stage('register',t)
+            retained=self._keyframe_geometry
+            require(keyframe_digest(k)==self._keyframe_digest and geometry_digest(target)==target_seal and
+                    retained is not None and retained[0] is k and retained[2]==target_seal and
+                    geometry_digest(retained[1])==target_seal,
+                    'retained_keyframe_geometry_changed')
             if not fit['accepted']:
+                self._bridge_failed(k,seal.frame,fit['reason'])
                 self._map.invalidate_gap(fit['reason']);return
+            shifted_bridge=bool(fit.get('shifted_seed_grid'))
             pose=self._map._compose(k[2],(*map(float,fit['xy']),float(fit['yaw'])))
             bridge=RegisteredNativeBridge(seal.frame.context,k[1],seal.frame.scan_cdr_sha256[1],base.version,pose)
             self._issued_bridge=bridge;self._bridge_digest=hashlib.sha256(repr(bridge).encode()).digest()
@@ -397,6 +535,9 @@ class CommittedNativeMapAdapter:
         # no association/scalar TTL rerun, no timestamp renewal here.
         now=dict(source_now_ns=seal.diagnostic_observed_source_ns,receipt_now_ns=seal.diagnostic_observed_RAW_ns)
         ticket=self._map.prepare(seal.frame,registered_bridge=bridge,**now)
+        t=self._stage('prepare',t)
+        if ticket is None and str(self._map.status().get('reason','')).startswith('native_map_capacity'):
+            self._capacity_latched=True
         if ticket is None or cancelled():return
         with self._fence:
             if cancelled():return
@@ -408,19 +549,25 @@ class CommittedNativeMapAdapter:
                     validate=lambda: not cancelled() and self._map._state is state and
                         state.frame is not None and digest(state.frame)==digest(seal.frame) and
                         self._validate_frame(seal.frame))
+        t=self._stage('commit',t)
         if not published:return
         self._keyframe=(self._map._state.version,seal.frame.scan_cdr_sha256[1],
-                        self._map._state.pose,freeze_geometry(geometry),seal.current_cdr)
+                        self._map._state.pose,seal.current_cdr)
         self._keyframe_digest=keyframe_digest(self._keyframe)
+        self._keyframe_motion=(seal.frame.context,seal.frame.scan_stamps_ns,seal.frame.current_to_previous)
+        self._bridge_retry=None
+        t=self._stage('keyframe',t)
         if seal.chain_token is not None:
             self._mapped_chain=(seal.chain_token,seal.frame.sequence,seal.frame.scan_cdr_sha256[1],seal.chain_pose)
         else:self._mapped_chain=None
         if type(bridge) is AcceptedContiguousNativeChain:self._counts['accepted_native_chain_bridges']+=1
-        elif bridge is not None:self._counts['bridges']+=1
+        elif bridge is not None:
+            self._counts['bridges']+=1
+            if shifted_bridge:self._counts['shifted_seed_bridges']+=1
         callback=self._callback
         if callback is not None:
             try:
-                snapshot=self.display_snapshot();status=self.status()
+                snapshot=self._map.display_snapshot(tiles=True);status=self.status()
                 publisher=callback(snapshot,status) # Heavy encode outside locks.
                 require(publisher is None or callable(publisher),'display_callback_publish_callable_required')
                 if publisher is not None:
@@ -428,6 +575,7 @@ class CommittedNativeMapAdapter:
                         if not cancelled() and self._map._state.version==snapshot['map_version']:
                             publisher() # Trusted bounded pointer swap, never IO.
             except Exception as error:self._encoder_fault=self._encoder_fault or str(error)[:128]
+            self._stage('display',t)
 
     def proposal_snapshot(self):
         if not self._enabled or self._stop.is_set() or self.factory is None:return None

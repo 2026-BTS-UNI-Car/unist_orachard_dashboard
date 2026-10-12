@@ -18,13 +18,13 @@
     "kernel/fit_workers.py": "ab5c66eeaa0235410aafeccb349728ba926a386f94a47429ef4e9ee4bea2d99c",
     "kernel/raw_localization.py": "c401376de503d76e5fc9449e56eb3eb0bad08b8cf2d00010816046a2cf63f2e9",
     "observer_rows.py": "e3bb467367ec68e67c4a3c156fdafd038d0fa9f4c385a0691896203c90e33c77",
-    "physical_factory.py": "258e930e35d5498e7843c4efea609d25d3fe5fcfbedcb4fd586bc5993032d44a",
-    "physical_ingress.py": "a62995e2a20c11c74e69cc44f0b0a0ffac95713fdcd858506ddc2d50b798ffdb"
+    "physical_factory.py": "e534691cff0a63ec578bc6baef6903670a951225f6eef9405a363cb84f90828b",
+    "physical_ingress.py": "377fcff0676ee458cb95b3477b8e0ebe82bd4a8f5e7e531c0b03f89ee023ac63"
   },
   "offline_inspector_optional_file": "inspect_capture.py",
   "original_native_Cpp_observer_required_separately": true,
-  "parent_manifest_sha256": "5ab6b3d1339521d41a21dde76c97f031c23386e499f00e8fd4f41a4ab7baedf6",
+  "parent_manifest_sha256": "e62315334c1accf2b4cd8c129f08694597ee787a28fd270a042a94466509860b",
   "schema": "ubts.private.physical_native_shadow_deployment_closure.v1",
   "source_only_no_installed_live_pipeline_qualification": true,
-  "source_revision": "native_v20_owned_original_CDR_projection_reuse"
+  "source_revision": "native_v21_owned_registration_imu_gap_scan_continuity_wait"
 }

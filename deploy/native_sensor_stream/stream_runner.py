@@ -546,6 +546,18 @@ def verify_stream_manifest(path, expected_sha, args):
     return base
 
 
+V21_REANCHOR_FEATURES = ("registration_rejection_reanchor_enabled",
+                         "positive_age_imu_gap_reanchor_enabled",
+                         "scan_continuity_reanchor_enabled")
+V21_REANCHOR_POLICIES = (
+    ("registration_rejection_policy",
+     "typed_owned_WAIT_exact_kernel_outcomes_keep_validated_newest_scan_nothing_published"),
+    ("positive_age_imu_gap_policy",
+     "typed_owned_WAIT_same_sample_positive_age_gap_or_span_loss_full_reanchor_no_TTL_change"),
+    ("scan_continuity_policy",
+     "typed_owned_WAIT_fresh_ordered_scan_missing_keep_newest_pending_replaced_full_reanchor"))
+
+
 def load_physical_package(path, expected_sha, *, reviewed_features=None):
     """Verify before populating optional trusted features; preserve the cache bool."""
     require(reviewed_features is None or (type(reviewed_features) is dict and not reviewed_features),
@@ -601,6 +613,8 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "f6753a0da7f36d672df88da4023a6402581166cb2d24d25de11948baf7b85e0f",
             "native_v20_owned_original_CDR_projection_reuse":
                 "5ab6b3d1339521d41a21dde76c97f031c23386e499f00e8fd4f41a4ab7baedf6",
+            "native_v21_owned_registration_imu_gap_scan_continuity_wait":
+                "e62315334c1accf2b4cd8c129f08694597ee787a28fd270a042a94466509860b",
             "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait":
                 "4de382364c247de7b3ad05e819b2272e1de50a57d0d9e1c0ffe7d2e12ac85cf4",
         }
@@ -619,7 +633,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                         "native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
                          "native_private_strict_nearest_gates_default_OFF",
                         "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
             require(manifest.get("admission_timing_only") is False and
                     manifest.get("imu_gap_timing_only") is False and
                     manifest.get("preserved_timing_hooks") is True,
@@ -631,7 +645,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
         if revision in ("native_v10_exact_cache_postconsumed_causal_raw_expiry_wait",
                         "native_private_strict_nearest_gates_default_OFF",
                         "native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
             key = "postconsumed_causal_raw_expiry_reanchor_enabled"
             require(manifest.get(key) is True,
                     "reviewed_optimized_physical_consumed_RAW_expiry_feature_required")
@@ -642,7 +656,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
             require(manifest.get(key) is False, "optimized_physical_authority_or_qualification_forbidden:" + key)
         for key in ("source_frozen", "exact_surface_cache_enabled"):
             require(manifest.get(key) is True, "optimized_physical_reviewed_feature_required:" + key)
-        if revision == "native_v20_owned_original_CDR_projection_reuse":
+        if revision in ("native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
             require(manifest.get("full_original_SHA_decode_at_every_association_preserved") is False,
                     "owned_projection_reuse_decode_claim_required")
             for key in ("owned_original_CDR_projection_reuse_preserved",
@@ -693,7 +707,7 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "reviewed_strict_nearest_gates_default_OFF_contract_required")
         features["strict_nearest_gates_enabled"] = True
     if optimized and revision in ("native_v11_exact_cache_receiver_commit_causal_raw_expiry_wait", "native_v12_exact_cache_strict_nearest_receiver_commit_causal_raw_expiry_wait",
-                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
+                        "native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
         require(manifest.get("receiver_commit_causal_raw_expiry_reanchor_enabled") is True,
                 "reviewed_receiver_commit_RAW_recovery_feature_required")
         features["receiver_commit_causal_raw_expiry_reanchor_enabled"] = True
@@ -705,29 +719,35 @@ def load_physical_package(path, expected_sha, *, reviewed_features=None):
                 "a27cad5b3ae16bfac181199ccbc931b8f41192d2ded02039030b0cd0138d371c",
                 "reviewed_combined_strict_nearest_contract_required")
         features["strict_nearest_gates_enabled"] = True
-    if optimized and revision in ("native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
+    if optimized and revision in ("native_v13_exact_cache_final_scalar_causal_raw_expiry_wait", "native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
         require(manifest.get("final_scalar_causal_raw_expiry_reanchor_enabled") is True and
                 manifest.get("strict_nearest_gates_enabled", False) is False,
                 "reviewed_final_scalar_RAW_recovery_feature_required")
         features["final_scalar_causal_raw_expiry_reanchor_enabled"] = True
-    if optimized and revision in ("native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
+    if optimized and revision in ("native_v14_exact_cache_receiver_end_scalar_causal_raw_expiry_wait", "native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
         require(manifest.get("receiver_end_scalar_causal_raw_expiry_wait_enabled") is True,
                 "reviewed_receiver_end_scalar_RAW_recovery_required")
-    if optimized and revision in ("native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
+    if optimized and revision in ("native_v15_exact_cache_preparation_causal_raw_expiry_wait", "native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
         require(manifest.get("preparation_causal_raw_expiry_reanchor_enabled") is True,
                 "reviewed_preparation_RAW_recovery_required")
         features["preparation_causal_raw_expiry_reanchor_enabled"] = True
-    if optimized and revision in ("native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
+    if optimized and revision in ("native_v16_exact_cache_commit_initial_causal_raw_expiry_wait", "native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
         require(manifest.get("commit_initial_causal_raw_expiry_wait_enabled") is True,
                 "reviewed_commit_initial_RAW_recovery_required")
-    if optimized and revision in ("native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
+    if optimized and revision in ("native_v17_exact_cache_owned_positive_age_expiry_wait", "native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
         require(manifest.get("positive_age_expiry_policy") ==
                 "typed_owned_WAIT_same_sample_SOURCE_RAW_no_TTL_change",
                 "reviewed_owned_positive_age_wait_policy_required")
-    if optimized and revision in ("native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse"):
+    if optimized and revision in ("native_v19_exact_cache_original_callback_expiry_wait", "native_v20_owned_original_CDR_projection_reuse", "native_v21_owned_registration_imu_gap_scan_continuity_wait"):
         require(manifest.get("original_callback_expiry_policy") ==
                 "typed_IMU_WAIT_admission_and_retention_same_sample_original_clocks",
                 "reviewed_original_callback_expiry_wait_policy_required")
+    if optimized and revision == "native_v21_owned_registration_imu_gap_scan_continuity_wait":
+        for key in V21_REANCHOR_FEATURES:
+            require(manifest.get(key) is True, "reviewed_v21_reanchor_feature_required:" + key)
+        for key, value in V21_REANCHOR_POLICIES:
+            require(manifest.get(key) == value, "reviewed_v21_reanchor_policy_required:" + key)
+        features.update(dict.fromkeys(V21_REANCHOR_FEATURES, True))
     sys.path.insert(0, str(path))
     if reviewed_features is not None:
         reviewed_features.update(features)  # only after the complete closure and isolation proof
@@ -745,7 +765,7 @@ def load_native_map_sources(path, expected_sha):
     require(manifest.get("schema") == "ubts.private.native_map_source.v2" and
             manifest.get("parent_map_source_sha256") == "556c90c0186c71dfd73110d000984214a31e4b6fdc0e8953f5873d76d5e03a69" and
             set(manifest.get("files_sha256", {})) == names and
-            manifest.get("parent_package_sha256") == "e62315334c1accf2b4cd8c129f08694597ee787a28fd270a042a94466509860b" and
+            manifest.get("parent_package_sha256") == "87859742812894e69dede8f537906e8bd743560ae01eed556d778445efd960fa" and
             manifest.get("parent_map_handoff_sha256") == "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9" and
             manifest.get("runtime_qualified") is False and manifest.get("motor_command_sent") is False and
             manifest.get("execution_eligible") is False, "exact_unqualified_native_map_sources_required")
@@ -786,12 +806,14 @@ def make_adapter(args):
     contract = PhysicalShadowContract("laser", "imu_link")
     features = getattr(args, "physical_reviewed_features", {})
     ingress_keys = {"imu_gap_reanchor_enabled", "startup_expiry_discard_enabled",
-                    "current_expiry_reanchor_enabled"}
+                    "current_expiry_reanchor_enabled", "positive_age_imu_gap_reanchor_enabled",
+                    "scan_continuity_reanchor_enabled"}
     feature_keys = ingress_keys | {"postconsumed_causal_raw_expiry_reanchor_enabled",
                                    "strict_nearest_gates_enabled",
                                    "receiver_commit_causal_raw_expiry_reanchor_enabled",
                                    "final_scalar_causal_raw_expiry_reanchor_enabled",
-                                   "preparation_causal_raw_expiry_reanchor_enabled"}
+                                   "preparation_causal_raw_expiry_reanchor_enabled",
+                                   "registration_rejection_reanchor_enabled"}
     require(type(features) is dict and set(features) <= feature_keys and
             all(type(value) is bool for value in features.values()),
             "verified_physical_receiver_features_required")
@@ -816,6 +838,8 @@ def make_adapter(args):
         factory_options["preparation_causal_raw_expiry_reanchor_enabled"] = True
     if features.get("strict_nearest_gates_enabled") is True:
         factory_options["strict_nearest_gates_enabled"] = True
+    if features.get("registration_rejection_reanchor_enabled") is True:
+        factory_options["registration_rejection_reanchor_enabled"] = True
     factory = PhysicalNativeShadowFactory(receiver, contract, **factory_options)
     control_enabled = getattr(args, 'native_control_input_enabled', False)
     require(type(control_enabled) is bool, 'typed_native_control_default_OFF_required')

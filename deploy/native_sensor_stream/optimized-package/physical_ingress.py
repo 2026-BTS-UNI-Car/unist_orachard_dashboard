@@ -74,6 +74,29 @@ class _ValidatedReceiverCommitCausalRawExpiry(Exception):
     """Exact initial receiver-commit association, before its generic latch."""
 
 
+class _ValidatedPositiveAgeImuGap(Exception):
+    """V21: exact gap/span-loss pairing of a positively aged pair, before admission."""
+
+
+class _ValidatedScanContinuityLoss(Exception):
+    """V21: exact fresh ordered scan whose previous anchor cannot form one pair."""
+
+
+# V21 exact allowlists. Anything else from pair_imu or _consume_scan stays fatal.
+POSITIVE_AGE_IMU_GAP_REASONS = ('imu_bracket_gap_exceeded', 'imu_outside_retained_span')
+POSITIVE_AGE_IMU_GAP_WAIT_REASONS = {
+    'imu_bracket_gap_exceeded': 'waiting_for_fresh_scan_after_positive_age_original_IMU_bracket_gap',
+    'imu_outside_retained_span': 'waiting_for_fresh_scan_after_positive_age_original_IMU_span_loss'}
+SCAN_CONTINUITY_WAIT_REASONS = {
+    'missing_original_scan': 'waiting_for_next_scan_after_missing_original_scan',
+    'pending_pair_replaced': 'waiting_for_fresh_scan_after_pending_pair_replaced_continuity_loss'}
+
+
+def _max_present(*values):
+    values = tuple(v for v in values if v is not None)
+    return max(values) if values else None
+
+
 @dataclass(frozen=True)
 class _ReceiverCommitCausalRawExpiryWait:
     reason: str
@@ -113,6 +136,26 @@ class _OriginalCallbackExpiryWait:
     envelope: object = None
 
 
+@dataclass(frozen=True)
+class _PositiveAgeImuGapWait:
+    reason: str
+    generation: int
+    _owner: object
+    input_ready: bool = False
+    prepared: object = None
+    envelope: object = None
+
+
+@dataclass(frozen=True)
+class _ScanContinuityWait:
+    reason: str
+    generation: int
+    _owner: object
+    input_ready: bool = False
+    prepared: object = None
+    envelope: object = None
+
+
 class PhysicalOriginalIngress(OriginalIngress):
     """Bounded original ownership, causal IMUs and ONE pending native scan pair.
 
@@ -126,13 +169,19 @@ class PhysicalOriginalIngress(OriginalIngress):
                  scan_frame, imu_frame, profile_revision,
                  scan_publisher_gid, imu_publisher_gid, observer_contract_sha256,
                  scan_topic='/scan', imu_topic='/imu/data_raw', imu_gap_reanchor_enabled=False,
-                 startup_expiry_discard_enabled=False, current_expiry_reanchor_enabled=False):
+                 startup_expiry_discard_enabled=False, current_expiry_reanchor_enabled=False,
+                 positive_age_imu_gap_reanchor_enabled=False, scan_continuity_reanchor_enabled=False):
         require(type(imu_gap_reanchor_enabled) is bool, 'typed_IMU_gap_reanchor_option_required')
         self.__imu_gap_reanchor_enabled = imu_gap_reanchor_enabled
         require(type(startup_expiry_discard_enabled) is bool and type(current_expiry_reanchor_enabled) is bool,
                 'typed_scan_expiry_options_required')
         self.__startup_expiry_discard_enabled = startup_expiry_discard_enabled
         self.__current_expiry_reanchor_enabled = current_expiry_reanchor_enabled
+        # V21 options: default OFF leaves every v20 code path and outcome unchanged.
+        require(type(positive_age_imu_gap_reanchor_enabled) is bool and
+                type(scan_continuity_reanchor_enabled) is bool, 'typed_v21_reanchor_options_required')
+        self.__positive_age_imu_gap_reanchor_enabled = positive_age_imu_gap_reanchor_enabled
+        self.__scan_continuity_reanchor_enabled = scan_continuity_reanchor_enabled
         require(callable(source_clock_kind), 'independent_ROS_clock_kind_provider_required')
         for gid in (scan_publisher_gid, imu_publisher_gid):
             require(type(gid) is bytes and len(gid) == 16 and any(gid),
@@ -146,7 +195,9 @@ class PhysicalOriginalIngress(OriginalIngress):
         self.observer_contract_sha256 = observer_contract_sha256
         self._physical_configuration = (source_clock_kind, self.expected_gids,
                                          observer_contract_sha256, imu_gap_reanchor_enabled,
-                                         startup_expiry_discard_enabled, current_expiry_reanchor_enabled)
+                                         startup_expiry_discard_enabled, current_expiry_reanchor_enabled,
+                                         positive_age_imu_gap_reanchor_enabled,
+                                         scan_continuity_reanchor_enabled)
         self.callback_provenance = {}
         self._callback_context = None
         self._last_delivery_raw = self._last_delivery_source = None
@@ -175,6 +226,21 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._consumed_expiry_proof = None
         self._receiver_expiry_proof = self._receiver_expiry_wait = None
         self._final_expiry_proof = None
+        self._positive_age_gap_proof = self._positive_age_gap_wait = None
+        self.positive_age_imu_gap_wait_count = 0
+        self.positive_age_imu_gap_wait_timing = None
+        self._continuity_proof = self._continuity_wait = self._continuity_anchor = None
+        self.scan_continuity_wait_count = 0
+        self.scan_continuity_wait_counts = dict.fromkeys(SCAN_CONTINUITY_WAIT_REASONS, 0)
+        self.scan_continuity_wait_timing = None
+
+    @property
+    def positive_age_imu_gap_reanchor_enabled(self):
+        return self.__positive_age_imu_gap_reanchor_enabled
+
+    @property
+    def scan_continuity_reanchor_enabled(self):
+        return self.__scan_continuity_reanchor_enabled
 
     @property
     def imu_gap_reanchor_enabled(self):
@@ -200,7 +266,19 @@ class PhysicalOriginalIngress(OriginalIngress):
         self._consumed_expiry_proof = None
         self._receiver_expiry_proof = self._receiver_expiry_wait = None
         self._final_expiry_proof = None
+        self._positive_age_gap_proof = self._positive_age_gap_wait = None
+        self._continuity_proof = self._continuity_wait = self._continuity_anchor = None
         return value
+
+    def _clear_transient_wait_slots(self):
+        # V21 helper: a newly owned WAIT/anchor supersedes every older proof/WAIT slot.
+        self._gap_exception = self._gap_wait_outcome = None
+        self._expiry_wait_outcome = None
+        self._callback_expiry_wait = None
+        self._preparation_expiry_proof = self._consumed_expiry_proof = None
+        self._receiver_expiry_proof = self._receiver_expiry_wait = self._final_expiry_proof = None
+        self._positive_age_gap_proof = self._positive_age_gap_wait = None
+        self._continuity_proof = self._continuity_wait = self._continuity_anchor = None
 
     def reset(self):
         value = super().reset()
@@ -222,7 +300,8 @@ class PhysicalOriginalIngress(OriginalIngress):
             'source_profile_configuration_changed')
         require(self._physical_configuration == (self.source_clock_kind,
             self.expected_gids, self.observer_contract_sha256, self.imu_gap_reanchor_enabled,
-            self.startup_expiry_discard_enabled, self.current_expiry_reanchor_enabled),
+            self.startup_expiry_discard_enabled, self.current_expiry_reanchor_enabled,
+            self.positive_age_imu_gap_reanchor_enabled, self.scan_continuity_reanchor_enabled),
             'physical_source_provenance_configuration_changed')
         require(type(receipt) is RawReceipt and receipt.domain == self.domain,
                 'RAW_boot_domain_changed')
@@ -571,6 +650,10 @@ class PhysicalOriginalIngress(OriginalIngress):
                     return self._quarantine_scan_expiry(cdr, receipt,
                         callback.independent_ros_system_now_ns, publisher_gid, clock, envelope=envelope)
             self._scan_fresh(envelope, clock)
+            if self.scan_continuity_reanchor_enabled:
+                # V21: classify only after every gate above; returns unless the
+                # exact allowlisted continuity loss is proven on this clock.
+                self._classify_scan_continuity(envelope, clock)
             require(self.pending is None and self._active is None and self.prepared is None,
                     'pending_pair_replaced_continuity_lost')
             previous = self.previous
@@ -586,8 +669,154 @@ class PhysicalOriginalIngress(OriginalIngress):
             self.previous = envelope
             return self._outcome('pending_physical_original_pair' if previous else
                                  'first_physical_original_scan', envelope=envelope)
+        except _ValidatedScanContinuityLoss as error:
+            try:
+                return self._quarantine_scan_continuity(error, envelope, clock)
+            except Exception as invalid:
+                return self._invalidate(str(invalid))
         except Exception as error:
             return self._invalidate(str(error))
+
+    # ---- V21 (c): fresh ordered scan whose anchor cannot form one exact pair ----
+
+    def _classify_scan_continuity(self, envelope, clock):
+        previous = self.previous
+        if previous is None:
+            return
+        if self.pending is not None:
+            # IMU-only stall: an older pair still waits for its end IMU.
+            if not (self._active is None and self.prepared is None and self._prepared_digest is None and
+                    type(self.pending) is tuple and len(self.pending) == 2 and self.pending[1] is previous):
+                return  # existing 'pending_pair_replaced_continuity_lost' stays fatal
+            kind = 'pending_pair_replaced'
+        else:
+            interval = envelope.wire.header.stamp_ns-previous.wire.header.stamp_ns
+            if not interval > PAIR_INTERVAL_NS:
+                return  # adjacent pair, or non-positive interval -> existing fatal require
+            kind = 'missing_original_scan'
+        if not (previous.receipt.ns <= envelope.receipt.ns and
+                envelope.wire.header.stamp_ns > previous.wire.header.stamp_ns and
+                previous.publisher_gid == envelope.publisher_gid == self.expected_gids[0]):
+            return  # reordering / receipt reversal / publisher change stay fatal below
+        with self.lock:
+            self._scan_continuity_guards(kind, envelope, previous, self.pending, clock)
+            error = _ValidatedScanContinuityLoss(kind)
+            self._continuity_proof = (error, kind, envelope, previous, self.pending, clock,
+                                      self.generation, self.clock_session)
+            raise error
+
+    def _scan_continuity_guards(self, kind, envelope, previous, pending, clock):
+        require(self.scan_continuity_reanchor_enabled is True and self.fault is None,
+                self.fault or 'scan_continuity_reanchor_disabled')
+        require(kind in SCAN_CONTINUITY_WAIT_REASONS, 'exact_scan_continuity_reason_required')
+        self._receipt(envelope.receipt, self.generation)
+        self._exact_latest_clock(clock, 'exact_existing_scan_continuity_clock_required')
+        require(self.previous is previous and previous is not None and envelope is not previous and
+                self._active is None and self.prepared is None and self._prepared_digest is None,
+                'owned_scan_continuity_state_required')
+        for value in (previous, envelope):
+            self._scan_callback_guards(value, clock)
+        self._scan_fresh(envelope, clock)  # the newest scan is fresh on this same clock
+        interval = envelope.wire.header.stamp_ns-previous.wire.header.stamp_ns
+        require(interval > 0 and previous.receipt.ns <= envelope.receipt.ns and
+                previous.publisher_gid == envelope.publisher_gid == self.expected_gids[0],
+                'missing_or_reordered_adjacent_native_pair')
+        if kind == 'missing_original_scan':
+            require(pending is None and self.pending is None and interval > PAIR_INTERVAL_NS,
+                    'exact_missing_original_scan_required')
+        else:
+            require(type(pending) is tuple and len(pending) == 2 and pending is self.pending and
+                    pending[1] is previous, 'exact_pending_original_pair_required')
+            self._scan_callback_guards(pending[0], clock)
+            require(0 < previous.wire.header.stamp_ns-pending[0].wire.header.stamp_ns <= PAIR_INTERVAL_NS and
+                    pending[0].receipt.ns <= previous.receipt.ns and
+                    pending[0].publisher_gid == previous.publisher_gid,
+                    'missing_or_reordered_adjacent_native_pair')
+        retained = tuple(self.imus)
+        if retained:
+            self._imu_window_guards(retained, clock)
+        for owner, _digest in tuple(self._owners.values()):
+            self.validate_owned(owner)
+        require(type(self.scan_continuity_wait_count) is int and _ns(self.scan_continuity_wait_count+1) and
+                type(self.scan_continuity_wait_counts.get(kind)) is int and
+                _ns(self.scan_continuity_wait_counts[kind]+1), 'scan_continuity_wait_counter_exhausted')
+        return interval
+
+    def _quarantine_scan_continuity(self, error, envelope, clock):
+        with self.lock:
+            proof = self._continuity_proof
+            require(type(error) is _ValidatedScanContinuityLoss and type(proof) is tuple and len(proof) == 8 and
+                    proof[0] is error and proof[2] is envelope and proof[5] is clock and
+                    proof[6] == self.generation and proof[7] == self.clock_session and self.fault is None,
+                    'owned_scan_continuity_proof_required')
+            _, kind, _, previous, pending, _, _, _ = proof
+            interval = self._scan_continuity_guards(kind, envelope, previous, pending, clock)
+            timing = dict(schema='ubts.native.scan_continuity_wait.v1', kind=kind,
+                previous_header_ns=previous.wire.header.stamp_ns, current_header_ns=envelope.wire.header.stamp_ns,
+                header_interval_ns=interval, pair_interval_limit_ns=PAIR_INTERVAL_NS,
+                pending_pair_headers_ns=None if pending is None else
+                    [pending[0].wire.header.stamp_ns, pending[1].wire.header.stamp_ns],
+                comparison=dict(source_ns=clock.source_ns, RAW_ns=clock.receipt_ns),
+                current_SOURCE_age_ns=clock.source_ns-envelope.wire.header.stamp_ns,
+                current_RAW_age_ns=clock.receipt_ns-envelope.receipt.ns,
+                retained_IMU_count=len(self.imus),
+                anchor=('newest_validated_scan_retained' if kind == 'missing_original_scan'
+                        else 'full_reanchor_nothing_retained'),
+                SOURCE_TTL_ns=SOURCE_AGE_NS, RAW_TTL_ns=RECEIPT_AGE_NS, admitted_pair=False,
+                data_qualified=False)
+            require(len(json.dumps(timing, allow_nan=False, separators=(',', ':')).encode()) <= 1024,
+                    'scan_continuity_wait_timing_capacity')
+            if kind == 'missing_original_scan':
+                # Same post-state as the reviewed first-scan path: the fresh,
+                # fully validated newest scan is the only anchor; no pair across the hole.
+                self.previous = envelope
+                self.pending = self.prepared = self._active = None
+                self._prepared_digest = None
+                self._clear_transient_wait_slots()
+                self._continuity_anchor = envelope
+            else:
+                # IMU stall taints both scans' brackets: full v9-style re-anchor.
+                scan_floor = _max_present(self._observed_scan_header_floor, self._gap_scan_floor,
+                                          envelope.wire.header.stamp_ns)
+                imu_floor = _max_present(self._observed_imu_header_floor, self._gap_imu_floor,
+                                         *(v.wire.header.stamp_ns for v in self.imus))
+                self._observed_scan_header_floor = self._gap_scan_floor = scan_floor
+                self._observed_imu_header_floor = self._gap_imu_floor = imu_floor
+                self.previous = self.pending = self.prepared = self._active = None
+                self._prepared_digest = None
+                self.imus.clear(); self._owners.clear(); self.callback_provenance.clear()
+                self._clear_transient_wait_slots()
+            self._first_pair = True
+            self.scan_continuity_wait_count += 1
+            self.scan_continuity_wait_counts[kind] += 1
+            self.scan_continuity_wait_timing = timing
+            result = _ScanContinuityWait(SCAN_CONTINUITY_WAIT_REASONS[kind], self.generation, self)
+            self._continuity_wait = result
+            return result
+
+    def is_owned_scan_continuity_wait(self, value):
+        with self.lock:
+            try:
+                if not (type(value) is _ScanContinuityWait and value is self._continuity_wait and
+                        value._owner is self and value.generation == self.generation and self.fault is None and
+                        self.scan_continuity_reanchor_enabled is True and
+                        value.reason in SCAN_CONTINUITY_WAIT_REASONS.values() and
+                        value.input_ready is False and value.prepared is None and value.envelope is None and
+                        self._continuity_proof is None and self.pending is None and self.prepared is None and
+                        self._active is None and self._prepared_digest is None and self._first_pair is True):
+                    return False
+                if value.reason == SCAN_CONTINUITY_WAIT_REASONS['missing_original_scan']:
+                    anchor = self._continuity_anchor
+                    if anchor is None or self.previous is not anchor:
+                        return False
+                    self._native_scan(anchor)
+                    for imu in tuple(self.imus):
+                        self.validate_owned(imu)
+                    return True
+                return (self._continuity_anchor is None and self.previous is None and
+                        not self._owners and not self.imus and not self.callback_provenance)
+            except Exception:
+                return False
 
     def _scan_expiry_option(self):
         return (self.startup_expiry_discard_enabled if self.previous is None
@@ -751,6 +980,10 @@ class PhysicalOriginalIngress(OriginalIngress):
                 originals = tuple(self.imus)
                 first = self._first_pair
             clock = self._evaluate()
+            if self.positive_age_imu_gap_reanchor_enabled:
+                # V21: same sampled clock, before either existing entry point
+                # (v17 receiver pre-check or v9 association gap guards).
+                self._classify_positive_age_imu_gap(pair, originals, clock, token)
             self._check_receiver_prepare_positive_age(pair,originals,clock,token,first,
                 positive_age_factory,'receiver_prepare_association')
             originals = tuple(e for e in originals
@@ -796,11 +1029,239 @@ class PhysicalOriginalIngress(OriginalIngress):
                     return self._quarantine_expected_gap(error, token)
                 except Exception as invalid:
                     return self._invalidate(str(invalid))
+        except _ValidatedPositiveAgeImuGap as error:
+            with self.lock:
+                if generation != self.generation:
+                    return self._outcome('late_prepare_discarded')
+                try:
+                    return self._quarantine_positive_age_imu_gap(error, token)
+                except Exception as invalid:
+                    return self._invalidate(str(invalid))
         except Exception as error:
             with self.lock:
                 if generation != self.generation:
                     return self._outcome('late_prepare_discarded')
                 return self._invalidate(str(error))
+
+    # ---- V21 (b): positively aged pair whose original IMU brackets are lost ----
+
+    def _exact_latest_clock(self, clock, reason):
+        # The classification clock must be the receiver's latest existing sample:
+        # proves no resample/renewal happened between the failed gate and WAIT.
+        require(type(clock) is PhysicalClockReading and clock.source_session == self.clock_session and
+                clock.raw_domain == self.domain and clock.source_ns == self._last_system and
+                clock.receipt_ns == self._last_eval_raw and
+                clock.sample_sequence == self._system_sample_sequence and
+                _ns(clock.source_ns) and _ns(clock.receipt_ns) and _ns(clock.sample_sequence) and
+                clock.clock_kind == SYSTEM_CLOCK and clock.provenance_domain == PHYSICAL_DOMAIN, reason)
+
+    @staticmethod
+    def _original_imu_samples(originals):
+        return tuple(ImuSample(v.wire.header.stamp_ns, v.receipt.ns, v.wire.header.frame_id,
+            tuple(float(x) for x in v.wire.groups[0]), tuple(float(x) for x in v.wire.groups[2]),
+            tuple(float(x) for x in v.wire.groups[1]), tuple(float(x) for x in v.wire.groups[3]))
+            for v in originals)
+
+    @staticmethod
+    def _receiver_prepare_ages_positive(current, originals, clock):
+        # Identical selection to the v17 receiver pre-check: scan, latest IMU at
+        # or before the scan Header, newest retained IMU; unchanged TTLs.
+        lower = next((v for v in reversed(originals)
+                      if v.wire.header.stamp_ns <= current.wire.header.stamp_ns), None)
+        values = (current,) if lower is None or not originals else (current, lower, originals[-1])
+        return any(clock.source_ns-v.wire.header.stamp_ns >= SOURCE_AGE_NS or
+                   clock.receipt_ns-v.receipt.ns >= RECEIPT_AGE_NS for v in values)
+
+    def _classify_positive_age_imu_gap(self, pair, originals, clock, token):
+        previous, current = pair
+        if not originals or not self._receiver_prepare_ages_positive(current, originals, clock):
+            return
+        pairing = pair_imu(self._original_imu_samples(originals), previous.wire.header.stamp_ns,
+            current.wire.header.stamp_ns, frame_id=self.imu_frame, receipt_now_ns=clock.receipt_ns,
+            max_roll_pitch_rad=None)
+        if pairing.reason not in POSITIVE_AGE_IMU_GAP_REASONS:
+            return  # bracketed -> existing v17 WAIT; every other reason stays fatal
+        with self.lock:
+            self._positive_age_imu_gap_guards(previous, current, originals, clock, pairing.reason, token)
+            error = _ValidatedPositiveAgeImuGap(pairing.reason)
+            self._positive_age_gap_proof = (error, previous, current, originals, clock, pairing.reason,
+                                            token, self.generation, self.clock_session)
+            raise error
+
+    def _scan_callback_guards(self, value, clock):
+        scan = self._native_scan(value)
+        a, b, inc, dt, cycle, minimum, maximum = map(float, value.wire.metadata)
+        require(all(math.isfinite(v) for v in (a, b, inc, dt, cycle, minimum, maximum)) and
+                120 <= len(scan.ranges) <= 4096 and 0 < inc <= .1 and dt >= 0 and
+                0 <= cycle <= .5 and 0 <= minimum < maximum <= 100 and
+                abs(b-(a+(len(scan.ranges)-1)*inc)) <= 2e-4 and
+                (len(scan.ranges)-1)*dt <= .2, 'bounded_original_physical_scan_geometry_required')
+        callback = self.callback_provenance[id(value)][1]
+        require(type(callback) is NativeCallbackProvenance and
+                value.publisher_gid == callback.publisher_gid == self.expected_gids[0] and
+                callback.observer_contract_sha256 == self.observer_contract_sha256 and
+                value.wire.header.stamp_ns <= callback.independent_ros_system_now_ns <= clock.source_ns and
+                value.receipt.ns <= clock.receipt_ns, 'noncausal_reanchor_original_callback')
+        require(scan.stamp_ns+math.ceil((len(scan.ranges)-1)*dt*1e9) <=
+                callback.independent_ros_system_now_ns, 'rolling_scan_wire_time_future_at_original_callback')
+        return scan
+
+    def _imu_window_guards(self, originals, clock):
+        # Every retained original (not only bracket endpoints) must be owned,
+        # causal, ordered, one publisher and carry valid ROS IMU groups.
+        require(type(originals) is tuple and 1 <= len(originals) <= 64, 'original_imu_window_required')
+        stamps, receipts = [], []
+        for value in originals:
+            self.validate_owned(value)
+            require(type(value.wire) is WireImu and value.wire.header.frame_id == self.imu_frame,
+                    'original_imu_window_required')
+            callback = self.callback_provenance[id(value)][1]
+            require(type(callback) is NativeCallbackProvenance and
+                    value.publisher_gid == callback.publisher_gid == self.expected_gids[1] and
+                    callback.observer_contract_sha256 == self.observer_contract_sha256 and
+                    value.wire.header.stamp_ns <= callback.independent_ros_system_now_ns <= clock.source_ns and
+                    value.receipt.ns <= clock.receipt_ns, 'noncausal_reanchor_original_callback')
+            q, qc, angular, ac, _linear, _lc = tuple(tuple(float(v) for v in group) for group in value.wire.groups)
+            groups = dict(quaternion=q, orientation_covariance=qc,
+                          angular_velocity=angular, angular_velocity_covariance=ac)
+            for name, group in (('orientation', _imu_group(groups, 'quaternion', 'orientation_covariance', 4)),
+                    ('angular_velocity', _imu_group(groups, 'angular_velocity', 'angular_velocity_covariance', 3))):
+                require(group.valid and group.available, 'imu_'+name+'_'+group.reason)
+            stamps.append(value.wire.header.stamp_ns)
+            receipts.append(value.receipt.ns)
+        require(all(a < b for a, b in zip(stamps, stamps[1:])) and
+                all(a <= b for a, b in zip(receipts, receipts[1:])), 'reordered_imu_window')
+        return stamps
+
+    def _positive_age_imu_gap_guards(self, previous, current, originals, clock, reason, token):
+        require(self.positive_age_imu_gap_reanchor_enabled is True and self.fault is None,
+                self.fault or 'positive_age_IMU_gap_reanchor_disabled')
+        require(reason in POSITIVE_AGE_IMU_GAP_REASONS, 'exact_positive_age_IMU_gap_reason_required')
+        self._receipt(current.receipt, self.generation)
+        self._exact_latest_clock(clock, 'exact_existing_positive_age_IMU_gap_clock_required')
+        require(token is not None and self._active is token and self.pending is None and
+                self.prepared is None and self._prepared_digest is None and self.previous is current,
+                'owned_current_positive_age_IMU_gap_attempt_required')
+        require(len(originals) == len(self.imus) and all(a is b for a, b in zip(originals, self.imus)),
+                'retained_original_IMU_window_changed')
+        self.validate_owned(previous)
+        for value in (previous, current):
+            self._scan_callback_guards(value, clock)
+        require(0 < current.wire.header.stamp_ns-previous.wire.header.stamp_ns <= PAIR_INTERVAL_NS and
+                previous.receipt.ns <= current.receipt.ns, 'missing_or_reordered_adjacent_native_pair')
+        stamps = self._imu_window_guards(originals, clock)
+        for value in (previous, current)+originals:
+            require(clock.source_ns-value.wire.header.stamp_ns >= 0 and clock.receipt_ns-value.receipt.ns >= 0,
+                    'future_original_cannot_be_positive_age_wait')
+        require(self._receiver_prepare_ages_positive(current, originals, clock),
+                'exact_positive_owned_pair_age_expiry_required')
+        boundaries = []
+        for at in (previous.wire.header.stamp_ns, current.wire.header.stamp_ns):
+            index = bisect_left(stamps, at)
+            if index < len(stamps) and stamps[index] == at:
+                boundaries.append(('exact', 0))
+            elif 0 < index < len(stamps):
+                boundaries.append(('bracket', stamps[index]-stamps[index-1]))
+            elif index == 0:
+                boundaries.append(('below_retained_span', None))  # older brackets already lost
+            else:
+                # An end IMU that was never received is a sequencing breach, not data loss.
+                raise ValueError('end_original_IMU_not_received_cannot_be_positive_age_wait')
+        require(any(kind == 'below_retained_span' or (kind == 'bracket' and gap > MAX_IMU_BRACKET_NS)
+                    for kind, gap in boundaries), 'owned_positive_age_IMU_gap_or_span_loss_required')
+        pairing = pair_imu(self._original_imu_samples(originals), previous.wire.header.stamp_ns,
+            current.wire.header.stamp_ns, frame_id=self.imu_frame, receipt_now_ns=clock.receipt_ns,
+            max_roll_pitch_rad=None)
+        require(pairing.reason == reason, 'positive_age_IMU_gap_classification_changed')
+        for owner, _digest in tuple(self._owners.values()):
+            self.validate_owned(owner)
+        require(type(self.positive_age_imu_gap_wait_count) is int and
+                _ns(self.positive_age_imu_gap_wait_count+1), 'positive_age_IMU_gap_wait_counter_exhausted')
+        return tuple(boundaries)
+
+    def _quarantine_positive_age_imu_gap(self, error, token):
+        proof = self._positive_age_gap_proof
+        require(type(error) is _ValidatedPositiveAgeImuGap and type(proof) is tuple and len(proof) == 9 and
+                proof[0] is error and proof[6] is token and proof[7] == self.generation and
+                proof[8] == self.clock_session and self.fault is None,
+                'owned_positive_age_IMU_gap_proof_required')
+        _, previous, current, originals, clock, reason, _, _, _ = proof
+        # Full guards again on the SAME sampled clock against handoff mutation.
+        boundaries = self._positive_age_imu_gap_guards(previous, current, originals, clock, reason, token)
+        lower = next((v for v in reversed(originals)
+                      if v.wire.header.stamp_ns <= current.wire.header.stamp_ns), None)
+        def ages(value):
+            return None if value is None else dict(header_ns=value.wire.header.stamp_ns,
+                SOURCE_age_ns=clock.source_ns-value.wire.header.stamp_ns,
+                RAW_age_ns=clock.receipt_ns-value.receipt.ns)
+        timing = dict(schema='ubts.native.positive_age_IMU_gap_wait.v1', stage='receiver_prepare',
+            pairing_reason=reason, scan_headers_ns=[previous.wire.header.stamp_ns, current.wire.header.stamp_ns],
+            comparison=dict(source_ns=clock.source_ns, RAW_ns=clock.receipt_ns),
+            boundaries=[dict(kind=kind, gap_ns=gap) for kind, gap in boundaries],
+            scan=ages(current), selected_lower_IMU=ages(lower), newest_IMU=ages(originals[-1]),
+            retained_IMU_count=len(originals), gap_limit_ns=MAX_IMU_BRACKET_NS,
+            SOURCE_TTL_ns=SOURCE_AGE_NS, RAW_TTL_ns=RECEIPT_AGE_NS,
+            admitted=False, data_qualified=False)
+        require(len(json.dumps(timing, allow_nan=False, separators=(',', ':')).encode()) <= 2048,
+                'positive_age_IMU_gap_wait_timing_capacity')
+        # Never lower floors advanced by any earlier valid observation.
+        scan_floor = _max_present(self._observed_scan_header_floor, self._gap_scan_floor,
+                                  current.wire.header.stamp_ns)
+        imu_floor = _max_present(self._observed_imu_header_floor, self._gap_imu_floor,
+                                 *(v.wire.header.stamp_ns for v in self.imus))
+        self._observed_scan_header_floor = self._gap_scan_floor = scan_floor
+        self._observed_imu_header_floor = self._gap_imu_floor = imu_floor
+        self.previous = self.pending = self.prepared = self._active = None
+        self._prepared_digest = None
+        self.imus.clear(); self._owners.clear(); self.callback_provenance.clear()
+        self._clear_transient_wait_slots()
+        self._first_pair = True
+        self.positive_age_imu_gap_wait_count += 1
+        self.positive_age_imu_gap_wait_timing = timing
+        result = _PositiveAgeImuGapWait(POSITIVE_AGE_IMU_GAP_WAIT_REASONS[reason], self.generation, self)
+        self._positive_age_gap_wait = result
+        return result
+
+    def is_owned_positive_age_imu_gap_wait(self, value):
+        with self.lock:
+            return (type(value) is _PositiveAgeImuGapWait and value is self._positive_age_gap_wait and
+                    value._owner is self and value.generation == self.generation and self.fault is None and
+                    self.positive_age_imu_gap_reanchor_enabled is True and
+                    value.reason in POSITIVE_AGE_IMU_GAP_WAIT_REASONS.values() and
+                    value.input_ready is False and value.prepared is None and value.envelope is None and
+                    self._positive_age_gap_proof is None and
+                    self.previous is None and self.pending is None and self.prepared is None and
+                    self._active is None and self._prepared_digest is None and
+                    not self._owners and not self.imus and not self.callback_provenance)
+
+    def _release_rejected_registration_keep_anchor(self, owner, attempt, original, digest):
+        """V21 (a) receiver half: drop the rejected prepared pair, keep its newest scan.
+
+        Called only by the exact factory abandon path under factory.lock and
+        this lock. The post-state is the reviewed post-commit steady state
+        (previous = validated current scan, retained owned IMUs) without any
+        commit: no receiver consume, no diagnostic, and a new pair epoch.
+        """
+        with self.lock:
+            from physical_factory import PhysicalNativeShadowFactory
+            require(type(owner) is PhysicalNativeShadowFactory and owner.ingress is self and
+                    owner.registration_rejection_reanchor_enabled is True and
+                    attempt is owner._registration_rejection_attempt and type(attempt) is tuple and
+                    len(attempt) == 8 and attempt[1] is original and attempt[2] == digest,
+                    'exact_registration_rejection_factory_required')
+            require(type(original) is PreparedInputs and original is self.prepared and
+                    original.generation == self.generation and self.fault is None and
+                    type(digest) is str and digest == self._prepared_digest == self._digest_prepared(original) and
+                    self.previous is original.current and self.pending is None and self._active is None,
+                    'exact_rejected_prepared_pair_required')
+            self._native_scan(original.current)
+            for value in tuple(self.imus):
+                self.validate_owned(value)
+            self.prepared = None
+            self._prepared_digest = None
+            self._clear_transient_wait_slots()
+            self._first_pair = True
+            return original.current
 
     def _retain_imu_gap_failure_timing(self, previous, current, originals, samples, clock):
         # pair_imu has already validated window ordering/frames/receipt
