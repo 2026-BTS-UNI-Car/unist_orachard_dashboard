@@ -62,14 +62,46 @@ class FrameTimingTest(unittest.TestCase):
         self.assertLessEqual(plan['max_rounding_error_s'],.0005)
         self.assertAlmostEqual(plan['last_dt_s'],.066000002,places=9)
 
-    def test_collision_and_invalid_times_are_rejected_without_adjusting_pts(self):
-        for values in ([0.,.0004],[0.,0.],[0.,-.01],[0.,float('nan')],[False,.1]):
+    def test_invalid_times_are_rejected(self):
+        for values in ([0.,0.],[0.,-.01],[0.,float('nan')],[False,.1]):
             with self.subTest(values=values),self.assertRaises(ValueError):
                 frame_timing([dict(t_s=t) for t in values])
         with self.assertRaisesRegex(ValueError,'mixed_native_camera_time'):
             frame_timing([dict(t_s=0.,bag_time_ns=10),dict(t_s=.1)])
         with self.assertRaisesRegex(ValueError,'camera_native_time_mismatch'):
             frame_timing([dict(t_s=0.,bag_time_ns=10),dict(t_s=.2,bag_time_ns=100_000_010)])
+
+    def test_two_receipts_0_4_ms_apart_never_fail_the_recording(self):
+        origin=1_800_000_000_000_000_000
+        offsets=[0,400_000,66_000_000,99_000_000]  # A drained burst stored by the recorder.
+        rows=[dict(t_s=.02+n*1e-9,bag_time_ns=origin+n) for n in offsets]
+        plan=frame_timing(rows)  # Receipts only (no header stamps): moved 1 ms, counted.
+        self.assertEqual(plan['pts_ms'],[0,1,66,99])
+        self.assertEqual((plan['pts_source'],plan['header_stamp_rejected_reason']),('bag_receipt','header_stamp_missing'))
+        self.assertEqual((plan['pts_adjusted_frames'],plan['pts_max_adjustment_s']),(1,.001))
+        self.assertEqual(len(plan['pts_ms']),len(rows))  # No frame added or dropped.
+        self.assertEqual(frame_timing([dict(t_s=t) for t in (0.,.0004)])['pts_ms'],[0,1])
+        stamped=[dict(row,stamp_ns=origin+s) for row,s in zip(rows,(0,33_333_333,66_666_667,100_000_000))]
+        plan=frame_timing(stamped)  # Capture stamps keep the real spacing.
+        self.assertEqual(plan['pts_ms'],[0,33,67,100])
+        self.assertEqual((plan['pts_source'],plan['pts_adjusted_frames']),('header_stamp',0))
+        self.assertAlmostEqual(plan['span_s'],.1,places=9)
+
+    def test_header_stamps_need_1ms_spacing_and_receipt_agreement(self):
+        origin=1_800_000_000_000_000_000
+        receipts=[0,33_000_000,66_000_000,99_000_000]
+        def plan(stamps):
+            return frame_timing([dict(t_s=.02+r*1e-9,bag_time_ns=origin+r,stamp_ns=origin+s) for r,s in zip(receipts,stamps)])
+        self.assertEqual(plan([0,33_000_000,33_500_000,99_000_000])['header_stamp_rejected_reason'],
+                         'header_stamp_not_increasing_by_1ms')
+        self.assertEqual(plan([0,33_000_000,66_000_000,1_200_000_000])['header_stamp_rejected_reason'],
+                         'header_stamp_diverges_from_receipt')
+        rejected=plan([0,33_000_000,20_000_000,99_000_000])
+        self.assertEqual((rejected['pts_source'],rejected['pts_ms']),('bag_receipt',[0,33,66,99]))
+        burst=frame_timing([dict(t_s=.02+r*1e-9,bag_time_ns=origin+r) for r in (0,100_000,200_000,300_000,33_000_000)])
+        self.assertEqual(burst['pts_ms'],[0,1,2,3,33])
+        self.assertEqual((burst['pts_adjusted_frames'],burst['pts_max_adjustment_s']),(3,.003))
+        self.assertGreater(burst['terminal_pts_ms'],33)
 
     def test_single_frame_has_explicit_hold_not_forced_capture_fps(self):
         plan=frame_timing([dict(t_s=.2,bag_time_ns=100)])
