@@ -41,7 +41,7 @@ def export(archive,output,topic='auto'):
     reader.set_filter(rosbag2_py.StorageFilter(topics=[topic]))
     typename=next(t.type for t in reader.get_all_topics_and_types() if t.name==topic)
     message_type=get_message(typename);start=info['starting_time']['nanoseconds_since_epoch']
-    frames=[];previous=None;dimensions=None;rotation=None
+    frames=[];previous=None;dimensions=None;rotation=None;payloads=set()
     output.parent.mkdir(parents=True,exist_ok=True)
     if output.exists():raise ValueError('export_target_already_exists')
     partial=output.with_suffix('.zip.partial')
@@ -53,14 +53,17 @@ def export(archive,output,topic='auto'):
             if typename=='sensor_msgs/msg/CompressedImage':
                 data=bytes(message.data)
                 image=cv2.imdecode(np.frombuffer(data,dtype=np.uint8),cv2.IMREAD_COLOR)
+                # Driver passthrough frames keep sensor orientation and declare
+                # rotation=180; legacy re-encoded frames are already upright.
                 current_rotation=180 if 'rotation=180' in message.format else 0
+                payloads.add('original_camera_mjpeg' if 'original_camera_mjpeg' in message.format else 'reencoded_jpeg')
             elif typename=='sensor_msgs/msg/Image':
                 if message.encoding not in ('bgr8','rgb8'):raise ValueError('unsupported_native_camera_encoding')
                 image=np.frombuffer(bytes(message.data),dtype=np.uint8).reshape(message.height,message.step)[:,:message.width*3].reshape(message.height,message.width,3)
                 if message.encoding=='rgb8':image=cv2.cvtColor(image,cv2.COLOR_RGB2BGR)
                 ok,jpeg=cv2.imencode('.jpg',image,[cv2.IMWRITE_JPEG_QUALITY,95])
                 if not ok:raise ValueError('native_frame_export_failed')
-                data=jpeg.tobytes();current_rotation=0
+                data=jpeg.tobytes();current_rotation=0;payloads.add('raw_image_encoded_q95')
             else:raise ValueError('unsupported_camera_message')
             if image is None:raise ValueError('invalid_source_camera_frame')
             size=(image.shape[1],image.shape[0])
@@ -77,7 +80,8 @@ def export(archive,output,topic='auto'):
         value=dict(schema='ubts.native_camera_export.v1',complete=True,archive_id=archive.name,frames=frames,
             source_sha256=hashes,source_signatures=signatures,source_topic=topic,bag_start_ns=start,
             source_width=dimensions[0],source_height=dimensions[1],rotation_deg=rotation,all_frames_exported=True,
-            original_camera_codec_preserved=typename.endswith('/CompressedImage'))
+            original_camera_codec_preserved=typename.endswith('/CompressedImage'),
+            camera_payload=payloads.pop() if len(payloads)==1 else 'mixed')
         bundle.writestr('manifest.json',json.dumps(value,separators=(',',':')))
     partial.replace(output)
     return dict(archive_id=archive.name,source_topic=topic,frames=len(frames),width=dimensions[0],height=dimensions[1],bytes=output.stat().st_size,sha256=digest(output))

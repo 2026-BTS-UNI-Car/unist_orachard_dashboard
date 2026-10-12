@@ -78,6 +78,14 @@ WebSocket bridge는 표시용 압축 프레임과 캡처 상태를 분리한다.
 
 브라우저/WebSocket output은 표시용 프리뷰다. 기본 AI 추론은 `ORCHARD_VISION_INFERENCE_WIDTH=0`으로 source/native frame을 사용하고, recorder는 별도의 `RECORDER_CAMERA_PREVIEW_WIDTH=640`으로 저장 JPEG만 축소한다. 따라서 화면이나 archive 용량을 줄이기 위해 프리뷰 폭을 바꿔도 AI 입력 해상도는 바뀌지 않는다. 추론 입력은 camera bridge가 단독 소유하므로 폭을 제한하려면 `ORCHARD_VISION_INFERENCE_WIDTH`만 명시적으로 설정한다. recorder는 공유된 bridge 결과를 sensor stamp로 매칭하며 독립 추론 설정을 갖지 않는다.
 
+## MJPEG 원본 녹화 경로 (2026-10-13)
+
+`CAMERA_MJPEG_PASSTHROUGH=1`(기본, `--no-mjpeg-passthrough`로 끔)이고 fourcc가 `MJPG`이면 드라이버는 `CAP_PROP_CONVERT_RGB=0`으로 카메라가 보낸 원본 JPEG를 받는다. 캡처 thread는 디코드·회전·재인코딩을 하지 않고 SOI/SOF/EOI 헤더만 검사한 뒤 원본 바이트를 `/camera/recording/jpeg`에 발행한다. 픽셀은 센서 방향 그대로이고 format이 `jpeg; original_camera_mjpeg; rotation=180; width=1920; height=1080`처럼 회전을 선언한다. `export_recording_camera.py`는 `rotation=180`을 manifest `rotation_deg`로 옮기고 `build_adaptive_recording.py`가 `hflip,vflip`으로 적용한다. 회전 표시가 없는 이전 녹화(이미 회전된 q90 재인코딩)는 그대로 rotation 0이다.
+
+프리뷰(`/camera/image_jpeg`)와 raw(`/camera/image_raw`)는 latest-only worker에서 원본 JPEG를 디코드한다. `CAMERA_PREVIEW_DECODE_REDUCTION=auto|1|2|4`의 기본 auto는 1080p 이상을 1/2 축소 디코드하므로 `CAMERA_COMPRESSED_PREVIEW_WIDTH=1280`이어도 실제 프리뷰는 960x540이다. 요청/실효 폭은 status의 `preview`에 있다. raw는 `CAMERA_RAW_PUBLISH_FPS` 주기에만 전체 디코드·회전한다.
+
+백엔드가 BGR을 돌려주거나(미지원) 연속 3회 open의 첫 버퍼가 JPEG가 아니면 기존 디코드 경로(`NativeCameraEncoder` q90 재인코딩)로 자동 전환하고 `mode=fallback`과 이유를 기록한다. 실행 중 잘못된 JPEG 버퍼는 read 실패로 세어 기존 5회 재open 규칙을 따른다. `camera_driver_status.json`의 `mode`, `mjpeg_passthrough`, `stage_counters`(device_reads, passthrough_frames, invalid_frames, recording_published(+bytes), preview_decoded/published/overwritten, raw_published의 누적값과 약 5초 rate)로 단계별 처리량을 확인한다. 실제 카메라의 장시간 기록 FPS는 별도 현장 측정이 필요하다.
+
 camera AI worker는 5 Hz의 latest-frame/coalescing 방식이다. worker가 200 ms보다 늦어져도 과거 frame queue를 순서대로 처리하지 않고 가장 최근 frame으로 교체하며, 누락 수와 실제 추론 입력 크기는 `runtime/camera_bridge_status.json`의 `vision_publisher`에서 확인한다. 실시간 표시 스트림은 이 AI 주기와 독립적으로 약 15 Hz까지 동작한다.
 
 ## 실시간 전송 프로토콜

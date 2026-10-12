@@ -46,6 +46,9 @@ are retained. The source-sized MP4 uses CRF 18 and is the top HLS representation
 720/480/360/240 representations are added only when the source is large enough.
 No resolution/FPS upscaling or constant 30 FPS conversion is performed. A 1080
 source therefore remains 1080; a 720 source cannot become native 1080.
+Driver MJPEG passthrough frames are stored in sensor orientation and declare
+`rotation=180` in the message format; the export records `rotation_deg` and
+the build applies `hflip,vflip`. Older frames without that flag are upright.
 
 ## Control contract
 

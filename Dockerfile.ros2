@@ -14,7 +14,7 @@ COPY dashboard_server ./dashboard_server
 COPY scripts/__init__.py ./scripts/__init__.py
 COPY scripts/lidar_ws_bridge.py ./scripts/lidar_ws_bridge.py
 COPY scripts/camera_ros2_driver.py ./scripts/camera_ros2_driver.py
-COPY scripts/camera_cadence.py scripts/camera_preview_worker.py ./scripts/
+COPY scripts/camera_cadence.py scripts/camera_preview_worker.py scripts/camera_mjpeg.py ./scripts/
 COPY scripts/camera_ws_bridge.py ./scripts/camera_ws_bridge.py
 COPY scripts/imu_ros2_driver.py ./scripts/imu_ros2_driver.py
 COPY scripts/imu_ws_bridge.py ./scripts/imu_ws_bridge.py
