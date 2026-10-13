@@ -322,3 +322,18 @@ Jetson 설치 native7453은 그대로다. 마지막 성공 상태 확인은 UTC1
 재개 evidence: sdk-enabled-storage-probe-v3/HANDOFF.json, ROOT_ENABLED_SDK_CLOSED_READBACK.json, linux-numpy-overview-candidate-v2/POSTCLOSED_HANDOFF.json, finite-archive-retention-prototype-v5/HANDOFF.json, gc-v5-independent-stop-review/HANDOFF.json. PUBLIC Git/NAS는 각 source head 확인 파일을 따른다. 전체 목표 미완료이며 software 잔여 항목을 현장 대기 항목으로 옮기지 않는다.
 
 ---
+
+## 2026-10-14 20MiB 실제 저장·단일 writer·종료 경합·원본 보유 연결 (2026-10-13T21:37:57.533894+00:00)
+
+- [x] 실제 C++799a/EVP binary-stream V2: 16,391cells/81,955B 및 2048×2048=4,194,304cells/20,971,520B를 기존80KiB wire 한도로 전송하고 영구 receipt 2개를 검증했다. Stop을 전송 전에 수행해도 이미 소유한 RAW는 유지하며 archive ACK 이후에만 해제한다. fake/version/nonce/f64 signed-zero 변조를 거부하고 최종 RAW/WIRE/PENDING0, 자식 exit0/helper 제거·부재, source 및 SDK97files 불변 확인. 최대 크기 전체 profile5.245s/cross0.798s/전체trial49.306s는 공유 host 합성 관찰이며 실시간·하드웨어·단독 finish throughput이 아니다. Root 읽기 전용 DB/CAS 재검증도 통과.
+- [x] 첫 max trial V1은 configure/compile 성공 뒤 defaultOFF 시작127로 실패했다. ldd가 mounted799a 대신 이미지의 예전 `/ws/install` ABI를 선택했다. 실패를 보존하고 NEW V2에서 같은 정확한 LD 환경을 ldd/defaultOFF/두 profile에 적용하며 경로·SHA를 확인했다. 기존 DSO/core를 다시 빌드하거나 가짜 symlink로 대체하지 않았다.
+- [x] 단일 writer 제안 V2: 실제 namespaced owner/Source/CommittedReadView가 만든 ReceiptStore를 빌려 같은 OS lock/DB를 공유, C++ 원래 nonce/f64/body identity와 display reference의 별도 관계를 검증, metadata-only BODY로 재복사/re-persist를 하지 않는다. 46개 finite Python 검사 모두 통과/skip0, 33source 불변, 독립 검토 완료. 실제 C++ endpoint/RAW-release 및 GC 병합은 아직 미구현이다.
+- [x] exact-public-namespace retention/overview V5: 기존12개+V2교정1+V3직접생성1+V4동시cache-release1+V5worker-start1 =서로 다른16개 그룹을 확인했다(16개 전체 재실행이 아님). thread/cache/opening/pin을 실제 해제하기 전 closed로 보고하지 않으며 오류는 소유권을 유지하고 재시도할 수 있다. 수식/native math/RAM/disk cap과 엄격한 클래스 식별 유지. V3/V4의 추가 경합 증거는 별도 보존, V5 독립 follow-up 검토 중. 공개/Jetson에 아직 적용하지 않았다.
+- [x] qualified-private-source NAS 백업: fullbody providerV2 20파일, actual probeV2 36파일, singlewriterV2 33파일, retentionV4 53파일을 frozen 해시로 복제했다. 원본GPS/CDR/body·raw inspect/env는 복사하지 않는다. V4에는 이후 발견된 worker-start 경합이 있으므로 다음 작업은 V5 이상의 확정된 source를 따른다.
+- [ ] 가장 중요한 실제 연결: Python Source.stop 뒤 begin이 새 요청을 거부하는 규칙만으로는 C++가 Stop 전에 소유한 RAW를 아직 시작되지 않은 archive로 보낼 수 없다. 실제 bound C++ Runtime.stop barrier 뒤 current pending archive_requests≤8와 정확한 charged firstchunk로 만든 일회성 owned-FD 권한을 사용해야 한다. completed nonce/owns·resolve 결과나 Python bool/JSON callback은 권한이 아니다. 첫 lease는 그대로 첫 payload로 써서80KiB 한도를 넘기지 않는다. 최종 해제는 실제 Runtime.ack가 수행한다. 진짜 binder가 없으면 loader/production begin_preowned는 실패하도록 유지하고 synthetic model 권한을 승인으로 취급하지 않는다.
+- [ ] 이 연결을 실제 singlewriter/metadata-only owner/overview pins/GC와 병합하고 source·Stop·generation·close·partial/native-ACK roots를 검증한다. 외부 CPP receipt를 무조건 영구 보존하면 disk cap에 걸리므로 실제 producer의 retired reference/re-admission authority 없이 안전한 정리를 완료 처리하지 않는다. helper120s/4096RPC의 사전 budget 예약·quiescent generation 교체도 운영 연결 필요.
+- [ ] 실제 센서→SDK Grid→영구 writer→공유 대시보드 factory/runtime, 전체 원본 기록 native 지도/robot global path, GPS measurement-clock/covariance/고정 frame, ARM/live/현장 검증은 여전히 software/검증 잔여다. 원본필드·정확도·시계를 추정해서 채우지 않는다. 모터·arm·펌웨어·장착 보정·원본 변경 없음; Jetson 설치 native7453 유지, 자율주행 출력 OFF/HOLD.
+
+재개: sdk-fullbody-storage-probe-v2/HANDOFF.json, ROOT_FULLSIZE_SDK_READBACK.json, single-writer-stream-owner-proposal-v2/POSTCLOSED_HANDOFF.json, single-writer-stream-independent-review-v2/HANDOFF.json, public-owner-retention-overview-integration-v5/HANDOFF.json, preowned-native-archive-integration-design-v1/HANDOFF.json. 최신 machine checkpoint의 active_work를 따른다. 전체 목표 미완료이며 단일 writer/genuine endpoint/retention integration을 우선 진행한다.
+
+---

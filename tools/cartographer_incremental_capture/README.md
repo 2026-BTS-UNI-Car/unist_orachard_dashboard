@@ -35,7 +35,13 @@ a durable receipt provider. It archived one exact 10-byte/2-cell body, rejected
 forged/stale/bit-mutated ACKs, and checked Stop plus external-owner/wire drain.
 The tested provider profile is only64 cells/320 bytes; this is not a full-size
 native transport, actual Grid callback, ROS executor or sensor qualification.
-The genuine full-body streaming provider is still being implemented.
+A separate actual C++ binary-stream trial now archives16,391 cells and the
+existing maximum4,194,304 cells/20,971,520 bytes through81,920-byte charged chunks.
+Both exact receipts preserve nonce and raw geometry bits, reject forged/stale
+ACKs, and drain source Stop with final RAW/wire/pending accounting zero.
+The maximum whole synthetic profile took about5.25s; this is not live performance.
+Standalone storage is proven separately from canonical shared-writer, actual
+Grid/sensor callback, continuous backend and dashboard factory integration.
 The copied metadata batch ID is NOT a genuine pose-graph revision; this preview
 must retain its UNQUALIFIED_AD8_SDK_PREVIEW label and no physical authority.
 
