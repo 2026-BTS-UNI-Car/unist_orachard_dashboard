@@ -294,3 +294,17 @@ Jetson 신규 설치/조종/모터/펌웨어/장착 보정 없음. 최신 성공
 전체 목표 미완료. Jetson 설치 native7453 유지, 마지막 현재상태 관찰은 UTC18:00~18:14이며 이후 접속/건강상태를 추정하지 않는다. 다음 재개: sdk-full-rebuild-qualification-v3/HANDOFF.json, overview-closed-v6-vector-probe-v2/HANDOFF.json, overview-closed-vector-independent-readback/HANDOFF.json, overview-browser-probe-v2/output/ROOT_CHROME_RESULT.json, gnss-receiver-utc-candidate-v4/HANDOFF.json 및 활성 provider/GC/Linux qualification 폴더. Frozen 실패·unowned NAS 변경·원본 보존; staleCompose 재생성 금지.
 
 ---
+
+## 2026-10-14 GPS 원본 시각 보존·검증·연속 작업 체크포인트 (2026-10-13T20:29:37.821655+00:00)
+
+- [x] ACTUAL 491abba: 실제 체크섬 검증된 NAV-PVT 입력 100B와 92B payload, calendar/validity/nano/tAcc/iTOW를 보존한다. ROS header는 발행 시각이라는 역할만 명시하며 센서 측정 시각으로 바꾸지 않는다. 공유 decoder/driver 3개는 SIM 343b36f에도 byte-identical로 반영했다. 원본 측정 clock 연결 및 GPS 매핑 factor는 아직 OFF다.
+- [x] 공개 UTC admission 12개 synthetic 검사 통과, 별도 독립 검토 통과. 원래 GPS·serial·시계 검사 34개 통과, 녹화 검사 2개 통과/ROS 필요 4개 skip. 처음 환경 실패(NumPy/SciPy ABI, websockets, fixture 경로, OpenCV)는 보존했고, 별도 WSL venv에 프로젝트 범위의 의존성을 설치했다. 전역 패키지는 바꾸지 않았다. SIM 공유 변경은 관련 decoder 검사 3개 통과. ROS/직렬/보드 실제 동작을 검증했다고 주장하지 않는다.
+- [x] 실제 Chrome overview 증거를 마감했다: 13 tiles/38,240 cells, 확대 후 refresh와 Stop에서 canvas 동일, 기능 API 30회 모두 200. favicon 404 1회는 남긴다. host와 lease 종료, Windows listener 목록에 해당 포트가 없음. 별도 socket 확인은 timeout 10035라 '연결 거부 확인'으로 주장하지 않는다. 이는 저장 fixture 표시 검증이며 실시간 대시보드 연결은 아니다.
+- [ ] 실제 799a C++ SHA/영구 ReceiptStore 연결 테스트 V2: configure와 암호화 dependency 확인 성공, 테스트 CHECK 매크로가 glog와 충돌해 compile 실패. enabled 실행/receipt 저장은 아직 없으며 exact helper 제거·부재와 source 불변 확인. 실패를 보존한 새 V3 recipe에서 테스트 매크로만 변경해 독립/root 검토 후 한 번 실행한다. 기존 recipe는 재시도하지 않는다.
+- [ ] GC V4: 실제 보관 파일 IO가 pin lock을 쥐어 Stop을 막는 문제를 수정, gated IO 중 open/Stop 검사 통과. 아직 private source이며 독립 검토·overview 전체 snapshot pin·실제 producer의 retirement authority 연결 필요. 원본·미확인 orphan·사용 중 파일은 정리하지 않는다.
+- [ ] Linux/Jazzy NumPy 읽기 검사는 종료: d67 image, Python 3.12.3, NumPy 1.26.4, 1216 dependency hashes, helper 제거·부재. distribution metadata와 실제 SIM 실행 context는 미검증. Linux 전용 typed/default-OFF accelerator와 bounded helper를 준비하며 Windows 결과를 Linux/ARM에 자동 적용하지 않는다.
+- [ ] 우선순위: 실제 native sensor→SDK producer→영구 ACK→단일 writer→공유 대시보드 runtime, 원본 전체 기록의 native map continuity, global robot path 및 GPS/IMU/LiDAR clock/covariance, bounded archive/pins, ARM·현장 검증. dense pose EOF 성공이나 fixture UI 성공으로 전체 통합 목표를 완료 처리하지 않는다.
+
+Jetson 설치 native7453은 그대로다. 마지막 성공 상태 확인은 UTC18:00~18:14의 기록이며 현재 상태를 추정하지 않는다. 모터 출력·arm·펌웨어·장착 보정·원본 수정 없음. 상세 evidence: PUBLIC_GNSS_UTC_CHECKS.json, SIM_GNSS_SHARED_SOURCE.json, overview-browser-probe-v2/HANDOFF.json 및 진행 중 provider/GC/Linux 폴더. 모든 TODO 세 사본은 동일 UTF-8로 갱신한다.
+
+---
