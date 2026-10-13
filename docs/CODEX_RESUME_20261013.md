@@ -308,3 +308,17 @@ Jetson 신규 설치/조종/모터/펌웨어/장착 보정 없음. 최신 성공
 Jetson 설치 native7453은 그대로다. 마지막 성공 상태 확인은 UTC18:00~18:14의 기록이며 현재 상태를 추정하지 않는다. 모터 출력·arm·펌웨어·장착 보정·원본 수정 없음. 상세 evidence: PUBLIC_GNSS_UTC_CHECKS.json, SIM_GNSS_SHARED_SOURCE.json, overview-browser-probe-v2/HANDOFF.json 및 진행 중 provider/GC/Linux 폴더. 모든 TODO 세 사본은 동일 UTF-8로 갱신한다.
 
 ---
+
+## 2026-10-14 실제 C++ 저장 연결·Linux 검증·GC Stop 경계 (2026-10-13T20:50:39.998289+00:00)
+
+- [x] 실제 DSO799a enabled DI 테스트 V3 성공: configure/compile/실행 exit0, 실제 OpenSSL SHA와 영구 ReceiptStore 연결. 10B/2cell 데이터 1개에서 원래 C++ nonce와 f64 signed-zero 비트·SHA를 보존하고 fake/stale/bit-mutated ACK를 거부한다. Stop 뒤 archive ACK는 허용하되 새 catalog는 발행하지 않으며 외부 owner·wire lease를 끝까지 유지하고 정상 종료한다. 68.397s, 정확한 helper 제거/부재, Python 자식 exit0, source 및 SDK97files 불변. root가 저장 DB·파일을 읽기 전용으로 다시 검증했다. V2 glog 매크로 충돌 실패 보존. 이 테스트의 범위는 최대64cells/320B이며 전체 native 지도·Grid·ROS executor·센서·ARM 검증이 아니다.
+- [x] Linux NumPy overview V2 검증: d67 /usr/bin/python3 -I, Python3.12.3/NumPy1.26.4, 19개 finite synthetic 검사 모두 통과/skip0. 원래 scalar 및 vector 수식과 셀/좌표/SHA 결과 동일, typed defaultFalse, 의존성1216파일/초기105module 검증, 모듈·operator·interpreter 변경 거부, owner context/Stop/clock 처리 보존. thread/tmp/container 종료와 정확한 부재 확인. 실제SIM entrypoint/환경·distribution metadata 전체·Linux 실데이터 처리 속도는 미검증이라 운영 가속을 켜지 않는다.
+- [x] GC V5 Stop 예약 경계 수정 및 독립 검토: 소유자 condition에서 승인한 '오래된·핀 없는 파생 데이터 정리'는 Stop 뒤에도 commit/unlink를 마무리할 수 있다. 이를 즉시 취소되는 작업이라고 주장하지 않는다. precheck→Stop return→journal commit 순서를 강제로 검증했고 현재 지도 pointer/raw 및 입력 SHA를 유지, 다음 정리 주기는 STOPPED, 모든 자원 종료. 기존 V4와 이전 실패·검사는 그대로 보존했다.
+- [ ] GC는 아직 private/defaultOFF: 실제 공개 namespaced owner/view의 type guard를 보존한 overview snapshot/전체 page/실제 tile IO pin 연결, SDK의 obsolete receipt retirement 및 재전송 권한 연결이 필요하다. 쓰는 중인 읽기 pin을 단순 TTL로 해제하지 않는다. 원본·미확인 orphan·current/finished/inflight 데이터 보호와 원래 disk/RAM/native 수치 cap 유지.
+- [ ] 최대4,194,304cells/20MiB native RAW와 16,384cells/80KiB wire cap을 그대로 사용하는 새로운 청크 저장 provider 작성 중. 청크 수신/쓰기 응답은 영구 body ACK가 아니다. 송신 RAW를 최종 전체 SHA/CAS fsync/readback/정확한 receipt까지 유지하고 일시 wire 복사만 청크 전송 후 해제한다. 청크마다 fsync하여 지연을 키우는 방식은 사용하지 않는다. 실제 소스 검토·bounded qualification·전체 SDK/Grid 연결 전까지 성능/운영 완료를 주장하지 않는다.
+- [ ] 원본 GPS 감사: Oct3의 작은 원본 gps.jsonl 7개를 찾았고 archive manifest와 SHA 대조 중. jsonl 행 수와 rosbag /gps/data 메시지 수는 다르므로 동일하다고 간주하지 않는다. 최초 count 동일성 단정 실패는 보존하고, 원본 CDR ledger/hash와 timestamp를 따로 비교한다. 필드/packet을 복원하거나 GPS 측정 시각·Yaw·전역 지도 factor를 추정해서 켜지 않는다.
+- [ ] 현재 최우선 미완료: 실제 센서→native SDK→단일 writer→공유 대시보드 factory/runtime 연결, 원본 전체 기록의 native map 지속성·global robot path 및 GPS clock/covariance, bounded history/pins/GC 통합, ARM/live/현장 검증. 물리 모터·arm·펌웨어·장착 보정 및 원본 변경 없음. Jetson native7453 유지; 설치된 기능과 source-only·private 검증은 계속 분리한다.
+
+재개 evidence: sdk-enabled-storage-probe-v3/HANDOFF.json, ROOT_ENABLED_SDK_CLOSED_READBACK.json, linux-numpy-overview-candidate-v2/POSTCLOSED_HANDOFF.json, finite-archive-retention-prototype-v5/HANDOFF.json, gc-v5-independent-stop-review/HANDOFF.json. PUBLIC Git/NAS는 각 source head 확인 파일을 따른다. 전체 목표 미완료이며 software 잔여 항목을 현장 대기 항목으로 옮기지 않는다.
+
+---
