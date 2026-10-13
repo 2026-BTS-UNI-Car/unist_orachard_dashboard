@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from datetime import datetime, timezone
 import math
 import struct
 import time
 from .gps_reception import MESSAGES, WEEK_MS, parse_reception, reception_snapshot
+from .gps_utc import decorate_receiver_time
 
 GPS_SCHEMA = "orchard.gps.v1"
 GPS_TIMELINE_SCHEMA = "orchard.gps_timeline.v1"
@@ -102,6 +104,10 @@ class GnssDecoder:
                 del self.buffer[:length+8]
                 try:
                     frame = self._ubx(raw[2], raw[3], raw[6:-2])
+                    if frame is not None and raw[2:4]==b'\x01\x07' and len(raw)==100:
+                        frame.update(receiver_pvt_frame_hex=raw.hex(),receiver_pvt_frame_sha256=hashlib.sha256(raw).hexdigest(),
+                            receiver_pvt_payload_hex=raw[6:-2].hex(),receiver_pvt_raw_origin='checked_decoder_input_frame_not_hardware_certificate')
+                        frame['receiver_time_evidence']=decorate_receiver_time(frame)
                 except (ValueError, IndexError, struct.error):
                     self.rejected += 1; continue
             else:
@@ -242,6 +248,11 @@ class GnssDecoder:
                      gps_time_fully_resolved=bool(p[11]&4),
                      gps_time_accuracy_s=struct.unpack_from('<I',p,12)[0]*1e-9,
                      gps_time_fraction_ns=struct.unpack_from('<i',p,16)[0])
+        frame.update(gps_time_calendar_utc=dict(year=struct.unpack_from('<H',p,4)[0],month=p[6],day=p[7],hour=p[8],minute=p[9],second=p[10]),
+                     gps_time_valid_bits=p[11],gps_time_accuracy_ns=struct.unpack_from('<I',p,12)[0],gps_time_origin_protocol='UBX_NAV_PVT')
+        if len(p)==92:
+            frame.update(receiver_pvt_payload_hex=bytes(p).hex(),receiver_pvt_raw_origin='decoder_payload_argument_only_checksum_unverified')
+        frame['receiver_time_evidence']=decorate_receiver_time(frame)
         return frame
 
 

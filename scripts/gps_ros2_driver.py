@@ -283,7 +283,9 @@ def main():
         for frame in serial.poll():
             stamp = node.get_clock().now().to_msg()
             frame['stamp'] = dict(sec=stamp.sec, nanosec=stamp.nanosec)
+            frame['stamp_role'] = 'host_ROS_publication_not_receiver_measurement'
             serial.decoder.sample['stamp'] = frame['stamp']
+            serial.decoder.sample['stamp_role'] = frame['stamp_role']
             fix_pub.publish(make_navsat(frame, NavSatFix))
             data_pub.publish(String(data=json.dumps(frame, allow_nan=False, separators=(',', ':'))))
 

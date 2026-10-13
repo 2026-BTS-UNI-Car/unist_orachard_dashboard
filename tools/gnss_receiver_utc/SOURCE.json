@@ -1,0 +1,22 @@
+{
+  "schema": "DEFAULT_OFF_PUBLIC_RECEIVER_UTC_SOURCE_v4",
+  "private_handoff_sha256": "411eb2eef1006e6433091bb439791e46ffde5d9d87b1baadc92cc158a6a98247",
+  "independent_Stop_review_sha256": "33f50748ab1df113fb3fdc6910e982a0e907fa9c2a24e3fd3c9d721385038b18",
+  "Jetson_installed": false,
+  "actual_map_factor_or_clock_association": false,
+  "shared_source_sha256": {
+    "dashboard_server/gps.py": "d872e2478879f0f568582bf851e5da16979737534b8477dd1f5c674929cc21ae",
+    "dashboard_server/gps_utc.py": "3ef3dae95b54790a844855401767873e1d812b69fa5005d4df488240d896b7da",
+    "scripts/gps_ros2_driver.py": "ef53becb5a0845111ca16bf91954051525c2aae1a91532fbbb86068e9778f9e3",
+    "deploy/native_sensor_stream/native_gnss_fusion.py": "877b5390f8eef64fc8046097f81f7f3322f2999134face428caceb084bd9a5f8"
+  },
+  "files_sha256": {
+    ".gitattributes": "8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992",
+    "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "README.md": "9c17f05f81798506880e678ef9e49ea9e850a681d5b61244469754b20bf0ef00",
+    "stop_seam_probe.py": "310a48af02b079e5e00710261b10cba9f07c4bb5f006687fc4526bf1f6b6244f",
+    "test_utc.py": "e7e824792ad08dbdad06c87175b56a617482736614de7c3486a7cc5c191eff3a",
+    "utc_admission.py": "296069f88dd2d15c6c63ae16fa5144fdb1be38f904b94015f92416ced139f961",
+    "__init__.py": "de10515babc678d8e99a33ff22f8d6eed736d61a36ba6ac136ee278a10b18447"
+  }
+}
