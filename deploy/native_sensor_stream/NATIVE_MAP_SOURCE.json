@@ -12,10 +12,10 @@
   "files_sha256": {
     "batched_map_owner.py": "1009242fe6a235b7f6205d7afbfb088c0199d9979849536fd8cac7595b6f7302",
     "batched_rays.py": "c92818d13224a6730624e82baf5173f4231d6a78552d4c04a2ef61feb53a0b37",
-    "committed_native_map.py": "e3d1768154210209996032fb7eafa8e5fdd368732ed2272779374530afd11169",
+    "committed_native_map.py": "26b2a5a1deef81e9e761b0ede9a234a95ca79c6e27418e1bdd62c387aba32856",
     "keyframe_registration.py": "a11970e9a3cbe9c3cf0da915d9a01b5733c285e7215ef620ad214cae70413704",
     "native_map_owner.py": "4b0e2e77094b3de49a5ca56408f2e172fb059a01c7035ad80db906786717af7b",
-    "native_map_transport.py": "1c3622cbee33c8626f8a119274fd394fc18f6c069c1be3d060ff125dca5eb22f",
+    "native_map_transport.py": "b5879583125005dd6c3b280c1c1f82caa9667eec12a6de1be73fab5bd53e11a1",
     "native_pose_ledger.py": "87d2fec7b8f461543c494087995f71b7b6467b742b83b4ac6d874a531587c8cc",
     "pair_visibility.py": "71b509967b9da092825741ee28cb4a138f877ab539c9b1ebb32f3bf622b657b0",
     "paired_keyframe_registration.py": "1efc8add6fe1a605044d3d4c9414da7cc3a10d4076a95837ee8088a2eafc4bfc",
