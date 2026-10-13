@@ -6,6 +6,24 @@ Historical CDR acquisition clocks are never comparison clocks or fresh inputs.
 An optional seed_center (a LiDAR-fit constant-twist extrapolation across a
 short in-session gap) adds a second identical seed grid whose solver bound
 reaches it; acceptance gates and the ambiguity test run over every result.
+
+With gates=True (C1b+G, default OFF), reject-only gates after the unchanged search, selection and ambiguity test:
+* separated acceptable alternative: any result that itself passes every gate
+  (solver + full-return consistency) and lies beyond the false-accept scale
+  from the best (> GATE_SEPARATED_M or > GATE_SEPARATED_RAD) rejects,
+  whatever its coverage/rmse (coverage favours poses keeping H inside K's
+  view; rmse grows with the range of the overlapping part).
+* degeneracy margin: the solver's own final correspondence normals at the
+  best pose must carry >= GATE_MIN_WEAK_NORMAL of their scatter across the
+  least-constrained translation direction (solver floor .06).
+* alias screen (GATE_SCREEN): share of H anchors within .15 m of K over a
+  +-4 m translation square (yaw 0 on a .1 m grid, yaw offsets -10..10 deg on a
+  .2 m grid) around the best; up to 6+6 peaks are refined with
+  the same solver from that seed; a refinement failing only a degeneracy gate
+  is re-solved with those gates reported (_fit_free) and used ONLY as a
+  competitor; competitors passing every gate and separated beyond the
+  false-accept scale reject; competitors at the lenient full-return level
+  (GATE_LENIENT_OVERLAP) that are separated and comparable reject.
 """
 from collections import Counter
 import hashlib
@@ -16,6 +34,15 @@ from common.original_cdr import decode, LASER_TYPE, WireScan
 from kernel.raw_localization import scan_points, surfaces, fit_surfaces, rotate, Surfaces
 from scipy.spatial import cKDTree
 from native_map_owner import require
+
+GATE_SEPARATED_M,GATE_SEPARATED_RAD=.25,math.radians(2.5)
+GATE_MIN_WEAK_NORMAL=.12
+GATE_SCREEN=True
+GATE_SCREEN_REACH_M,GATE_SCREEN_POINTS=4.,160
+GATE_SCREEN_YAWS=tuple(math.radians(a) for a in range(-10,11))
+GATE_SCREEN_RHO,GATE_SCREEN_PEAKS,GATE_SCREEN_EXCL_M,GATE_SCREEN_EXCL_RAD=.5,6,.4,math.radians(2.5)
+GATE_LENIENT_OVERLAP=.60
+_DEGENERATE=('translation_geometrically_degenerate','pose_information_degenerate')
 
 
 def scan_geometry(cdr, expected_sha):
@@ -70,7 +97,106 @@ def seed_grid(center=(0.,0.,0.)):
             for x in (-.4,0,.4) for y in (-.4,0,.4)]
 
 
-def register_keyframe(target,current, *, cancelled=lambda:False, max_wall_s=1.5, seed_center=None):
+def _weak_normal(target,current,fit):
+    """Smallest eigenvalue of the solver's final correspondence normal scatter."""
+    moved=current.points@rotate(fit['yaw']).T+fit['xy']
+    distance,index=target.tree.query(moved,workers=1);normals=target.normals[index]
+    residual=np.einsum('ni,ni->n',target.points[index]-moved,normals)
+    aligned=np.abs(np.einsum('ni,ni->n',current.normals@rotate(fit['yaw']).T,normals))>.7
+    good=(distance<.25)&(np.abs(residual)<.12)&aligned
+    if good.sum()<3:return 0.
+    n=normals[good];return float(np.linalg.eigvalsh(n.T@n/len(n))[0])
+
+
+def _fit_free(target,current,theta,initial_xy,max_translation,max_yaw):
+    """fit_surfaces iteration and gates, degeneracy gates not applied (competitor only)."""
+    xy=np.asarray(initial_xy,dtype=float).copy()
+    for _ in range(15):
+        moved=current.points@rotate(theta).T+xy
+        distance,index=target.tree.query(moved,workers=1)
+        normals=target.normals[index];difference=target.points[index]-moved
+        residual=np.einsum('ni,ni->n',difference,normals)
+        aligned=np.abs(np.einsum('ni,ni->n',current.normals@rotate(theta).T,normals))>.7
+        good=(distance<.30)&(np.abs(residual)<.15)&aligned
+        if good.sum()<60:return None
+        p=moved[good];n=normals[good];r=residual[good]
+        jac=np.column_stack((n[:,0],n[:,1],-n[:,0]*p[:,1]+n[:,1]*p[:,0]))
+        weight=np.minimum(1.,.04/np.maximum(np.abs(r),1e-9))
+        delta=np.linalg.lstsq(jac*np.sqrt(weight[:,None]),r*np.sqrt(weight),rcond=1e-6)[0]
+        theta+=float(delta[2]);xy=rotate(float(delta[2]))@xy+delta[:2]
+        if np.linalg.norm(xy)>max_translation or abs(theta)>max_yaw:return None
+        if np.linalg.norm(delta[:2])<.0005 and abs(delta[2])<.0001:break
+    moved=current.points@rotate(theta).T+xy
+    distance,index=target.tree.query(moved,workers=1);normals=target.normals[index]
+    residual=np.einsum('ni,ni->n',target.points[index]-moved,normals)
+    aligned=np.abs(np.einsum('ni,ni->n',current.normals@rotate(theta).T,normals))>.7
+    good=(distance<.25)&(np.abs(residual)<.12)&aligned
+    rmse=float(np.sqrt(np.mean(residual[good]**2))) if good.any() else math.inf
+    if good.sum()<60 or good.sum()/current.denominator<.4 or rmse>.08:return None
+    return dict(xy=xy,yaw=theta,coverage=int(good.sum())/current.denominator,rmse_m=rmse)
+
+
+def _near_raster(dense,pts):
+    """.05 m cells within .15 m of a keyframe point, over where the screened points can land."""
+    from scipy import ndimage
+    lo=np.maximum(pts.min(axis=0)-GATE_SCREEN_REACH_M-.3,dense.min(axis=0)-.25)
+    hi=np.maximum(np.minimum(pts.max(axis=0)+GATE_SCREEN_REACH_M+.3,dense.max(axis=0)+.25),lo+.05)
+    d=dense[np.all((dense>=lo-.2)&(dense<=hi+.2),axis=1)]
+    shape=tuple(int(v) for v in np.ceil((hi-lo)/.05)+1)
+    free=np.ones(shape,dtype=bool);idx=np.floor((d-lo)/.05).astype(np.int64)
+    ok=np.all((idx>=0)&(idx<np.array(shape)),axis=1);free[idx[ok,0],idx[ok,1]]=False
+    return ndimage.distance_transform_edt(free)*.05<.15,lo
+
+
+def _peaks(scores,g,yaws,centre):
+    """Local maxima in (yaw,x,y) >= GATE_SCREEN_RHO x centre, away from the centre, strongest first."""
+    from scipy import ndimage
+    ox,oy=np.meshgrid(g,g,indexing='ij')
+    far=((np.hypot(ox,oy)[None]>=GATE_SCREEN_EXCL_M)|
+         (np.abs(np.asarray(yaws))[:,None,None]>=GATE_SCREEN_EXCL_RAD-1e-9))
+    mask=(ndimage.maximum_filter(scores,size=3,mode='nearest')<=scores)&far&(scores>=GATE_SCREEN_RHO*centre)
+    jj,xx,yy=np.nonzero(mask);order=np.argsort(-scores[jj,xx,yy],kind='stable');kept=[]
+    for o in order:
+        c=(float(g[xx[o]]),float(g[yy[o]]),float(yaws[jj[o]]))
+        if all(math.hypot(c[0]-k[0],c[1]-k[1])>=.3 or abs(c[2]-k[2])>=math.radians(2) for k in kept):kept.append(c)
+        if len(kept)>=GATE_SCREEN_PEAKS:break
+    return kept
+
+
+def _screen_peaks(target,current,pose):
+    """Share of H anchors within .15 m of K around pose: yaw 0 on a .1 m grid, then all yaw offsets on
+    a .2 m grid (rotated repeats); returns seeds (x,y,yaw), fine peaks first."""
+    pts=current.points
+    if len(pts)>GATE_SCREEN_POINTS:pts=pts[np.linspace(0,len(pts)-1,GATE_SCREEN_POINTS).astype(int)]
+    near,lo=_near_raster(target.dense,np.vstack([pts@rotate(pose[2]+dy).T+np.asarray(pose[:2])
+                                                for dy in GATE_SCREEN_YAWS]))
+    hn,wn=near.shape;flat=near.ravel()
+
+    def score(yaws,grid):
+        step=int(round(grid/.05));nh=int(round(GATE_SCREEN_REACH_M/grid))
+        offs=np.arange(-nh,nh+1,dtype=np.int64)*step;g=np.arange(-nh,nh+1)*grid
+        out=np.empty((len(yaws),len(g),len(g)))
+        for j,dy in enumerate(yaws):
+            base=np.floor((pts@rotate(pose[2]+dy).T+np.asarray(pose[:2])-lo)/.05).astype(np.int64)
+            ix=base[:,0][None,:]+offs[:,None];iy=base[:,1][None,:]+offs[:,None]
+            vx=(ix>=0)&(ix<hn);vy=(iy>=0)&(iy<wn)
+            idx=np.clip(ix,0,hn-1)[:,None,:]*wn+np.clip(iy,0,wn-1)[None,:,:]
+            out[j]=(flat[idx]&vx[:,None,:]&vy[None,:,:]).sum(axis=2)/len(pts)
+        return out,g,nh
+    fine,gf,nf=score((0.,),.1)
+    kept=_peaks(fine,gf,(0.,),fine[0,nf,nf])
+    swept,gs,_=score(GATE_SCREEN_YAWS,.2)
+    for c in _peaks(swept,gs,GATE_SCREEN_YAWS,fine[0,nf,nf]):
+        if all(math.hypot(c[0]-k[0],c[1]-k[1])>=.3 or abs(c[2]-k[2])>=math.radians(2) for k in kept):kept.append(c)
+    return [(pose[0]+x,pose[1]+y,pose[2]+a) for x,y,a in kept]
+
+
+def _separated_beyond_tolerance(a,b):
+    return (np.linalg.norm(np.asarray(a['xy'])-np.asarray(b['xy']))>GATE_SEPARATED_M or
+            abs(math.atan2(math.sin(a['yaw']-b['yaw']),math.cos(a['yaw']-b['yaw'])))>GATE_SEPARATED_RAD)
+
+
+def register_keyframe(target,current, *, cancelled=lambda:False, max_wall_s=1.5, seed_center=None, gates=False):
     """Identity seed grid, plus the same grid around seed_center when given.
 
     seed_center is a search hint only (a LiDAR-fit twist extrapolated across a
@@ -121,11 +247,47 @@ def register_keyframe(target,current, *, cancelled=lambda:False, max_wall_s=1.5,
         comparable=other['coverage']>=best['coverage']-.03 and other['rmse_m']<=max(.015,best['rmse_m']*1.3)
         if separated and comparable:
             return dict(accepted=False,reason='ambiguous_native_keyframe',attempted=attempted,shifted_seed_grid=shifted)
+        if gates and _separated_beyond_tolerance(other,best):
+            return dict(accepted=False,reason='ambiguous_acceptable_alternative',attempted=attempted,shifted_seed_grid=shifted)
+    if gates:
+        rejected=_bridge_gates(target,current,best,cancelled,begin,max_wall_s,attempted,shifted)
+        if rejected is not None:return rejected
     return dict(accepted=True,reason='unverified_bounded_native_keyframe_registration',
                 attempted=attempted,search_complete=True,search_global_uniqueness_verified=False,
                 shifted_seed_grid=shifted,
                 physical_accuracy_verified=False,rolling_scan_deskewed=False,
                 elapsed_s=time.monotonic()-begin,**best)
+
+
+def _bridge_gates(target,current,best,cancelled,begin,max_wall_s,attempted,shifted):
+    """C1b+G reject-only tail: degeneracy margin, screened alternatives, final deadline. None keeps the result."""
+    weak=_weak_normal(target,current,best)
+    if weak<GATE_MIN_WEAK_NORMAL:
+        return dict(accepted=False,reason='translation_weakly_constrained',weak_normal=weak,attempted=attempted,
+                    shifted_seed_grid=shifted)
+    if GATE_SCREEN:
+        for sx,sy,sa in _screen_peaks(target,current,(float(best['xy'][0]),float(best['xy'][1]),float(best['yaw']))):
+            if cancelled() or time.monotonic()-begin>=max_wall_s:
+                return dict(accepted=False,reason='recovery_cancelled_or_work_deadline',attempted=attempted,
+                            shifted_seed_grid=shifted)
+            reach=math.hypot(sx,sy);bound=(IDENTITY_BOUND_M+reach,IDENTITY_BOUND_RAD+abs(sa))
+            diagnostic=Counter();attempted+=1
+            fit=fit_surfaces(target,current,sa,np.array((sx,sy)),*bound,diagnostic)
+            if fit is None and any(diagnostic.get(d) for d in _DEGENERATE):
+                fit=_fit_free(target,current,sa,np.array((sx,sy)),*bound)
+            if fit is None:continue
+            overlap,rms=_full_overlap(target,current,fit)
+            if min(overlap)<GATE_LENIENT_OVERLAP or max(rms)>.08:continue
+            if min(overlap)>=.70 and _separated_beyond_tolerance(fit,best):
+                return dict(accepted=False,reason='ambiguous_screened_alternative',attempted=attempted,
+                            shifted_seed_grid=shifted)
+            separated=np.linalg.norm(fit['xy']-best['xy'])>.08 or abs(fit['yaw']-best['yaw'])>math.radians(1)
+            comparable=fit['coverage']>=best['coverage']-.03 and fit['rmse_m']<=max(.015,best['rmse_m']*1.3)
+            if separated and comparable:
+                return dict(accepted=False,reason='ambiguous_screened_alias',attempted=attempted,shifted_seed_grid=shifted)
+    if cancelled() or time.monotonic()-begin>=max_wall_s:
+        return dict(accepted=False,reason='recovery_cancelled_or_work_deadline',attempted=attempted,shifted_seed_grid=shifted)
+    return None
 
 
 # --- Scan-to-map bridge (C6) ------------------------------------------------------------------
