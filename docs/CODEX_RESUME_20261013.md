@@ -200,3 +200,26 @@ LastsuccessfulJetsonnative745321ee10/13 21:03KST idle/unowned/noauthority/motor;
 Optional NumPy validation is source-only SIM27c2a1e/defaultOFF. Root executed745 actual adversarial cases after fixing an initially inert test invocation; independent28 probes and exact2.43M-cell local benchmark passed. First Windows import.722s/pages<1ms/peak35.7MB are closed-storage observations, not live10Hz or whole-field/ARM qualification. Scalar fallback/geometry/probability bytes remain unchanged.
 
 Cap-only V2 passed16 standalone plus2 recovered-IO probes, but actual build-v2 stopped before compilation because its assumed parent DSO was not installed. The exact helper was removed; no DSO/replay produced. Installed f0e8ae44 and cached36273fcf are under separate ELF/source/link review; the old567 qualified-overlay evidence must not be called installed-default proof. Separate strict fullfield EOF custody reader, derived-tile browser adapter and bounded producer/ACK/catalog prototype continue. GPS/core/global-path/whole-record/native-owner/live/physical integration remain open. Jetson current status is not inferred from the last successful21:03KST read;23:15SSHfailed.
+
+
+# 2026-10-14 Codex 최신 체크포인트 — 전체 기록 연속 경로·실제 웹 좌표 렌더링 검증
+
+UTC 2026-10-13T17:00:59.989970+00:00. **실제 대시보드 매핑 전체 해결·GPS 통합·실차 자율주행 완료 아님.** 실차 OFF/HOLD. 모터·조종·펌웨어·장착 보정·원본 변경 없음. 마지막 성공 Jetson 읽기는 10/13 21:03 KST native745321ee idle/unowned/authority false/motor false이고, 23:15 KST SSH는 Cloudflare bad handshake로 실패했다. 현재 보드 상태를 추정하지 않는다.
+
+- [x] 전체 Oct3 `20261003T072530Z_both` 원본 입력: 17,671개 CDR 메시지/140,819,812B를 실제 EOF까지 읽고, LiDAR5,243/IMU10,395/GPS2,033의 원본 바이트·Header·bag시각·순서·개수·before/after SHA를 확인했다. String1,015개에는 Header를 만들어 넣지 않았다. 원본 GPS는 수집했지만 이 연구 매퍼의 core 입력으로 사용하지 않았다.
+- [x] 별도 cap-only 실제 amd64 DSO `e6808077` 빌드: 정확한 부모 코드/객체/link/ELF 검사와 실제 로더·ABI·기본OFF/4096·명시5243·4MiB·실패IO 등10검사 통과. 원본 core/센서/clock/pose math/nativegridcaps 변경 없음. Jetson/ARM 배포 없음.
+- [x] 전체 기록 매퍼 실행: 39.455초, sampled RSS539,436KiB, 정상 종료. 완전한 dense5235행은 원본scan8..5242 연속이며 중간·tail 누락0, 삽입node1771. 생성PB는 기존 전체 기록 PB와 바이트가 같다. 이 시간은 오프라인 처리 비용이며 실시간/느린 인터넷/물리 정확도 검증이 아니다.
+- [x] 시작점 오해 원인 검증: 원본scan0..6은 첫IMU보다 먼저 기록됐다. 이전30초 fixture는 원본scan7..306이며 첫IMU는 같다. fixture0 누락은 원본scan7에 해당한다. **사전 예상scan1..5242를 요구한 원래 run은 실패 상태로 보존**하고, 기대값을 뒤에서 바꿔 원래 통과로 표시하지 않았다. 독립 감사가5235연속행·1771삽입·299동일pose·원본SHA를 재현했다.
+- [x] 별도 postclosed 검사/지도 export: 새SLAM/센서재생 없이 이미 닫힌PB를 원래0.05m 해상도로 내보냈다. PGM39,411,987B와YAML은 기존 전체 지도 SHA와 정확히 같다. 기존30초299pose도 수치가 정확히 같다. 새 출력은 이미지 artifact이며 native확률 posterior/39Mcell transport 허용을 의미하지 않는다.
+- [x] 원본 출력 cap 연구 source `tools/cartographer_dense_field`: 기본OFF/4096/4MiB 유지, 명시적fieldprofile만5243 등허용. Root WSL16검사/skip0. 공개 source이며 설치·원본·기존SIM CLI gate는 바꾸지 않는다. GitHub `e013378`.
+- [x] 좌표 타일 client V2: Python9+Node27, 실제synthetic Worker1, 독립6Python/12Node그룹. 최대4미완료tile작업,128tile/2Mcell/4MiBrawcache, immutablecursor/snapshot/transformrevision/Stop/late-response/수동zoom유지. defaultOFF이며 originalpublisher manifest/certificate/globalpose를 위조하지 않는다.
+- [x] Root 실제Chrome V2: 검증된 닫힌V6 지도에서54tile 렌더링/positive색상/동일source 재조회 후 수동확대 유지/Stop 후 지도 유지. 실제70GET(55bodyGET 전부200), 입력SHA 불변, listener/store 모두 종료. screenshot과JSON 보존. 원본30초 fixture의 retained display이며 현재실차/새pose/전체기록browser/slowinternet 검증은 아니다.
+- [x] 실패도 보존: EOF-v1은 LiDAR전용ledger필드를 다른sensor에도 요구한 harness오류; v2는 Windows/WSL경로 차이로 container생성전 실패; v3 EOF 성공. 브라우저V1은 nativefetch receiver오류로 실패했고 V2에서 수정했다. 초기supplementary seam 및 독립cache-delay fixture오류도 수정전증거를 남겼다. 후보빌드-v2 부모DSO가정 실패와 기존V3/V5전송 실패도 유지한다.
+- [ ] **최우선 실제 upstream 통합:** qualifiedad8 publisher는 여전히 전체catalog body를Node lock안에서 복사하고 cap오류를계속유지하며, RMWpublish뒤 receiverdurableACK없이wirecopy를 해제한다. 설치부모f0는 이publisher를 포함하지 않는다. 웹/저장만 고치면해결되지않는다. 정확한ad8조합을 pin한 새defaultOFF C++ incrementalcatalog/changedbody/ACK/DEFER/Stop기작과 비동기storage owner를 구현·독립검토 중이다. legacyprotocol/C1bG/C6OFF/nativebodycaps/센서clock/posemath는 유지한다.
+- [ ] 한source writer/job, multi-client조회dedup, live우선순위/active-replay inhibition, boundedIO/queue/progress/Stop, receiverstore→derivedroute 실제 연결 및 wholefield sustained검증. published primitive들만으로 실제dashboard 매핑을 교체하지 않았다.
+- [ ] 전체지도overview LOD/선택영역자동조절, finiteCAS/finishedmap/oldclientpins/보존정책/GC/powerfail, optimizedglobalrobotpath/원본sensorassociation/GPSclock·covariance·ENU기준/ARM/livebackend. 일반GPS5~10m를 정확한row위치/heading으로 쓰지 않는다.
+- [ ] 전체10/03 도로·과수원/10/10현장 및 별도9/10차체·offset 조건 검증, 실제센서acquisition/mount확인, 수동저속feedback·제동·회전 시험,USBSSD백업/offlineGNSS시각/전압·전류/RTC 등현장 항목. consumeddevelopment를freshholdout으로 바꾸지 않는다.
+
+재개: `CURRENT_CHECKPOINT.json`, `RESEARCH_PROGRESS_LATEST.json`, `cartographer-fullfield-dense-run-v1/HANDOFF.json`(원래expectation-negative), `cartographer-fullfield-postclosed-v1/HANDOFF.json`, `fullfield-dense-independent-review-v1/HANDOFF.json`, `viewport-browser-adapter-v2/HANDOFF.json`, `viewport-browser-independent-review-v2/HANDOFF.json`, `viewport-loopback-probe-v2/ROOT_CHROME_RESULT.json`. staleCompose 재생성 금지/exactDockerAPI/no-retry 설치 원칙. 원본·frozen실패·unownedNAS수정 보존.
+
+---
