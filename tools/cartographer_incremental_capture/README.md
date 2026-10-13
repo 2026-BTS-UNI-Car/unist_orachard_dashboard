@@ -30,7 +30,12 @@ rights; the external SDK-free owner retains raw/wire leases until accounted clos
 An explicitly enabled Bootstrap needs real digest and authenticated durable
 receipt providers. Missing providers are rejected. Request/ACK binding includes
 source context, nonce, native key/version/body ID, bit-exact geometry and raw SHA.
-The provider bridge and enabled-runtime probes are still being implemented.
+One actual compiled-library synthetic probe now supplies real OpenSSL SHA and
+a durable receipt provider. It archived one exact 10-byte/2-cell body, rejected
+forged/stale/bit-mutated ACKs, and checked Stop plus external-owner/wire drain.
+The tested provider profile is only64 cells/320 bytes; this is not a full-size
+native transport, actual Grid callback, ROS executor or sensor qualification.
+The genuine full-body streaming provider is still being implemented.
 The copied metadata batch ID is NOT a genuine pose-graph revision; this preview
 must retain its UNQUALIFIED_AD8_SDK_PREVIEW label and no physical authority.
 
@@ -40,7 +45,7 @@ Actual fresh full-package build:309.753s; configure/build/install/loaded ABI all
 exit0, owned helper removed and exact absence verified. Prior failed allocator,
 cleanup and configure attempts remain separate immutable checkpoints.
 
-Still open: actual enabled provider wiring, coherent source/clock admission,
+Still open: full-size enabled provider wiring, coherent source/clock admission,
 native whole-record streaming, finite archive/read-lease GC, global robot path
 and GPS measurement-clock association, ARM/live and physical tests. No wheel
 encoder, PWM, camera or simulated truth is introduced as localization evidence.
