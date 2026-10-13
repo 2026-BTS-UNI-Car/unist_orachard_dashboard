@@ -10,7 +10,7 @@
   "files_sha256": {
     "batched_map_owner.py": "1009242fe6a235b7f6205d7afbfb088c0199d9979849536fd8cac7595b6f7302",
     "batched_rays.py": "c92818d13224a6730624e82baf5173f4231d6a78552d4c04a2ef61feb53a0b37",
-    "committed_native_map.py": "ecc5f32c487ac796a5b1cf3c6cfd27b09252ea133b8748acf86e19c19b4b3d20",
+    "committed_native_map.py": "9cabbd97316cb7278d90587c1d3af68d28e7f74c772af551f2cc1c06961830e3",
     "keyframe_registration.py": "3e7081965a50f67940aee35971ac87b3eb6c31fabbaee6df7abd7a2505975169",
     "native_map_owner.py": "4b0e2e77094b3de49a5ca56408f2e172fb059a01c7035ad80db906786717af7b",
     "native_map_transport.py": "f398eb663a6d7ab408aa960bd7a1f4cc584839bf0574a0ad5c9497e74fd3d6c2",
@@ -18,8 +18,16 @@
     "stream_rows_map.py": "0f2950904d9514eec7f0f9c885f505502e7d750f9dd6b8ebf6bb2a5a34d9f89d"
   },
   "motor_command_sent": false,
+  "owned_wait_health_guard": {
+    "candidate_parent_commit": "6a3987d116a58de6237623b9bf94164b1b08cb25",
+    "factory_fault_cancels_both_wait_labels": true,
+    "factory_stop_cancels_both_wait_labels": true,
+    "geometric_continuity_fixed": false,
+    "healthy_registration_preserved": true,
+    "private_handoff_sha256": "0b2f7ffa6f9bbd9f87f2a1e2ebf7904f7d53cca0039679ff1c315ba439071892"
+  },
   "parent_map_handoff_sha256": "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9",
-  "parent_map_source_sha256": "556c90c0186c71dfd73110d000984214a31e4b6fdc0e8953f5873d76d5e03a69",
+  "parent_map_source_sha256": "f23a0445ea87635562e695c018e54b25c58401803dcf942b4a7a5643164299ba",
   "parent_package_sha256": "87859742812894e69dede8f537906e8bd743560ae01eed556d778445efd960fa",
   "pose_ledger_default_OFF": true,
   "runtime_qualified": false,

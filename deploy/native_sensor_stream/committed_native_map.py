@@ -243,9 +243,8 @@ class CommittedNativeMapAdapter:
                 # invalidations (and any factory fault/Stop) and all later
                 # raster/publication phases retain cancellation.
                 f=self.factory
-                typed_wait=(reason=='native_original_pair_wait' or
-                    (reason=='native_fit_not_committed' and f is not None and f.fault is None and
-                     not f.stop_intent.is_set()))
+                typed_wait=(reason in ('native_original_pair_wait','native_fit_not_committed') and
+                    f is not None and f.fault is None and not f.stop_intent.is_set())
                 preserve=(typed_wait and not self._stop.is_set() and
                     work is not None and work[0] is self._working and work[1] is self._map._state and
                     work[2] is self._keyframe and work[3]==self._serial)
