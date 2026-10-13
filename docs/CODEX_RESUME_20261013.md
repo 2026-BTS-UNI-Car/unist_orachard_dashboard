@@ -277,3 +277,20 @@ Jetson 신규 설치/조종/모터/펌웨어/장착 보정 없음. 최신 성공
 재개: CURRENT_CHECKPOINT.json, RESEARCH_PROGRESS_LATEST.json, public-owner-overview-http-v4/HANDOFF.json, overview-closed-v6-probe-v1/HANDOFF.json, sdk-full-prebuild-closure-v1/HANDOFF.json, incremental-native-sdk-adapter-v5 및 sdk-full-rebuild-qualification-v1. frozen 실패·unowned NAS 변경 보존, stale Compose 재생성 금지, 설치는 exact Docker API/no-retry.
 
 ---
+
+
+## 2026-10-14 실제 SDK 컴파일·브라우저·가속 검증 (2026-10-13T19:57:47.578060+00:00)
+
+- [x] 공개 SIM overview2a4140b: Windows Python11+Node8, WSL Python15(실제HTTP4 포함) 통과, 독립 검토 통과. 기본OFF이며 GET은 지도 worker를 시작하지 않는다. 공개 ACTUAL 문서55be88f와 NAS 미러까지 확인했다.
+- [x] **실제 ROS 전체 패키지 재빌드 성공:** SDK V5의 여섯 변경 파일을 fresh source/object/install 경로에서 모든 class-header 소비자와 함께 빌드했다. 총309.753s, configure/build/install/실제 로드 DSO OFF·누락 DI 거부·setup seal 검사가 모두 exit0이다. DSO799a1e079ff38e4fae64d855dc55c990c0c1885ec5d35e78fb3da1e62ac2022a(9,831,624B), 부모/core/source 불변, helper 제거·정확한 부재 확인. binary는 Git/Jetson에 설치하지 않았다.
+- [x] 첫 실제 build V2는 configure9.111s의 FileNotFoundError로 실패했다. 최초 trace가 없어 원래 원인을 확정하지 않았다. 임시 파일 삭제에 안전한 용량 감시·전체 trace·정확한 소문자 Docker not-found 처리를 새 V3에서 검사했고 성공했다. 원래 실패·잘못된 absent=false·별도 부재 증거를 모두 보존했다.
+- [x] **가속의 실제 닫힌 데이터 검증:** 같은2,432,295cells/원본2body를 표시용13tiles/38,240cells로 변환,1.4057048s(기존 별도 scalar7.8228356s 관찰). 원본 import는 별도2.4193246s. 원본/좌표/타일순서/SHA 일치, 실제aggregate13개611,840B를 저장하고 독립 readback했다. client2개26read/Stop/lease0/자원 종료. 엄격한A/B·live·ARM 성능으로 주장하지 않는다. NumPy qualification은 현재 Windows의 정확한 환경에만 적용되며 Linux/Jazzy는 별도 확인한다.
+- [x] **실제 Chrome 표시 검증:** 닫힌V6 aggregate13개/38,240cells/positive445개가 표시됐다. 확대 후 새로읽기(완성2회)와 Stop 후 canvas PNG가 바이트 단위로 같았다. loopbackhost는 닫았고 이미 표시된 탭과 STOP_RETAINED.png를 보존했다. 첫 Worker 연결 실패는 별도로 보존했으며 테스트용 명시적start/API 연결을 새 후보에서 수정했다. 실시간센서/GPS/전체과수원 검증은 아니다.
+- [x] GNSS UTC V4 source11개/독립 Stop delta 검토 통과. 실제feed100B frame/92B payload와 rawvalid/calendar/nano/tAcc/iTOW를 보존하고 independently checksum/decoded-field를 대조한다. 원본CDR의 시각 gate는 기본OFF이며 publication header를 measurement time으로 바꾸지 않는다. 옛7개 추출본3366행의 누락 품질을 복원하거나 유효하다고 간주하지 않는다.
+- [ ] **현재 최우선 소프트웨어:** 실제 C++ Request/Ack↔기존 fsync/readback ReceiptStore 연결, enabled SDK-free 작은 body 검증, 원본 센서/Grid/coherent clock 연결 및 whole-record native stream, single-writer/대시보드 자동 factory/worker 수명 관리, source 품질·global robot path·GPS 시각 연관, finite history/read pin/GC.
+- [ ] Windows 가속을 Linux/Jazzy·실제SIM/ARM에 무검증 적용하지 않는다. 정확한 Python/NumPy/native dependency closure를 읽기 전용 helper로 확인하는 새 recipe를 준비 중이다. Docker start는 source/profile 검토 후 한 번씩 실행한다.
+- [ ] 이후에 실제 움직임·fresh holdout·30~60% 수동시험·GPS 실외fix·전류/전압·USBSSD·offlineGNSS시계·RTC·카메라 movingfps·Sept10 장착차이 검증. 실차 조종/모터/펌웨어/장착보정 및 자율주행 출력 없음.
+
+전체 목표 미완료. Jetson 설치 native7453 유지, 마지막 현재상태 관찰은 UTC18:00~18:14이며 이후 접속/건강상태를 추정하지 않는다. 다음 재개: sdk-full-rebuild-qualification-v3/HANDOFF.json, overview-closed-v6-vector-probe-v2/HANDOFF.json, overview-closed-vector-independent-readback/HANDOFF.json, overview-browser-probe-v2/output/ROOT_CHROME_RESULT.json, gnss-receiver-utc-candidate-v4/HANDOFF.json 및 활성 provider/GC/Linux qualification 폴더. Frozen 실패·unowned NAS 변경·원본 보존; staleCompose 재생성 금지.
+
+---
