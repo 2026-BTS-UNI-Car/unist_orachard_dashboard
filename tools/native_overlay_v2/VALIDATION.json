@@ -1,0 +1,60 @@
+{
+  "schema": "ubts.codex.deployment_helper_v2.handoff.v1",
+  "written_utc": "2026-10-13T06:42:42.646209+00:00",
+  "state": "private_future_helper_tested_not_deployed",
+  "base": {
+    "source": "D:\\Develop\\UBTS\\codex-resume-20261013\\release-native-guard-notice-20261013\\install_native_overlay.py",
+    "sha256": "51900677ed5bc877e2a1c59a4e37462d4c2b2e8e090cb3e4b4db76b16bb8b501",
+    "scope": "new private installer helper only; current release and remote unchanged"
+  },
+  "current_release_helper_unchanged_verified": true,
+  "candidate_sha256": "cc0537ad7eab426741023d5aeb823585c65b4d2b526580e4b8427bae3aa11acc",
+  "test_sha256": "5b1b93e3c654ecf7876e5724adf4577644c4dfcbeecadf50a45254d26ba22d85",
+  "README_sha256": "a709fc65e3807a88ce428353365c74d39bbbbe7b3f42788404c5f842eb75e866",
+  "test_result": {
+    "argv": [
+      "C:\\Users\\UdonSari\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "-I",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "D:\\Develop\\UBTS\\codex-resume-20261013\\deployment-helper-v2\\tests",
+      "-v"
+    ],
+    "returncode": 0,
+    "elapsed_s": 0.317,
+    "test_count": 8,
+    "skips": 0,
+    "fake_Docker_API_and_UDS": true,
+    "actual_Docker": false,
+    "actual_SSH": false,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "56f050f52a845f79af7ba6859b1bbd5fa32aa6104f0fbcee1a9b41a6823e2253"
+  },
+  "baseline_reproduction": {
+    "schema": "ubts.deployment_helper.fake_v1_regression_reproduction.v1",
+    "original_sha256": "51900677ed5bc877e2a1c59a4e37462d4c2b2e8e090cb3e4b4db76b16bb8b501",
+    "tests": 4,
+    "failures": 4,
+    "errors": 0,
+    "unexpected_success": false,
+    "fake_only": true,
+    "actual_Docker_called": false,
+    "actual_SSH_called": false
+  },
+  "runtime_changes": [
+    "AF_UNIX Docker API timeout set before connect",
+    "rollback tracking before first restart mutation; restore exact original ID/name/config/restart policy/running state, preserve failed owned replacement evidence"
+  ],
+  "actual_Docker_invoked": false,
+  "actual_SSH_invoked": false,
+  "current_release_or_remote_mutated": false,
+  "runtime_source_or_motors_changed": false,
+  "automatic_installer_retry_added": false,
+  "automatic_lock_or_socket_deletion_added": false,
+  "real_Linux_Docker_validation": false,
+  "remote_current_installer_status_independently_verified": false,
+  "next": "ROOT review/publish future helper; do not replace current running installer."
+}
