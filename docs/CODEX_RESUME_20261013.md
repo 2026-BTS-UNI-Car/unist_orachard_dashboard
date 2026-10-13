@@ -223,3 +223,20 @@ UTC 2026-10-13T17:00:59.989970+00:00. **실제 대시보드 매핑 전체 해결
 재개: `CURRENT_CHECKPOINT.json`, `RESEARCH_PROGRESS_LATEST.json`, `cartographer-fullfield-dense-run-v1/HANDOFF.json`(원래expectation-negative), `cartographer-fullfield-postclosed-v1/HANDOFF.json`, `fullfield-dense-independent-review-v1/HANDOFF.json`, `viewport-browser-adapter-v2/HANDOFF.json`, `viewport-browser-independent-review-v2/HANDOFF.json`, `viewport-loopback-probe-v2/ROOT_CHROME_RESULT.json`. staleCompose 재생성 금지/exactDockerAPI/no-retry 설치 원칙. 원본·frozen실패·unownedNAS수정 보존.
 
 ---
+
+
+# 2026-10-14 최신 체크포인트 — 저장 작업 공유·Stop·마감 시각 처리
+UTC 2026-10-13T17:45:50.916988+00:00. **실차 매핑 교체·GPS 통합·자율주행 완료가 아니다.** 모터/조종/펌웨어/장착 보정/원본 변경 없음. 이번 단계는 로컬 source-only이며 Jetson 설치 없음. 최근 Jetson 읽기는 Cloudflare bad handshake로 실패했으므로 현재 보드 상태를 추정하지 않는다.
+
+- [x] 비동기 저장/조회 owner V2: 단일 writer, source당 단일 job, 같은 job 중복 제거, 최대2source/4job/8MiBmetadata/20MiBbody, live 우선 phase scheduling, 상태·사유·메모리·진행 단계, 디스크 실패 시 명시 DEFER/retry, Stop/generation 후 기존 지도 유지. 실행 중 파일/SQL IO를 강제로 끊는 구현은 아니며 늦게 끝난 durable 결과는 저장돼도 화면에 공개되지 않는다.
+- [x] 실제 발견한 V1 오류 보존 및 V2 수정: 마지막 SQL commit이 deadline 뒤에 반환되면 V1이 새 지도를 공개했다. V2는 최종 publication fence와 각 blocking return에서 deadline/owner를 다시 검사한다. 독립 검토 및 원본14+추가3=17 synthetic 검사 통과. 공개 패키지 검사17개/skip0/임시 리소스 종료 확인. 초기 공개 준비는 freeze JSON 필드 이름 오류로 파일 생성 전 실패했고, 증거를 남긴 뒤 수정했다.
+- [x] 닫힌 V6 실제 native 데이터 연결 시험 **한 번**: 2,432,295cell/158tile/12,161,475B를 원본 row portions와 바이트 단위 비교. 원래 version108/18, bodyID54/55, source stamp, crop 및 SE3 유지. 두54tile 조회 lease가 저장 job1개를 공유했고 Stop 후 identity 유지, 모든 lease/thread/store 종료, 입력 SHA 불변. 관찰 job2.509초/샘플 resident8,729,175B/process peak34,529,280B. 로컬 비격리 비용이며 실시간 속도 향상·현장 정확도 주장이 아니다.
+- [x] C++ incremental mechanism V1의 실제 source-contract 오류 두 개 보존: unknown -0.0 float bits 허용, 목록에서 사라진 trajectory clock high-water 손실. 별도 V2가 이를 수정하고 catalog sequence/native transform revision을 구분했다. V2 standalone13그룹 통과. 실제 SDK/Node/DSO 연결·인증 ACK는 아직 미검증이다.
+- [ ] **가장 먼저:** exact ad8 실제 Node/SDK에 bounded changed-body copy/coherent catalog/보존 확인 ACK/DEFER/Stop 연결. Node/source lock 안에 disk/SQL/RMW를 넣지 않는다. legacy protocol/C1bG/C6OFF/native caps/source clock/pose math 유지. 아직 제안 seam이나 standalone model을 실제 producer 구현으로 표시하지 않는다.
+- [ ] 실제 live/replay writer와 dashboard derived route 연결, 전체 현장 native 지도 transport/브라우저 지속 시험. 30초 닫힌 데이터 시험과 full-record pose/export 성공을 전체 경로 완료로 합치지 않는다.
+- [ ] 전체 지도 overview LOD, manual zoom 보존, 유한 CAS/history 보존 정책/GC/재시작·전원 차단, optimized global robot path 및 GPS clock/covariance/ENU 기준. 일반 GPS5~10m는 과수열 위치나 heading의 정확한 기준으로 사용하지 않는다.
+- [ ] Oct3 전 기록/Oct10 현장/별도 Sept10 차체·offset 검증, ARM/live/현장 수동 센서 feedback 시험, USBSSD 백업/offlineGNSS 시각/전류·전압/RTC 등 실제 장비 항목. 물리 자율주행 OFF/HOLD 유지.
+
+재개: CURRENT_CHECKPOINT.json, RESEARCH_PROGRESS_LATEST.json, async-storage-viewport-owner-v2/HANDOFF.json, async-owner-independent-review-v2/HANDOFF.json, async-owner-closed-v6-probe-v2/HANDOFF.json, incremental-native-cpp-candidate-v2/HANDOFF.json 및 각 실패 증거. 실제 SDK adapter와 whole-field overview 작업은 계속 진행 중이다. stale Compose 재생성 금지, 설치는 exact Docker API/no-retry. unowned NAS 수정과 frozen 실패 보존.
+
+---
