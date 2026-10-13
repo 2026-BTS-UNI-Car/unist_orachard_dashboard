@@ -18,6 +18,7 @@ from native_map_owner import (NativeAcceptedMapOwner, AcceptedNativeFrame,
                               RegisteredNativeBridge, AcceptedContiguousNativeChain, require, token, digest, MAX_NS)
 from keyframe_registration import (scan_geometry, register_keyframe, freeze_geometry, geometry_digest,
                                    register_map, MapBridgeTarget, ScanPolar)
+from paired_keyframe_registration import register_original_pair
 from kernel.raw_localization import Surfaces
 from batched_map_owner import BatchedNativeAcceptedMapOwner
 
@@ -87,7 +88,8 @@ class CommittedNativeMapAdapter:
     def __init__(self,factory, *, enabled=False,map_epoch=None,
                  map_frame='unverified_native_laser_local',on_display_commit=None,
                  recovery_max_wall_s=1.5,accepted_native_chain_enabled=False,pose_ledger_enabled=False,
-                 scan_to_map_bridge_enabled=False,keyframe_bridge_gates_enabled=False,**map_budgets):
+                 scan_to_map_bridge_enabled=False,keyframe_bridge_gates_enabled=False,
+                 paired_visibility_bridge_enabled=False,**map_budgets):
         require(type(enabled) is bool,'typed_map_adapter_default_OFF_required')
         require(type(accepted_native_chain_enabled) is bool,'typed_native_chain_default_OFF_required')
         require(type(pose_ledger_enabled) is bool,'typed_pose_ledger_default_OFF_required')
@@ -95,6 +97,12 @@ class CommittedNativeMapAdapter:
         self.__scan_to_map_bridge_enabled=scan_to_map_bridge_enabled
         require(type(keyframe_bridge_gates_enabled) is bool,'typed_keyframe_bridge_gates_default_OFF_required')
         self.__keyframe_bridge_gates_enabled=keyframe_bridge_gates_enabled
+        require(type(paired_visibility_bridge_enabled) is bool,'typed_paired_visibility_bridge_default_OFF_required')
+        require(not paired_visibility_bridge_enabled or keyframe_bridge_gates_enabled,
+                'paired_visibility_bridge_requires_original_C1bG_tail')
+        require(not paired_visibility_bridge_enabled or not scan_to_map_bridge_enabled,
+                'paired_visibility_prototype_requires_exclusive_bridge_policy')
+        self.__paired_visibility_bridge_enabled=paired_visibility_bridge_enabled
         self._ring=[];self._ring_digest=None;self._map_target=None
         from native_pose_ledger import CommittedPoseLedger
         self.pose_ledger=CommittedPoseLedger(enabled=pose_ledger_enabled)
@@ -120,7 +128,8 @@ class CommittedNativeMapAdapter:
         self._counts=dict(captured=0,processed=0,replaced=0,cancelled=0,bridge_attempts=0,bridges=0,
                           accepted_native_chain_bridges=0,chain_heads=0,heads_superseded=0,
                           bridge_backoff_skips=0,capacity_latched_skips=0,shifted_seed_bridges=0,
-                          map_bridge_attempts=0,map_bridges=0,pose_history_retention_failures=0)
+                          map_bridge_attempts=0,map_bridges=0,pose_history_retention_failures=0,
+                          paired_visibility_attempts=0,paired_visibility_bridges=0)
         self._stages={k:[0,0,0] for k in STAGES}
         self._last_work={};self._callback=on_display_commit;self._recovery_budget=recovery_max_wall_s
         self._map=BatchedNativeAcceptedMapOwner(enabled=enabled,historical_display_only=True,
@@ -132,6 +141,9 @@ class CommittedNativeMapAdapter:
 
     @property
     def scan_to_map_bridge_enabled(self):return self.__scan_to_map_bridge_enabled
+
+    @property
+    def paired_visibility_bridge_enabled(self):return self.__paired_visibility_bridge_enabled
 
     @property
     def keyframe_bridge_gates_enabled(self):return self.__keyframe_bridge_gates_enabled
@@ -273,6 +285,7 @@ class CommittedNativeMapAdapter:
                 pending_limit=2,pending_chain_head=int(self._head is not None),chain_head_limit=1,
                 scan_to_map_bridge_enabled=self.scan_to_map_bridge_enabled,map_ring_entries=len(self._ring),
                 keyframe_bridge_gates_enabled=self.keyframe_bridge_gates_enabled,
+                paired_visibility_bridge_enabled=self.paired_visibility_bridge_enabled,
                 map_ring_limit=MAP_RING_MAX,
                 capacity_latched=self._capacity_latched,last_bridge=dict(self._last_bridge) if self._last_bridge else None,bridge_retry=dict(self._bridge_retry) if self._bridge_retry else None,
                 keyframes_retained=int(self._keyframe is not None),keyframe_limit=1,
@@ -588,6 +601,13 @@ class CommittedNativeMapAdapter:
                 if use_map:
                     fit=register_map(map_target,geometry,polar,cancelled=cancelled,
                                      max_wall_s=MAP_BRIDGE_MAX_WALL_S,seed_center=center)
+                elif self.paired_visibility_bridge_enabled:
+                    self._counts['paired_visibility_attempts']+=1
+                    fit=register_original_pair(k[3],seal.current_cdr,enabled=True,
+                        target_sha256=k[1],current_sha256=seal.frame.scan_cdr_sha256[1],
+                        cancelled=lambda:(cancelled() or self.factory.stop_intent.is_set() or
+                            self.factory.fault is not None or self.ingress.fault is not None),
+                        max_wall_s=self._recovery_budget,seed_center=center)
                 else:
                     fit=register_keyframe(target,geometry,cancelled=cancelled,max_wall_s=self._recovery_budget,
                                           seed_center=center,gates=self.keyframe_bridge_gates_enabled)
@@ -606,13 +626,14 @@ class CommittedNativeMapAdapter:
                         retained is not None and retained[0] is k and retained[2]==target_seal and
                         geometry_digest(retained[1])==target_seal,
                         'retained_keyframe_geometry_changed')
-            self._last_bridge=dict(method='scan_to_map' if use_map else 'keyframe',reason=fit.get('reason'),
+            self._last_bridge=dict(method='scan_to_map' if use_map else 'paired_visibility' if self.paired_visibility_bridge_enabled else 'keyframe',reason=fit.get('reason'),
                                    attempted=fit.get('attempted'),map_members=fit.get('map_members'))
             if not fit['accepted']:
                 self._bridge_failed(k,seal.frame,fit['reason'])
                 self._map.invalidate_gap(fit['reason']);return
             shifted_bridge=bool(fit.get('shifted_seed_grid'))
             if use_map:self._counts['map_bridges']+=1
+            if self.paired_visibility_bridge_enabled:self._counts['paired_visibility_bridges']+=1
             pose=self._map._compose(k[2],(*map(float,fit['xy']),float(fit['yaw'])))
             bridge=RegisteredNativeBridge(seal.frame.context,k[1],seal.frame.scan_cdr_sha256[1],base.version,pose)
             self._issued_bridge=bridge;self._bridge_digest=hashlib.sha256(repr(bridge).encode()).digest()

@@ -457,7 +457,7 @@ class NativeMapSession:
     attached and reject another source. Only explicit new_map erases history.
     """
     def __init__(self, adapter_factory, *, map_epoch,pose_ledger_enabled=False,scan_to_map_bridge_enabled=False,
-                 keyframe_bridge_gates_enabled=False):
+                 keyframe_bridge_gates_enabled=False,paired_visibility_bridge_enabled=False):
         require(callable(adapter_factory) and type(map_epoch) is str and
                 re.fullmatch('[0-9a-f]{32}', map_epoch), 'native_map_session_constructor_required')
         require(type(pose_ledger_enabled) is bool,'typed_pose_ledger_default_OFF_required')
@@ -466,6 +466,12 @@ class NativeMapSession:
         self._scan_to_map_bridge_enabled=scan_to_map_bridge_enabled
         require(type(keyframe_bridge_gates_enabled) is bool,'typed_keyframe_bridge_gates_required')
         self._keyframe_bridge_gates_enabled=keyframe_bridge_gates_enabled
+        require(type(paired_visibility_bridge_enabled) is bool,'typed_paired_visibility_bridge_default_OFF_required')
+        require(not paired_visibility_bridge_enabled or keyframe_bridge_gates_enabled,
+                'paired_visibility_bridge_requires_original_C1bG_tail')
+        require(not paired_visibility_bridge_enabled or not scan_to_map_bridge_enabled,
+                'paired_visibility_prototype_requires_exclusive_bridge_policy')
+        self._paired_visibility_bridge_enabled=paired_visibility_bridge_enabled
         self._factory = adapter_factory
         self._epoch = map_epoch
         self._adapter = None
@@ -480,7 +486,8 @@ class NativeMapSession:
                 self._adapter = self._factory(factory, enabled=True, map_epoch=self._epoch,
                     accepted_native_chain_enabled=True, batched_rays_enabled=True,pose_ledger_enabled=self._pose_ledger_enabled,
                     scan_to_map_bridge_enabled=self._scan_to_map_bridge_enabled,
-                    keyframe_bridge_gates_enabled=self._keyframe_bridge_gates_enabled)
+                    keyframe_bridge_gates_enabled=self._keyframe_bridge_gates_enabled,
+                    paired_visibility_bridge_enabled=self._paired_visibility_bridge_enabled)
                 self.transport = NativeMapTransport(self._adapter, push_only=True)
             else:
                 self._adapter.attach_factory(factory, explicit=True)

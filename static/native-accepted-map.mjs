@@ -7,6 +7,21 @@ const integer=value=>Number.isSafeInteger(value)&&value>=0;
 const clone=value=>JSON.parse(JSON.stringify(value));
 const base='/api/autonomy/native-map/';
 
+export class PoseHistoryNotice {
+  constructor() {this.message='';}
+  update(value) {
+    if(value?.state==='new_map')this.message='';
+    const map=value?.status?.map,missing=map?.pose_history_missing_commits;
+    if(Number.isFinite(missing)&&Number.isInteger(missing)&&missing>0) {
+      const count=Number.isSafeInteger(missing)?`${missing.toLocaleString('ko-KR')}회`:'일부';
+      this.message=`지도 재구성 이력 ${count} 누락 · 보관 한도 초과 · 현재 지도 누적은 계속됩니다.`;
+    }else if(map?.pose_history_complete===true)this.message='';
+    // Display Stop or a missing transport reply carries no new history proof.
+    // Retain the notice until a complete ledger or explicit New map is seen.
+    return this.message;
+  }
+}
+
 export class NativeAcceptedMapClient {
   constructor({request,commit,status=()=>{},pollMs=500,action=null,clear=()=>{}}) {
     require(typeof request==='function'&&typeof commit==='function'&&typeof status==='function', 'native_map_callbacks');
@@ -157,6 +172,8 @@ export async function mountNativeAcceptedMap(container) {
     canvas.style.cssText='width:100%;height:320px;touch-action:none';section.append(canvas);
     const status=document.createElement('p');status.setAttribute('role','status');status.textContent='표시 OFF · 기존 지도 유지';
     section.append(status);container.append(section);
+    const historyWarning=document.createElement('p'),historyNotice=new PoseHistoryNotice();
+    historyWarning.setAttribute('role','status');historyWarning.hidden=true;section.append(historyWarning);
     const map=new MetricMap(canvas.id,false,Math.PI),client=new NativeAcceptedMapClient({request:boundedMapRequest,
       action:boundedMapAction,clear:epoch=>map.set({map_epoch:epoch,scan_count:0}),
       commit:snapshot=>map.setTiles(snapshot),status:value=>{
@@ -167,6 +184,7 @@ export async function mountNativeAcceptedMap(container) {
         status.textContent=labels[value.state]||labels.waiting;
         if(value.map_version!==undefined)status.textContent+=` · 완료 ${value.map_version} · 관측 셀 ${value.cell_count}`;
         if(value.status?.map?.pose_continuity===false&&value.retained)status.textContent+=' · 연결 정합 대기';
+        historyWarning.textContent=historyNotice.update(value);historyWarning.hidden=!historyWarning.textContent;
       }});
     container._nativeMapView=client;
     start.addEventListener('click',()=>client.start());stop.addEventListener('click',()=>client.stop());

@@ -49,6 +49,23 @@ class ServiceSourceBinding(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'exact_unqualified_native_map_sources_required'):
                 stream_runner.load_native_map_sources(target, hashlib.sha256(raw).hexdigest())
 
+    def test_rehashing_cannot_turn_the_unqualified_paired_proposal_on(self):
+        spec = json.loads((ROOT / 'NATIVE_MAP_SOURCE.json').read_bytes())
+        spec['explicit_private_session_features']['paired_visibility_bridge_enabled'] = True
+        raw = json.dumps(spec).encode('utf-8')
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder)
+            (target / 'NATIVE_MAP_SOURCE.json').write_bytes(raw)
+            with self.assertRaisesRegex(ValueError, 'exact_unqualified_native_map_sources_required'):
+                stream_runner.load_native_map_sources(target, hashlib.sha256(raw).hexdigest())
+
+    def test_both_new_modules_are_in_the_exact_manifest_and_build_recipes(self):
+        spec = json.loads((ROOT / 'NATIVE_MAP_SOURCE.json').read_bytes())
+        for name in ('paired_keyframe_registration.py', 'pair_visibility.py'):
+            self.assertEqual(spec['files_sha256'][name], hashlib.sha256((ROOT / name).read_bytes()).hexdigest())
+            for recipe in ('Dockerfile.gnss', 'Dockerfile.gnss.overlay', 'Dockerfile.optimized'):
+                self.assertIn('deploy/native_sensor_stream/' + name + ' ', (ROOT / recipe).read_text(encoding='utf-8'))
+
 
 if __name__ == '__main__':
     unittest.main()
