@@ -1,6 +1,6 @@
 # Future deployment helper V2 — source only, not used by the active release
 
-Published from the reviewed private candidate after the guard/history-notice overlay installed successfully. This helper was not substituted into that running or completed installer. The private evidence below describes its eight mocked regression tests; disposable Linux/Docker qualification is still required before a future install uses V2.
+Published from the reviewed private candidate after the guard/history-notice overlay installed successfully. This helper was not substituted into that running or completed installer. The original eight mocked regression tests and additional real Linux Docker function checks are described below. Complete installer fault injection and restored native-service health remain unverified before a future install uses V2.
 
 This folder contains only the two reviewed operational fixes for the native overlay installer. It does not change the currently running installer, the local release folder, any remote release, Docker containers, runtime source, physical outputs or original recordings.
 
@@ -48,10 +48,16 @@ The fixture deliberately uses `on-failure:7`, making a hardcoded unless-stopped 
 
 `TEST_RESULT.json`, `BASELINE_COMPARISON.json` and `logs/` hold the results. `fake-runs/` and `baseline-v1-readonly-copy/fake-runs/` retain the individual mocked install/rollback evidence and lock files; they contain no real credentials or devices.
 
+## Additional real Linux Docker function checks
+
+On October 13, eight additional checks passed against Linux amd64 Docker Desktop 29.5.3. The exact `restore_original` routine and Docker API executed against disposable actual containers. Checks covered restart-policy-only mutation, stopped-before-rename, renamed-before-create, started replacement, lost create reply, an originally stopped container, refusal to touch an unknown occupant, and an actual Unix-socket timeout (0.15075 seconds for a 0.15-second test timeout). The original ID/name/image/full Config/HostConfig and running state, including `on-failure:7`, were compared. Test resources were removed and the fourteen unrelated container IDs/configurations/states were unchanged.
+
+Source SHA256: `cc0537ad7eab426741023d5aeb823585c65b4d2b526580e4b8427bae3aa11acc`. Sanitized evidence is `D:/Develop/UBTS/codex-resume-20261013/installer-docker-qualification/REAL_DOCKER_FUNCTION_RESULT.json` and its `HANDOFF.md`; the result SHA256 is `bdc6710fd9645d551846b7e531dc26e8c69b072b2678386d35efe7147a8887e6`. This was **function-level qualification**, not the complete installer: official Linux Docker CLI was unavailable, so inspect/run seams used real daemon REST operations. Failure boundaries were prepared as actual state transitions instead of injecting failures through every top-level CLI operation. No ARM, Jetson, build or native UDS health check was performed.
+
 ## Limits and next step
 
-This is not a real Linux/Docker rollback qualification. It has not been deployed. Exact runtime restoration does not itself prove the restored native UDS has returned healthy; ROOT's normal post-operation service observation remains necessary. Restoration can fail if Docker is unreachable, the original is missing, or an unowned container occupies the name; those failures remain explicit and do not authorize touching unknown resources.
+The real function checks do not qualify the entire installer or ARM/native-service restoration. V2 has not been deployed. Exact runtime restoration does not itself prove the restored native UDS has returned healthy; ROOT's normal post-operation service observation remains necessary. Restoration can fail if Docker is unreachable, the original is missing, or an unowned container occupies the name; those failures remain explicit and do not authorize touching unknown resources.
 
 The active remote installer was not contacted because this task prohibited SSH. The local current release contained no fetched install-result artifact during review, so no independent remote phase/status claim is made here. ROOT owns that monitor.
 
-ROOT should review this helper and its fake tests, publish it as a future helper version, and qualify its behavior in a disposable real Docker environment before using it for another deployment. Do not overwrite the already-running release script or assume these fixes apply to its current process.
+ROOT should qualify the complete installer in a disposable Linux Docker environment with its real CLI and injected top-level failures, then verify restored service health before using it for another deployment. Do not overwrite the completed release script or assume these fixes apply to its earlier process.
