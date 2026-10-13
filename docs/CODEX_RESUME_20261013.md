@@ -277,4 +277,3 @@ Jetson 신규 설치/조종/모터/펌웨어/장착 보정 없음. 최신 성공
 재개: CURRENT_CHECKPOINT.json, RESEARCH_PROGRESS_LATEST.json, public-owner-overview-http-v4/HANDOFF.json, overview-closed-v6-probe-v1/HANDOFF.json, sdk-full-prebuild-closure-v1/HANDOFF.json, incremental-native-sdk-adapter-v5 및 sdk-full-rebuild-qualification-v1. frozen 실패·unowned NAS 변경 보존, stale Compose 재생성 금지, 설치는 exact Docker API/no-retry.
 
 ---
-
