@@ -303,6 +303,7 @@ cand6 bridge 시도를 공백 길이별로 나눴다(공백 = 마지막 발행 s
 - 재생에서 지도가 덮는 시간은 기록당 6–33초뿐이다(5.6절의 연속성 한계). gate는 연속성을 바꾸지 않는다.
 
 **설치(Jetson)**: native 이미지 `30c7fd71…`(부모 `29c89fb1…`, 파일 5개), map manifest `91f3f2c4…`. 기존 컨테이너를 `ubts-native-sensor-observation-retained-map-bridge-gates-20261013-20261013T142645`로 보존했고, 정상 재시작 확인. 릴리스 폴더 `~/ubts-releases/native-map-bridge-gates-20261013`.
+- 설치 후 실차 정지 관찰(180초, 관찰만, rover disarmed, 모터 명령 없음): 세션 장애 0, 폴링 오류 0, 웹에서 본 세대 316(설치 전 33Hz 시험 350). scan 헤더→웹 p50/p90 242/295ms(설치 전 248/293ms), 세대 간격 최대 3.5초(설치 전 4.0초). Stop 후 owner `stopped`, 실패 사유 없음(`LIVE_PROBE_GATES.json`).
 
 ## 6. 테스트
 
