@@ -12,9 +12,10 @@ export class PoseHistoryNotice {
   update(value) {
     if(value?.state==='new_map')this.message='';
     const map=value?.status?.map,missing=map?.pose_history_missing_commits;
-    if(Number.isFinite(missing)&&Number.isInteger(missing)&&missing>0) {
-      const count=Number.isSafeInteger(missing)?`${missing.toLocaleString('ko-KR')}회`:'일부';
-      this.message=`지도 재구성 이력 ${count} 누락 · 보관 한도 초과 · 현재 지도 누적은 계속됩니다.`;
+    const knownCount=Number.isFinite(missing)&&Number.isInteger(missing)&&missing>0;
+    if(knownCount||(map?.pose_history_complete===false&&map?.pose_history_warning==='retained_pose_history_capacity')) {
+      const count=knownCount&&Number.isSafeInteger(missing)?`${missing.toLocaleString('ko-KR')}회`:'일부';
+      this.message=`지도 재구성 이력 ${count} 누락 · 보관 한도 초과 · 전체 이력 재구성이 불완전합니다.`;
     }else if(map?.pose_history_complete===true)this.message='';
     // Display Stop or a missing transport reply carries no new history proof.
     // Retain the notice until a complete ledger or explicit New map is seen.
@@ -67,6 +68,10 @@ export class NativeAcceptedMapClient {
     try {
       const first=await this.request(base+'tiles',abort.signal);
       require(first?.ok===true&&FALSE_FLAGS.every(k=>first[k]===false),'native_map_reply_contract');
+      // Track a returned pin for release even when this reply was superseded
+      // by display Stop/Start. No obsolete reply may update status or history.
+      if(first.available&&typeof first.page?.lease_id==='string'&&/^[0-9a-f]{32}$/.test(first.page.lease_id))this.lease=first.page.lease_id;
+      require(!abort.signal.aborted&&this.running&&revision===this.revision,'native_map_cancelled');
       if(!first.available){this.notify({state:'waiting',retained:!!this.last,status:first.status});return;}
       const pages=[],keys=new Set();let answer=first,head=null,total=0;
       for(let index=0;index<64;index++) {
