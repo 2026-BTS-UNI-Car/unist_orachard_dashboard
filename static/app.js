@@ -629,6 +629,11 @@ function enforceCameraSelection() {
   state.cameraLive.fps = chooseCameraFps(fps, state.cameraLive.fps);
 }
 
+const CAMERA_SETTINGS_ERRORS = {
+  camera_resolution_locked_while_recording: "녹화 중에는 해상도를 바꿀 수 없습니다. 녹화를 멈춘 뒤 바꾸세요(fps는 변경 가능)",
+  camera_resolution_change_needs_idle_recorder: "녹화기 상태를 확인할 수 없어 해상도를 바꾸지 않았습니다",
+};
+
 async function setCameraSettings(next) {
   if (next.resolution) {
     const resolutions = cameraResolutionOptions();
@@ -661,7 +666,7 @@ async function setCameraSettings(next) {
     });
     const result = await res.json();
     if (!res.ok || !result.ok) {
-      throw new Error(result.error || `HTTP ${res.status}`);
+      throw new Error(CAMERA_SETTINGS_ERRORS[result.error] || result.error || `HTTP ${res.status}`);
     }
     if (Array.isArray(result.supported_view_modes)) {
       applyCameraModeCatalog(result.supported_view_modes, "settings");
