@@ -87,12 +87,14 @@ class CommittedNativeMapAdapter:
     def __init__(self,factory, *, enabled=False,map_epoch=None,
                  map_frame='unverified_native_laser_local',on_display_commit=None,
                  recovery_max_wall_s=1.5,accepted_native_chain_enabled=False,pose_ledger_enabled=False,
-                 scan_to_map_bridge_enabled=False,**map_budgets):
+                 scan_to_map_bridge_enabled=False,keyframe_bridge_gates_enabled=False,**map_budgets):
         require(type(enabled) is bool,'typed_map_adapter_default_OFF_required')
         require(type(accepted_native_chain_enabled) is bool,'typed_native_chain_default_OFF_required')
         require(type(pose_ledger_enabled) is bool,'typed_pose_ledger_default_OFF_required')
         require(type(scan_to_map_bridge_enabled) is bool,'typed_scan_to_map_bridge_default_OFF_required')
         self.__scan_to_map_bridge_enabled=scan_to_map_bridge_enabled
+        require(type(keyframe_bridge_gates_enabled) is bool,'typed_keyframe_bridge_gates_default_OFF_required')
+        self.__keyframe_bridge_gates_enabled=keyframe_bridge_gates_enabled
         self._ring=[];self._ring_digest=None;self._map_target=None
         from native_pose_ledger import CommittedPoseLedger
         self.pose_ledger=CommittedPoseLedger(enabled=pose_ledger_enabled)
@@ -130,6 +132,9 @@ class CommittedNativeMapAdapter:
 
     @property
     def scan_to_map_bridge_enabled(self):return self.__scan_to_map_bridge_enabled
+
+    @property
+    def keyframe_bridge_gates_enabled(self):return self.__keyframe_bridge_gates_enabled
 
     def _clear_ring(self):
         # New map, new source or capacity latch only. Stop keeps the ring like K;
@@ -264,6 +269,7 @@ class CommittedNativeMapAdapter:
                 worker_launch_unproven=self._launch_ambiguous,pending_latest=int(self._pending is not None or self._head is not None),in_flight=int(self._working is not None),
                 pending_limit=2,pending_chain_head=int(self._head is not None),chain_head_limit=1,
                 scan_to_map_bridge_enabled=self.scan_to_map_bridge_enabled,map_ring_entries=len(self._ring),
+                keyframe_bridge_gates_enabled=self.keyframe_bridge_gates_enabled,
                 map_ring_limit=MAP_RING_MAX,
                 capacity_latched=self._capacity_latched,last_bridge=dict(self._last_bridge) if self._last_bridge else None,bridge_retry=dict(self._bridge_retry) if self._bridge_retry else None,
                 keyframes_retained=int(self._keyframe is not None),keyframe_limit=1,
@@ -581,7 +587,7 @@ class CommittedNativeMapAdapter:
                                      max_wall_s=MAP_BRIDGE_MAX_WALL_S,seed_center=center)
                 else:
                     fit=register_keyframe(target,geometry,cancelled=cancelled,max_wall_s=self._recovery_budget,
-                                          seed_center=center)
+                                          seed_center=center,gates=self.keyframe_bridge_gates_enabled)
             finally:
                 # No exception to WAIT cancellation while preparing rays or
                 # committing a map-owner ticket whose serial was revoked.

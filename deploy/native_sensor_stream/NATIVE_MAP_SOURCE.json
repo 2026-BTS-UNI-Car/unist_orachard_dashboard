@@ -5,15 +5,16 @@
   "explicit_private_session_features": {
     "accepted_native_chain_enabled": true,
     "batched_rays_enabled": true,
+    "keyframe_bridge_gates_enabled": true,
     "scan_to_map_bridge_enabled": false
   },
   "files_sha256": {
     "batched_map_owner.py": "1009242fe6a235b7f6205d7afbfb088c0199d9979849536fd8cac7595b6f7302",
     "batched_rays.py": "c92818d13224a6730624e82baf5173f4231d6a78552d4c04a2ef61feb53a0b37",
-    "committed_native_map.py": "ecc5f32c487ac796a5b1cf3c6cfd27b09252ea133b8748acf86e19c19b4b3d20",
-    "keyframe_registration.py": "3e7081965a50f67940aee35971ac87b3eb6c31fabbaee6df7abd7a2505975169",
+    "committed_native_map.py": "ecbd9dc062a024b714a7951bda531ad5894f245da34cfbc8c35a21ea1fa60f2f",
+    "keyframe_registration.py": "a11970e9a3cbe9c3cf0da915d9a01b5733c285e7215ef620ad214cae70413704",
     "native_map_owner.py": "4b0e2e77094b3de49a5ca56408f2e172fb059a01c7035ad80db906786717af7b",
-    "native_map_transport.py": "f398eb663a6d7ab408aa960bd7a1f4cc584839bf0574a0ad5c9497e74fd3d6c2",
+    "native_map_transport.py": "40db011e22c8aee9ec8fc5e07b8289ff5553ceab7da5834768f9c629ee518ef7",
     "native_pose_ledger.py": "cbafac757be803d8f0cc1c7fbdd430513c0387c15e2a4852f0ef1a1b9b5d196b",
     "stream_rows_map.py": "0f2950904d9514eec7f0f9c885f505502e7d750f9dd6b8ebf6bb2a5a34d9f89d"
   },

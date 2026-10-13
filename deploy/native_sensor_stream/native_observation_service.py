@@ -127,13 +127,14 @@ def main(argv=None):
         bound.gps_data_gid,bound.gps_fix_gid=args.gps_data_gid,args.gps_fix_gid
         bound.native_gnss_manifest_sha256=GNSS_SOURCE_SHA
         stream_runner.load_native_gnss_sources(root,GNSS_SOURCE_SHA)
-    bound.native_map_manifest_sha256 = 'f23a0445ea87635562e695c018e54b25c58401803dcf942b4a7a5643164299ba'
+    bound.native_map_manifest_sha256 = '91f3f2c4b556c1765fa64b4286b9c38b62598b7b042d2b876daacc3ce4d4d101'
     if args.enable_native_map:
         stream_runner.load_native_map_sources(root, bound.native_map_manifest_sha256)
         from committed_native_map import CommittedNativeMapAdapter
         from native_map_transport import NativeMapSession
         import uuid
-        bound.native_map_session = NativeMapSession(CommittedNativeMapAdapter, map_epoch=uuid.uuid4().hex,pose_ledger_enabled=args.enable_native_gnss)
+        bound.native_map_session = NativeMapSession(CommittedNativeMapAdapter, map_epoch=uuid.uuid4().hex,pose_ledger_enabled=args.enable_native_gnss,
+            keyframe_bridge_gates_enabled=True)
     retained_map = getattr(bound, 'native_map_session', None)
     binary=root/'bin/actual_cdr_stream'
     stream_runner.require(stream_runner.sha_file(binary)==bound.observer_binary_sha256,'compiled_observer_SHA_required')
