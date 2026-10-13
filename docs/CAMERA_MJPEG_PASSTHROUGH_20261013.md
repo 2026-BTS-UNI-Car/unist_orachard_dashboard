@@ -92,3 +92,38 @@
 - 몇 분 길이 녹화의 영상 생성.
 - `/camera/image_raw`(6.2MB)는 Fast DDS 512KB 공유메모리 한계 때문에 일부 손실된다. 이 동작은 원래부터 있었고 transport 설정은 바꾸지 않았다.
 - 녹화 중 시스템 시계가 step되면(예: GNSS 시각 동기) header·수신 시각이 함께 이동해 영상에 공백이 생긴다. 시각 동기 서비스는 녹화·제어·매핑 중에는 step하지 않도록 조건을 걸어 두었다.
+
+## 6. 녹화 중 해상도 변경 잠금(commit `b782d9b`)
+
+**문제**
+- 영상 내보내기는 한 녹화를 하나의 프레임 크기로 처리한다. 크기가 바뀌면 `camera_mode_changed_inside_recording`으로 그 녹화의 영상 생성 전체가 실패한다(원본 프레임은 bag에 남는다).
+- 대시보드는 녹화 중에도 카메라 해상도 변경을 그대로 저장했다. 그래서 녹화 중 해상도를 바꾸면 그 녹화의 영상을 잃었다.
+- passthrough/fallback 전환은 앞의 수정으로 같은 방향·크기를 유지하므로 해당하지 않는다.
+
+**수정**
+- `/api/camera/settings`는 프레임 크기 변경을 녹화기가 idle이거나 LiDAR만 녹화할 때만 저장한다.
+  - 카메라 녹화 중(마감 중 포함): `camera_resolution_locked_while_recording`.
+  - 녹화기 상태를 알 수 없을 때: `camera_resolution_change_needs_idle_recorder`.
+- 같은 크기의 fps 변경은 그대로 허용한다. 화면에는 한국어 사유를 표시한다.
+- 테스트: `tests/test_camera_settings_recording_lock.py` 4개(Linux py3.10, Jetson 이미지 안에서 기존 telemetry 테스트와 함께 8개 통과).
+
+**설치(Jetson)**
+- 대시보드 이미지 `aa83a85d…` = 기존 `fe9bb6cb…` + `telemetry.py`·`app.js` 2개 파일. 설치본 파일은 HEAD와 같은 내용(CRLF)이어서 같은 수정만 반영했다.
+- 방법: 저장한 기존 컨테이너 inspect의 Config/HostConfig를 그대로 쓰고 이미지만 바꿔 Docker API로 다시 만들었다. 실행 설정 동일, health healthy, `/api/health` 200을 확인했다.
+- 롤백: 기존 컨테이너를 `unist-orachard-dashboard-kept-install-camera-size-lock-20261013T120437`(이미지 `fe9bb6cb`, 정지)로 보존했다. 절차는 `~/ubts-releases/dashboard-camera-size-lock-20261013/RECREATE_install-camera-size-lock.json`의 `rollback`에 있다.
+
+**설치 중 사고(복구 완료)**
+- 첫 설치 스크립트는 compose override 방식이었다. 새 컨테이너의 실행 설정이 기존과 달라 교체를 중단했다.
+- 그 뒤 compose 롤백이 `66243e6b…`(10/07 이미지)를 띄웠다. 이 보드의 compose 파일 57개는 실제 실행 중이던 대시보드(`fe9bb6cb`, compose 밖에서 설치)를 나타내지 않기 때문이다.
+- 약 16분(11:48–12:04 KST) 동안 이전 이미지가 실행됐다. 녹화·모터 동작은 없었다(녹화기 idle, rover disarmed).
+- 저장한 inspect로 `fe9bb6cb` 컨테이너를 같은 설정으로 다시 만들었다. 제공 파일 해시가 설치 전과 같음을 확인한 뒤 위 설치를 진행했다.
+- compose가 만든 컨테이너는 `…-kept-restore-fe9bb6cb-20261013T120412`(정지)로 보존했다.
+- **이 보드의 대시보드는 compose로 다시 만들면 안 된다.** compose 파일과 실제 설치본이 다르다.
+
+**실제 녹화 확인** `20261013T030500Z_both`(31.6초, 정지 상태, 모터 출력 없음)
+- 녹화 시작 약 4초 뒤 실제 대시보드 경로로 1280×720 변경을 요청했다. 응답은 `camera_resolution_locked_while_recording`이었고, 설정 파일 바이트는 그대로였다.
+- 카메라 상태는 계속 `actual 1920×1080`, passthrough, streaming이었다(시험 스크립트의 크기 필드 이름 오류로 해당 단계 판정이 `null`로 기록돼, 상태 파일을 직접 읽어 확인했다).
+- bag: 끝까지 읽은 계수가 metadata와 일치, 원본 JPEG 910장, header 기준 29.7fps, 연속 동일 payload 0, 표본 전부 1920×1080.
+- 영상 생성 완료(1080 variant 포함), 회전 정확히 한 번 적용(180° 회전 원본과 상관 0.999, 그대로 0.34).
+- 결과: `~/ubts-releases/dashboard-camera-size-lock-20261013/CAMERA_SIZE_LOCK_TEST_lock1.json`, 판정 보정 `…lock1.EVALUATION.json`(`lock_verified`).
+
