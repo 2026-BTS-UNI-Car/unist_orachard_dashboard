@@ -16,7 +16,8 @@ from common.native_ownership import PreparedInputs
 from physical_factory import PhysicalNativeShadowFactory, PreparedPhysicalDiagnostic
 from native_map_owner import (NativeAcceptedMapOwner, AcceptedNativeFrame,
                               RegisteredNativeBridge, AcceptedContiguousNativeChain, require, token, digest, MAX_NS)
-from keyframe_registration import scan_geometry, register_keyframe, freeze_geometry, geometry_digest
+from keyframe_registration import (scan_geometry, register_keyframe, freeze_geometry, geometry_digest,
+                                   register_map, MapBridgeTarget, ScanPolar)
 from kernel.raw_localization import Surfaces
 from batched_map_owner import BatchedNativeAcceptedMapOwner
 
@@ -57,6 +58,19 @@ SEED_CENTER_MAX_GAP_NS=3_000_000_000
 # exponential backoff in original scan time (no clock read), bounded.
 BRIDGE_FREE_ATTEMPTS=3
 BRIDGE_BACKOFF_BASE_NS,BRIDGE_BACKOFF_MAX_NS=500_000_000,4_000_000_000
+# Scan-to-map bridge target: K plus published scans of K's own chain within 2 s, >= 0.15 s
+# apart, at most 24 original CDRs (~26 KB each). The search stays inside the 2 s recovery cap.
+MAP_RING_SPAN_NS,MAP_RING_SPACING_NS,MAP_RING_MAX=2_000_000_000,150_000_000,24
+MAP_BRIDGE_MAX_WALL_S=2.
+
+
+def ring_digest(ring):
+    h=hashlib.sha256()
+    for entry in ring:
+        version,sha,stamp,pose,raw,context,lineage=entry
+        require(hashlib.sha256(raw).hexdigest()==sha,'retained_map_ring_CDR_changed')
+        h.update(repr((version,sha,stamp,pose,context,lineage)).encode())
+    return h.digest()
 
 
 def seal_digest(s):
@@ -72,10 +86,14 @@ def seal_digest(s):
 class CommittedNativeMapAdapter:
     def __init__(self,factory, *, enabled=False,map_epoch=None,
                  map_frame='unverified_native_laser_local',on_display_commit=None,
-                 recovery_max_wall_s=1.5,accepted_native_chain_enabled=False,pose_ledger_enabled=False,**map_budgets):
+                 recovery_max_wall_s=1.5,accepted_native_chain_enabled=False,pose_ledger_enabled=False,
+                 scan_to_map_bridge_enabled=False,**map_budgets):
         require(type(enabled) is bool,'typed_map_adapter_default_OFF_required')
         require(type(accepted_native_chain_enabled) is bool,'typed_native_chain_default_OFF_required')
         require(type(pose_ledger_enabled) is bool,'typed_pose_ledger_default_OFF_required')
+        require(type(scan_to_map_bridge_enabled) is bool,'typed_scan_to_map_bridge_default_OFF_required')
+        self.__scan_to_map_bridge_enabled=scan_to_map_bridge_enabled
+        self._ring=[];self._ring_digest=None;self._map_target=None
         from native_pose_ledger import CommittedPoseLedger
         self.pose_ledger=CommittedPoseLedger(enabled=pose_ledger_enabled)
         self.__accepted_native_chain_enabled=accepted_native_chain_enabled
@@ -96,10 +114,11 @@ class CommittedNativeMapAdapter:
         self._issued_bridge=None;self._bridge_digest=None;self._keyframe=None;self._keyframe_digest=None
         self._capture_sequence=0;self._serial=0;self._fault=None;self._encoder_fault=None
         self._head=None;self._keyframe_geometry=None;self._keyframe_motion=None
-        self._bridge_retry=None;self._capacity_latched=False
+        self._bridge_retry=None;self._capacity_latched=False;self._last_bridge=None
         self._counts=dict(captured=0,processed=0,replaced=0,cancelled=0,bridge_attempts=0,bridges=0,
                           accepted_native_chain_bridges=0,chain_heads=0,heads_superseded=0,
-                          bridge_backoff_skips=0,capacity_latched_skips=0,shifted_seed_bridges=0)
+                          bridge_backoff_skips=0,capacity_latched_skips=0,shifted_seed_bridges=0,
+                          map_bridge_attempts=0,map_bridges=0)
         self._stages={k:[0,0,0] for k in STAGES}
         self._last_work={};self._callback=on_display_commit;self._recovery_budget=recovery_max_wall_s
         self._map=BatchedNativeAcceptedMapOwner(enabled=enabled,historical_display_only=True,
@@ -108,6 +127,14 @@ class CommittedNativeMapAdapter:
 
     @property
     def accepted_native_chain_enabled(self):return self.__accepted_native_chain_enabled
+
+    @property
+    def scan_to_map_bridge_enabled(self):return self.__scan_to_map_bridge_enabled
+
+    def _clear_ring(self):
+        # New map, new source or capacity latch only. Stop keeps the ring like K;
+        # only the worker extends it, so a cancelled registration never sees it change.
+        self._ring=[];self._ring_digest=None;self._map_target=None
 
     def _clear_chain(self):
         self._capture_last=None;self._chain_token=None;self._chain_pose=None;self._chain_digest=None
@@ -187,7 +214,7 @@ class CommittedNativeMapAdapter:
                     'map_worker_join_before_attach_required')
             self.factory,self.ingress=factory,factory.ingress
             self._context=self._factory_context(factory,*self._context[4:]);self._serial+=1
-            self._keyframe_motion=None
+            self._keyframe_motion=None;self._clear_ring()
             self._map.invalidate_gap('new_native_source_requires_registration')
             return self.status()
 
@@ -199,7 +226,7 @@ class CommittedNativeMapAdapter:
             require(epoch!=self._context[4],'new_map_epoch_required')
             self._context=(*self._context[:4],epoch,self._context[5]);self._keyframe=None;self._keyframe_digest=None
             self._keyframe_geometry=None;self._keyframe_motion=None;self._head=None
-            self._bridge_retry=None;self._capacity_latched=False
+            self._bridge_retry=None;self._capacity_latched=False;self._clear_ring()
             self._clear_chain();self._mapped_chain=None
             self._issued_bridge=None;self._bridge_digest=None;self._serial+=1
             return self._map.new_map(self._context,explicit=True)
@@ -236,7 +263,9 @@ class CommittedNativeMapAdapter:
                 encoder_fault=self._encoder_fault,worker_alive=self._thread is not None and self._thread.is_alive(),
                 worker_launch_unproven=self._launch_ambiguous,pending_latest=int(self._pending is not None or self._head is not None),in_flight=int(self._working is not None),
                 pending_limit=2,pending_chain_head=int(self._head is not None),chain_head_limit=1,
-                capacity_latched=self._capacity_latched,bridge_retry=dict(self._bridge_retry) if self._bridge_retry else None,
+                scan_to_map_bridge_enabled=self.scan_to_map_bridge_enabled,map_ring_entries=len(self._ring),
+                map_ring_limit=MAP_RING_MAX,
+                capacity_latched=self._capacity_latched,last_bridge=dict(self._last_bridge) if self._last_bridge else None,bridge_retry=dict(self._bridge_retry) if self._bridge_retry else None,
                 keyframes_retained=int(self._keyframe is not None),keyframe_limit=1,
                 counters=dict(self._counts),last_work=dict(self._last_work),
                 stage_timing_ms={k:[n,round(t/1e6/n,2) if n else 0.,round(m/1e6,2)] for k,(n,t,m) in self._stages.items()},
@@ -438,6 +467,36 @@ class CommittedNativeMapAdapter:
         retry['next_scan_ns']=frame.scan_stamps_ns[1]+wait
         self._bridge_retry=retry
 
+    def _ring_matches(self,k):
+        ring=self._ring
+        return bool(ring) and ring[-1][0]==k[0] and ring[-1][1]==k[1] and ring[-1][3]==k[2] and ring[-1][4] is k[3]
+
+    def _retained_map_target(self):
+        """Local map of the retained ring in K's frame, built once per ring and sealed."""
+        seal=ring_digest(self._ring)
+        require(seal==self._ring_digest,'retained_map_ring_changed')
+        cached=self._map_target
+        if cached is None or cached[0]!=seal:
+            k_pose=self._ring[-1][3];inverse=self._inverse(k_pose)
+            members=[(entry[4],entry[1],self._map._compose(inverse,entry[3])) for entry in reversed(self._ring)]
+            members[0]=(members[0][0],members[0][1],(0.,0.,0.))
+            cached=self._map_target=(seal,MapBridgeTarget(members))
+        return cached[1],seal
+
+    def _extend_ring(self,frame,state,cdr,bridge):
+        """Retain the published scan; a registered bridge or a new context restarts the ring."""
+        entry=(state.version,frame.scan_cdr_sha256[1],frame.scan_stamps_ns[1],state.pose,cdr,frame.context,
+               'bridge' if type(bridge) is RegisteredNativeBridge else 'chain')
+        ring=self._ring
+        if type(bridge) is RegisteredNativeBridge or not ring or ring[-1][5]!=frame.context:
+            ring=[entry]
+        else:
+            # The previous K stays only when it is >= 0.15 s after the entry before it.
+            if len(ring)>1 and ring[-1][2]-ring[-2][2]<MAP_RING_SPACING_NS:ring=ring[:-1]
+            ring=ring+[entry]
+            ring=[e for e in ring if frame.scan_stamps_ns[1]-e[2]<=MAP_RING_SPAN_NS][-MAP_RING_MAX:]
+        self._ring=ring;self._ring_digest=ring_digest(ring)
+
     def _retained_geometry(self,k):
         """Surfaces of the retained keyframe, derived once from its original CDR.
 
@@ -502,31 +561,49 @@ class CommittedNativeMapAdapter:
                     'registered_keyframe_generation_changed')
             if not self._bridge_allowed(k,seal.frame):
                 self._counts['bridge_backoff_skips']+=1;return
-            target,target_seal=self._retained_geometry(k)
             geometry=scan_geometry(seal.current_cdr,seal.frame.scan_cdr_sha256[1])[1]
             center=self._seed_center(seal.frame)
+            use_map=self.scan_to_map_bridge_enabled and self._ring_matches(k)
+            if use_map:
+                map_target,ring_seal=self._retained_map_target()
+                polar=ScanPolar(wire)
+            else:
+                target,target_seal=self._retained_geometry(k)
             t=self._stage('geometry',t)
             self._counts['bridge_attempts']+=1
+            if use_map:self._counts['map_bridge_attempts']+=1
             with self._cv:
                 if cancelled():return
                 self._recovery_work=(seal,base,k,serial)
             try:
-                fit=register_keyframe(target,geometry,cancelled=cancelled,max_wall_s=self._recovery_budget,
-                                      seed_center=center)
+                if use_map:
+                    fit=register_map(map_target,geometry,polar,cancelled=cancelled,
+                                     max_wall_s=MAP_BRIDGE_MAX_WALL_S,seed_center=center)
+                else:
+                    fit=register_keyframe(target,geometry,cancelled=cancelled,max_wall_s=self._recovery_budget,
+                                          seed_center=center)
             finally:
                 # No exception to WAIT cancellation while preparing rays or
                 # committing a map-owner ticket whose serial was revoked.
                 with self._cv:self._recovery_work=None
             t=self._stage('register',t)
-            retained=self._keyframe_geometry
-            require(keyframe_digest(k)==self._keyframe_digest and geometry_digest(target)==target_seal and
-                    retained is not None and retained[0] is k and retained[2]==target_seal and
-                    geometry_digest(retained[1])==target_seal,
-                    'retained_keyframe_geometry_changed')
+            if use_map:
+                require(keyframe_digest(k)==self._keyframe_digest and ring_digest(self._ring)==ring_seal and
+                        self._map_target is not None and self._map_target[0]==ring_seal and
+                        self._map_target[1] is map_target,'retained_map_ring_changed')
+            else:
+                retained=self._keyframe_geometry
+                require(keyframe_digest(k)==self._keyframe_digest and geometry_digest(target)==target_seal and
+                        retained is not None and retained[0] is k and retained[2]==target_seal and
+                        geometry_digest(retained[1])==target_seal,
+                        'retained_keyframe_geometry_changed')
+            self._last_bridge=dict(method='scan_to_map' if use_map else 'keyframe',reason=fit.get('reason'),
+                                   attempted=fit.get('attempted'),map_members=fit.get('map_members'))
             if not fit['accepted']:
                 self._bridge_failed(k,seal.frame,fit['reason'])
                 self._map.invalidate_gap(fit['reason']);return
             shifted_bridge=bool(fit.get('shifted_seed_grid'))
+            if use_map:self._counts['map_bridges']+=1
             pose=self._map._compose(k[2],(*map(float,fit['xy']),float(fit['yaw'])))
             bridge=RegisteredNativeBridge(seal.frame.context,k[1],seal.frame.scan_cdr_sha256[1],base.version,pose)
             self._issued_bridge=bridge;self._bridge_digest=hashlib.sha256(repr(bridge).encode()).digest()
@@ -537,7 +614,7 @@ class CommittedNativeMapAdapter:
         ticket=self._map.prepare(seal.frame,registered_bridge=bridge,**now)
         t=self._stage('prepare',t)
         if ticket is None and str(self._map.status().get('reason','')).startswith('native_map_capacity'):
-            self._capacity_latched=True
+            self._capacity_latched=True;self._clear_ring()
         if ticket is None or cancelled():return
         with self._fence:
             if cancelled():return
@@ -554,6 +631,8 @@ class CommittedNativeMapAdapter:
         self._keyframe=(self._map._state.version,seal.frame.scan_cdr_sha256[1],
                         self._map._state.pose,seal.current_cdr)
         self._keyframe_digest=keyframe_digest(self._keyframe)
+        if self.scan_to_map_bridge_enabled:
+            self._extend_ring(seal.frame,self._map._state,seal.current_cdr,bridge)
         self._keyframe_motion=(seal.frame.context,seal.frame.scan_stamps_ns,seal.frame.current_to_previous)
         self._bridge_retry=None
         t=self._stage('keyframe',t)
