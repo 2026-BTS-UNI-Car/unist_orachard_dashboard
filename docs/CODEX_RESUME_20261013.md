@@ -259,3 +259,22 @@ UTC 2026-10-13T18:20:31.982114+00:00. **전체 현장 센서→지도→대시�
 재개: CURRENT_CHECKPOINT.json, RESEARCH_PROGRESS_LATEST.json, DASHBOARD_READONLY_STATUS_20261014.json, SENSOR_CADENCE_READONLY_20261014.json, sim-derived-owner-route-v3/HANDOFF.json, sim-derived-route-independent-review-v3/HANDOFF.json, incremental-native-sdk-adapter-v1/HANDOFF.json 및 후속V2. 기본OFF선택코드/설치된7453를 구분한다. staleCompose 재생성 금지, exactDockerAPI/no-retry, frozen실패/unownedNAS 변경 보존.
 
 ---
+
+## 2026-10-14 지도 표시·실제 SDK 연결 체크포인트 (2026-10-13T19:17:38.653017+00:00)
+
+- [x] 공개 SIM 저장 관리자에 overview를 연결한 비공개 후보: 기존 수학·원본 CAS를 그대로 두고 namespaced owner/import만 연결했다. 실제 공개 클래스의 세대 변경·Stop·이전 화면 유지·계속 증가하는 snapshot 검사 11개 통과.
+- [x] 실제 WSL DashboardHandler로 선택적 SIM overview HTTP 경로를 검사했다. 조회가 worker를 시작하지 않으며 기존 세션·Origin·Stop 요청 크기/시간 제한을 재사용한다. 4개 통과. 첫 HTTP 상태 조회의 빈 query 처리 실패와 독립 검토의 2239B 중첩 JSON 예외는 각각 보존했고 새 후보에서 수정했다. 전체 과수원/실차 검증으로 표시하지 않는다.
+- [x] 닫힌 원본 V6의 2,432,295 셀/158 원본 타일을 13 표시 타일/38,240 aggregate 셀로 변환했다. scalar 소요 7.8228356초, 원본 import는 별도 2.5611482초. 원본 12,161,475B·version108/18·body54/55·시각/geometry는 불변이다. 처리 후 aggregate 본체는 보관하지 않아 사후 독립 본체 검증을 주장하지 않는다.
+- [x] C++ 실제 전체 ROS 패키지 재빌드에 필요한 729파일/39,205,116B와 2527 dependency header pin을 읽기 전용으로 확보했다. 부모 ROS는 Jazzy/Noble이며 설치 부모 DSO f0는 dense-only, ad8 native publisher와 다르다. SDK source/header 전체 소비자를 새 object tree에서 빌드해야 한다.
+- [x] C++ SDK V4의 제한된 할당 실패 재시도 5개/정적40개 검사 통과. 기존 실패한 allocator shim 로그를 보존했고 production은 V3와 동일하다. 추가 begin_capture/status/pump와 sequence-floor allocation 경계는 새 V5에서 검사 중이다.
+- [x] 가속 V5의 검증된 package와 다른 같은 버전 NumPy 모듈을 수용하는 문제가 독립 검토에서 재현됐다. V5를 보존하고 V6에서 interpreter/package/spec/loader/module-object origin을 연결했다. V6 25개 검사 통과, 독립 검토와 단일 원본 데이터 비용 실험은 아직 남았다. 기본 가속 OFF, 원본 scalar/용량/시각/SE3 규칙은 유지한다.
+- [ ] 즉시 다음: SDK V5 및 정확한 full-package build recipe 검토 후 한 번의 실제 SDK compile/DSO ABI OFF 검사를 실행한다. 아직 실제 ROS consumer compile은 하지 않았다.
+- [ ] overview 후보 독립 검토 후 공개 SIM의 optional service/UI 연결, producer→single writer→viewport 실제 흐름·장시간 live/replay 처리·global 경로·GPS measurement UTC/covariance/ENU·ARM 검증을 완료한다.
+- [ ] 유한 archive/history는 무한 보존이 아니며 소진될 수 있다. 현재 V6의 125 CAS 파일 21,901,830B는 모두 reachable이라 삭제 대상이 없다. 실제 read lease pin·원자적인 roots·receipt 보존·journaled GC가 필요하며 아직 구현하지 않았다. 원본/기록/미확인 작업을 지우지 않는다.
+
+Jetson 신규 설치/조종/모터/펌웨어/장착 보정 없음. 최신 성공 관찰은 UTC18:00~18:14의 native7453 idle/unowned, recorder idle, rover disarmed, GPS connected/no_fix, IMU 약32.88Hz이다. camera 1080p30은 mode이고 bridge 약25.24fps는 preview 관찰이라 원본 녹화 fps로 간주하지 않는다. 이후 원본 카메라 확인 SSH timeout을 보존했으며 현재 접속/상태를 추정하지 않는다. 전체 목표는 미완료다.
+
+재개: CURRENT_CHECKPOINT.json, RESEARCH_PROGRESS_LATEST.json, public-owner-overview-http-v4/HANDOFF.json, overview-closed-v6-probe-v1/HANDOFF.json, sdk-full-prebuild-closure-v1/HANDOFF.json, incremental-native-sdk-adapter-v5 및 sdk-full-rebuild-qualification-v1. frozen 실패·unowned NAS 변경 보존, stale Compose 재생성 금지, 설치는 exact Docker API/no-retry.
+
+---
+
