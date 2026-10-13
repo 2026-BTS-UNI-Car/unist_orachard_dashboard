@@ -234,6 +234,50 @@ class InFlightRegistrationPreserve(unittest.TestCase):
             self.assertEqual(a._serial, 7, reason)
             self.assertEqual(a._proposal_sequence_floor, 3)
 
+    def test_both_wait_labels_cancel_on_factory_fault(self):
+        for reason in ('native_original_pair_wait', 'native_fit_not_committed'):
+            with self.subTest(reason=reason):
+                a = self.make(fault='original_factory_fault')
+                a.invalidate_gap(reason)
+                self.assertEqual(a._serial, 8)
+                self.assertEqual(a.factory.fault, 'original_factory_fault')
+                self.assertEqual(a._proposal_sequence_floor, 3)
+
+    def test_both_wait_labels_cancel_on_factory_stop_intent(self):
+        for reason in ('native_original_pair_wait', 'native_fit_not_committed'):
+            with self.subTest(reason=reason):
+                a = self.make(stopping=True)
+                a.invalidate_gap(reason)
+                self.assertEqual(a._serial, 8)
+                self.assertTrue(a.factory.stop_intent.is_set())
+                self.assertEqual(a._proposal_sequence_floor, 3)
+
+    def test_both_wait_labels_cancel_with_detached_factory(self):
+        for reason in ('native_original_pair_wait', 'native_fit_not_committed'):
+            with self.subTest(reason=reason):
+                a = self.make()
+                a.factory = None
+                a.invalidate_gap(reason)
+                self.assertEqual(a._serial, 8)
+
+    def test_both_wait_labels_keep_raster_stage_cancellation(self):
+        # The registration-only marker is already cleared before ray preparation.
+        # This test documents the unchanged policy; it does not permit late commit.
+        for reason in ('native_original_pair_wait', 'native_fit_not_committed'):
+            with self.subTest(reason=reason):
+                a = self.make()
+                a._recovery_work = None
+                a.invalidate_gap(reason)
+                self.assertEqual(a._serial, 8)
+
+    def test_both_wait_labels_cancel_on_explicit_map_stop(self):
+        for reason in ('native_original_pair_wait', 'native_fit_not_committed'):
+            with self.subTest(reason=reason):
+                a = self.make()
+                a._stop.set()
+                a.invalidate_gap(reason)
+                self.assertEqual(a._serial, 8)
+
     def test_fault_stop_and_other_reasons_cancel(self):
         cases = [(dict(fault='boom'), 'native_fit_not_committed'), (dict(stopping=True), 'native_fit_not_committed'),
                  ({}, 'control_input_unavailable'), ({}, 'asynchronous_gap')]

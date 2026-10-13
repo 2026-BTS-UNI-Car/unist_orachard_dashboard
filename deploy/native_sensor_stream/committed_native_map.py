@@ -120,7 +120,7 @@ class CommittedNativeMapAdapter:
         self._counts=dict(captured=0,processed=0,replaced=0,cancelled=0,bridge_attempts=0,bridges=0,
                           accepted_native_chain_bridges=0,chain_heads=0,heads_superseded=0,
                           bridge_backoff_skips=0,capacity_latched_skips=0,shifted_seed_bridges=0,
-                          map_bridge_attempts=0,map_bridges=0)
+                          map_bridge_attempts=0,map_bridges=0,pose_history_retention_failures=0)
         self._stages={k:[0,0,0] for k in STAGES}
         self._last_work={};self._callback=on_display_commit;self._recovery_budget=recovery_max_wall_s
         self._map=BatchedNativeAcceptedMapOwner(enabled=enabled,historical_display_only=True,
@@ -248,9 +248,8 @@ class CommittedNativeMapAdapter:
                 # invalidations (and any factory fault/Stop) and all later
                 # raster/publication phases retain cancellation.
                 f=self.factory
-                typed_wait=(reason=='native_original_pair_wait' or
-                    (reason=='native_fit_not_committed' and f is not None and f.fault is None and
-                     not f.stop_intent.is_set()))
+                typed_wait=(reason in ('native_original_pair_wait','native_fit_not_committed') and
+                    f is not None and f.fault is None and not f.stop_intent.is_set())
                 preserve=(typed_wait and not self._stop.is_set() and
                     work is not None and work[0] is self._working and work[1] is self._map._state and
                     work[2] is self._keyframe and work[3]==self._serial)
@@ -262,8 +261,12 @@ class CommittedNativeMapAdapter:
     def status(self):
         value=self._map.status()
         with self._cv:
+            ledger=self.pose_ledger.status()
             value.update(adapter='same_commit_immutable_seal_async_historical',adapter_fault=self._fault,
-                committed_pose_ledger=self.pose_ledger.status(),
+                committed_pose_ledger=ledger,
+                pose_history_complete=ledger['enabled'] and ledger['full_history_preserved'],
+                pose_history_warning=ledger['reason'] if ledger['enabled'] else None,
+                pose_history_missing_commits=ledger['missing_committed_rows'],
                 accepted_native_chain_enabled=self.accepted_native_chain_enabled,
                 encoder_fault=self._encoder_fault,worker_alive=self._thread is not None and self._thread.is_alive(),
                 worker_launch_unproven=self._launch_ambiguous,pending_latest=int(self._pending is not None or self._head is not None),in_flight=int(self._working is not None),
@@ -628,10 +631,12 @@ class CommittedNativeMapAdapter:
             if published and not cancelled():
                 state=self._map._state
                 chain=seal.chain_token or ('registered:'+str(serial))
-                self.pose_ledger.append_committed(seal.frame,state.pose,state.version,chain,seal.current_cdr,
+                retained=self.pose_ledger.append_committed(seal.frame,state.pose,state.version,chain,seal.current_cdr,
                     validate=lambda: not cancelled() and self._map._state is state and
                         state.frame is not None and digest(state.frame)==digest(seal.frame) and
                         self._validate_frame(seal.frame))
+                if not retained and self.pose_ledger.enabled and not self.pose_ledger.cancel.is_set():
+                    self._counts['pose_history_retention_failures']+=1
         t=self._stage('commit',t)
         if not published:return
         self._keyframe=(self._map._state.version,seal.frame.scan_cdr_sha256[1],

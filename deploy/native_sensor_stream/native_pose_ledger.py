@@ -17,6 +17,7 @@ MAX_ROWS=4096
 MAX_ORIGINAL_BYTES=16*1024*1024
 MAX_EXPORT_BYTES=40*1024*1024
 CHUNK_BYTES=64*1024
+MAX_MISSING_COMMITS=2**63-1
 CONTEXT=('source_session','generation','source_clock_domain','receipt_clock_domain','map_epoch','map_frame')
 
 
@@ -42,6 +43,7 @@ class CommittedPoseLedger:
         self.enabled=enabled;self.capacity=capacity;self.byte_cap=original_bytes
         self.lock=threading.RLock();self.cancel=threading.Event()
         self.entries=[];self.original_bytes=0;self.reason=None;self.joined=False
+        self.missing_commits=0;self.missing_count_saturated=False;self._first_missing=None;self._missing_floor=None
         self._exports={};self._floors={};self.gnss=[];self.gnss_bytes=0;self.gnss_complete=True
         self._live_prefix=None
 
@@ -78,6 +80,23 @@ class CommittedPoseLedger:
             floor=self._floors.get(key)
             require(floor is None or (source>floor[0] and receipt>=floor[1] and version>floor[2]),'committed_pose_rewind')
             if len(self.entries)>=self.capacity or self.original_bytes+len(original_cdr)>self.byte_cap:
+                # The historical map is already committed. Keep its real-time
+                # worker running, but expose every failed retention explicitly.
+                # No eviction, I/O, extra scan retention or clock renewal here.
+                if self.cancel.is_set():return False
+                previous_missing=self._missing_floor
+                require(previous_missing is None or previous_missing[0]!=key or
+                    (source>previous_missing[1] and receipt>=previous_missing[2] and version>previous_missing[3]),
+                    'committed_pose_rewind')
+                missing=canonical(dict(context_sha256=hashlib.sha256(canonical(list(ctx))).hexdigest(),
+                    map_epoch=ctx[4],generation=ctx[1],version=version,source_ns=source,
+                    callback_RAW_ns=receipt,scan_sha256=frame.scan_cdr_sha256[1],
+                    original_CDR_bytes=len(original_cdr)))
+                require(len(missing)<=1024,'bounded_missing_pose_notice_required')
+                if self._first_missing is None:self._first_missing=missing
+                self._missing_floor=(key,source,receipt,version)
+                if self.missing_commits<MAX_MISSING_COMMITS:self.missing_commits+=1
+                else:self.missing_count_saturated=True
                 self.reason='retained_pose_history_capacity';return False
             row=dict(context=dict(zip(CONTEXT,ctx)),chain=chain,version=version,source_ns=source,
                 callback_RAW_ns=receipt,xy=list(pose[:2]),yaw_rad=pose[2],scan_sha256=frame.scan_cdr_sha256[1],
@@ -115,6 +134,9 @@ class CommittedPoseLedger:
                 original_GNSS_pairs=gps,complete_retained_quality_GNSS_history=self.gnss_complete,
                 contains_original_scans=include_scans,complete_retained_history=self.reason is None,
                 ledger_reason=self.reason,runtime_authority=False,motor_command_sent=False,
+                missing_committed_rows=self.missing_commits,missing_count_saturated=self.missing_count_saturated,
+                first_missing_committed=json.loads(self._first_missing) if self._first_missing is not None else None,
+                retained_prefix_only=self.reason is not None,
                 physical_accuracy_verified=False,host_ROS_stamps_are_receiver_epoch=False))
             require(len(raw)<=MAX_EXPORT_BYTES,'pose_history_export_bound')
             self._exports[include_scans]=raw
@@ -169,6 +191,7 @@ class CommittedPoseLedger:
                     'one_pinned_live_history_prefix_required')
             poses=tuple(self.entries);gps=tuple(self.gnss)
             reason=self.reason;gps_complete=self.gnss_complete
+            missing=self.missing_commits;missing_saturated=self.missing_count_saturated;first_missing=self._first_missing
             token=secrets.token_hex(16)
             # Pending pin blocks concurrent opens while encoding outside lock.
             pin=(now+60.,token,poses,gps,None,None)
@@ -179,6 +202,9 @@ class CommittedPoseLedger:
                 pose_entry_sha256=[entry.seal.hex() for entry in poses],
                 GNSS_entry_sha256=[seal.hex() for _raw,seal in gps],
                 complete_retained_history=reason is None,ledger_reason=reason,
+                missing_committed_rows=missing,missing_count_saturated=missing_saturated,
+                first_missing_committed=json.loads(first_missing) if first_missing is not None else None,
+                retained_prefix_only=reason is not None,
                 complete_retained_quality_GNSS_history=gps_complete,
                 source_stamps_unchanged=True,host_ROS_stamps_are_receiver_epoch=False,
                 GNSS_correction_applied_to_cells=False,fused_occupancy_qualified=False,
@@ -191,6 +217,8 @@ class CommittedPoseLedger:
             return dict(ok=True,snapshot=token,index_sha256=digest,index_bytes=len(index),
                 pose_rows=len(poses),quality_GNSS_pairs=len(gps),snapshot_scope='fixed_prefix_at_open',
                 current_run_complete=False,source_stamps_unchanged=True,
+                complete_retained_history=reason is None,ledger_reason=reason,
+                missing_committed_rows=missing,retained_prefix_only=reason is not None,
                 GNSS_correction_applied_to_cells=False,fused_occupancy_qualified=False,
                 runtime_authority=False,motor_command_sent=False)
         except BaseException:
@@ -249,5 +277,8 @@ class CommittedPoseLedger:
             original_GNSS_pairs=len(self.gnss),original_GNSS_bytes=self.gnss_bytes,
             complete_retained_quality_GNSS_history=self.gnss_complete,
             stopped=self.cancel.is_set(),joined=self.joined,full_history_preserved=self.reason is None,
+            missing_committed_rows=self.missing_commits,missing_count_saturated=self.missing_count_saturated,
+            first_missing_committed=json.loads(self._first_missing) if self._first_missing is not None else None,
+            retained_prefix_only=self.reason is not None,
             retained_entries_never_evicted=True,
             source_stamps_unchanged=True,runtime_authority=False,motor_command_sent=False)

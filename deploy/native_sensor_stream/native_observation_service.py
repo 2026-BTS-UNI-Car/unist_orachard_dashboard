@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 GRAPH_SOURCE_SHA='5d0ce1ea41f9408b8088272bd8689d483b50863cf3af31199960df90df2d2052'
 
-GNSS_SOURCE_SHA='595c2c2a1af5b8dc82fa5d0e0133618f78896edb10ad33f88ccb66094424d8de'
+GNSS_SOURCE_SHA='b81c4ad91b7abd106234db4f9856cfa99770f5cf58c3e7329dc160195e305410'
 
 
 def bind_observation_socket(target):
@@ -127,7 +127,7 @@ def main(argv=None):
         bound.gps_data_gid,bound.gps_fix_gid=args.gps_data_gid,args.gps_fix_gid
         bound.native_gnss_manifest_sha256=GNSS_SOURCE_SHA
         stream_runner.load_native_gnss_sources(root,GNSS_SOURCE_SHA)
-    bound.native_map_manifest_sha256 = '91f3f2c4b556c1765fa64b4286b9c38b62598b7b042d2b876daacc3ce4d4d101'
+    bound.native_map_manifest_sha256 = 'd126c0738ff9c8e4fc082b439a455eaa7bf4a041c8dc0c49d069b4f254020859'
     if args.enable_native_map:
         stream_runner.load_native_map_sources(root, bound.native_map_manifest_sha256)
         from committed_native_map import CommittedNativeMapAdapter
