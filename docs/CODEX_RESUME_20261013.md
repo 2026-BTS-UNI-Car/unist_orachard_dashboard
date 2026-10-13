@@ -337,3 +337,18 @@ Jetson 설치 native7453은 그대로다. 마지막 성공 상태 확인은 UTC1
 재개: sdk-fullbody-storage-probe-v2/HANDOFF.json, ROOT_FULLSIZE_SDK_READBACK.json, single-writer-stream-owner-proposal-v2/POSTCLOSED_HANDOFF.json, single-writer-stream-independent-review-v2/HANDOFF.json, public-owner-retention-overview-integration-v5/HANDOFF.json, preowned-native-archive-integration-design-v1/HANDOFF.json. 최신 machine checkpoint의 active_work를 따른다. 전체 목표 미완료이며 단일 writer/genuine endpoint/retention integration을 우선 진행한다.
 
 ---
+
+## 2026-10-14 실제 SDK 센서 연결·소유권 병합 작업 (2026-10-13T22:08:26.719765+00:00)
+
+- [x] 공개 ACTUAL `24e9fc6`, SIM `5707da3`를 GitHub/NAS에서 대조했다. 최대 native body 저장 증거와 미완료 연결 범위를 반영했으며 source/runtime activation을 완료로 표시하지 않는다. NAS SIM의 기존 미소유 raw_localization.py 변경은 해시 그대로 유지했다.
+- [x] retention/overview V5의 worker-start 종료 경합에 대한 독립 좁은 검토가 완료됐다. 이전 16개 그룹을 재실행한 결과가 아니다. V4의 추가 오류 기록을 보존하며 확정된 V5 55파일도 NAS에 frozen 해시로 복제했다.
+- [x] root의 DEFAULT-OFF chunk 검사 후보: 원래 검사를 frozen source에서 그대로 추출해 3,617개 finite 입력을 비교했으며 일치했다. 같은 합성 262,144cells 검사 구간은 old0.095~0.098s/candidate0.0467s였다. 표준 library memoryview를 사용하며 원래 float32/mask/+0 unknown 비트 조건을 유지한다. 전체 저장/SDK/live/ARM 비용 결과가 아니며 독립 검토·실제 연결은 미완료다.
+- [ ] 실제 C++ pending RAW endpoint와 canonical borrowed writer를 병합 중이다. 전용 inherited Unix FD, 실제 kernel parent와 ROOT-qualified actor ELF/loaded799a에 묶으며 caller JSON/bool을 RAW 권한으로 쓰지 않는다. 주행 중 ordinary begin과 정지 뒤 preowned begin을 모두 지원해야 한다. 실제 첫 charged lease를 첫 payload로 사용하고 실제 Runtime.ack 뒤에만 backend drain root를 해제한다.
+- [ ] root가 실제 SDK Node 실행 source `native-sdk-node-assembly-v1/node_entry.cpp`를 작성했다. 실제 provider를 ROS/DDS threads 이전에 연결하고 실제 Node DI/retained Runtime/원본 센서 입력/native Grid/catalog/Stop 뒤 archive drain을 통합한다. 아직 unfrozen/uncompiled이고 canonical backend와 bounded catalog codec 검토 후에만 별도 원본30s recipe로 실행한다. Page에는 원래 Frame.observation이 없으므로 captured time을 꾸며 넣지 않는다; delivery observation은 sensor freshness가 아니다.
+- [ ] root의 `native-completed-reference-retirement-v2`는 새 native head가 재수신을 막는 이전 completed metadata만 정리하는 source 제안이다. pending/draft/latest/previous/current/final/RAW/wire는 유지한다. 디스크 삭제/receipt GC 권한이 아니며 확인 응답 유실 시 backend는 root를 유지한다. 5개 새 finite C++ 그룹은 아직 실행하지 않았다. V1 runner의 group8/실제5 불일치는 실행 전에 발견해 보존했고 V2에서 runner만 고쳤다. 모든 SDK consumer를 새로 빌드하기 전 existing799a와 혼합하지 않는다.
+- [ ] 즉시 다음: canonical shared owner+overview/retention source freeze/peer → 실제 inherited-FD C+++Python 단일 저장소 시험 → 실제 원본 센서 Node/Grid와 공유 GUI/전체 기록 검증. 이후 실제 native retirement handshake·유한 archive 지속성·GPS measurement clock/global robot path·ARM/live/현장 범위를 검증한다. 종료/세대 교체는 남은 RAW/partial/ACK/read pin을 생략하지 않는다.
+- [ ] 전체 목표 미완료. Jetson의 설치 native7453는 유지하며 모터/arm/펌웨어/장착 보정/원본 변경 없음, 자율주행 출력 OFF/HOLD. 설치·원본 매핑·물리 정확도에 대한 검증 없이 체크하지 않는다.
+
+재개: `RESEARCH_PROGRESS_LATEST.json`의 active_work, `CURRENT_CHECKPOINT.json`, pending-native-archive-endpoint-v1, canonical-owner-retention-overview-integration-v1 및 root의 Node assembly/retirement source를 확인한다. 최근 확정 소스와 실패 증거를 분리해서 따르며 이전 source-only 제안의 존재를 운영 적용으로 해석하지 않는다.
+
+---
