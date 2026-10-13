@@ -870,6 +870,9 @@ class TelemetryProvider:
             .upper()[:4]
             or "MJPG"
         )
+        locked = self._camera_size_change_locked(int(mode["width"]), int(mode["height"]))
+        if locked is not None:
+            return {**locked, "supported_view_modes": modes}
         settings = {
             "updated_at": time.time(),
             "source": "dashboard",
@@ -893,6 +896,37 @@ class TelemetryProvider:
             "settings": settings,
             "settings_file": str(self.camera_settings_file),
             "supported_view_modes": modes,
+        }
+
+    def _camera_size_change_locked(self, width: int, height: int) -> dict[str, Any] | None:
+        """A frame-size change is refused unless the recorder is known not to record camera.
+
+        The camera export keeps one frame size per recording and rejects a size
+        change inside it, so a mid-recording resolution change would lose that
+        recording's video. FPS-only changes keep the size and stay allowed.
+        """
+        current = self.camera_settings().get("settings", {})
+        try:
+            if (int(current.get("width")), int(current.get("height"))) == (width, height):
+                return None
+        except (TypeError, ValueError):
+            pass
+        recording = self.recording_status()
+        if recording.get("active") is False:
+            return None
+        if recording.get("active") is True and recording.get("kind") == "lidar":
+            return None
+        error = (
+            "camera_resolution_locked_while_recording"
+            if recording.get("active") is True
+            else "camera_resolution_change_needs_idle_recorder"
+        )
+        return {
+            "ok": False,
+            "error": error,
+            "recording_id": recording.get("recording_id"),
+            "recorder_state": recording.get("state"),
+            "current_resolution": current.get("resolution"),
         }
 
     def camera_status(self) -> dict[str, Any]:
