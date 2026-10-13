@@ -5,7 +5,7 @@
   "explicit_private_session_features": {
     "accepted_native_chain_enabled": true,
     "batched_rays_enabled": true,
-    "keyframe_bridge_gates_enabled": false,
+    "keyframe_bridge_gates_enabled": true,
     "scan_to_map_bridge_enabled": false
   },
   "files_sha256": {
