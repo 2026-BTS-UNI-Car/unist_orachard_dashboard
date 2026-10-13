@@ -298,12 +298,15 @@ class RingPolicy(unittest.TestCase):
 
 
 class FeatureSwitch(unittest.TestCase):
-    def test_typed_default_off_adapter_and_session_enable(self):
+    def test_typed_default_off_adapter_and_session(self):
         with self.assertRaisesRegex(ValueError, 'typed_scan_to_map_bridge'):
             CommittedNativeMapAdapter(None, scan_to_map_bridge_enabled=1)
         with self.assertRaisesRegex(ValueError, 'typed_scan_to_map_bridge'):
             NativeMapSession(CommittedNativeMapAdapter, map_epoch='e' * 32, scan_to_map_bridge_enabled='yes')
-        self.assertTrue(NativeMapSession(CommittedNativeMapAdapter, map_epoch='e' * 32)._scan_to_map_bridge_enabled)
+        # OFF by default everywhere: the 2026-10-03 holdout found false accepts (not cleared).
+        self.assertFalse(NativeMapSession(CommittedNativeMapAdapter, map_epoch='e' * 32)._scan_to_map_bridge_enabled)
+        self.assertTrue(NativeMapSession(CommittedNativeMapAdapter, map_epoch='e' * 32,
+                                         scan_to_map_bridge_enabled=True)._scan_to_map_bridge_enabled)
         import inspect
         default = inspect.signature(CommittedNativeMapAdapter.__init__).parameters['scan_to_map_bridge_enabled'].default
         self.assertIs(default, False)

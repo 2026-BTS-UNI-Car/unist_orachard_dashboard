@@ -456,7 +456,7 @@ class NativeMapSession:
     runner owns Stop and its absolute join deadline. Unknown map workers stay
     attached and reject another source. Only explicit new_map erases history.
     """
-    def __init__(self, adapter_factory, *, map_epoch,pose_ledger_enabled=False,scan_to_map_bridge_enabled=True):
+    def __init__(self, adapter_factory, *, map_epoch,pose_ledger_enabled=False,scan_to_map_bridge_enabled=False):
         require(callable(adapter_factory) and type(map_epoch) is str and
                 re.fullmatch('[0-9a-f]{32}', map_epoch), 'native_map_session_constructor_required')
         require(type(pose_ledger_enabled) is bool,'typed_pose_ledger_default_OFF_required')
