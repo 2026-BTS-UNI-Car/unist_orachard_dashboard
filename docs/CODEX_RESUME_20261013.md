@@ -240,3 +240,22 @@ UTC 2026-10-13T17:45:50.916988+00:00. **실차 매핑 교체·GPS 통합·자율
 재개: CURRENT_CHECKPOINT.json, RESEARCH_PROGRESS_LATEST.json, async-storage-viewport-owner-v2/HANDOFF.json, async-owner-independent-review-v2/HANDOFF.json, async-owner-closed-v6-probe-v2/HANDOFF.json, incremental-native-cpp-candidate-v2/HANDOFF.json 및 각 실패 증거. 실제 SDK adapter와 whole-field overview 작업은 계속 진행 중이다. stale Compose 재생성 금지, 설치는 exact Docker API/no-retry. unowned NAS 수정과 frozen 실패 보존.
 
 ---
+
+
+# 2026-10-14 최신 체크포인트 — 실제 보드 재확인·SIM 선택 API
+UTC 2026-10-13T18:20:31.982114+00:00. **전체 현장 센서→지도→대시보드 연결, GPS 통합, 실차 자율주행은 미완료.** 실차 OFF/HOLD. 모터/조종/펌웨어/장착 보정/원본 변경 없음. 이번 코드 변경은 SIM 선택 경로이며 보드 설치 없음.
+
+- [x] Jetson 현재 읽기: 10/14 03:00 KST SSH 성공. native image745321ee 그대로, idle/unowned/runtimeauthority false/motorfalse. 03:02 대시보드 GET: LiDAR/camera/IMU live, GPS USBconnected/no_fix, roverdisarmed, recorderidle/activefalse/fresh, 디스크127,138,779,136B 여유. 과거 badhandshake 실패와 성공 상태를 각각 보존했다.
+- [x] 현재 센서 카운터 관찰: 약3초 동안 IMU32.884Hz, camera bridge25.239fps(자체source_fps25.2). 카메라 모드는1080p30이나 실측 수신은25fps였다. LiDAR API에 scan_count가 없어 주파수를 만들지 않았다. 정지 상태의 짧은 bridge delivery 관찰이며 원본 취득/현장 녹화 프레임률 검증이 아니다.
+- [x] SIM optional derived API: 이름 공간을 분리한 owner/service를 공개 소스에 연결. 기본OFF, provider가 명시적으로 소유 service를 주입해야 한다. GET status/open/page/body/release는 지도 job을 만들지 않고 입력 파일 경로를 받지 않는다. POST Stop은 기존 Origin/session 검사와 epoch/generation/serial 원자 비교로 오래된 화면이 새 세션을 멈추지 못하게 한다. 실제 생산자/factory/UI는 아직 연결되지 않았다.
+- [x] V2 API 독립 오류 보존: malformedURL 예외, 비ASCII Content-Length 예외, 본문 읽기 전체 deadline 부재. V3는 ASCII1~4digit/singleLength/noTransferEncoding/4096B/절대3초 read1/엄격UTF8·중복key·비유한JSON을 검사한다. 기존17+신규9=26 검사 WSL 통과, 실제DashboardHandler+가짜provider의 loopbackHTTP 포함. 독립10경계검사 및 malformedURI 재검토 통과. 공개 패키지26/skip0/리소스종료도 확인했다. 소유한 공개 Python 파일 줄바꿈만 정리했고 AST 불변을 증명했다.
+- [x] 닫힌 V6 저장 시험 독립검토:128output파일/SQLread-only/receipt2개/158tile/2,432,295cells/12,161,475B/기존시각·geometry·version108/18·bodyID54/55가 일치한다. job1개/client2개/Stop보존/정리 완료. 전체 필드 처리나 live 성능으로 확대해 해석하지 않는다.
+- [ ] **최우선 실제 C++ 연결:** V1 actual Node/SDK source17standalone+22static 검사. 하지만 pendingbatch 덮어쓰기/종료 누락/nonce문자열 순서 문제가 남았다. V2는 보존 확인 전 batch 유지, rawcopy↔잠금밖SHA 분리, 실제DIbootstrap·상태조회·보존handle·종료를 작성/검토 중이다. 아직 ROS/SDK/DSO 소비자 빌드나 source certificate/실제receipt 공급자 검증은 없다. 기존constructor/CLI/defaultOFF/legacyprotocol/C1bG/C6OFF/native caps/sourceclocks/posemath 유지.
+- [ ] 대시보드 optionalfactory/worker 종료 관리, 실제 producer→singlewriter→derivedview 연결, 전 현장 native 지도 transport와 브라우저 지속 시험. Source-only 성공을 실차 설치로 표시하지 않는다.
+- [ ] whole-field display-only overviewLOD: 원본fullresolution CAS 유지, 최대positive/known·freecoverage 별도표시, max128tile/65536aggregatecells/8MiBcache, 조회는cache-only이고 준비worker1개를 공유. manualzoom/Stop/기존화면 유지와 boundeddeadline/DEFER를 구현 중이다.
+- [ ] **추가 확인:** 카메라 raw취득/ROS발행/bridge수신/실제녹화 fps 구분 및30fps 미달 원인, 유한archive/historyGC·재시작·전원차단·oldleases, optimizedglobalpath/GPSmeasurementUTC·covariance·ENU, ARM/live/moving 검증. GPSno_fix를 유효위치로 바꾸지 않는다.
+- [ ] Oct3 모든기록/Oct10현장/별도Sept10차체offset 평가, 현장센서feedback·30~60%수동제동/회전 시험, USBSSD/offlineGNSS시간/전류·전압/RTC 등 실제장비 항목. 기존development를 freshholdout으로 표시하지 않는다.
+
+재개: CURRENT_CHECKPOINT.json, RESEARCH_PROGRESS_LATEST.json, DASHBOARD_READONLY_STATUS_20261014.json, SENSOR_CADENCE_READONLY_20261014.json, sim-derived-owner-route-v3/HANDOFF.json, sim-derived-route-independent-review-v3/HANDOFF.json, incremental-native-sdk-adapter-v1/HANDOFF.json 및 후속V2. 기본OFF선택코드/설치된7453를 구분한다. staleCompose 재생성 금지, exactDockerAPI/no-retry, frozen실패/unownedNAS 변경 보존.
+
+---
