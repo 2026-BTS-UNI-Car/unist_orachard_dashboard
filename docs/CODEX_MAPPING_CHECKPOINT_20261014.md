@@ -1,5 +1,21 @@
 # 매핑 작업 목표와 검증 체크포인트 — 2026-10-14
 
+<!-- ROOT_STOP_AND_OVERVIEW_OCT14 -->
+후속 체크포인트 (2026-10-14T08:51:09.037307+00:00): 전체 목표는 ACTIVE이다.
+
+- [x] 전체 원본 V4에서 저장 압력 복구를 직접 관찰했다. 실제 공간 회수 후 4회 재시도했고 마지막 수락 작업 `native-870-870`은 완료됐다. 전체 센서 EOF도 통과했다.
+- [ ] V4의 전체 성공은 아니다. 약 3,365만 셀의 overview가 준비 시간 안에 완료되지 않아 검증 도구가 종료했다. 최종 RAW 0·정상 actor 종료·모든 Node callback·최종 최적화 tail은 이 실행에서 증명하지 못했다.
+- [x] 기본 비활성 고속 셀 검증 후보: 555개 비교, 실제 지도 본체 4개의 471개 청크 일치. 초기 로딩 0.46초. 전체 처리 성능 개선을 뜻하지 않는다.
+- [x] 현재 보존 구조의 고속 overview 후보: 좌표·셀 값·저장 결과·Stop 보존에 대한 3개 검증 통과. V6r2 전체 원본 실행에 두 후보를 연결해 검증 중이며, 기존 HELLO 3초·overview 30초·저장 512MiB 한도는 유지한다.
+- [x] 로컬 실제 C0 SDK Stop: 대시보드 client 1 요청, client 2 제어 거절, 실제 Runtime 정지 → Node 종료 → RAW/WIRE/PENDING 0 → canonical MapStop → 정상 종료 및 남은 지도 데이터 대조 통과. 15개 별도 단위 검증도 통과했다. 의도적으로 원본 일부만 재생한 Stop 시험이며 전체 원본 EOF 시험은 아니다.
+- [ ] Stop 후 같은 브라우저의 canvas가 유지되는 실제 화면 검증과 큰 backlog에서의 Stop 지연 검증은 남아 있다.
+- [x] SIM 시간 지원 새 C++ 프로그램 빌드 통과. 새 ELF `44a5dc71dbcf7916e7432948048bc874c97c120df88b74bc298ec6cc033ac8a3`, C0 SDK 링크 검증. 아직 시뮬레이터·SDK runtime·웹 센서 화면 실행 성공은 아니다.
+- [ ] V6r2 전체 재생 결과 확정 후 시뮬레이터와 새 SDK 프로그램, 공유 지도·센서 대시보드 연결을 실행 검증한다.
+
+재개 위치: `RESEARCH_PROGRESS_LATEST.json`, `fullfield-C0-integrated-v4/POSTCLOSED_PARTIAL_OUTCOME.json`, `native-C0-software-stop-probe-v1/POSTCLOSED_HANDOFF.json`, `sim-C0-actor-build-v1/output/COMPILE_RESULT.json`. 이 로컬 후보를 Jetson에 새로 설치하지 않았으며 실제 모터·조종 활성화·펌웨어·장착 보정은 수행하지 않았다.
+<!-- /ROOT_STOP_AND_OVERVIEW_OCT14 -->
+
+
 <!-- ROOT_WHOLEFIELD_OCT14 -->
 전체 원본 재생 체크포인트 (2026-10-14T08:10:42.065464+00:00): 목표는 실제 2D LiDAR·IMU 기반 연속 지도, 단일 저장 작업자와 공유 웹 화면, 안전한 Stop·유한 저장소, 로컬 시뮬레이션 연결을 실행 검증하는 것이다. 목표는 ACTIVE이며 완료가 아니다.
 
