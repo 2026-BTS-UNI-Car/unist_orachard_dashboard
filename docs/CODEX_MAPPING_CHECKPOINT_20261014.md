@@ -1,6 +1,34 @@
 # 매핑 작업 목표와 검증 체크포인트 — 2026-10-15
 
 <!-- ROOT_LATEST_GOALS_OCT15 -->
+## 현재 목표와 재개 순서 — 2026-10-15 (2026-10-14T16:12:36.303570+00:00)
+
+목표는 ACTIVE이며 전체 완료가 아니다. V23에서 실제 시뮬레이션 센서→C0 SDK→같은 단일 저장 작업자→제품 브라우저 화면의 실행 검증이 통과했다. 아래 목록이 현재 상태이며 이후 절은 과거 실행 기록이다. native 위치 추정 입력은 `/scan`·`/imu/data_raw`이며 카메라·가상 GPS는 표시용이다.
+
+- [x] **V23 실제 factory·native 종료:** 새 common recipe `a1ed8207…`·fresh actor `68f50a80…`·C0 SDK `c0c419c9…`, factory `aa5fb298…`·wrapper `9e9cd038…`·GUI V7 `73c1aa86…`를 연결했다. 실제 작업 5개, 마지막 `native-25-25` COMPLETE, RAW/WIRE/PENDING 0·actor 종료 0, helper/network/browser process 정리가 통과했다. **C0 GC_STATE는 PENDING**이므로 모든 GC가 완료됐다고 표시하지 않는다. 완료 참조 정리는 4개·참조 정리 대기 0이었다.
+- [x] **V23 실제 제품 브라우저:** 일반 Chrome의 약 30초 관찰에서 1080p JPEG·LiDAR·raw IMU·가상 GPS·기존 네 WebSocket·같은 client2 native canvas·current COMPLETE 관계의 7개 검사가 모두 통과했다. 실제 native sequence 19·snapshot 4와 known cell 65,683개를 화면에 표시했다. 페이지 JSON과 1,042,417B PNG 증거를 보존했다.
+- [x] **영상 전달과 제한된 parameter 확인:** 카메라 decode 8.353845fps·visible RAF 7.300728fps, LiDAR 4.791518/s·IMU 18.998202/s·가상 GPS 4.659130/s를 관찰했다. 이전 V18 decode 0.826446fps와 관찰 창이 달라 원인 비교는 별도다. 실제 parameter get에서 JPEG quality 70과 QoS `sensor_data`를 읽었지만 node/topic/format/list 발견 검사 일부가 실패해 **전체 configuration 검증은 미완료**다.
+- [x] **common 환경 소스·컴파일 검증:** 1,216개 의존 파일·105 binding·11 operator, 저장 tile 32개·434,176셀·14 partial edge와 4개 chunk의 scalar/vector bit 일치가 통과했다. 새 컴파일 actor는 651,264B이며 기존 68f actor와 바이트가 같고 SDK 97파일은 보존했다. 해당 별도 byte/산술 검사를 actual runtime 성공과 구분해 기록한다.
+- [x] 전체 원본 V13의 선택 센서 15,638개·custody 17,671행 EOF와 마지막 `native-719-719` COMPLETE·RAW/WIRE/PENDING 0·actor 종료 0을 확인했다. 저장된 snapshot 15의 36,222,708셀 overview는 별도 읽기 전용 profile에서 12.0979678초에 완료됐다. V13 최종 current overview/HTTP는 미확인으로 전체 harness 실패를 보존한다.
+- [ ] **1순위: 로컬 실행·시작·시뮬레이션 이동 흐름.** 반복 실행 가능한 local start/run/Stop을 마련하고 시뮬레이션 이동 중 native 센서 지도와 같은 화면 관계를 검증한다. 실제 모터·조종 활성화와 구분하고 native 입력 범위를 유지한다.
+- [ ] **중요 목표: 실제 카메라 30fps.** V23의 factory 종료 시점 최근 ROS 수신은 약 30.19fps였지만 브라우저 decode는 약 8.35fps이며 실제 30fps는 UNQUALIFIED이다. source/Gazebo 성능·bridge·ROS·WebSocket·decode·표시를 같은 관찰 창에서 대조한다. 일부 순간 수신률을 전체 30fps 성공으로 간주하지 않는다.
+- [ ] **전체 최종 표시와 live 우선 처리.** 원본 최종 overview·공유 HTTP·브라우저를 함께 확인하고 live core loop·vector 셀 검사·저장/표시 지연을 줄인다. 큰 전체 요약은 live 영역 갱신을 막지 않도록 defer하고 기존 지도·수동 확대·Stop을 보존한다. 남은 GC 상태와 운영 화면·재시작 복구·검증 코드 공개를 마무리한다.
+- [ ] **parameter readback 강화:** 실제 quality 70·QoS getter 성공을 보존하면서 짧은 발견 창에서 실패한 node/topic/format/list 검사를 안정적으로 대조한다. source 설정값과 실제 전체 configuration 확인을 구분한다.
+- [ ] **별도 목표: GPS 품질·물리 하드웨어.** 원본 측정 시각·freshness·공분산/불확실성을 검증한 GPS만 위치 정합 입력으로 연결한다. ARM·현장 정확도·GNSS/RTC/USB SSD·장착 보정·실제 자율주행은 별도 검증한다.
+
+새 Jetson 배포·실제 모터 출력·조종 활성화·펌웨어·장착 보정은 수행하지 않았다. 자율주행 출력은 OFF/HOLD이다. 재개 제어 파일은 `CURRENT_CHECKPOINT.json`, `RESEARCH_PROGRESS_LATEST.json`, `GOAL_TARGETS_CURRENT.json`, `V23_ACTUAL_POSITIVE_CHECKPOINT_20261015.json`이다. 새 factory/wrapper frozen source 백업은 `V23_FACTORY_WRAPPER_SOURCE_BUNDLE_20261015.json`에서 대조한다.
+
+<!-- /ROOT_LATEST_GOALS_OCT15 -->
+
+## 과거 실행 기록 — 각 기록 시점의 상태
+
+아래 체크포인트는 당시의 관찰과 실패를 보존한 이력이다. 현재 작업 순서는 위 목록을 따른다.
+
+<!-- ROOT_V23_PREVIOUS_GOALS_HISTORY -->
+## 이전 목표 기록 — V23 결과 반영 전
+
+아래 목록은 당시의 미완료 상태와 실패를 보존한 기록이다. 현재 순서는 위 최신 목록을 따른다.
+
 ## 현재 목표와 재개 순서 — 2026-10-15 (2026-10-14T15:23:35.487671+00:00)
 
 목표는 ACTIVE이며 전체 완료가 아니다. 실제 2D LiDAR·IMU 기반 지도를 원본 기록 끝까지 생성하고, 로컬 시뮬레이션의 같은 단일 저장 작업자에 연결해 대시보드에서 계속 표시한다. 아래 목록이 현재 상태이며 이후 절은 과거 실행 기록이다. native 위치 추정 입력은 `/scan`·`/imu/data_raw`이다.
@@ -17,12 +45,7 @@
 - [ ] **별도 목표: GPS 품질·물리 하드웨어.** 원본 측정 시각·freshness·공분산/불확실성을 검증한 GPS만 위치 정합 입력으로 연결한다. ARM·현장 물리 정확도·GNSS/RTC/USB SSD·장착 보정·실제 자율주행은 별도 검증한다.
 
 이번 후보의 새 Jetson 배포·실제 모터 출력·조종 활성화·펌웨어·장착 보정은 수행하지 않았다. 자율주행 출력은 OFF/HOLD이다. 재개 제어 파일은 `RESEARCH_PROGRESS_LATEST.json`, `GOAL_TARGETS_CURRENT.json`, `ROOT_CURRENT_PROGRESS_20261015.json`이며 새 frozen source 백업은 `OCT15_UI_CAMERA_PHASE_SOURCE_BUNDLE.json`에서 대조한다.
-
-<!-- /ROOT_LATEST_GOALS_OCT15 -->
-
-## 과거 실행 기록 — 각 기록 시점의 상태
-
-아래 체크포인트는 당시의 관찰과 실패를 보존한 이력이다. 현재 작업 순서는 위 목록을 따른다.
+<!-- /ROOT_V23_PREVIOUS_GOALS_HISTORY -->
 
 <!-- ROOT_WHOLE_NATIVE_CLOSED_OCT14 -->
 원본 지도 처리 완료 확인 (2026-10-14T12:48:06.298225+00:00): V11에서 원본 17,671 custody 행과 선택 센서 15,638개(5,243 scan·10,395 IMU)의 EOF·별도 수신 바이트/순서를 대조했다. 마지막 실제 지도 작업 `native-740-740` COMPLETE, 실제 SDK RAW/WIRE/PENDING 0, actor 종료 0, 정리 후 helper/network 부재를 확인했다. 공간 정리 후 실제 작업 완료로 복구했다. 각 SDK sensor callback 계수·최종 최적화 tail 전체·물리 지형 정확도는 아직 별도 미검증이다.
