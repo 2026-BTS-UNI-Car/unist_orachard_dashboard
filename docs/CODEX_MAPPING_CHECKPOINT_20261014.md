@@ -1,3 +1,18 @@
+<!-- ROOT_STOP_CORE_WORKER_CLOSED_OCT15 -->
+## 현재 목표와 최신 검증 — 2026-10-15
+
+목표는 실제 2D LiDAR·IMU 지도와 로컬 전체 센서 시뮬레이션의 안정적인 연결이다. 목표 상태는 ACTIVE다.
+
+- [x] 새 시뮬레이션 Stop의 핵심 경로: 실제 native 정지·비동기 close·backend 종료 0·RAW/WIRE/PENDING 0·같은 지도 30초 유지 확인. `ACTUAL_STOP_CLOSE_V3_CORE_OBSERVATION.json` 참조.
+- [ ] 전체 Stop 구성은 카메라 생산자 진단 파일 누락으로 아직 완료가 아니다. 앞선 실패 기록을 보존했다.
+- [ ] 최우선: RPC마다 실행하던 traceback watchdog을 기본 OFF로 전환하고 새 원본 소스·실행 검증. V27에서 ACK 이후 watchdog 취소 대기가 다음 RPC 진입을 막은 증거가 있다.
+- [ ] 브라우저 worker는 V27에서 40초 제한에 걸리고 최종 다운로드가 없었다. FPS·화질 성공으로 간주하지 않고 bootstrap/worker/export의 유한 오류 정보를 추가한다.
+- [ ] 단일 만료형 가상 모터 명령 소유자와 zero ACK를 먼저 검증한 뒤 시뮬레이션 이동·지도 연속성을 확인한다.
+- [ ] 이후 상시 로컬 실행, 전체 기록 최종 지도 표시, 카메라 전달 성능, 검증된 GPS 연결과 최종 문서를 완료한다.
+
+카메라 원본 생산은 약 30fps지만 브라우저 30fps는 아직 검증되지 않았다. 실제 Jetson 신규 배포·모터 출력·조종 활성화는 수행하지 않았다. 아래의 이전 실패와 체크포인트는 당시 결과로 남긴다.
+<!-- /ROOT_STOP_CORE_WORKER_CLOSED_OCT15 -->
+
 <!-- ROOT_SIM_STOP_CLOSE_NEGATIVE_OCT15 -->
 ## 현재 작업: 시뮬레이션 정지 종료 오류 수정
 
