@@ -1,3 +1,25 @@
+<!-- ROOT_OCT15_V24_CLOSED_CHECKPOINT -->
+## 2026-10-15: V24/V25 closed checkpoint and next goal
+
+The goal remains ACTIVE. Latest V25 SIM4CPU native factory and all seven browser claims passed, with RAW accounting zero and owned processes/containers/network absent. Its native runtime closed four jobs at `native-19-19` COMPLETE. The diagnostic remains **partial/negative** solely because the initial display counter was absent; the strict Q70 graph passed. No old failure was relabelled.
+
+V24's native factory passed: five jobs, last `native-25-25` COMPLETE, SDK RAW accounting zero, actor exit 0 and frozen sources unchanged. V24's browser trial remains **negative**: two final-current-native claims failed. Three valid same-owner observations (native3/9/18) and the retained visible canvas remain evidence from that attempt. V23's browser PASS also remains historical positive evidence.
+
+The V24 strict Q70 graph readback passed in 2.071 s. Baseline2CPU measured 96.38% quota utilization and 191 of 200 periods throttled over 20.7659 s. V25 SIM4CPU measured 56.09% utilization and zero of 201 periods throttled over 20.7619 s. Producer rates improved to Gazebo 29.81 fps and ROS compressed 28.95 fps, while WebSocket delivery was 10.16 fps and browser decode 10.20 fps. These independently sampled rates are not a synchronous end-to-end ratio; achieved browser 30 fps remains unqualified.
+
+The saved32-tile directory-FD reuse focus passed byte parity and four guards, but reuse was slower (0.10885/0.11201 s versus baseline 0.09423/0.08004 s). It stays default OFF and is not promoted as an optimization.
+
+- [x] Preserve V25 native/browser PASS, diagnostic partial, V24 browser negative and all older evidence separately.
+- [ ] Next: investigate the remaining camera delivery/consumer bottleneck and robust initial diagnostic counter, without changing native authority or claiming browser30.
+- [ ] Complete portable local start/run/Stop and SIM movement, whole-original final GUI, and live writer/overview performance with measured evidence. Source-published preview remains runtime-unqualified until its own actual run.
+- [ ] Keep GPS clock/quality and physical accuracy, ARM, deployment and hardware validation as separate unfinished goals.
+
+Only `/scan` and `/imu/data_raw` feed native localization. Camera/GPS are display-only here. No motor/ARM/firmware/mount-calibration or original-record mutation occurred in this checkpoint. Old board/installation/status entries below are observations from their recorded dates, not current deployment verification. CURRENT/RESEARCH/GOAL retain their history and record V24 as a distinct latest attempt.
+<!-- /ROOT_OCT15_V24_CLOSED_CHECKPOINT -->
+
+Later Root closed result: V25 SIM4CPU native and all seven product-browser checks passed with RAW0 and owned cleanup. Strict JPEGQ70 graph readback passed.20.7619s quota window: GZ29.814/ROS28.947fps,56.09percent quota use,zero throttle. Browser10.201decodedfps;30fps remains open. Diagnostic overall false because display baseline counter was missing; no display rate fabricated. (SHA256 75b6dc093d4e83bbbc7b1985367e110d28c6c2da2fb66e1cc0233659a8241936).
+
+
 # 매핑 작업 목표와 검증 체크포인트 — 2026-10-15
 
 <!-- ROOT_LATEST_GOALS_OCT15 -->
