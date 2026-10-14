@@ -1,3 +1,15 @@
+<!-- ROOT_SIM_STOP_CLOSE_NEGATIVE_OCT15 -->
+## 현재 작업: 시뮬레이션 정지 종료 오류 수정
+
+목표는 ACTIVE다. 새 Stop 실행 파일을 빌드하고 같은 로컬 이미지에서 의존성과 기본 OFF를 확인했다. 실제 시뮬레이션 실행에서 대시보드 정지 요청, native 엔진 정지·Node 종료, RAW/WIRE/PENDING 0, canonical MAPPING_STOPPED, 정지 후 같은 지도 30초 유지가 관찰됐다. 그러나 마지막 `close` 통신에서 `owned_provider_EOF`가 발생해 actor 정상 종료·최종 accounting 검증과 전체 실행은 **실패**했다. 성공으로 바꾸거나 새 주행을 허용하지 않는다.
+
+- [x] 실패 원본과 정지 단계 증거, helper/network/browser 종료를 별도로 보존: `ROOT_STOP_CLOSED_FAILURE_20261015.json`.
+- [ ] 현재 우선 작업: 기존 RPC·owner·actor 제한 안에서 정리 준비와 완료 상태를 비동기로 처리하고, 새 실행으로 정상 종료를 확인한다.
+- [ ] 이후 가상 차량 이동·상시 운영과 카메라 worker 전달을 검증한다. 브라우저 카메라 30fps·GPS 통합·실차 적용은 아직 완료되지 않았다.
+
+GitHub와 NAS에는 로컬 preview 진입점과 V24/V25 결과 문서를 반영했다. 실제 Jetson 신규 설치와 실제 모터 출력은 수행하지 않았다.
+<!-- /ROOT_SIM_STOP_CLOSE_NEGATIVE_OCT15 -->
+
 <!-- ROOT_OCT15_V24_CLOSED_CHECKPOINT -->
 ## 2026-10-15: V24/V25 closed checkpoint and next goal
 
