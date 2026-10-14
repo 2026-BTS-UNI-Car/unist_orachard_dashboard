@@ -353,20 +353,21 @@ Jetson 설치 native7453은 그대로다. 마지막 성공 상태 확인은 UTC1
 
 ---
 
-## 현재 목표와 진행 상태 — 2026-10-14 (2026-10-14T04:17:07.482538+00:00)
+## 현재 목표와 진행 상태 — 2026-10-14 (2026-10-14T05:02:42.333176+00:00)
 
 목표: 휠 엔코더 없이 실제 2D LiDAR·IMU 기록으로 끝까지 이어지는 지도를 만들고, 같은 저장 작업자를 사용하는 로컬 시뮬레이션 대시보드에 표시한다. GPS는 원본 측정 시각과 품질을 검증한 입력만 연결한다. 원본 기록을 보존하고 실차 모터 출력·조종 활성화·펌웨어·장착 보정은 수행하지 않는다. Codex 목표는 active이며 전체 완료가 아니다.
 
 - [x] 실제 SDK→C++→단일 Python 저장 작업자 연결 시험: 16,391셀과 4,194,304셀 합성 native body의 원본 해시, 원본 요청·확인 응답, 단일 SQLite/CAS, 지도 작업 COMPLETE, 정지 후 이미 소유한 데이터 보관, RAW/wire/pending 0, 작업자 종료를 확인했다. 원본 센서·GUI·물리 정확도 검증은 별도다.
 - [x] 이전 실패 보존: V1 컴파일 경고 5곳은 형식만 수정했다. V2 C++ cross 시험은 종료 0이었으나 Python 메타데이터 필드 가정이 틀려 검증이 실패했다. 별도 읽기 전용 검증으로 나머지 cross 항목을 확인했다. V3은 같은 ELF로 최대 크기 시험만 실행했으며 기존 컴파일과 cross 시험은 반복하지 않았다.
 - [x] 센서 시각·참조 관리 코드를 포함한 전체 SDK를 새로 빌드했다. 새 DSO c0c419c9, 전체 consumer 빌드와 실제 로드된 DSO의 메타데이터 ABI 검사는 통과했다(214.402초). 실제 센서 재생·양성 retirement·GC 권한은 아직 검증하지 않았다. 기존 799a 헤더/바이너리와 혼합하지 않는다.
-- [ ] 1. 원본 30초의 300 LiDAR scan·597 IMU 메시지를 실제 Node/Grid에 넣고 단일 저장소의 지도와 원본 요청 관계를 검증한다. Node V3 검증 스크립트의 메타데이터 가정 오류는 실행 전에 발견했으며 V4에서 수정한다.
+- [x] 1. 원본 30초의 300 LiDAR scan·597 IMU 메시지를 원본 바이트·순서 그대로 실제 Node/Grid에 넣었다. V9에서 897개 메시지의 EOF·DDS 수신 대조, 단일 저장소의 원본 요청/확인 응답/지도 관계, 마지막 작업 COMPLETE, RAW/wire/pending 0, Node·TF·작업자 종료와 helper 제거를 확인했다. 실제 Node의 모든 callback·최종 최적화 tail·물리 정확도는 별도 미검증이다.
+- [x] 연속 입력을 막던 실제 원인 해결: 지도 타일 전체 준비 중 writer 잠금을 잡아 BEGIN 요청이 3초를 넘겼다. active IO root를 유지한 채 타일 준비와 짧은 CAS/SQL 저장 단계를 나누고 FIFO writer와 readonly mmap을 적용했다. 새 경합 검사 6개·mmap 검사 12개·결합 검사 6개를 통과했고 V9 실제 원본 재생도 종료 0이었다. 재생 도구의 매 메시지 전체 폴더 검사도 1초 주기 감사와 별도 저장소 한도로 바꿨다.
 - [ ] 2. 같은 owner에 연결한 공유 HTTP 지도와 대시보드를 실제로 띄워 두 클라이언트, 수동 확대 유지, 새 지도와 Stop 동작을 확인한다. 저장 DB를 복제한 별도 지도 생성기로 대체하지 않는다.
 - [ ] 3. 새 SDK의 실제 Frame.observation 시각을 정확한 역할로 전달하고, native 참조 정리·확인 응답·read pin·유한 저장소를 실제 연결에서 검증한다. 전달 시각을 센서 freshness로 간주하지 않는다.
 - [ ] 4. 10/03와 10/10 전체 원본을 EOF까지 재생하며 지도 연속성·처리 지연·CPU/메모리·큐를 확인한다. 과수원·일반 도로와 9/10 장착 위치 차이를 구분한다.
 - [ ] 5. GPS 측정 시각·공분산·장착 불확실성을 검증해 연결하고, 로컬 시뮬레이션과 대시보드를 최종 검증한다. ARM·이동 중 검증·실외 GNSS·RTC·USB SSD는 하드웨어 항목으로 별도 기록한다.
 - [ ] 6. 완료 범위와 미완료 범위를 구분해 TODO·CLAUDE.md·체크포인트·GitHub·NAS를 동기화한다. 미검증 실차 자율주행 출력은 OFF/HOLD를 유지한다.
 
-현재 실행 결과와 재개 순서: `RESEARCH_PROGRESS_LATEST.json`, `GOAL_TARGETS_CURRENT.json`, `CURRENT_CHECKPOINT.json`. 실제 canonical 최대 크기 결과는 `native-sdk-canonical-backend-probe-v3/POSTCLOSED_HANDOFF.json`, 전체 SDK 빌드 결과는 `sdk-native-retirement-observation-fullbuild-v1/output/RESULT.json`에 있다. 설치된 Jetson 서비스의 상태는 이전 날짜 관찰이며 이번 로컬 결과를 보드 설치로 표시하지 않는다.
+현재 실행 결과와 재개 순서: `RESEARCH_PROGRESS_LATEST.json`, `GOAL_TARGETS_CURRENT.json`, `CURRENT_CHECKPOINT.json`. 실제 원본30초 결과는 `native-sdk-node-assembly-v9/POSTCLOSED_HANDOFF.json`에 있다. 출력은 약150MB라 긴 기록에는 실제 참조 정리/GC가 필요하다. 공유 GUI V2는 완료 후 정리된 job.data를 읽으려다 실패했고 V3에서 actual Submit hash와 완료 작업 관계로 수정 중이다. browser 도구 inventory가 비어 있어 설치된 Chrome의 별도 콘솔 렌더링 시험을 준비한다. canonical 최대 크기 결과와 SDK 전체 빌드 결과도 보존한다. 이번 로컬 결과를 Jetson 설치로 표시하지 않는다.
 
 ---
