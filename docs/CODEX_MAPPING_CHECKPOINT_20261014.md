@@ -1,41 +1,32 @@
 <!-- ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
-- [ ] **최신 전체 원본 V33: 미완료.** 센서15,638개/보존17,671개 EOF·readback은 일치했지만 마지막 native633이 DEFERRED에 머물렀고, GC 이후 이미 소유한 버퍼 저장이 제한 시간 안에 끝나지 않아 actor가1로 종료됐다. RAW0·정상 종료·브라우저 시작은 확인되지 않았다. 마지막 용량 거부 당시 이전 캐시는 이미 없었으므로 캐시 해제만으로 해결되지 않는다. Stop 이후에도 남은 버퍼를 저장할 수 있게 실제 보호 참조와 공간 정리 연결을 수정한다. `ROOT_WHOLE33_EOF_POSITIVE_PRESSURE_DRAIN_NEGATIVE_20261015.json`.
 
-## 현재 목표와 우선순위 — 2026-10-15
+## 현재 목표와 실행 순서 — 2026-10-15
 
-목표 상태: **ACTIVE / 미완료**. 원본 기록 끝까지 유지되는 2D LiDAR·raw IMU 지도와 재실행 가능한 로컬 시뮬레이션 대시보드를 완성한다. 원본·이전 실패 결과를 보존하고, 현장 검증은 소프트웨어 검증과 구분한다.
+**ACTIVE / 미완료.** 실제 2D RPLIDAR S2·raw IMU 원본으로 끝까지 이어지는 지도와 다시 실행할 수 있는 로컬 시뮬레이션 대시보드를 완성한다. 아래는 최신 상태이며 뒤의 오래된 체크포인트는 당시의 결과다. 현재 소스·실행 상태는 `D:\Develop\UBTS\codex-resume-20261013\CURRENT_CHECKPOINT.json`을 함께 따른다.
 
-- [x] 짧은 원본 입력 897개 EOF·readback, 마지막 native 지도 작업 완료, RAW/WIRE/PENDING 0, 정상 종료, 같은 소유자의 HTTP 조회 2개와 GC 정리 확인. `ROOT_V19_V6_CLOSED_OBSERVATION_20261015.json`.
-- [x] **짧은 원본의 마지막 지도 표시:** 원본 897개 입력의 EOF·RAW0·정상 종료, 같은 마지막 지도의 상세/전체 브라우저 픽셀, 내부 준비 표시와 두 HTTP 조회, 실행 자원 정리까지 V22에서 통과했다. tuple/list 표현 차이만 수정하고 값·타입·길이·현재 지도 검증은 유지했다. ROOT_SHORT22_CLOSED_READBACK_20261015.json.
-- [x] **전체 원본 native 처리:** V23에서 센서 입력 15,638개와 보존 기록 17,671개 EOF·readback 일치, 마지막 지도 작업 완료, RAW/WIRE/PENDING 0·정상 종료·131개 native 정리(남음 0)를 확인했다. ROOT_WHOLE23_CLOSED_OBSERVATION_20261015.json. SDK callback 전체 도달·실제 지형 정확도 검증은 별도다.
-- [x] **Windows 상태 파일 잠금 복구:** 지정된 GUI_READY 임시 파일 교체의 13/61 오류만 기존 시간과 횟수 제한 안에서 재시도한다. 실제 파일 I/O 검사 3개·독립 검토·짧은 원본 V24의 EOF897/RAW0/실제 최종 지도 픽셀/내부 준비 상태/정상 종료를 통과했다. `ROOT_WRITER24_CLOSED_POSITIVE_20261015.json`.
-- [x] **실행 목록 분리:** 전체 소스 258개를 보존하고 해시에 연결한 실행 목록 123개로 기존 256개 제한을 유지했다. 실제 import·설정 누락 거부 검사와 독립 검토, 짧은 원본 V26의 전체 화면·EOF897·RAW0·종료 검증을 통과했다. `ROOT_SHORT26_RUNTIME_CLOSURE_POSITIVE_20261015.json`.
-- [ ] **최우선 전체 원본 마지막 화면·연속성:** V31은 입력15,638개/보존17,671개 EOF·readback, 마지막 native752 COMPLETE, RAW0·정상 종료를 확인했다. 최종36,135,060셀 overview가 기존30초 안에 끝나지 않아 브라우저는 시작하지 못했다. 짧은 원본 V30은 같은 새 엔진과 실제 화면·종료를 통과했다. 큰 지도 파일 읽기와 안전한 이전 캐시 해제를 개선하고, 입력 종료와 전체 SDK callback·실시간 정확도를 구분해 검증한다.
-- [x] **재시도 시간 배치 수정:** 원래 저장 후 대기 예산을 유지하는 postwork 수정의 검사 3개·독립 검토·짧은 원본 V28 EOF897/RAW0/실제 마지막 지도 픽셀/정상 종료를 통과했다. `ROOT_SHORT28_POSTWORK_WRITER_POSITIVE_20261015.json`.
-- [x] **지도·가상 제어 정지 연결용 새 빌드:** 새 소스로 빌드·라이브러리 연결·기본 OFF·SDK 97개 불변·빌드 자원 정리를 확인했다. 실제 통합 Stop·이동 시험은 아직 아니다.
-- [x] V31 전체 센서 브라우저·native 종료 검증. 카메라 1080p·Q70, decoded 25.64fps / 최근 27.28fps 확인. 로컬 SIM 상세 보기에서만 12MB/s 상한을 사용한다.
-- [x] **가상 제어의 무출력 시험:** V8 실제 native ZERO ACK 7.67ms, 센서 신선도 2초 유지, 종료 시 ZERO ACK·소유자 정상 종료·컨테이너 제거·소스 불변 확인. 가상 주행 명령은 0개다. ROOT_INERT_V8_CLOSED_POSITIVE_20261015.json.
-- [ ] **지도 엔진과 통합 정지 및 가상 이동:** V8에서 실제 같은 요청의 가상 ZERO 응답→SDK Stop→MAPPING_STOPPED→RAW/WIRE/PENDING0→native_closed/close_begin/close_status/close→C0 exit0를 확인했다. MAP은OOMKilledFalse였고 브라우저도 정상 종료했다. 가상 제어 소유자의 최종 ZERO100ms 응답 실패로 전체 시험은 여전히 실패다. 종료 응답 뒤 추가 tick/중복 STOP·ZERO 경로를 수정하고 재검증한다. 시간·메모리·정지·신선도 검사는 그대로다. `ROOT_JOINT8_SDK_STOP_RAW0_POSITIVE_OWNER_CLOSE_NEGATIVE_20261015.json`.
-- [x] **새 엔진·최종 화면·진단 짧은 재생:** V30에서 원본 EOF897/RAW0/마지막 지도 작업/두 HTTP 조회/내부 준비/실제 native·전체 지도 브라우저 픽셀/정상 종료·정리를 모두 통과했다. V29의 이전 빌드 해시 요구 오류는 보존했고, 현재 컴파일·실행 파일을 실행 전에 검사하도록 수정했다. `ROOT_SHORT30_CLOSED_JOINED_POSITIVE_20261015.json`.
-- [x] **전체 원본 새 엔진 종료:** V31에서 센서15,638개/보존17,671개 EOF·readback, 마지막 native752 COMPLETE, RAW0·정상 종료·117개 정리(남음0)를 확인했다. 중간 발행 지연 이후 새 데이터가 반영됐다. 실제 모든 SDK callback/최적화 tail/지형 정확도는 별도다. `ROOT_WHOLE31_JOINT5_CLOSED_OBSERVATION_20261015.json`.
-- [x] **캐시 후보 짧은 원본 화면·종료:** V32에서897개 EOF·readback, 마지막 native41 COMPLETE/스냅샷11, RAW0·정상 종료, 두 HTTP 조회·내부 준비·실제 headed 브라우저 native/overview 픽셀과 자원 정리를 확인했다. 캐시 해제를 명시 요청했지만 짧은 기록의 용량 거부는0회라 실제 압력 개선 효과는 미확정이다. `ROOT_SHORT32_CLOSED_JOINED_POSITIVE_20261015.json`.
-- [x] **닫힌 최종 지도 동일 계산 비교:** V31의 동일36,135,060셀/2,390행/1,543파일을 원본 읽기 전용·전체 해시로 비교했다. Windows bind9.39초/Linux local7.58초, 두 계산 모두 원래30초 안에 완료되고18개 display tile·네 평면 body 해시가 일치했다. 복사·전체 해시9.27초는 별도 비용이다. 한 번의 warmed 순서 고정 offline 비교이므로 실시간/실차 인증이 아니고, 파일 경로만으로 V31 재생 중30초 초과를 설명할 수 없다. `ROOT_CLOSED_WHOLE31_STORAGE_PAIR_POSITIVE_20261015.json`.
-- [ ] **전체 최종 지도 속도:** V31은 최종36,135,060셀 중20,579,496셀까지 처리한 상태에서 기존30초 화면 준비 시간이 끝나 브라우저를 시작하지 못했다. NumPy·4타일 prefetch가 실제 활성화됐고 GUI 오류는 없었다. 시간을 늘려 통과시키지 않고 실제 파일 읽기·계산과 이전 캐시 수명을 개선한다.
-- [ ] **용량·캐시 수명 개선:** 실제 native752 VIEW 거부 당시536,779,644B+추가167,936B가512MiB를76,668B 초과했고 GC가81,920B를 확보해 작업은 복구됐다. 그때 캐시18 참조가 남았고 visible22/capture23이며 overview 작업/lease/opening은 없었다. 정확한 읽기 소유권을 지키는 캐시 교체를 검토하며 임의 삭제·TTL·용량 확장은 하지 않는다.
-- [x] **프로젝트 내부 기본 OFF 소스:** 단일 가상 제어 소유자·typed Stop 소스와 freeze를 SIM에 반영했다. 플러그인3개는 실제 RAW 및 Git LF 바이트로 독립 검증된 해시만 인정하며, NAS의18개 핀 검사도 통과했다. 파일 정규화·컴파일 증거 재사용·Jetson 배포는 하지 않았다. 실제 통합 실행과 상시 실행은 남았다.
-- [x] **초기 연결 파일 I/O 실측:** 동일262파일/14,744,587B를 직접 해시 검증했다. Windows 경로 직접 읽기 합계2.156초, 프로세스 경유 소스/SDK 읽기 약2.09초였고, 동일 파일의 Linux 임시 저장소 읽기는 약0.016초였다. 복사·전체 해시 확인2.482초는 별도로 측정했다. 실제 등록 성공이나 SDK 정지 시험으로 간주하지 않는다.
-- [x] **초기 연결 Linux 소스 제공:** 정확한262파일/14,744,587B를 새32MiB 임시 저장소에 복사·전체 해시 확인하고 RW helper를 제거한 뒤 읽기 전용으로 제공했다. 실제 V6/V7에서 원래3초 검사로 SDK READY·HELLO와 첫 같은 owner COMPLETE까지 도달했다. 등록 시 전체 해시·매 교환 시 프로세스/시계/연결 검사는 그대로다. 통합 Stop·상시 실행은 별도 미완료다.
-- [x] **실제 C++ 스캔 시간 변환:** 설치된 C0 SDK 함수2회 호출로 0이 아닌 ray 간격, 중간/마지막 무효 ray, 마지막 유효 ray 기준 시각·음수 상대시각·좌표·순서·강도·원본 비트 보존을 확인했다. SDK97파일 불변과 두 helper 종료를 확인했다. 센서 취득시각·TF 보정·궤적 정확도 검증은 별도다.
-- [ ] **지도 정확도 별도 검토:** 짧은 native/파생 지도의 방사형 free-space와 점 번짐을 실제 지형 정확도 검토 항목으로 남긴다. 원본 first-ray 시각·간격은 보존되며 SDK는 마지막 유효 ray 기준 시각/음수 point time을 사용한다. 수신 시각 차이만으로 보정하지 않는다. IMU→LiDAR identity TF는 실측 보정이 아니다.
-- [x] **Stop 뒤 저장 압력 수정의 제한 검사:** 실제 owner/SQLite/CAS/고정2MiB 한도·collector를 쓰는 합성 검사3개가 통과했다. 정확한 오래된 데이터 정리, 실패 작업·현재/이전/finished/unknown 참조 보존, 잘못된 authority·세대·재사용FD 거부를 확인했다. TEST 채널 fixture이므로 실제 SDK RAW·ACK 검증은 아니다. source1924382f, Root624554.
-- [ ] **실제 SDK 압력·종료 소유권 시험:** 실제 C0 Runtime의5MiB RAW와 기존preowned FD를 사용하고 고정28MiB 저장 한도에서 자연스러운 BEGIN 거부→정확한 오래된5MiB 정리→동일RAW 영구 저장·ACK→RAW0·정상 종료를 확인한다. 후보는 소스 검토만 통과했으며 fresh compile/실행은 아직이다. 원본 전체 재생 재시도 전에 이 경계를 검증한다.
-- [ ] **실패 시 정상 종료:** DEFERRED/FAILED/CANCELLED는 실패를 유지하며 원래 SDK 종료·GC·RAW0 경로를 실행한다. C++ 정책3개 검사·새 Node 빌드·COMMON 연결·V30 실제 정상 종료는 통과했다. 실제 실패한 작업의 RAW0 종료 검증은 남았다.
-- [ ] **상시 로컬 실행:** 반복 시작·센서 연결·명시적 Stop·자원 종료를 통합 검증한다. 카메라 30fps 목표는 아직 미완료다.
-- [ ] **GPS·실차:** 품질·시각·좌표 증거가 있는 입력 연결과 현장 검증이 남았다. 현재 Jetson 상태를 새로 확인하거나 신규 배포·실제 모터 출력·조종 활성화·펌웨어·장착 보정을 하지 않았다.
+### 완료해 확인한 범위
 
-TODO 세 사본과 GitHub·NAS 문서를 주기적으로 동기화한다. 검증된 소스 504개를 NAS에 별도 해시 검증 백업했다. 이 백업은 원본 녹화·SDK 실행 파일·브라우저 프로필·인증 정보를 포함하지 않으며, 전체 실행 환경 복구를 검증한 것은 아니다.
+- [x] 기존 짧은 원본 후보 V32: scan300+IMU597 입력, EOF897·readback, 마지막 native 작업 COMPLETE, RAW/WIRE/PENDING0, 두 HTTP 조회·실제 headed 브라우저의 native/overview 지도 표시·정상 종료·자원 정리. 새 수정 후보의 재검증과는 구분한다.
+- [x] 고정28MiB 저장 한도의 실제 C0 SDK 시험: 자연 BEGIN 용량 거부 → 정확한 COMMITTED 과거5MiB 삭제 → 같은 RAW 저장·실제 ACK → RAW0·정상 종료. 합성 셀 시험이며 원본 센서·지형 정확도 검증은 아니다.
+- [x] 추가로 발견한 미완료 요청 문제 재현 및 수정: 기존 일반 ArchiveLive BEGIN 거부 뒤 preowned 실제 ACK가 와도 live_outcomes1이 남았다. 최소 두 헤더 수정 뒤 동일 실제 시험은 live0·RAW0·native_closed·close를 통과했다. 저장소 보호 참조·64chunk 해시·정확한5MiB 삭제도 별도 읽기 전용 검증을 통과했다. 기존 전체 RESULT의 검증기 실패는 그대로 보존했다. `ROOT_ACTUAL_PREOWNED_FIX_COMMON_AGGREGATE_JOINED_POSITIVE_20261015.json`.
+- [x] 원본 처리용 새 Node 소스8270·ELF0ce26의 실제 빌드, SDK97/C0 불변, 기본 실행 OFF, 현재 COMMON 환경 ldd·기본 OFF·정확한 자원 정리. 센서 실행 성공으로 해석하지 않는다.
+- [x] 원본897개 입력 통계와 기존 ROS ledger 해시 일치. LiDAR3240beam/scan, 유효 범위 안72.05%, 범위30m를 넘는 유한값99,312개, IMU 최대 메시지 간격109ms. 입력과 소스 불변·기존 작업의 정확한 컨테이너 종료/부재도 별도 검증했다. 기존 잘못된 Docker 부재 판정 결과는 보존했다. 장착 축·시계 정렬·지도 정확도는 이 통계로 보정하지 않는다.
+- [x] 최신 작은 증거와 현재 체크포인트 NAS 복사·해시 확인. 최근10개 소스467파일/4.79MB도 별도 NAS ZIP 검증. SDK·원본·전체 실행 환경 복구를 보장하는 백업은 아니다.
 
-아래 절은 당시 상태를 보존한 이력이다. 현재 우선순위와 완료 여부는 이 절을 기준으로 한다.
+### 다음 작업 — 이 순서로 진행
+
+- [ ] **1. 새 짧은 원본 후보:** 새 Node와 Stop 후 안전한 공간 정리5파일, 이전 캐시 해제, GUI 단계 진단을 합쳐 실제 원본897개를 처리한다. 같은 소유자의 최종 지도·두 클라이언트·브라우저·RAW0·정상 종료를 확인한다.
+- [ ] **2. 전체 원본과 최종 화면:** 15,638개 센서/17,671개 보존 입력을 끝까지 처리한다. 이전 V31은 native752 COMPLETE·RAW0·정상 종료였으나36.1M셀 최종 overview가 기존30초 내 준비되지 않았다. 최신 V33은 EOF 일치 뒤 native633 DEFERRED·Stop 후 저장 대기로 실패했다. 캐시만으로 해결되지 않은 경로에 새 저장/요청 해제 수정을 검증한다. 제한 시간을 늘려 통과시키지 않는다.
+- [ ] **3. 연속성·정확도:** 전체 SDK callback과 최적화 tail, 정합·원거리 겹침·진행 방향·Stop 뒤 지도 유지·재생 일시정지·사용자 확대 유지·여러 클라이언트를 구분해 확인한다. IMU↔LiDAR identity TF는 미측정 가정이다. GPS는 원본 시각·품질이 검증된 경우에만 사용하고, 휠/가상truth/PWM/카메라는 native 위치 추정 입력으로 쓰지 않는다.
+- [ ] **4. 시뮬레이션 통합 Stop:** V8은 실제 동일 요청 ZERO ACK→SDK Stop→MAPPING_STOPPED→RAW0→정상 C0 종료를 확인했으나 마지막 owner ZERO100ms 검사에 실패했다. 종료 중복 STOP/tick 수정은 준비했다. V9은 먼저 전체 callback drain333ms 지연으로 기존100ms 검사에 실패해 종료 수정을 검증하지 못했다. 333ms가 단일 callback 시간인지는 모른다. 새 숫자 진단은 SIM/owner cgroup을 관찰하며 기준을 바꾸지 않는다.
+- [ ] **5. 로컬 제품 실행과 성능:** 반복 Start/Stop·작업 상태/중단·실시간 우선순위·유한 저장소·여러 기기 접속·실제 로컬 시작 명령을 검증한다. 카메라1080p/Q70은 확인했지만 전체 센서 SIM의 decoded25.64fps/최근27.28fps는30fps 목표 미달이다. 느린 회선용 기본 전송 한도는 유지한다.
+- [ ] **6. 마감:** 소프트웨어 완료와 현장 필요 항목을 구분하여 TODO·CLAUDE.md·증거·GitHub·NAS를 갱신한다. 10/10·10/03 전체 및9/10 장착 차이, GPS 품질·시각, 현장 제동·저속 제어·오프라인 GNSS 시간·원본 SSD 백업은 관측 범위에 맞게 기록한다.
+
+### 작업 경계와 재개
+
+실제 모터 출력·arm·펌웨어·장착 보정·새 Jetson 배포·SSH는 이번 계속 작업에서 하지 않는다. Jetson 설치 정보는 과거 관찰이며 현재 접속 확인이 아니다. Root만 실제 Docker/SDK/ROS/Chrome/컴파일/Git/NAS 작업을 수행하며 무거운 시험은 직렬로 실행한다. 병렬 작업은 소스와 종료된 증거 검토만 맡긴다. 원본·실패 결과·기존 한도·소유권과 신선도 검사는 보존한다.
+
+최신 증거: `ROOT_WHOLE33_EOF_POSITIVE_PRESSURE_DRAIN_NEGATIVE_20261015.json`, `ROOT_JOINT9_CLOSED_FRESHNESS_NEGATIVE_20261015.json`, `ROOT_ACTUAL_PREOWNED_FIX_COMMON_AGGREGATE_JOINED_POSITIVE_20261015.json`. 새 짧은/전체 후보는 아직 실행 전이다.
 <!-- /ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
 
 <!-- ROOT_ORDERED_GOAL_20261015_1930 -->
