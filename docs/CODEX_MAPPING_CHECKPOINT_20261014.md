@@ -1,18 +1,16 @@
-<!-- ROOT_HOT_WHOLE_CLOSED_CURRENT -->
-## 최신 결과와 진행 목표 · 2026-10-15
+<!-- ROOT_PROFILE_WHOLE_CLOSED_CURRENT -->
+## 최신 체크포인트 · 전체 입력·종료 경로 통과, 실시간 성능 미완료
 
-목표는 실제 2D LiDAR·raw IMU 기록으로 지도를 끝까지 갱신하고, 같은 지도를 여러 클라이언트에서 이어 보는 로컬 환경을 완성하는 것이다. **ACTIVE / 미완료**이며 처리 지연과 전체 기록의 마지막 지도 완료가 최우선이다.
+- [x] 기본 저장 경로의 원본897개 회귀 시험은69.88초에 통과했다: EOF/readback·같은 typed Stop·RAW0/CLOSED·두 HTTP의 같은 보관 지도·Shutdown과 소유 자원 부재.
+- [x] 계측 기능을 켠 짧은 HOT 시험115.57초 및 전체523.804초 입력의 HOT 시험638.68초를 통과했다. 전체는 custody17,671개·scan5,243개·IMU10,395개 EOF/readback 후 마지막 승인 작업 native-793-793 COMPLETE·RAW0/CLOSED·실제 mapper 종료·같은 volume 실제 RO·두 HTTP의 같은 최종793/published26/history3·Shutdown을 확인했다. volume·슬롯을 보존하고 두 번째 Start를 거절했다.
+- [ ] 앞선 동일 경로의 시간 초과 실패도 보존했다. 이번 통과만으로 안정적인 실시간 성능을 입증하지 않는다. 전체 SDK callback 소비·최종 최적화 tail·물리 정확도·브라우저 픽셀은 미검증이며, 별도 frozen catalog가 새로 queued된 표식도 이번에는 없었다.
+- [x] 실제 계측 보고서의 session/runtime/settings/module SHA와 종료 시 미완료 계측0·오류0을 확인했다. 전체 본문·타일 SHA 검증 읽기는15.42GB/26,198회, import153회218.87초(호출 thread CPU44.00초), catalog26회5.24초였다. 중첩된 시간은 합산하거나 원인으로 단정하지 않는다.
+- [ ] 화면용 요약 지도는 가속 OFF로 후반3,364만 셀을 scalar 순회하고 있었다. Submit 관찰 기준29~81초의 나이가 관찰됐지만 센서 시각 기준 지연은 아니다. 타일 저장·writer 대기·fsync·overview 시간을 분리 계측하고, 기존 검증된 vector/qualified-pass 실행 연결을 준비한다.
 
-- [x] 짧은 원본897개에서 EOF/readback → 마지막 native-21-21 COMPLETE → RAW0·자연 CLOSED → 실제 mapper 종료 → 같은 Linux volume의 실제 읽기 전용 viewer → 두 HTTP의 같은 최종 지도 → Shutdown을 확인했다(116.77초). 보관 슬롯이 찬 두 번째 Start는 거절됐다.
-- [x] 전체523.804초 기록의 custody17,671개·scan5,243개·IMU10,395개를 끝까지 원본 순서·시각·CDR로 읽었다.
-- [ ] 전체 HOT 시험은 **실패**했다. 마지막 native-757-757이 기존30초 제한 내 끝나지 않았고 최종 RAW0·CLOSED·최종 지도는 입증하지 못했다. 실행603.18초, 원본·소스·설정 보존, 소유 helper·source·network 정리를 확인했다. volume·슬롯은 보존했다.
-- [ ] Linux 저장소만으로 지연은 해결되지 않았다. 후반 backend Submit 관찰 시각 대비 지도 나이 약37.15초가 관찰됐다. 이는 센서 시각 기준 지연 측정이 아니다. SQL 잠금·본문 검증·타일 준비·화면 합성을 분리 계측하고 실제 병목을 수정한다.
-- [x] 검증된 짧은 HOT 기능은 SIM `1a58a7c`, 실제 대시보드 문서는 `cdc121b`로 GitHub·NAS·SSD HEAD 일치와 package136개 파일의 원본 SHA256 일치를 확인했다. 이번 Jetson 배포는 없다.
+현재 목표는 ACTIVE / 미완료다. 다음은 계측v2 짧은 실행 → 기존 벡터 경로 연결과 동일 결과 검증 → 같은 전체 기록의 지연·완료 재검증이다. 입력/지도 완료/화면/정확도를 구분하고 기존 제한을 유지한다. 새 Jetson 배포·모터·조종 활성화·펌웨어·장착 보정은 하지 않았다.
 
-다음 순서: 기본 OFF 계측 후보 검토 → 실제 짧은 원본에서 계측·동작 검증 → 측정된 병목 수정 → 동일 전체 원본 재검증 → 지도 UI·SIM 정지·GPS 품질과 시각 검증. 완료 조건을 낮추거나 시간 제한을 늘려 통과시키지 않는다. 새 모터 출력·조종 활성화·펌웨어·장착 보정은 하지 않는다.
-
-근거: `codex-resume-20261013/ROOT_HOT_WHOLE523_FINAL_DEADLINE_NEGATIVE_20261015.json`, `ROOT_HOT_SHORT_V2_NATIVE_RW_TO_RO_POSITIVE_20261015.json`, `ROOT_HOT_PUBLICATION_20261015.json`. 재개 기준은 같은 폴더의 `CURRENT_CHECKPOINT.json`이다.
-<!-- /ROOT_HOT_WHOLE_CLOSED_CURRENT -->
+근거: `codex-resume-20261013/actual_public_PC_whole523_HOT_native_phase_profile_v1/RESULT.json`, 같은 폴더의 `ROOT_VERIFIED_NATIVE_PHASE_SUMMARY.json`, `ROOT_HOT_OFF_V10_ACTUAL_REGRESSION_POSITIVE_20261015.json`. 재개 기준은 `CURRENT_CHECKPOINT.json`이다.
+<!-- /ROOT_PROFILE_WHOLE_CLOSED_CURRENT -->
 
 <!-- ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
 
