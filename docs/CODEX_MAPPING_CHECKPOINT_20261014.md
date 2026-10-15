@@ -1,38 +1,21 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
-## 현재 목표와 재개 지점 — 실제 2D 센서 기반 로컬 지도·대시보드
+## 현재 목표와 체크포인트 — 2026-10-16, ACTIVE / 미완료
 
-2026-10-16 · **목표 ACTIVE / 미완료**
+최종 목표는 실제 S2 2D LiDAR·raw IMU 기록의 끝까지 이어지는 지도와, 조종·센서·공유 지도를 함께 쓰는 로컬 시뮬레이션 대시보드다. 원본 녹화는 보존한다. 실차 출력·조종 활성화·Jetson 배포·펌웨어·장착 보정은 이번 작업 범위에 없다.
 
-S2 2D LiDAR와 raw IMU로 기록 끝까지 지도 처리가 이어지고, 로컬 대시보드에서 수동 조종·지도 표시·중단·보관·반복 새 지도를 사용할 수 있게 완성한다. 아래 현재 표를 먼저 읽는다. 이후 오래된 체크포인트는 역사이며 현재 실행 지시를 대체하지 않는다.
+- [x] 실제 C++ SDK 원본 재생→단일 저장 작업자→공유 지도→Stop/RAW0/CLOSED 경로와 원본523.804초 Header 전달을 검증했다. 공개 C0 SDK와 runtime9100cbdd를 유지한다. 전달 반환은 최종 최적화·실물 정확도 검증과 구분한다.
+- [x] 자원 보고 파이프라인 수정 후 실제 조종 ON/OFF 통합 세 번을 통과했다. Windows 원자 교체, 종료 후 검증 중 보고 공백을 수정했다. 기존3초 감시·640MiB/8192파일은 유지한다.
+- [x] 현재 package6f9c03cc. 가상 조종 최초 거부 사유·시계/명령 나이·RPC/로그 처리 시간을 제한된 메모리 계측으로 분리했다. 진단값은 조종 권한이나 native 증명이 아니다.
+- [x] 직전 package7f50a0e2의 v20 실제 검증:25%50개 입력/2초, 독립 관찰0.2556m, 두 사용자 소유권 거부, release,220ms 입력 공백 후0/만료 티켓 거부, 명시적 재활성화/STOP 모두 통과. 같은 실행의 네 센서 WS·공유 지도·native 정상 종료도 통과했다.
+- [x] 별도 `--simulate-fullsensor-manual-operator`와 `--stop-simulation --config SAME`를 적용했다. v21에서 준비 후90.21초/179회 RUNNING 관찰, 동일 지도 공유, 실제 CLI Stop, 진짜 RAW0/CLOSED, 모든 소유 컨테이너/네트워크 정리를 확인했다. ARM·주행 입력은 보내지 않았다. 전체 약168.0초다.
+- [x] 기존300초/45초 smoke는 그대로다. operator만 고정700초 전체/550초 작업/150초 종료 정리다. 실제 고유 config/nonce/세션/Windows PID 생성 시각·실행 파일이 맞아야 중단 명령을 받는다. 초기화 도중 Stop은 admission 완료까지 보류되는 제한이 있다.
+- [ ] 장시간 조종 안정성은 미완료. v18은 시계 콜백143ms 공백으로 ARM 거부, v19는 입력 지연 후 명령 만료였다. v20 성공으로 이전 실패를 지우지 않는다.100ms 안전 기준·CPU/메모리·조종 권한을 완화하거나 자동 재활성화하지 않았다. CPU 제한이나 Nagle이 주원인이라는 증거는 없어 변경하지 않았다.
+- [ ] StreamProvider 자기 임시 파일 검증을 공유 잠금 밖으로 옮기는 후보는 실제 동시성/오류12개 그룹 통과했지만 아직 미적용이다. 수정 후 native 회귀와 비용을 다시 측정한다.
+- [ ] 명시적 지도 내보내기·보관 슬롯 해제·반복 새 지도·여러 사용자 전환을 완성한다. 현재는 보관 지도와 슬롯을 자동 삭제하지 않고 두 번째 시작을 거부한다.
+- [ ] 이동·회전·일반 도로·과수원 지도의 지속 처리 속도와 정확도, 사용자 확대 유지·PNG·재접속,1080p 실제 디코딩30fps, GPS 원본 시각/품질을 검증한다.
+- [ ] Computer Use가 브라우저 현재 URL을 검증하지 못해 화면 확인을 중단했다. 브라우저 픽셀을 검증했다고 보고하지 않는다. core/최종 최적화·실물 정확도·현장 자율주행도 미완료다.
 
-현재 제품은 package7ca90ee7/runtime9100cbdd다. 코드 게시 SIM70e0c605, 실차 저장소 문서만61c4bb1a를 GitHub·NAS에서 확인했다. 이 문서 정리 이후의 정확한 HEAD는 `RESUME_FIRST_CURRENT.json` publication을 따른다. 실제 Jetson 배포는 없다. 실제 설치와 소스 전용 후보를 섞지 않는다.
-
-### 확인한 완료
-
-- [x] 공개 native 경로의 원본 EOF/CDR·저장·실제 RAW0/CLOSED·보관 지도 두 클라이언트 재열기.
-- [x] 격리 SDK의 원본 Header chain/시각/순서 대조: 짧은 scan300/IMU597개와 전체523.804초 scan5,243/IMU10,395개, 전달 반환 전부 일치·skip0. 공개 C0 SDK는 유지한다. core 처리·최종 최적화·물리 정확도 완료를 뜻하지 않는다.
-- [x] GUI 부분 시작 실패 정리와 overview 병목 계측, catalog 전체 CAS 해시 검증의 SQL 잠금 밖 이동. 실제 COMPLETE72타일2.02초/SQL 대기0.255초 관찰은 전체 실시간 성능 완료가 아니다.
-- [x] 자원 보고 파이프라인: 기존1Hz 측정 공유, 독립 호스트 관찰기, 검증된 actor 종료 후 무결성 검사 동안 단일1Hz 발행 작업자. Windows 교체 거부에만 동일 파일 수명 확인 후 최대5회/사이10ms 재시도한다. 영구 거부·다른 오류는 실패한다.
-- [x] 같은 제품의 실제 조종 ON 통합133.51초 및136.43초, 조종 OFF 회귀134.41초: 네 센서 WS·두 HTTP 클라이언트의 동일 지도·실제 Stop/RAW0/CLOSED·모든 소유 자원 정리 통과. 이전11.177초 종료 보고 공백은 재발하지 않았다.
-- [x] 136.43초 실행에서 독립 ROS 관찰기로0.080m 실제 가상 이동과 nonzero Twist를 관찰하고 같은 실행의 지도·정상 종료도 확인했다. 전체 수동 조종 검사는 아래와 같이 실패다.
-- [x] 회귀 및 소스 검사: 공유 보고8개·호스트 관찰8개·실제 Windows 포함 발행10개·종료 발행 작업자9개·기존11개. 제품162개 전이 raw SHA, 외부423개 Git index 입력, NAS 미소유 편집 보존 및 TODO 세 사본 일치를 확인했다.
-
-### 다음 순서 — 계속 진행할 항목
-
-1. [ ] **조종 거부 원인과 안정성**: 일부 이동 실행은 약1.4초 뒤 drive 요청 거부로 출력0이 됐다. 입력 만료·시계 수신/진행 지연·watchdog·RPC 중 첫 원인을 bounded metadata로 보존한다. 현재100ms 조건을 자동 완화하거나 자동 재활성화하지 않는다. 관찰기 준비/40초 시작 지연 등 이전 실패도 남겨 둔다.
-2. [ ] **지속 가상 조종 환경**: 별도 operator 후보는 소스17개 검사 통과, 미적용. 기존300/45초 시험을 유지하며 고정700초 전체/550초 작업과 명시적 로컬 종료 요청을 분리했다. 적용 전 소스 검토, 기존 회귀 및 실제 operator Stop/정상 종료 검증이 필요하다.
-3. [ ] **저장 조회 지연**: own-temp finish 사전 검증을 공유 SQL 잠금 밖으로 옮기는 후보는 실제 StreamProvider/ReceiptStore/SQLite12개 그룹과 부모/후보 기존13개 대조 통과, 미적용. 기존 allocation/Stop 테스트가 예전 정리 함수를 patch하던 문제는 비공개 fixture에서만 고쳤다. 공개 적용 시 회귀와 실제 native 검증을 한다.
-4. [ ] **보관·반복 생성**: 명시적 지도 내보내기·보관 슬롯 해제·새 지도 반복·여러 클라이언트 상태/Stop/세션 전환. 기존 지도·원본은 자동 삭제하지 않는다.
-5. [ ] **지속 실시간 성능·정확도**: 입력 시각→처리→저장→표시 지연, 이동/회전/도로/과수원 연속성. 현재 결과를 모든 환경의 정확도나 지연 보장으로 확대하지 않는다.
-6. [ ] **화면·센서**: 실제 pan/zoom·PNG·재접속·1080p 디코딩/30fps·GPS 원본 시각/품질. 브라우저 화면·30fps·GPS 통합 위치 추정은 아직 검증되지 않았다.
-7. [ ] **core/최종 지도 검증**: 격리 SDK에서 FinishAll/FinishTrajectory/destructor 반환은 확인했으나 RunFinalOptimization은0회다. 최종 최적화·물리 지형 정확도는 별도 검증한다.
-8. [ ] 변경마다 실제/소스 전용/미검증을 구분해 TODO·CLAUDE·compact checkpoint·GitHub·NAS를 동기화한다. GitHub Actions 사용량이 없어 `[skip ci]`와 직접 검증을 사용한다.
-
-원본 source550초/actor900초/job30초/drain60초/RPC3초/Start40초, backend512MiB·합계640MiB/8192파일 한도를 유지한다. 기존 smoke는 전체300초/관찰45초다. operator 후보의 별도700초 예산을 smoke 통과에 쓰지 않는다.
-
-이번 작업에서는 실제 모터 출력·조종 활성화·펌웨어·장착 보정·미검증 실차 자율주행·Jetson 배포를 하지 않는다. 위치 추정 입력은 scan+raw IMU이며 GPS/카메라는 검증 전 표시용이다. wheel/PWM/truth를 위치 추정에 넣지 않는다.
-
-재개: `D:\Develop\UBTS\codex-resume-20261013\RESUME_FIRST_CURRENT.json`. 공개 근거: `docs/RESOURCE_PIPELINE_QUALIFICATION_20261016.json`, `docs/ISOLATED_SDK_COVERAGE_20261016.json`. NAS의 다른 작업자 편집 `dashboard/dashboard_server/sensor_mapping/raw_mapping/raw_localization.py`는 보존한다.
+근거: `docs/OPERATOR_SIMULATION_QUALIFICATION_20261016.json`. 재개 기준: `codex-resume-20261013/RESUME_FIRST_CURRENT.json`. 로컬 코드 적용, GitHub/NAS 동기화, Jetson 설치를 구분한다. 위치 추정 입력은 scan+raw IMU이며 카메라/GPS/PWM/wheel/truth를 몰래 섞지 않는다. 목표가 완료될 때까지 다음 미완료 항목을 진행한다.
 <!-- /ROOT_VECTOR_STARTUP_CURRENT -->
 
 <!-- ROOT_PROFILE_WHOLE_CLOSED_CURRENT -->
