@@ -11,13 +11,13 @@
 - [x] 추가로 발견한 미완료 요청 문제 재현 및 수정: 기존 일반 ArchiveLive BEGIN 거부 뒤 preowned 실제 ACK가 와도 live_outcomes1이 남았다. 최소 두 헤더 수정 뒤 동일 실제 시험은 live0·RAW0·native_closed·close를 통과했다. 저장소 보호 참조·64chunk 해시·정확한5MiB 삭제도 별도 읽기 전용 검증을 통과했다. 기존 전체 RESULT의 검증기 실패는 그대로 보존했다. `ROOT_ACTUAL_PREOWNED_FIX_COMMON_AGGREGATE_JOINED_POSITIVE_20261015.json`.
 - [x] 원본 처리용 새 Node 소스8270·ELF0ce26의 실제 빌드, SDK97/C0 불변, 기본 실행 OFF, 현재 COMMON 환경 ldd·기본 OFF·정확한 자원 정리. 센서 실행 성공으로 해석하지 않는다.
 - [x] 원본897개 입력 통계와 기존 ROS ledger 해시 일치. LiDAR3240beam/scan, 유효 범위 안72.05%, 범위30m를 넘는 유한값99,312개, IMU 최대 메시지 간격109ms. 입력과 소스 불변·기존 작업의 정확한 컨테이너 종료/부재도 별도 검증했다. 기존 잘못된 Docker 부재 판정 결과는 보존했다. 장착 축·시계 정렬·지도 정확도는 이 통계로 보정하지 않는다.
-- [x] 최신 작은 증거와 현재 체크포인트 NAS 복사·해시 확인. 최근10개 소스467파일/4.79MB도 별도 NAS ZIP 검증. SDK·원본·전체 실행 환경 복구를 보장하는 백업은 아니다.
+- [x] 최신 작은 증거와 현재 체크포인트 NAS 복사·해시 확인. 최신19개 소스822파일/9.93MB도 별도 NAS ZIP 검증(SHA109f0b27). SDK·원본·전체 실행 환경 복구를 보장하는 백업은 아니다.
 
 ### 다음 작업 — 이 순서로 진행
 
-- [ ] **1. 새 짧은 원본 후보:** 새 Node와 Stop 후 안전한 공간 정리5파일, 이전 캐시 해제, GUI 단계 진단을 합쳐 실제 원본897개를 처리한다. 같은 소유자의 최종 지도·두 클라이언트·브라우저·RAW0·정상 종료를 확인한다.
-- [ ] **2. 전체 원본과 최종 화면:** 15,638개 센서/17,671개 보존 입력을 끝까지 처리한다. 이전 V31은 native752 COMPLETE·RAW0·정상 종료였으나36.1M셀 최종 overview가 기존30초 내 준비되지 않았다. 최신 V33은 EOF 일치 뒤 native633 DEFERRED·Stop 후 저장 대기로 실패했다. 캐시만으로 해결되지 않은 경로에 새 저장/요청 해제 수정을 검증한다. 제한 시간을 늘려 통과시키지 않는다.
-- [ ] **3. 연속성·정확도:** 전체 SDK callback과 최적화 tail, 정합·원거리 겹침·진행 방향·Stop 뒤 지도 유지·재생 일시정지·사용자 확대 유지·여러 클라이언트를 구분해 확인한다. IMU↔LiDAR identity TF는 미측정 가정이다. GPS는 원본 시각·품질이 검증된 경우에만 사용하고, 휠/가상truth/PWM/카메라는 native 위치 추정 입력으로 쓰지 않는다.
+- [x] **1. 새 짧은 원본 후보 V5:** 새 Node0ce26와 Stop 후 공간 정리5파일·요청 해제·이전 캐시 해제·GUI 진단을 결합해 실제 원본897개를 끝까지 처리했다. 마지막 native26/snapshot10 COMPLETE, RAW0·정상 종료, 두 HTTP 클라이언트·실제 headed 브라우저의 native/overview 픽셀·정확한 자원 정리를 확인했다. 최종 overview는2.96초/작업 스레드CPU0.70초였다. 화면에 방사형 자유 공간과 번짐이 보여 지도 정확도는 미검증이다. `ROOT_NEW_SHORT_V5_CLOSED_JOINED_POSITIVE_20261015.json`.
+- [ ] **2. 전체 원본과 최종 화면:** 15,638개 센서/17,671개 보존 입력을 끝까지 처리한다. 이전 V31은 native752 COMPLETE·RAW0·정상 종료였으나36.1M셀 최종 overview가 기존30초 내 준비되지 않았다. 최신 V33은 EOF 일치 뒤 native633 DEFERRED·Stop 후 저장 대기로 실패했다. 캐시만으로 해결되지 않은 경로에 새 저장/요청 해제 수정을 검증한다. 제한 시간을 늘려 통과시키지 않는다. **현재 V6 전체 원본 실행 중:** sourcece5d/wrapperc013, Root session39867. V5 짧은 시험의 정확한 결과를 재확인한 뒤 기존550/900/30초·RPC3·512MiB 한도로 실행했다. 종료 후 결과를 확인하기 전에는 통과로 표시하지 않는다.
+- [ ] **3. 연속성·정확도:** 전체 SDK callback과 최적화 tail, 정합·원거리 겹침·진행 방향·Stop 뒤 지도 유지·재생 일시정지·사용자 확대 유지·여러 클라이언트를 구분해 확인한다. IMU↔LiDAR identity TF는 미측정 가정이다. GPS는 원본 시각·품질이 검증된 경우에만 사용하고, 휠/가상truth/PWM/카메라는 native 위치 추정 입력으로 쓰지 않는다. 현재 Node는 capture를 닫은 뒤 destructor에서 trajectory를 끝내며 RunFinalOptimization은 호출하지 않는다. 따라서 현재 마지막 COMPLETE가 최종 최적화 tail까지 포함한다는 증거는 없다. 실제 SDK ingress/post-Add/skip 계측은 별도 새 SDK 소스로 준비하며 현재 C0 실행에 섞지 않는다.
 - [ ] **4. 시뮬레이션 통합 Stop:** V8은 실제 동일 요청 ZERO ACK→SDK Stop→MAPPING_STOPPED→RAW0→정상 C0 종료를 확인했으나 마지막 owner ZERO100ms 검사에 실패했다. 종료 중복 STOP/tick 수정은 준비했다. V9은 먼저 전체 callback drain333ms 지연으로 기존100ms 검사에 실패해 종료 수정을 검증하지 못했다. 333ms가 단일 callback 시간인지는 모른다. 새 숫자 진단은 SIM/owner cgroup을 관찰하며 기준을 바꾸지 않는다.
 - [ ] **5. 로컬 제품 실행과 성능:** 반복 Start/Stop·작업 상태/중단·실시간 우선순위·유한 저장소·여러 기기 접속·실제 로컬 시작 명령을 검증한다. 카메라1080p/Q70은 확인했지만 전체 센서 SIM의 decoded25.64fps/최근27.28fps는30fps 목표 미달이다. 느린 회선용 기본 전송 한도는 유지한다.
 - [ ] **6. 마감:** 소프트웨어 완료와 현장 필요 항목을 구분하여 TODO·CLAUDE.md·증거·GitHub·NAS를 갱신한다. 10/10·10/03 전체 및9/10 장착 차이, GPS 품질·시각, 현장 제동·저속 제어·오프라인 GNSS 시간·원본 SSD 백업은 관측 범위에 맞게 기록한다.
@@ -26,7 +26,7 @@
 
 실제 모터 출력·arm·펌웨어·장착 보정·새 Jetson 배포·SSH는 이번 계속 작업에서 하지 않는다. Jetson 설치 정보는 과거 관찰이며 현재 접속 확인이 아니다. Root만 실제 Docker/SDK/ROS/Chrome/컴파일/Git/NAS 작업을 수행하며 무거운 시험은 직렬로 실행한다. 병렬 작업은 소스와 종료된 증거 검토만 맡긴다. 원본·실패 결과·기존 한도·소유권과 신선도 검사는 보존한다.
 
-최신 증거: `ROOT_WHOLE33_EOF_POSITIVE_PRESSURE_DRAIN_NEGATIVE_20261015.json`, `ROOT_JOINT9_CLOSED_FRESHNESS_NEGATIVE_20261015.json`, `ROOT_ACTUAL_PREOWNED_FIX_COMMON_AGGREGATE_JOINED_POSITIVE_20261015.json`. 새 짧은/전체 후보는 아직 실행 전이다.
+최신 증거: `ROOT_WHOLE33_EOF_POSITIVE_PRESSURE_DRAIN_NEGATIVE_20261015.json`, `ROOT_JOINT9_CLOSED_FRESHNESS_NEGATIVE_20261015.json`, `ROOT_ACTUAL_PREOWNED_FIX_COMMON_AGGREGATE_JOINED_POSITIVE_20261015.json`. 새 짧은 V5는 통과했고 전체 V6는 실행 중이다. 최종 상태는 CURRENT_CHECKPOINT.json을 따른다.
 <!-- /ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
 
 <!-- ROOT_ORDERED_GOAL_20261015_1930 -->
