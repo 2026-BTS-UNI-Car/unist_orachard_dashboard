@@ -1,19 +1,31 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
-## 현재 목표·체크포인트 — 2026-10-15 19:35 KST
+## 현재 목표와 체크포인트 — 전체 기록의 처리 지연 개선
 
-**목표 ACTIVE / 미완료:** 실제 RPLIDAR S2 2D LiDAR·raw IMU 기록이 마지막까지 연속된 지도로 이어지고, 반복 사용 가능한 로컬 시뮬레이션 대시보드에서 표시되게 한다. 원본 입력 수신·지도 작업 완료·표시 지연·물리 정확도는 각각 검증한다.
+2026-10-15 · **목표 ACTIVE / 미완료.** 실제 RPLIDAR S2 2D LiDAR·raw IMU로 지도가 기록 마지막까지 이어지고, 로컬 full-sensor 시뮬레이션 대시보드에서 확인되도록 완성한다.
 
-- [x] 전체 523.804초 원본 입력 시험 한 회에서 17,671 custody / scan 5,243 + IMU 10,395의 EOF/readback, 마지막 승인 native-793 COMPLETE, RAW0/CLOSED, mapper 실제 종료, 같은 volume RO, 두 HTTP의 동일 최종 지도, Shutdown·자원 부재까지 확인했다. 이 결과는 안정적인 실시간 성능이나 전체 SDK callback·최적화 tail·물리 정확도의 증명이 아니다.
-- [x] 계측 v2 짧은 실행으로 overview가 주된 측정 CPU 비용임을 확인했다. scalar overview 11회 CPU47.84초. 기존 qualified vector 경로를 기본 OFF 설정으로 연결했고 실제 짧은 실행에서 활성 상태·정상 종료를 확인했다. 다른 작업량의 vector 실행 CPU14.93초 / 전체130.91초이므로 통제된 속도 향상으로 단정하지 않는다.
-- [x] 실제 scalar/vector adapter 합성 비교: 네 가지 회전·영역 조건의 descriptor·좌표 평면·압축 본문·페이지 동일, 입력 거절 세 경우, Stop·기존 lease 보존·thread 정리 검증 통과(18.36초). 실제 센서 정확도·브라우저 픽셀 검증과는 별개다.
-- [ ] 최신 전체 vector 시험은 센서 재생 전 시작40초 제한에서 실패했다. 노드는 약44초 후 준비됐으며, 대부분 지연은 actor 실행 이전이다. 모든 소유 helper/source/network 부재와 원본·코드·설정 보존을 확인했다. 실패를 보존하고, 기존 제한을 늘리지 않은 채 시작 단계별 비용을 조사한다.
-- [x] 같은 UI 세션의 수동 확대·이동 상태를 복원하고 지도 bounds가 바뀌어도 유지하는 수정 후보: pure-JS 검증9개·구문 검사·변경 범위 검토 통과. 아직 제품 적용·실제 화면 검증 전이다.
-- [ ] 다음 순서: 시작 지연 측정 및 수정 → 같은 전체 원본의 vector 실행 재검증 → 센서 시각부터 표시까지 지연 측정·개선 → 실제 full-sensor SIM 대시보드 연결 → 다중 접속·중단·반복 새 지도·확대 유지 검증.
-- [ ] 별도 미완료: 전체 SDK callback/최종 최적화 tail, SIM100ms ZERO ACK, 실제 브라우저1080p30fps, GPS 원본 시각·품질을 검증한 연계, 차량 자세/경로 표시와 물리 오차 검증.
+### 우선순위와 완료 기준
 
-현재 로컬 package는0b801c4e / runtime0df64003(계측v2·vector 설정), GitHub/NAS의 최신 게시 package는c4c35156(계측v1)이다. 미게시 변경과 실행 증빙은 SSD 체크포인트에 보존했다. 새 PC SDK owner와 main full-sensor SIM 대시보드는 아직 실제 연결되지 않았다. scan+raw IMU만 위치 추정에 사용하며 GPS·카메라·PWM·truth를 검증 없이 넣지 않는다. Jetson 새 배포·모터·조종 활성화·펌웨어·장착 보정은 하지 않았다.
+1. **전체 기록 처리:** 원래 시간·용량 제한 안에서 마지막 지도 저장, 정상 종료, 재조회가 가능해야 한다. 입력 수신과 지도 완료를 따로 측정하고, 실제 센서→표시 지연을 줄인다.
+2. **대시보드 연결:** 하나의 지도 작업을 카메라·LiDAR·IMU·검증된 GPS 화면과 함께 표시한다. 여러 기기 접속, 작업 상태·중단, 새 지도, 확대·이동 유지가 실제로 동작해야 한다.
+3. **재사용과 검증:** 같은 기록·다른 기록·시뮬레이션에서 확인하고, 소프트웨어 완료와 현장 보정·물리 정확도 검증을 구분한다.
+4. **인수인계:** 각 실행 결과를 TODO·machine checkpoint에 남기고 검증한 코드를 GitHub와 NAS에 동기화한다. Jetson 배포는 별도로 기록한다.
 
-재개 기준: `codex-resume-20261013/CURRENT_CHECKPOINT.json`, `ROOT_WHOLE_VECTOR_STARTUP_CLOSED_20261015.json`, `ROOT_VECTOR_STARTUP_TIMES_20261015.json`. 실제 실행은 현재 없음. 뒤쪽 과거 체크포인트보다 이 최신 블록과 machine checkpoint를 우선한다.
+### 이번에 확인한 것
+
+- [x] 앞선 전체523.804초 시험 한 회는 원본17,671개 수신·CDR readback, 마지막 승인 지도 저장, RAW0/CLOSED, mapper 종료, 같은 volume RO, 두 HTTP 동일 지도, Shutdown까지 통과했다(638.68초). 실시간 성능·전체 callback·물리 정확도의 증명은 아니다.
+- [x] 새 셀 검증 가속의 합성304개 scalar/vector 비교와 실제 저장·캐시·거절·정리 경로를 확인했다. 모든 새 옵션은 기본 OFF다.
+- [x] 새 경로의 짧은 원본897개 native 시험은137.28초에 전체 저장·조회·종료 경로를 통과했다. 시작40초 제한은18.10초에 통과했다. 이전과 작업량이 달라 성능 향상을 단정하지 않는다.
+- [x] 별도 SDK 진단 빌드와 새 헤더/DSO ABI·설치98파일 검증은 통과했다. 실제 Node callback 검증과 제품 전환은 아직이며 기존 제품 SDK를 유지한다.
+- [ ] 전체523.804초 시험98891은625.43초에 실패했다. 원본17,671개/선택15,638개 EOF·CDR readback은 확인했지만 마지막 지도 완료 제한을 넘겼다. 새 import420.05초/CPU120.94초, tile writer 대기119.17초를 측정했다. 계측 종료 시 미완료2개·partial=true여서 전체 비용으로 단정하지 않는다. 모든 소유 helper/source/network 종료와 원본·코드·설정 보존을 확인했다.
+- [ ] 이전 전체 vector v2는 최종 catalog30초 한도 초과로 실패했다. 시작도 반복 시험에서18~44초로 변동하여 안정화가 남아 있다. 실패 기록과 기존 제한을 유지한다.
+- [ ] 다음: 현재 전체 실행 종료·실제 단계 계측 분석 → 셀 검증/화면 합성 병목 수정 → full-sensor SIM 연결 → 다중 접속·Stop·반복 새 지도·확대 유지 확인.
+
+현재 로컬 package `0b29069a` / runtime `1164db1f`는 미게시다. 마지막 검증된 GitHub/NAS는 SIM `bd0f688`, 실차 dashboard 문서 `79484b2`이며 Jetson 배포가 아니다. 원본/실차 서비스는 보존하며 실제 모터 출력·조종 활성화·펌웨어·장착 보정·미검증 실차 자율주행은 수행하지 않는다.
+
+재개는 `codex-resume-20261013/RESUME_FIRST_CURRENT.json`부터 읽는다. 상세 기준은 `docs/CURRENT_MAPPING_GOALS.md`, 이력은 `CURRENT_CHECKPOINT.json`과 아래 과거 블록에 있다.
+
+- [x] 본문 하나당 한 번의 전체 검증과 8,192셀 단위 상태 확인으로 바꾼 후보는 실제 Linux에서304개 scalar/vector 비교·수명/손상/스레드 검사·네 가지 저장 조건을 통과했다. SQL 잠금 범위 수정의 정상/Stop/손상 데이터 동시성 시험도 통과했다. 같은 세션 확대·이동 복원은 pure-JS9개와 구문 검사를 통과해 로컬 코드에 반영했다. 브라우저 화면은 아직 미검증이다.
+- [x] 수정본 전체523.804초 시험60849는653.99초에 통과했다. 원본17,671개/선택15,638개 EOF·CDR readback → 마지막 승인 native-730 COMPLETE·published31 → RAW0/CLOSED → mapper 종료 → 같은 volume 실제 RO → 두 HTTP 동일 최종 지도 → Shutdown·두 번째 Start 거절·소유 자원 부재를 확인했다. 원본·코드·설정은 보존됐다. 전체 callback·최적화 tail·물리 정확도·브라우저 픽셀·실시간 처리의 증명은 아니다.
 <!-- /ROOT_VECTOR_STARTUP_CURRENT -->
 
 <!-- ROOT_PROFILE_WHOLE_CLOSED_CURRENT -->
