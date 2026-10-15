@@ -2,27 +2,26 @@
 
 ## 현재 목표와 실행 순서 — 2026-10-15
 
-**ACTIVE / 미완료.** 실제 S2 2D LiDAR·raw IMU 원본으로 마지막 지도까지 이어지는 매핑과, 반복 실행할 수 있는 로컬 시뮬레이션 대시보드를 완성한다. 상세 완료 기준은 SIM의 `docs/CURRENT_MAPPING_GOALS.md`, 최신 실행 상태는 `codex-resume-20261013/CURRENT_CHECKPOINT.json`에 있다. 아래의 이전 체크포인트는 당시 기록으로 보존한다.
+**ACTIVE / 미완료.** 실제 RPLIDAR S2 2D LiDAR와 raw IMU로 기록 끝까지 이어지는 지도를 만들고, 반복 실행 가능한 로컬 시뮬레이션 대시보드를 완성한다. 완료 기준은 `docs/CURRENT_MAPPING_GOALS.md`, 실행 상태는 `codex-resume-20261013/CURRENT_CHECKPOINT.json`에 둔다.
 
-### 새로 실행해 확인한 결과
+### 실제 확인한 결과
 
-- [x] **공개 로컬 H6 전체 절차:** 원본 scan300+IMU597(897개)의 시각·CDR을 유지한 EOF와 수신 해시 일치 → 같은 요청의 실제 SDK Stop → RAW/WIRE/PENDING0·검증된 CLOSED → 두 클라이언트의 보관 지도 조회 → Shutdown·foreground exit0를 확인했다. snapshot4/history3, 67.85초. 소유 컨테이너·센서 parent·네트워크는 모두 정리됐고 원본·설정·소스는 그대로다. `ROOT_PUBLIC_H6_NATIVE_WORKFLOW_POSITIVE_20261015.json`.
-- [x] 실제 실행에서 발견한 Ready 파일명, DDS 공유 IPC, 임시 파일 삭제와 용량 검사 사이의 경쟁 조건, Windows→Linux Shutdown 파일 소유권 문제를 수정했다. 용량·RPC·종료 제한과 Linux private 파일 검사는 유지했다. 파일 검사 집중 검증은 Windows와 실제 Linux 임시 트리에서 통과했다.
-- [x] **저장 병목 구성요소 측정:** 같은 native 지도 commit이 Windows bind43.75초 / 일반 Linux volume12.60초였다. 한 번의 순차 측정이며 전체 지연의 원인이나 전체 실행 개선을 입증하지 않는다.
-- [x] 완료된 native 자료 순회 수정의 9개 SQL 집중 검증 통과. 종료된 V9의 잔류18개/119,058,550B는 저장 증빙 값이 일치하지만 native GC 작업표에는 없었다. 현재 참조가 없거나 삭제해도 된다는 증거는 아니며, 실시간 정리 개선은 아직 검증 전이다.
+- [x] 공개 H6 및 GC/PNG 코드 적용 후 H7: 원본 scan300+IMU597의 시각·CDR을 유지한 EOF/readback → 같은 요청의 typed Stop → RAW/WIRE/PENDING0·검증된 CLOSED → 두 HTTP 클라이언트의 동일 지도 → Shutdown·foreground exit0. H7 99.97초이며 H6 67.85초보다 빨라졌다고 주장하지 않는다.
+- [x] 센서 컨테이너 없이 H7 보관 지도 다시 열기: 별도 viewer, 두 클라이언트 snapshot4/history2 일치, 정상 Shutdown, 기존 CLOSED 증빙·catalog·보관 descriptor 보존, 소유 viewer·브라우저 프로세스 정리. `actual_public_standalone_retained_view_v1/RESULT.json`.
+- [x] GC 페이지 순회 수정의 SQL 집중 검증9개와 적용 후 짧은 SDK 실행 통과. 실제 참조·수명 검사를 유지하며 전체 실행 성능·회수 효과는 아직 미검증이다.
+- [x] PNG 저장/메타데이터 코드 및 합성 codec 검증. 실제 브라우저 저장은 미검증이다.
+- [ ] 자연 종료: 첫 실행은 작성 중인 결과 파일의 불변 SHA 검사로 실패했다. 두 번째는 Windows Python의 lstat/fstat ctime 의미 차이 때문에 Ready를 놓쳤다. 원본·제한을 유지한 수정으로 실제 재검증 중이며 두 실패를 보존한다.
+- [ ] 실제 브라우저 픽셀·pan/zoom·PNG: Computer Use가 현재 URL을 정책상 확인하지 못해 입력 전에 차단했다. HTTP 성공을 화면 검증으로 대체하지 않는다.
 
-### 다음 순서와 완료 판정
+### 완료할 순서
 
-- [ ] **1. 전체 원본의 마지막 지도:** 약523.8초/선택15,638개·보관17,671개 원본을 같은 제한으로 끝까지 처리하고, 마지막 고정 catalog의 실제 COMPLETE·최종 native/overview·정상 CLOSED·RAW0·자원 정리를 함께 확인한다. 기존 V9는 EOF·RAW0 후 catalog700 제출이 기존30초 예산에 실패했으므로 전체 목표는 아직 미완료다.
-- [ ] **2. 보관 지도·브라우저:** 센서 parent가 없어도 지도를 다시 열고, 실제 브라우저에서 pan/zoom·보관 전환·재접속 시 시점 유지·여러 클라이언트·작업 상태와 중단을 확인한다. H6의 두 HTTP 조회는 실제 픽셀 검증과 구분한다. 이전 짧은 V8의 headed 화면 성공도 새 제품의 성공으로 대신하지 않는다.
-- [ ] **3. 유한 저장소·성능:** 검토된 pagination을 실제 native 경로에 적용·검증하고, 선택적 일반 Linux hot-store를 검토한다. 기본 OFF, 기존512MiB 저장소·합산640MiB 작업 제한 유지, live reader·현재/이력 지도 보호, mapper 종료 뒤 RO viewer 전환을 확인한다. 원본 삭제나 무제한 캐시는 사용하지 않는다.
-- [ ] **4. SIM 통합:** 실제 같은-owner Stop·ZERO ACK·callback100ms·SDK Stop·RAW0·owner 종료를 함께 통과시킨다. 1080p/Q70의 실제 브라우저 decoded/visible30fps를 따로 검증한다. 기존 일곱 센서 화면 성공은 이 두 조건을 대신하지 않는다.
-- [ ] **5. 정확도·GPS:** SDK callback/최종 최적화 tail, 센서 축·TF·scan 시각, 독립 기준의 지도 오차를 검증한다. GPS는 원본 시각·수신기 UTC·품질이 검증된 경우에만 연결한다. native 위치 추정에는 wheel/PWM/truth/camera를 넣지 않는다.
-- [ ] **6. 마감:** 완료/미완료를 구분한 TODO·CLAUDE·증거·GitHub·NAS를 동기화하고 로컬 재개 절차를 남긴다.
+1. 짧은 원본의 자연 종료에서 마지막 native COMPLETE와 같은 published sequence, RAW0/CLOSED를 검증한다.
+2. 약523.8초 전체 원본의 선택15,638개·custody17,671개를 원래 순서·시각·CDR과 기존550/900/30/60/1100/1200초 예산 안에 처리한다. 마지막 native 작업·최종 지도·정상 종료를 함께 확인한다.
+3. GC 적용 전체 실행을 먼저 평가한다. 필요하면 기본 OFF Linux hot-store를 host+volume 합산640MiB 안에서 검증한다. 원본·현재/이력 지도·reader 보호를 유지한다.
+4. 공개 Start/Stop/조회/Shutdown 반복, UI 시점 유지·작업 상태/중단, SIM100ms ZERO ACK·정상 owner 종료, 1080p/Q70 실제 브라우저30fps를 각각 검증한다.
+5. SDK callback/최종 tail·물리 지도 정확도·GPS 시각/품질을 검증하고 TODO·CLAUDE·GitHub·NAS를 동기화한다. 현재 native 위치 추정에는 scan+raw IMU만 사용한다.
 
-### 현재 작업 경계
-
-현재 H6는 정상 종료됐으며 실행 중인 Root SDK 시험은 없다. 다음 실제 실행 때 CURRENT_CHECKPOINT의 runtime 상태를 먼저 확인한다. 이번 결과는 새 Jetson 배포·현재 보드 연결·실차 자율 주행 검증을 뜻하지 않는다. 실제 모터 출력·조종 활성화·펌웨어·장착 보정은 수행하지 않는다. 현장·하드웨어에서만 가능한 검증은 별도 항목으로 남긴다.
+실차 모터 출력·조종 활성화·펌웨어·장착 보정·새 Jetson 배포는 수행하지 않는다. 전체 지도·자율주행·30fps는 완료되지 않았다. 과거 기록은 아래에 그대로 보존한다.
 
 <!-- /ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
 
