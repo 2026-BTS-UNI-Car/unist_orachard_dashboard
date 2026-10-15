@@ -1,12 +1,18 @@
-<!-- ROOT_HOT_SHORT_POSITIVE_CURRENT -->
-## 최신 결과: Linux 저장 경로의 짧은 원본 통과
+<!-- ROOT_HOT_WHOLE_CLOSED_CURRENT -->
+## 최신 결과와 진행 목표 · 2026-10-15
 
-- [x] 원본897개 EOF/readback → 마지막 native-21-21 COMPLETE → RAW0·자연 CLOSED → 실제 mapper 부재 → 센서 parent 정상 종료 → 같은 volume을 실제 RO로 연 두 HTTP의 같은 최종 sequence → Shutdown을 통과했다(116.77초).
-- [x] 이른 viewer 시작과 보관 슬롯이 찬 두 번째 Start는 거절됐다. volume·슬롯은 보존됐고 소유 helper·source parent·network는 정리됐다. 합산 관찰22,786,745B/171파일.
-- [ ] 같은 저장 경로의 전체523.8초 시험이 진행 중이다. 실시간 지연·최종 최적화 tail·물리 정확도·새 UI 화면 검증은 아직 미완료다.
+목표는 실제 2D LiDAR·raw IMU 기록으로 지도를 끝까지 갱신하고, 같은 지도를 여러 클라이언트에서 이어 보는 로컬 환경을 완성하는 것이다. **ACTIVE / 미완료**이며 처리 지연과 전체 기록의 마지막 지도 완료가 최우선이다.
 
-근거: `codex-resume-20261013/actual_public_PC_original897_HOT_natural_workflow_v2/RESULT.json`. 검증된 코드와 소스 전용 후보를 구분하며 현재 배포/게시 상태는 `CURRENT_CHECKPOINT.json`을 따른다.
-<!-- /ROOT_HOT_SHORT_POSITIVE_CURRENT -->
+- [x] 짧은 원본897개에서 EOF/readback → 마지막 native-21-21 COMPLETE → RAW0·자연 CLOSED → 실제 mapper 종료 → 같은 Linux volume의 실제 읽기 전용 viewer → 두 HTTP의 같은 최종 지도 → Shutdown을 확인했다(116.77초). 보관 슬롯이 찬 두 번째 Start는 거절됐다.
+- [x] 전체523.804초 기록의 custody17,671개·scan5,243개·IMU10,395개를 끝까지 원본 순서·시각·CDR로 읽었다.
+- [ ] 전체 HOT 시험은 **실패**했다. 마지막 native-757-757이 기존30초 제한 내 끝나지 않았고 최종 RAW0·CLOSED·최종 지도는 입증하지 못했다. 실행603.18초, 원본·소스·설정 보존, 소유 helper·source·network 정리를 확인했다. volume·슬롯은 보존했다.
+- [ ] Linux 저장소만으로 지연은 해결되지 않았다. 후반 backend Submit 관찰 시각 대비 지도 나이 약37.15초가 관찰됐다. 이는 센서 시각 기준 지연 측정이 아니다. SQL 잠금·본문 검증·타일 준비·화면 합성을 분리 계측하고 실제 병목을 수정한다.
+- [x] 검증된 짧은 HOT 기능은 SIM `1a58a7c`, 실제 대시보드 문서는 `cdc121b`로 GitHub·NAS·SSD HEAD 일치와 package136개 파일의 원본 SHA256 일치를 확인했다. 이번 Jetson 배포는 없다.
+
+다음 순서: 기본 OFF 계측 후보 검토 → 실제 짧은 원본에서 계측·동작 검증 → 측정된 병목 수정 → 동일 전체 원본 재검증 → 지도 UI·SIM 정지·GPS 품질과 시각 검증. 완료 조건을 낮추거나 시간 제한을 늘려 통과시키지 않는다. 새 모터 출력·조종 활성화·펌웨어·장착 보정은 하지 않는다.
+
+근거: `codex-resume-20261013/ROOT_HOT_WHOLE523_FINAL_DEADLINE_NEGATIVE_20261015.json`, `ROOT_HOT_SHORT_V2_NATIVE_RW_TO_RO_POSITIVE_20261015.json`, `ROOT_HOT_PUBLICATION_20261015.json`. 재개 기준은 같은 폴더의 `CURRENT_CHECKPOINT.json`이다.
+<!-- /ROOT_HOT_WHOLE_CLOSED_CURRENT -->
 
 <!-- ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
 
