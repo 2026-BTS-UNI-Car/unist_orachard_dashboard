@@ -1,3 +1,21 @@
+<!-- ROOT_VECTOR_STARTUP_CURRENT -->
+## 현재 목표·체크포인트 — 2026-10-15 19:35 KST
+
+**목표 ACTIVE / 미완료:** 실제 RPLIDAR S2 2D LiDAR·raw IMU 기록이 마지막까지 연속된 지도로 이어지고, 반복 사용 가능한 로컬 시뮬레이션 대시보드에서 표시되게 한다. 원본 입력 수신·지도 작업 완료·표시 지연·물리 정확도는 각각 검증한다.
+
+- [x] 전체 523.804초 원본 입력 시험 한 회에서 17,671 custody / scan 5,243 + IMU 10,395의 EOF/readback, 마지막 승인 native-793 COMPLETE, RAW0/CLOSED, mapper 실제 종료, 같은 volume RO, 두 HTTP의 동일 최종 지도, Shutdown·자원 부재까지 확인했다. 이 결과는 안정적인 실시간 성능이나 전체 SDK callback·최적화 tail·물리 정확도의 증명이 아니다.
+- [x] 계측 v2 짧은 실행으로 overview가 주된 측정 CPU 비용임을 확인했다. scalar overview 11회 CPU47.84초. 기존 qualified vector 경로를 기본 OFF 설정으로 연결했고 실제 짧은 실행에서 활성 상태·정상 종료를 확인했다. 다른 작업량의 vector 실행 CPU14.93초 / 전체130.91초이므로 통제된 속도 향상으로 단정하지 않는다.
+- [x] 실제 scalar/vector adapter 합성 비교: 네 가지 회전·영역 조건의 descriptor·좌표 평면·압축 본문·페이지 동일, 입력 거절 세 경우, Stop·기존 lease 보존·thread 정리 검증 통과(18.36초). 실제 센서 정확도·브라우저 픽셀 검증과는 별개다.
+- [ ] 최신 전체 vector 시험은 센서 재생 전 시작40초 제한에서 실패했다. 노드는 약44초 후 준비됐으며, 대부분 지연은 actor 실행 이전이다. 모든 소유 helper/source/network 부재와 원본·코드·설정 보존을 확인했다. 실패를 보존하고, 기존 제한을 늘리지 않은 채 시작 단계별 비용을 조사한다.
+- [x] 같은 UI 세션의 수동 확대·이동 상태를 복원하고 지도 bounds가 바뀌어도 유지하는 수정 후보: pure-JS 검증9개·구문 검사·변경 범위 검토 통과. 아직 제품 적용·실제 화면 검증 전이다.
+- [ ] 다음 순서: 시작 지연 측정 및 수정 → 같은 전체 원본의 vector 실행 재검증 → 센서 시각부터 표시까지 지연 측정·개선 → 실제 full-sensor SIM 대시보드 연결 → 다중 접속·중단·반복 새 지도·확대 유지 검증.
+- [ ] 별도 미완료: 전체 SDK callback/최종 최적화 tail, SIM100ms ZERO ACK, 실제 브라우저1080p30fps, GPS 원본 시각·품질을 검증한 연계, 차량 자세/경로 표시와 물리 오차 검증.
+
+현재 로컬 package는0b801c4e / runtime0df64003(계측v2·vector 설정), GitHub/NAS의 최신 게시 package는c4c35156(계측v1)이다. 미게시 변경과 실행 증빙은 SSD 체크포인트에 보존했다. 새 PC SDK owner와 main full-sensor SIM 대시보드는 아직 실제 연결되지 않았다. scan+raw IMU만 위치 추정에 사용하며 GPS·카메라·PWM·truth를 검증 없이 넣지 않는다. Jetson 새 배포·모터·조종 활성화·펌웨어·장착 보정은 하지 않았다.
+
+재개 기준: `codex-resume-20261013/CURRENT_CHECKPOINT.json`, `ROOT_WHOLE_VECTOR_STARTUP_CLOSED_20261015.json`, `ROOT_VECTOR_STARTUP_TIMES_20261015.json`. 실제 실행은 현재 없음. 뒤쪽 과거 체크포인트보다 이 최신 블록과 machine checkpoint를 우선한다.
+<!-- /ROOT_VECTOR_STARTUP_CURRENT -->
+
 <!-- ROOT_PROFILE_WHOLE_CLOSED_CURRENT -->
 ## 최신 체크포인트 · 전체 입력·종료 경로 통과, 실시간 성능 미완료
 
