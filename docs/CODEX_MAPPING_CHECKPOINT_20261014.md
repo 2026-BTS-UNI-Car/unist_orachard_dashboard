@@ -14,6 +14,16 @@ S2 2D LiDAR와 raw IMU만으로 지도 처리가 기록 끝까지 이어지고, 
 - [x] 계측은 기본 OFF다. SQL 잠금 대기와 잠금 안 실제 질의, NumPy 바인딩 검사·청크 검사·계산을 분리했다. SQL·인덱스·지도 알고리즘·검증·자원 한도·정지 조건은 바꾸지 않았다.
 - [x] 이전 공개 package877d0311/runtimebf606de0의 정지 상태 유한 통합 시험129.34초는 네 센서 WS, 동일 지도 두 HTTP 조회, 실제 Stop·RAW0/CLOSED·자원 정리를 통과했다. GitHub·NAS의 원본 바이트도 확인했다. 이것은 조종 가능한 지속 대시보드나30fps 화면 검증이 아니다.
 
+### 진행 중인 다음 변경 — 아직 게시 전
+
+- [x] package79b5b6ff/runtime9100cbdd에서 catalog의 전체 CAS 해시 검증을 SQL 잠금 밖으로 옮겼다. coordinator 잠금·활성 draft/receipt 보호·전체 SHA·최종 Stop fence와 commit은 유지한다. SQLite·동시 조회·실패 checksum26개와 별도 소스 검토를 통과했다.
+- [x] 가상 수동 조종 OFF 분기를 포함한 기존 정지 시험126.06초 통과: 네 센서 WS·같은 native73/snapshot42 지도·Stop·RAW0/CLOSED·자원 정리. 실제 닫힌 보고서의72타일 COMPLETE 작업은2.02초/SQL 대기0.255초였지만, Stop 중단 작업에는2.59초 대기가 남았다. 전체 실시간 성능 완료로 보지 않는다.
+- [x] 별도 `--simulate-fullsensor-manual`의 실제 가상 조종 검사:25%·2초·50개 명령으로 시뮬레이터 좌표0.259m 이동, 두 번째 조종자 차단, release/입력 만료/재활성화/STOP 출력0 관찰. sink의 만료 검출 지연은2.627ms였지만 hard realtime이나 실차 제동 검증이 아니다. 이 실행 전체는 Docker 자원 조회3초 timeout으로 실패했으며 증거·지도·정상 CLOSED·정리 결과를 따로 보존했다.
+- [x] 같은 코드의 조종 기능 ON 통합 재검사는130.60초에 네 센서 WS·동일 지도·실제 가상Stop·native RAW0/CLOSED·자원 정리를 통과했다. 이때 별도 ROS 관찰기는 위치 메시지 발견이 늦어 입력 전 실패했다. 따라서 같은 실행의 움직이는 지도 검증은 아직 미완료다.
+- [x] 재실행 가능한 공개 회귀 추가: 가상 조종12개·JS5개·SQLite 동시 조회13개, 기존11개도 통과했다. 기존 정지 명령과45초 관찰/전체300초 한도를 유지한다.
+- [ ] 중복 Docker 자원 조회를 없애고 기존 native 부모의 같은1Hz 사용량 측정을 공유하도록 준비 중이다. 독립 관찰기의 준비 시간도 전체15초 내에서 재배분해 이동·지도·Stop을 한 실행에서 다시 확인한다. 기록된 실패를 성공으로 바꾸거나 native 한도를 늘리지 않는다.
+- [x] 직전 package76f43f75의 GUI/계측 변경은 SIM e8543580, 실차 문서만1b5f8f7f로 GitHub와 NAS에 반영했고159개 raw SHA를 대조했다. 현재79b5b6ff의 수동 조종/SQL 변경은 아직 로컬 검증 중이다.
+
 ### 현재 우선순위와 남은 완료 조건
 
 1. [x] GUI 정리+새 계측을 합친 package76f43f75/runtimec2f1dbae의 실제 통합 시험은123.63초에 통과했다. 네 센서 WS, 두 클라이언트의 동일 native68/snapshot33 지도, 실제 Stop·RAW0/CLOSED·소유 자원 정리를 확인했다. 첫 Docker 조회3초 timeout 실패도 그대로 보존했다. 한도·판정 기준은 늘리지 않았다.
