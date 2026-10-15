@@ -1,27 +1,38 @@
+<!-- ROOT_HOT_SHORT_POSITIVE_CURRENT -->
+## 최신 결과: Linux 저장 경로의 짧은 원본 통과
+
+- [x] 원본897개 EOF/readback → 마지막 native-21-21 COMPLETE → RAW0·자연 CLOSED → 실제 mapper 부재 → 센서 parent 정상 종료 → 같은 volume을 실제 RO로 연 두 HTTP의 같은 최종 sequence → Shutdown을 통과했다(116.77초).
+- [x] 이른 viewer 시작과 보관 슬롯이 찬 두 번째 Start는 거절됐다. volume·슬롯은 보존됐고 소유 helper·source parent·network는 정리됐다. 합산 관찰22,786,745B/171파일.
+- [ ] 같은 저장 경로의 전체523.8초 시험이 진행 중이다. 실시간 지연·최종 최적화 tail·물리 정확도·새 UI 화면 검증은 아직 미완료다.
+
+근거: `codex-resume-20261013/actual_public_PC_original897_HOT_natural_workflow_v2/RESULT.json`. 검증된 코드와 소스 전용 후보를 구분하며 현재 배포/게시 상태는 `CURRENT_CHECKPOINT.json`을 따른다.
+<!-- /ROOT_HOT_SHORT_POSITIVE_CURRENT -->
+
 <!-- ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
 
 ## 현재 목표와 실행 순서 — 2026-10-15
 
-**ACTIVE / 미완료.** 실제 RPLIDAR S2 2D LiDAR와 raw IMU로 기록 끝까지 이어지는 지도를 만들고, 반복 실행 가능한 로컬 시뮬레이션 대시보드를 완성한다. 완료 기준은 `docs/CURRENT_MAPPING_GOALS.md`, 실행 상태는 `codex-resume-20261013/CURRENT_CHECKPOINT.json`에 둔다.
+**ACTIVE / 미완료.** RPLIDAR S2 2D LiDAR·raw IMU로 기록 마지막까지 지도를 만들고, 반복 실행 가능한 로컬 시뮬레이션 대시보드를 완성한다. 완료 기준은 `docs/CURRENT_MAPPING_GOALS.md`, 실제 실행 상태는 `codex-resume-20261013/CURRENT_CHECKPOINT.json`이다.
 
-### 실제 확인한 결과
+### 검증된 결과와 현재 실패
 
-- [x] 공개 H6 및 GC/PNG 코드 적용 후 H7: 원본 scan300+IMU597의 시각·CDR을 유지한 EOF/readback → 같은 요청의 typed Stop → RAW/WIRE/PENDING0·검증된 CLOSED → 두 HTTP 클라이언트의 동일 지도 → Shutdown·foreground exit0. H7 99.97초이며 H6 67.85초보다 빨라졌다고 주장하지 않는다.
-- [x] 센서 컨테이너 없이 H7 보관 지도 다시 열기: 별도 viewer, 두 클라이언트 snapshot4/history2 일치, 정상 Shutdown, 기존 CLOSED 증빙·catalog·보관 descriptor 보존, 소유 viewer·브라우저 프로세스 정리. `actual_public_standalone_retained_view_v1/RESULT.json`.
-- [x] GC 페이지 순회 수정의 SQL 집중 검증9개와 적용 후 짧은 SDK 실행 통과. 실제 참조·수명 검사를 유지하며 전체 실행 성능·회수 효과는 아직 미검증이다.
-- [x] PNG 저장/메타데이터 코드 및 합성 codec 검증. 실제 브라우저 저장은 미검증이다.
-- [ ] 자연 종료: 첫 실행은 작성 중인 결과 파일의 불변 SHA 검사로 실패했다. 두 번째는 Windows Python의 lstat/fstat ctime 의미 차이 때문에 Ready를 놓쳤다. 원본·제한을 유지한 수정으로 실제 재검증 중이며 두 실패를 보존한다.
-- [ ] 실제 브라우저 픽셀·pan/zoom·PNG: Computer Use가 현재 URL을 정책상 확인하지 못해 입력 전에 차단했다. HTTP 성공을 화면 검증으로 대체하지 않는다.
+- [x] 공개 H6/H7: 원본 scan300+IMU597의 EOF·CDR readback → 같은 typed Stop → RAW/WIRE/PENDING0·CLOSED → 두 HTTP의 같은 지도 → Shutdown·foreground exit0. GC/PNG 적용 후 H7도 통과했으나 H7 99.97초 / H6 67.85초이므로 속도 향상으로 해석하지 않는다.
+- [x] 센서 parent 없이 H7 보관 지도 다시 열기: 별도 viewer, 두 HTTP snapshot4/history2 일치, 정상 Shutdown, 기존 CLOSED 증빙·catalog·descriptor 보존과 소유 자원 정리 확인.
+- [x] GC 페이지 순회 SQL 집중 검증9개·PNG codec 검증3개·standalone admission 합성 검증47개. 실제 UI/PNG 저장은 아직 미검증이다.
+- [x] 짧은 원본 자연 종료의 핵심: 마지막 native-14-14 COMPLETE·RAW0·검증된 자연 CLOSED·보관 조회 단계·Shutdown 확인. 단, 검증 스크립트 최종 결과 저장의 변수명 충돌로 전체 시험은 실패 처리했고 복구 관찰 증거만 별도 보존했다.
+- [x] **전체 원본 입력·수신:** 약523.8초의 custody17,671개, LiDAR5,243개·IMU10,395개, 선택15,638개가 원래 순서·시각·CDR 그대로 EOF/readback을 통과했다.
+- [ ] **최신 전체 V2는 실패:** 마지막 native-914-914가 기존30초 작업 제한 내 완료되지 않았다. 이번 실행의 정상 RAW0/CLOSED·최종 지도는 확인되지 않았다. 원본·소스·설정 보존, source exit0, 소유 helper·source parent·network 부재를 확인했다. 최고 합산526,784,016B/1,568파일로 용량 제한 초과는 아니었다. `ROOT_PUBLIC_WHOLE523_V2_CLOSED_FINAL_DEADLINE_NEGATIVE_20261015.json`.
+- [ ] 실제 브라우저 pan/zoom·PNG는 Computer Use가 URL 정책 검토에서 입력 전에 차단해 검증하지 않았다. HTTP 성공을 픽셀 성공으로 대체하지 않는다.
 
-### 완료할 순서
+### 다음 실행과 마감 기준
 
-1. 짧은 원본의 자연 종료에서 마지막 native COMPLETE와 같은 published sequence, RAW0/CLOSED를 검증한다.
-2. 약523.8초 전체 원본의 선택15,638개·custody17,671개를 원래 순서·시각·CDR과 기존550/900/30/60/1100/1200초 예산 안에 처리한다. 마지막 native 작업·최종 지도·정상 종료를 함께 확인한다.
-3. GC 적용 전체 실행을 먼저 평가한다. 필요하면 기본 OFF Linux hot-store를 host+volume 합산640MiB 안에서 검증한다. 원본·현재/이력 지도·reader 보호를 유지한다.
-4. 공개 Start/Stop/조회/Shutdown 반복, UI 시점 유지·작업 상태/중단, SIM100ms ZERO ACK·정상 owner 종료, 1080p/Q70 실제 브라우저30fps를 각각 검증한다.
-5. SDK callback/최종 tail·물리 지도 정확도·GPS 시각/품질을 검증하고 TODO·CLAUDE·GitHub·NAS를 동기화한다. 현재 native 위치 추정에는 scan+raw IMU만 사용한다.
+1. Linux 저장 경로를 기본 OFF 선택 옵션으로 연결했다. 소스 검토·합성 controller12개·실제 Linux 임시 FD 집중 검증7개를 통과했다. 현재 로컬 package51d00002이며 GitHub/NAS의 검증된 package는 d98747e4다. 실제 RW mapper → 정상 CLOSED → 원래 sensor parent를 소유자가 종료 → 같은 volume의 RO viewer → 두 HTTP → Shutdown은 아직 미검증이다.
+2. 기본 OFF 회귀 시험은 긴 호스트 경과시간으로 실패했고 별도 복구로 자원을 정리했다. 원인은 미확정이다. 첫 hot-store 시험도 시작 전 GUI 준비 파일 경로와 시작 후 hostname 검사에서 실패했다. controller만 수정해 짧은 원본부터 다시 검증한 뒤 전체523.8초를 재검증한다. 원래550/900/30/60/1100/1200초와 backend512MiB·합산640MiB/8192파일을 늘리지 않는다. volume·한 보관 슬롯은 의도적으로 남기며 자동 삭제/내보내기는 없다.
+3. 전체 기록의 마지막 native COMPLETE와 같은 최종 지도, 정상 RAW0/CLOSED·자원 정리를 함께 확인한다. 마지막 이전 지도를 최종 지도처럼 표시하지 않는다. 입력 EOF와 실시간 표시 성능은 별도 판정한다.
+4. 공개 반복 조작·시점 유지·작업 상태/중단, SIM100ms ZERO ACK·정상 owner 종료, 1080p/Q70 실제 브라우저30fps를 각각 검증한다.
+5. SDK callback/최종 tail·물리 지도 오차·GPS 시각/품질을 검증하고 TODO·CLAUDE·GitHub·NAS를 동기화한다. 현재 native 위치 추정 입력은 scan+raw IMU만 사용한다.
 
-실차 모터 출력·조종 활성화·펌웨어·장착 보정·새 Jetson 배포는 수행하지 않는다. 전체 지도·자율주행·30fps는 완료되지 않았다. 과거 기록은 아래에 그대로 보존한다.
+검증된 GC/PNG/standalone은 SIM c721277 (pre-HOT), 실제 dashboard 문서는68e9f17로 GitHub와 NAS에 반영했고 NAS132개 소스 SHA가 일치한다. 새 hot-store 코드는 로컬 적용·검증 중이며 아직 게시하지 않았다. 다른 작업자의 NAS 수정은 보존한다. 실차 모터·조종 활성화·펌웨어·장착 보정·새 Jetson 배포는 수행하지 않는다. 전체 지도·자율주행·30fps는 미완료다. 아래 이전 기록은 보존한다.
 
 <!-- /ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
 
