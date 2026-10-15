@@ -27,6 +27,8 @@
 실제 모터 출력·arm·펌웨어·장착 보정·새 Jetson 배포·SSH는 이번 계속 작업에서 하지 않는다. Jetson 설치 정보는 과거 관찰이며 현재 접속 확인이 아니다. Root만 실제 Docker/SDK/ROS/Chrome/컴파일/Git/NAS 작업을 수행하며 무거운 시험은 직렬로 실행한다. 병렬 작업은 소스와 종료된 증거 검토만 맡긴다. 원본·실패 결과·기존 한도·소유권과 신선도 검사는 보존한다.
 
 최신 증거: `ROOT_WHOLE33_EOF_POSITIVE_PRESSURE_DRAIN_NEGATIVE_20261015.json`, `ROOT_JOINT9_CLOSED_FRESHNESS_NEGATIVE_20261015.json`, `ROOT_ACTUAL_PREOWNED_FIX_COMMON_AGGREGATE_JOINED_POSITIVE_20261015.json`. 새 짧은 V8은 통과했다. 전체 V9는 EOF·RAW0 뒤 마지막 제출에 실패했다. 최종 상태는 CURRENT_CHECKPOINT.json을 따른다.
+
+- [x] **로컬 실행 코드·빌드·조회 뷰어:** SIM 저장소 `tools/native_mapping_pc`에 시작/상태/중지/저장 지도 열기 소스143개를 추가했다. 현재 C0 SDK97개 파일을 읽기 검증해 무시된 로컬 캐시로 가져오고 새 C++ actor ab09382b를 실제 빌드했다(기본 OFF·라이브러리 연결·빌드 컨테이너 정리 통과). 별도 뷰어의 실제 Linux SQLite/CAS/두 GET/종료7개와 표시·확대15개 시험도 통과했다. **결합 Start→Stop→보관 지도 브라우저는 아직 검증 전**이다. 전체 기록의 저장 병목·용량 문제도 미완료다. `ROOT_PUBLIC_SOURCE_FRESH_BUILD_AND_RETAINED_FIXTURE_20261015.json`.
 <!-- /ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
 
 <!-- ROOT_ORDERED_GOAL_20261015_1930 -->
