@@ -18,7 +18,7 @@
 2. [ ] 후반 overview 병목과 원본 시각→처리→저장→표시 지연을 줄인다. 현재 overview 최대30.84초이므로 실시간 완료가 아니다. 이동 중 지도 연속성과 여러 환경의 정확도를 확인한다.
 3. [ ] 명시적 보관/내보내기/슬롯 해제와 반복 새 지도, 여러 클라이언트의 상태·중단·새 세션 전환을 완성한다. 기존 지도/volume을 자동 삭제하지 않는다.
 4. [ ] 실제 브라우저 pan/zoom·PNG·재접속,1080p/Q70 decoded/visible30fps, SIM100ms ZERO ACK와 정상 종료, GPS 원본 시각·품질을 검증한다. Computer Use는 이 턴의 URL 정책 검증에서 중단됐으므로 픽셀 검증은 미완료다.
-5. [ ] 새 package877d0311/runtimebf606de0(154개 raw 소스)와 결과를 GitHub·NAS에 게시하고 SHA를 확인한다. 직전 게시본은 SIMc833cb7/실차 문서7d6ddff(package141e8ed2,139개)다. 게시 완료 여부는 compact checkpoint의 publication을 확인한다.
+5. [x] package877d0311/runtimebf606de0을 SIM4731099/실차 문서157754f로 GitHub·NAS에 게시했다. NAS의154개 소스와 runtime 전이 의존성159개 raw SHA, 원래 수정돼 있던 NAS 파일의 보존을 확인했다. Jetson 배포는 하지 않았다. 이후 문서 커밋은 compact publication에서 확인한다.
 
 재개 파일: `codex-resume-20261013/RESUME_FIRST_CURRENT.json`. 최신 실행 증거: `ROOT_PUBLIC_FULLSENSOR_PORTABLE_FINAL_CLOSED_POSITIVE_20261015.json`. 이전 실패 자료도 보존했다.
 
