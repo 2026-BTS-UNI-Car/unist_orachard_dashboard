@@ -10,11 +10,12 @@
 - [x] 짧은 기록의 마지막 두 갱신은 1.93초/0.91초, SQL 대기는 0.93초/0.32초로 관측됐다. 앞선 preflight 기록의 마지막 두 갱신은 3.84초/5.95초였다. 서로 다른 실제 작업의 관측이며 전체 구간 p50/p95나 센서 신선도 측정으로 해석하지 않는다.
 - [ ] 전체 기록의 최신 두 작업 계측: native-680-680 상태 DEFERRED: 갱신 30.04초, SQL 대기 13.70초, 타일 2027개 / native-776-776 상태 COMPLETE: 갱신 11.36초, SQL 대기 1.73초, 타일 2564개. 갱신 계측은 Linux 단조시계 기준이다. 수치와 성공 종료만으로 지속적인 실시간 성능·정확도 완료를 선언하지 않는다. 앞선 실패 시험의 30초 작업 제한 초과도 보존하며 파일/계산/owner fence/SQL 경로를 계속 줄인다.
 - [x] 이전 가상 수동 주행 v20은 0.2556m 이동/소유권 해제/입력 공백 정지/만료 티켓 거부/재활성화/STOP을 검증했다. v21 operator는 90.21초 관찰 후 실제 CLI Stop과 정상 지도 종료를 검증했다. 현재도 조종 코드와 100ms 기준은 같다. 이전 간헐 지연 실패를 보존하며 장시간 조종 안정성은 미완료다.
-- [ ] 지도 전체 내보내기·독립 복사본 검증·명시적 슬롯 해제·반복 새 지도를 구현한다. Windows OS 잠금은 실제 프로세스 경쟁/죽은 소유자 복구 등 7개와 별도 동일 프로세스 중첩 거부를 검증했지만 아직 제품에 적용하지 않았다. 보관 복사 모듈은 새 private staging만 만들며 commit/release/delete 권한은 없다. 실제 보관 실행과 target-only 검증은 다음 단계다. 자동 삭제·자동 슬롯 롤오버는 하지 않는다.
+- [x] private 지도 보관 복사 컴포넌트를 실제 읽기 전용 지도 볼륨으로 검증했다. 원본/복사본 전체 해시와 CAS를 대조해 139개 파일·22,582,747바이트를 22.29초에 복사했다. Windows pool 읽기 전용/새 stage 쓰기 전용 별칭의 같은 inode와 Linux directory fsync도 통과했다. 기존 메타데이터·capability 17개는 그대로였고 테스트 컨테이너는 정리했다. 처음의 소스 검사 오탐과 누락 hmac import 실패는 보존했으며, 실패했던 빈 폴더도 삭제하지 않았다.
+- [ ] 보관 기능은 아직 제품 CLI에 미적용이다. 별도 target-only 읽기 전용 검증·Windows commit·명시적 슬롯 해제·새 지도 반복이 남았다. 현재 복사본은 archive_committed=False / release_eligible=False이며 원본 지도 볼륨을 유지한다. Windows OS 잠금은 실제 작은 프로세스 검증 7개와 별도 중첩 거부를 통과했지만 Start/view 경로 통합은 미완료다. 자동 삭제·자동 슬롯 롤오버는 하지 않는다.
 - [ ] 이동·회전·일반 도로·과수원 지도의 지속 속도와 정확도, 확대 유지·PNG·재접속·브라우저 픽셀, 1080p 실제 디코딩 30fps, GPS 원본 시각/품질을 검증한다. core/최종 최적화·다른 날짜 데이터·현장 자율주행은 별도 미완료 항목이다.
 - [ ] Windows Computer Use는 이전 URL 검증 실패 이후 픽셀 검증을 완료하지 못했다. HTTP 응답 성공을 화면 렌더링 성공으로 보고하지 않는다.
 
-근거: `docs/STREAM_SHORT_SQL_QUALIFICATION_20261016.json`, 이전 `docs/STREAM_PREFLIGHT_QUALIFICATION_20261016.json`, `docs/OPERATOR_SIMULATION_QUALIFICATION_20261016.json`. 재개 기준: `codex-resume-20261013/RESUME_FIRST_CURRENT.json`. 로컬 적용·GitHub/NAS 게시·Jetson 설치를 구분한다. 위치 추정에는 scan+raw IMU만 사용하며 camera/GPS/PWM/wheel/truth를 몰래 섞지 않는다. 목표는 활성 상태로 유지하고 다음 미완료 항목을 계속 진행한다.
+근거: `docs/ARCHIVE_EXPORT_COMPONENT_QUALIFICATION_20261016.json`, `docs/STREAM_SHORT_SQL_QUALIFICATION_20261016.json`, 이전 `docs/STREAM_PREFLIGHT_QUALIFICATION_20261016.json`, `docs/OPERATOR_SIMULATION_QUALIFICATION_20261016.json`. 재개 기준: `codex-resume-20261013/RESUME_FIRST_CURRENT.json`. 로컬 적용·GitHub/NAS 게시·Jetson 설치를 구분한다. 위치 추정에는 scan+raw IMU만 사용하며 camera/GPS/PWM/wheel/truth를 몰래 섞지 않는다. 목표는 활성 상태로 유지하고 다음 미완료 항목을 계속 진행한다.
 <!-- /ROOT_VECTOR_STARTUP_CURRENT -->
 
 <!-- ROOT_PROFILE_WHOLE_CLOSED_CURRENT -->
