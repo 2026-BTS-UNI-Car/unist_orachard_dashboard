@@ -1,5 +1,10 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
 
+- [x] 2026-10-16 종료 표시 수정(package `523613e4` / runtime `4a70cdd5`)을 실제 짧은 재생과 Chrome에서 검증했다. 같은 세션의 실제 종료 증거를 받은 뒤에만 읽기 전용/종료됨으로 바뀐다. 마지막 native sequence 39 / snapshot 23이 보관 결과·화면과 일치했고, 실제 휠로 확대한 카메라를 유지했으며 Stop 버튼이 비활성화됐다. 원본/SDK/매핑/실차 출력은 변경하지 않았다. 근거: `docs/NATIVE_CLOSE_HANDOFF_QUALIFICATION_20261016.json`.
+- [x] 검증한 보관 SQL 변경은 GitHub SIM `59dbd25c`, 실차 문서 `2e2d6658`와 NAS에 저장했다. `retention-preflight-published-20261015T205654Z`의 자료 64개와 raw source 168개를 검증했다. 새 종료 표시의 전체 재생은 아직 미실행이며, 이전 전체 재생은 parent package `ff2bf75b`의 결과로 구분한다.
+- [ ] 다음 우선순위는 실제 SQL 잠금 보유자 계측/해결, 최신 제품 전체 재생·GUI Stop·여러 클라이언트, 보관 commit/명시적 슬롯 해제/새 지도 반복, 일반 도로/과수원 정확도, 전체 센서 시뮬레이션이다. 보관 commit 후보는 별도 소스와 NAS에만 있으며 아직 실행하지 않았다. 실제 모터·조종 활성화·Jetson 배포는 하지 않는다.
+
+
 - [x] 2026-10-16 보관 파일 SQL 개선(package `ff2bf75b` / runtime `3db1402d`)의 짧은 재생과 전체 523.804초 원본 재생이 정상 종료했다. 전체 마지막 native 844 / snapshot 41이 저장 지도·읽기 전용 재열기·두 HTTP·실제 Chrome native 지도와 일치했다. RAW0/CLOSED, 원본 보존, Shutdown, 소유 실행 자원 정리를 확인했다. 근거: `docs/RETENTION_SQL_PREFLIGHT_QUALIFICATION_20261016.json`.
 - [ ] 속도 개선 완료로 세지 않는다. 전체 실행은 이전 655.61초→이번 664.03초였다. 작업 합치기/호출 수가 달라 전체 SHA 합계 222.31→152.40초와 overview 합계 490.48→436.46초만으로 개선 원인을 단정할 수 없다. 마지막 직전 overview는 30.05초 중 SQL 진입 대기 26.64초, 타일 stat/read/SHA 0.48초, vector math 1.58초였다. 정확한 잠금 보유자를 계측하고 해결해야 한다. 마지막 전체 요약의 DEFERRED도 보존하며 native 최종 지도 검증과 구분한다.
 - [x] 정상 종료 화면 후보를 독립 검토하고 순수 JS 31개·Python 9개를 통과했다. 연결 실패만으로 종료를 선언하지 않고 같은 세션의 실제 종료 증거를 요구한다. 표시한 지도와 종료 시 보관 지도가 다를 수 있음을 따로 안내한다. 아직 소스 후보이며 제품 적용·실제 종료 HTTP/브라우저 검증은 미완료다.
