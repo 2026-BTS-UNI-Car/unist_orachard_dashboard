@@ -16,8 +16,8 @@
 ### 다음 작업 — 이 순서로 진행
 
 - [x] **1. 새 짧은 원본 후보 V8:** 실제 원본897개 EOF·readback, 마지막 고정 카탈로그47의 실제 재제출·COMPLETE/snapshot12, RAW/WIRE/PENDING0·정상 종료, 동일 소유자 두 HTTP 클라이언트와 실제 headed 브라우저의 native/overview 지도 표시·자원 정리를 확인했다. 새 c319/f54e 실행 파일과 조회 묶음을 실제 검증했고 최종 overview는1.14초/작업 스레드CPU0.70초였다. 화면 번짐은 남아 정확도 미검증이다. `ROOT_SHORT8_FROZEN_CATALOG_POSITIVE_AND_CLOSED36M_PARITY_20261015.json`.
-- [ ] **2. 전체 원본과 최종 화면:** V6는15,638개 센서/17,671개 보존 입력의 EOF·readback, RAW0·native 정상 종료까지 통과했으나 마지막 제출598이 기존566 작업 때문에 거부됐고 최종36.4M셀 overview도30초 안에 끝나지 않았다. 최신 V8 짧은 시험에서 마지막 카탈로그의 안전한 재제출이 통과했다. 같은 후보의 전체 기록·최종 화면을 재검증한다. 별도 닫힌36.135M셀 비교에서 원본1543파일 불변과 지도 fingerprint 일치, SQL2390회→75회를 확인했으나 전체 시간은9.17→9.27초여서 오프라인 속도 개선을 주장하지 않는다.
-- [ ] **3. 연속성·정확도:** 전체 SDK callback과 최적화 tail, 정합·원거리 겹침·진행 방향·Stop 뒤 지도 유지·재생 일시정지·사용자 확대 유지·여러 클라이언트를 구분해 확인한다. IMU↔LiDAR identity TF는 미측정 가정이다. GPS는 원본 시각·품질이 검증된 경우에만 사용하고, 휠/가상truth/PWM/카메라는 native 위치 추정 입력으로 쓰지 않는다. 현재 Node는 capture를 닫은 뒤 destructor에서 trajectory를 끝내며 RunFinalOptimization은 호출하지 않는다. 따라서 현재 마지막 COMPLETE가 최종 최적화 tail까지 포함한다는 증거는 없다. 실제 SDK ingress/post-Add/skip 계측은 별도 새 SDK 소스로 준비하며 현재 C0 실행에 섞지 않는다.
+- [ ] **2. 전체 원본·실시간 저장·최종 화면:** 최신 V9는15,638개 센서/17,671개 보존 입력의 EOF·readback과 RAW/WIRE/PENDING0을 확인했으나 기존 native668 작업이 점유해 마지막 고정 카탈로그700을30초 안에 제출하지 못했다. actor는 실패를 반환하고 자원을 정리했으며 최종 브라우저는 시작하지 않았다. 짧은 V8 통과·overview SQL2390→75와 별개로 native 저장 작업이 병목이다. 닫힌 V6에서는 하나의 작업이 최소73.26초 동안 다음 제출을 막았다(순수 commit 시간이라는 뜻은 아님). 파일 기록·동기화·SQL·계산을 분리 측정하고 같은 한도로 전체 기록을 다시 검증한다. `ROOT_LONG9_EOF_RAW0_POSITIVE_FINAL_ADMISSION_NEGATIVE_20261015.json`.
+- [ ] **3. 연속성·정확도:** 전체 SDK callback과 최적화 tail, 정합·원거리 겹침·진행 방향·Stop 뒤 지도 유지·재생 일시정지·사용자 확대 유지·여러 클라이언트를 구분해 확인한다. IMU↔LiDAR identity TF는 미측정 가정이다. GPS는 원본 시각·품질이 검증된 경우에만 사용하고, 휠/가상truth/PWM/카메라는 native 위치 추정 입력으로 쓰지 않는다. 현재 Node는 capture를 닫은 뒤 destructor에서 trajectory를 끝내며 RunFinalOptimization은 호출하지 않는다. 따라서 현재 마지막 COMPLETE가 최종 최적화 tail까지 포함한다는 증거는 없다. 실제 SDK ingress/post-Add/skip 계측은 별도 새 SDK 소스로 준비하며 현재 C0 실행에 섞지 않는다. 실제 SDK 헤더 GetCellCenter/Rigid3와 현재 웹 계산의40개 수치 비교는 통과했다(셀 중심 오차0, 지도 좌표 최대1.8e-15m). 이는 수식 비교이며 실센서·장착·지도 정확도를 보증하지 않는다. `ROOT_ACTUAL_SDK_HEADER_JS_GEOMETRY40_POSITIVE_20261015.json`.
 - [ ] **4. 시뮬레이션 통합 Stop:** 결합 후보4b33에서 실제 동일 Stop→SDK 정지·RAW0·native 정상 종료·브라우저 캔버스·자원 정리를 확인했으나 마지막 owner close ZERO ACK는 실패했다. 새 계측 후보48e2는 그보다 앞선 Stop ZERO/콜백100ms 검사에서 실패해 native close가 검증되지 않았다. 없는 close 메타데이터가 terminal 수집까지 막는 오류도 발견해 새 소스로 보완했다. 최초 실패와 정리 오류를 구분하고100ms 기준은 유지한다. 기존 두 실패는 보존했다.
 - [ ] **5. 로컬 제품 실행과 성능:** 반복 Start/Stop·작업 상태/중단·실시간 우선순위·유한 저장소·여러 기기 접속·실제 로컬 시작 명령을 검증한다. 카메라1080p/Q70은 확인했지만 전체 센서 SIM의 decoded25.64fps/최근27.28fps는30fps 목표 미달이다. 느린 회선용 기본 전송 한도는 유지한다.
 - [ ] **6. 마감:** 소프트웨어 완료와 현장 필요 항목을 구분하여 TODO·CLAUDE.md·증거·GitHub·NAS를 갱신한다. 10/10·10/03 전체 및9/10 장착 차이, GPS 품질·시각, 현장 제동·저속 제어·오프라인 GNSS 시간·원본 SSD 백업은 관측 범위에 맞게 기록한다.
@@ -26,7 +26,7 @@
 
 실제 모터 출력·arm·펌웨어·장착 보정·새 Jetson 배포·SSH는 이번 계속 작업에서 하지 않는다. Jetson 설치 정보는 과거 관찰이며 현재 접속 확인이 아니다. Root만 실제 Docker/SDK/ROS/Chrome/컴파일/Git/NAS 작업을 수행하며 무거운 시험은 직렬로 실행한다. 병렬 작업은 소스와 종료된 증거 검토만 맡긴다. 원본·실패 결과·기존 한도·소유권과 신선도 검사는 보존한다.
 
-최신 증거: `ROOT_WHOLE33_EOF_POSITIVE_PRESSURE_DRAIN_NEGATIVE_20261015.json`, `ROOT_JOINT9_CLOSED_FRESHNESS_NEGATIVE_20261015.json`, `ROOT_ACTUAL_PREOWNED_FIX_COMMON_AGGREGATE_JOINED_POSITIVE_20261015.json`. 새 짧은 V8은 통과했다. 전체 V6는 네이티브 종료만 통과했고 최종 화면은 실패했다. 최종 상태는 CURRENT_CHECKPOINT.json을 따른다.
+최신 증거: `ROOT_WHOLE33_EOF_POSITIVE_PRESSURE_DRAIN_NEGATIVE_20261015.json`, `ROOT_JOINT9_CLOSED_FRESHNESS_NEGATIVE_20261015.json`, `ROOT_ACTUAL_PREOWNED_FIX_COMMON_AGGREGATE_JOINED_POSITIVE_20261015.json`. 새 짧은 V8은 통과했다. 전체 V9는 EOF·RAW0 뒤 마지막 제출에 실패했다. 최종 상태는 CURRENT_CHECKPOINT.json을 따른다.
 <!-- /ROOT_NATIVE897_CLOSED_CURRENT_OCT15 -->
 
 <!-- ROOT_ORDERED_GOAL_20261015_1930 -->
