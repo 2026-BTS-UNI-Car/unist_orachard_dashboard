@@ -1,27 +1,28 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
-## 현재 목표와 체크포인트 — 지도 연속성과 로컬 센서 대시보드
+## 현재 목표와 재개 지점: 로컬 센서·지도 통합 환경 완성
 
-2026-10-15 · **목표 ACTIVE / 미완료.** 실제 RPLIDAR S2 2D LiDAR·raw IMU로 기록 끝까지 지도를 만들고, 카메라·LiDAR·IMU·GPS와 함께 로컬 시뮬레이션 대시보드에서 표시한다.
+2026-10-15 · **목표 ACTIVE / 미완료**
 
-### 확인한 결과
+실제 S2 2D LiDAR와 raw IMU를 사용하는 단일 지도 처리 경로를 완성하고, 로컬 대시보드에서 연속 표시·중단·보관·반복 새 지도 생성을 검증한다. 센서 수신, SDK 처리, 저장, 화면 표시, 물리 정확도는 각각 확인한다.
 
-- [x] 최신 전체523.804초 원본 시험 통과: custody17,671개, scan5,243개+IMU10,395개 EOF·CDR readback, 마지막 승인 native-951 저장, snapshot40/history4, RAW0/CLOSED, mapper 종료, 같은 volume 실제 RO 재열기, 두 HTTP 동일 지도, Shutdown과 두 번째 Start 거절. 전체629.74초였으며 소유 helper/source/network는 모두 종료됐다.
-- [x] 본문당 한 번의 셀 검증, SQL 잠금 범위 축소, 지도 내부 타일의 정수 bin 합성을 적용했다. 합성 비교·손상/Stop·실제 Linux 저장 검증을 통과했다. 기존 원본·SDK·제한은 유지했다.
-- [x] 대시보드용 외부 단일 지도 프로필을 구현했다. 이전 mapper를 추가로 만들지 않으며 조회 전용이다. native client2 iframe은 지정된 로컬 부모에만 허용한다. 실제 HTTP45개 및 native 실행 중 조회를 확인했다. 브라우저 픽셀 검증은 별도다.
-- [x] 같은 세션의 확대·이동 유지 코드를 적용하고 pure-JS9개를 확인했다. 실제 브라우저 입력은 아직 미검증이다.
-- [x] 최신 소스·검증 자료280파일/4.43MB를 NAS에 복사하고 SHA256을 대조했다. 소프트웨어 시험이며 Jetson 배포가 아니다.
+### 완료한 항목
 
-### 남은 일 — 이 순서로 진행
+- [x] 공개 `--simulate-fullsensor` 실행 경로를 추가했다. 실제 로컬 실행 129.34초에서 카메라/LiDAR/IMU/GPS의 main18080 WS 수신과 두 native HTTP 조회의 동일한 nonempty COMPLETE 지도(native67/snapshot41)를 확인했다. 실제 Stop → RAW0/CLOSED → 소유 helper·bridge 정리를 통과했다. 이 명령은 정지 상태에서45초를 관찰하는 유한 통합 시험이며, 영구 대시보드·주행·녹화·자율주행 명령이 아니다.
+- [x] Windows/Git 체크아웃의423개 외부 소스 파일을 대조했다.375개는 한 가지,48개는 검토한 두 가지 정확한 SHA256·길이 표현만 허용한다. 실행 중 처음 선택한 표현이 바뀌면 실패한다. 임의 줄바꿈 정규화나 소스 변경 허용은 없다. 네 혼합 줄바꿈 Python 파일은 docstring/줄번호가 다르며, docstring을 제외한 실행 AST만 같다. 원본 파일은 수정하지 않았다.38개 검사와 별도 소스 검토를 통과했다.
+- [x] 실제 종료 시점의 자원 조회 경합을 수정했다. 실패한 시험에서도 진짜 CLOSED를 확인했지만 결과는 실패로 보존했다. 남은 빈 소유 bridge·자기 lock만 회수했고 보관 지도는 유지했다. 별도 CLOSED 증거 없는 exit137·활성/실패/OOM mapper는 허용하지 않는다.28개 회귀 검사와 수정 후 실제 통합 시험을 통과했다.
+- [x] 이전 전체523.804초 기록 시험은17,671개 입력의 EOF/CDR readback, 마지막 승인 native951 저장, RAW0/CLOSED, 같은 volume RO, 두 HTTP 조회와 Shutdown을 통과했다(전체629.74초). 보관 지도 재열기와 같은 슬롯 두 번째 Start 거부도 확인했다. 이것만으로 전체 SDK callback·실시간 성능·지형 정확도를 완료했다고 보지 않는다.
 
-- [ ] **1. full-sensor SIM 연결:** 현재 PC 지도 owner 하나에 Gazebo scan·raw IMU를 연결하고, 원래 센서 대시보드에서 카메라/LiDAR/IMU/GPS와 같은 지도를 조회한다. 정지 상태의 유한 시험부터 실행한다. WSLg의 실제 Engine RO mount·X0 socket·그래픽 장치는 확인했으나 렌더링은 아직 미검증이다.
-- [ ] **2. 실제 처리 지연과 센서 소비:** EOF나 마지막 승인 지도만으로 전체 SDK callback 소비·최종 최적화 tail·실시간 정확도를 주장하지 않는다. 별도 witness SDK98파일 빌드는 통과했지만 실제 actor 연결과 callback 검증이 남았다. 최신 overview37회387.63초/max30.84초로 후반 합성이 여전히 병목이다. 중첩 시간은 합산하지 않는다.
-- [ ] **3. 반복 사용:** 여러 클라이언트 상태 조회·Stop, 명시적인 보관/내보내기/슬롯 해제, 반복 새 지도 생성, 새 세션 전환을 검증한다. 보관 지도를 자동 삭제하지 않는다.
-- [ ] **4. 표시·센서 품질:** 같은 세션 pan/zoom·PNG 픽셀, 1080p/Q70 실제30fps, SIM100ms ZERO ACK와 정상 종료, GPS 원본 시각·품질을 검증한다. 기존 실패와 고정 제한은 보존한다.
-- [ ] **5. 게시:** 최신 로컬 package141e8ed2/runtimebf606de0의 검증 결과를 문서와 함께 GitHub/NAS에 동기화한다. 현재 검증된 게시본은 SIMeef8b2f/실차 문서33be943이고 제품은package0b29069a다. 실차 dashboard 코드 설치와 구분한다.
+### 남은 목표 — 이 순서로 계속 진행
 
-재개는 `codex-resume-20261013/RESUME_FIRST_CURRENT.json`부터 읽는다. 상세 목표는 `docs/CURRENT_MAPPING_GOALS.md`다. 아래 블록은 과거 실행 이력이며 최신 상태를 대체하지 않는다.
+1. [ ] 실제 SDK가 원본 scan/IMU를 얼마나 소비했는지 count·Header chain으로 검증한다. 진단용 fresh SDK98파일과 외부 actor의 빌드는 통과했지만 공개 제품은 기존 C0 SDK를 유지한다. 입력 EOF나 AddSensorData 반환을 최적화 완료로 해석하지 않는다.
+2. [ ] 후반 overview 병목과 원본 시각→처리→저장→표시 지연을 줄인다. 현재 overview 최대30.84초이므로 실시간 완료가 아니다. 이동 중 지도 연속성과 여러 환경의 정확도를 확인한다.
+3. [ ] 명시적 보관/내보내기/슬롯 해제와 반복 새 지도, 여러 클라이언트의 상태·중단·새 세션 전환을 완성한다. 기존 지도/volume을 자동 삭제하지 않는다.
+4. [ ] 실제 브라우저 pan/zoom·PNG·재접속,1080p/Q70 decoded/visible30fps, SIM100ms ZERO ACK와 정상 종료, GPS 원본 시각·품질을 검증한다. Computer Use는 이 턴의 URL 정책 검증에서 중단됐으므로 픽셀 검증은 미완료다.
+5. [ ] 새 package877d0311/runtimebf606de0(154개 raw 소스)와 결과를 GitHub·NAS에 게시하고 SHA를 확인한다. 직전 게시본은 SIMc833cb7/실차 문서7d6ddff(package141e8ed2,139개)다. 게시 완료 여부는 compact checkpoint의 publication을 확인한다.
 
-위치 추정 입력은 scan+raw IMU다. GPS는 원본 시각·품질 검증 전에는 위치 추정에 넣지 않는다. wheel/PWM/truth/camera를 위치 추정 입력으로 사용하지 않는다. 실제 모터 출력·조종 활성화·펌웨어·장착 보정·미검증 실차 자율주행·새 Jetson 배포는 수행하지 않는다.
+재개 파일: `codex-resume-20261013/RESUME_FIRST_CURRENT.json`. 최신 실행 증거: `ROOT_PUBLIC_FULLSENSOR_PORTABLE_FINAL_CLOSED_POSITIVE_20261015.json`. 이전 실패 자료도 보존했다.
+
+위치 추정은 scan+raw IMU만 사용한다. GPS/카메라는 표시용이며 wheel/PWM/truth는 위치 추정에 넣지 않는다. 검증되지 않은 GPS는 정밀 위치로 취급하지 않는다. 실제 Jetson 배포·모터 출력·조종 활성화·펌웨어·장착 보정·실차 자율주행은 수행하지 않았다.
 <!-- /ROOT_VECTOR_STARTUP_CURRENT -->
 
 <!-- ROOT_PROFILE_WHOLE_CLOSED_CURRENT -->
