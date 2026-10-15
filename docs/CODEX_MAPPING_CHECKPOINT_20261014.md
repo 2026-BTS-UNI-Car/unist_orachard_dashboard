@@ -1,31 +1,27 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
-## 현재 목표와 체크포인트 — 전체 기록의 처리 지연 개선
+## 현재 목표와 체크포인트 — 지도 연속성과 로컬 센서 대시보드
 
-2026-10-15 · **목표 ACTIVE / 미완료.** 실제 RPLIDAR S2 2D LiDAR·raw IMU로 지도가 기록 마지막까지 이어지고, 로컬 full-sensor 시뮬레이션 대시보드에서 확인되도록 완성한다.
+2026-10-15 · **목표 ACTIVE / 미완료.** 실제 RPLIDAR S2 2D LiDAR·raw IMU로 기록 끝까지 지도를 만들고, 카메라·LiDAR·IMU·GPS와 함께 로컬 시뮬레이션 대시보드에서 표시한다.
 
-### 우선순위와 완료 기준
+### 확인한 결과
 
-1. **전체 기록 처리:** 원래 시간·용량 제한 안에서 마지막 지도 저장, 정상 종료, 재조회가 가능해야 한다. 입력 수신과 지도 완료를 따로 측정하고, 실제 센서→표시 지연을 줄인다.
-2. **대시보드 연결:** 하나의 지도 작업을 카메라·LiDAR·IMU·검증된 GPS 화면과 함께 표시한다. 여러 기기 접속, 작업 상태·중단, 새 지도, 확대·이동 유지가 실제로 동작해야 한다.
-3. **재사용과 검증:** 같은 기록·다른 기록·시뮬레이션에서 확인하고, 소프트웨어 완료와 현장 보정·물리 정확도 검증을 구분한다.
-4. **인수인계:** 각 실행 결과를 TODO·machine checkpoint에 남기고 검증한 코드를 GitHub와 NAS에 동기화한다. Jetson 배포는 별도로 기록한다.
+- [x] 최신 전체523.804초 원본 시험 통과: custody17,671개, scan5,243개+IMU10,395개 EOF·CDR readback, 마지막 승인 native-951 저장, snapshot40/history4, RAW0/CLOSED, mapper 종료, 같은 volume 실제 RO 재열기, 두 HTTP 동일 지도, Shutdown과 두 번째 Start 거절. 전체629.74초였으며 소유 helper/source/network는 모두 종료됐다.
+- [x] 본문당 한 번의 셀 검증, SQL 잠금 범위 축소, 지도 내부 타일의 정수 bin 합성을 적용했다. 합성 비교·손상/Stop·실제 Linux 저장 검증을 통과했다. 기존 원본·SDK·제한은 유지했다.
+- [x] 대시보드용 외부 단일 지도 프로필을 구현했다. 이전 mapper를 추가로 만들지 않으며 조회 전용이다. native client2 iframe은 지정된 로컬 부모에만 허용한다. 실제 HTTP45개 및 native 실행 중 조회를 확인했다. 브라우저 픽셀 검증은 별도다.
+- [x] 같은 세션의 확대·이동 유지 코드를 적용하고 pure-JS9개를 확인했다. 실제 브라우저 입력은 아직 미검증이다.
+- [x] 최신 소스·검증 자료280파일/4.43MB를 NAS에 복사하고 SHA256을 대조했다. 소프트웨어 시험이며 Jetson 배포가 아니다.
 
-### 이번에 확인한 것
+### 남은 일 — 이 순서로 진행
 
-- [x] 앞선 전체523.804초 시험 한 회는 원본17,671개 수신·CDR readback, 마지막 승인 지도 저장, RAW0/CLOSED, mapper 종료, 같은 volume RO, 두 HTTP 동일 지도, Shutdown까지 통과했다(638.68초). 실시간 성능·전체 callback·물리 정확도의 증명은 아니다.
-- [x] 새 셀 검증 가속의 합성304개 scalar/vector 비교와 실제 저장·캐시·거절·정리 경로를 확인했다. 모든 새 옵션은 기본 OFF다.
-- [x] 새 경로의 짧은 원본897개 native 시험은137.28초에 전체 저장·조회·종료 경로를 통과했다. 시작40초 제한은18.10초에 통과했다. 이전과 작업량이 달라 성능 향상을 단정하지 않는다.
-- [x] 별도 SDK 진단 빌드와 새 헤더/DSO ABI·설치98파일 검증은 통과했다. 실제 Node callback 검증과 제품 전환은 아직이며 기존 제품 SDK를 유지한다.
-- [ ] 전체523.804초 시험98891은625.43초에 실패했다. 원본17,671개/선택15,638개 EOF·CDR readback은 확인했지만 마지막 지도 완료 제한을 넘겼다. 새 import420.05초/CPU120.94초, tile writer 대기119.17초를 측정했다. 계측 종료 시 미완료2개·partial=true여서 전체 비용으로 단정하지 않는다. 모든 소유 helper/source/network 종료와 원본·코드·설정 보존을 확인했다.
-- [ ] 이전 전체 vector v2는 최종 catalog30초 한도 초과로 실패했다. 시작도 반복 시험에서18~44초로 변동하여 안정화가 남아 있다. 실패 기록과 기존 제한을 유지한다.
-- [ ] 다음: 현재 전체 실행 종료·실제 단계 계측 분석 → 셀 검증/화면 합성 병목 수정 → full-sensor SIM 연결 → 다중 접속·Stop·반복 새 지도·확대 유지 확인.
+- [ ] **1. full-sensor SIM 연결:** 현재 PC 지도 owner 하나에 Gazebo scan·raw IMU를 연결하고, 원래 센서 대시보드에서 카메라/LiDAR/IMU/GPS와 같은 지도를 조회한다. 정지 상태의 유한 시험부터 실행한다. WSLg의 실제 Engine RO mount·X0 socket·그래픽 장치는 확인했으나 렌더링은 아직 미검증이다.
+- [ ] **2. 실제 처리 지연과 센서 소비:** EOF나 마지막 승인 지도만으로 전체 SDK callback 소비·최종 최적화 tail·실시간 정확도를 주장하지 않는다. 별도 witness SDK98파일 빌드는 통과했지만 실제 actor 연결과 callback 검증이 남았다. 최신 overview37회387.63초/max30.84초로 후반 합성이 여전히 병목이다. 중첩 시간은 합산하지 않는다.
+- [ ] **3. 반복 사용:** 여러 클라이언트 상태 조회·Stop, 명시적인 보관/내보내기/슬롯 해제, 반복 새 지도 생성, 새 세션 전환을 검증한다. 보관 지도를 자동 삭제하지 않는다.
+- [ ] **4. 표시·센서 품질:** 같은 세션 pan/zoom·PNG 픽셀, 1080p/Q70 실제30fps, SIM100ms ZERO ACK와 정상 종료, GPS 원본 시각·품질을 검증한다. 기존 실패와 고정 제한은 보존한다.
+- [ ] **5. 게시:** 최신 로컬 package141e8ed2/runtimebf606de0의 검증 결과를 문서와 함께 GitHub/NAS에 동기화한다. 현재 검증된 게시본은 SIMeef8b2f/실차 문서33be943이고 제품은package0b29069a다. 실차 dashboard 코드 설치와 구분한다.
 
-현재 로컬 package `0b29069a` / runtime `1164db1f`는 미게시다. 마지막 검증된 GitHub/NAS는 SIM `bd0f688`, 실차 dashboard 문서 `79484b2`이며 Jetson 배포가 아니다. 원본/실차 서비스는 보존하며 실제 모터 출력·조종 활성화·펌웨어·장착 보정·미검증 실차 자율주행은 수행하지 않는다.
+재개는 `codex-resume-20261013/RESUME_FIRST_CURRENT.json`부터 읽는다. 상세 목표는 `docs/CURRENT_MAPPING_GOALS.md`다. 아래 블록은 과거 실행 이력이며 최신 상태를 대체하지 않는다.
 
-재개는 `codex-resume-20261013/RESUME_FIRST_CURRENT.json`부터 읽는다. 상세 기준은 `docs/CURRENT_MAPPING_GOALS.md`, 이력은 `CURRENT_CHECKPOINT.json`과 아래 과거 블록에 있다.
-
-- [x] 본문 하나당 한 번의 전체 검증과 8,192셀 단위 상태 확인으로 바꾼 후보는 실제 Linux에서304개 scalar/vector 비교·수명/손상/스레드 검사·네 가지 저장 조건을 통과했다. SQL 잠금 범위 수정의 정상/Stop/손상 데이터 동시성 시험도 통과했다. 같은 세션 확대·이동 복원은 pure-JS9개와 구문 검사를 통과해 로컬 코드에 반영했다. 브라우저 화면은 아직 미검증이다.
-- [x] 수정본 전체523.804초 시험60849는653.99초에 통과했다. 원본17,671개/선택15,638개 EOF·CDR readback → 마지막 승인 native-730 COMPLETE·published31 → RAW0/CLOSED → mapper 종료 → 같은 volume 실제 RO → 두 HTTP 동일 최종 지도 → Shutdown·두 번째 Start 거절·소유 자원 부재를 확인했다. 원본·코드·설정은 보존됐다. 전체 callback·최적화 tail·물리 정확도·브라우저 픽셀·실시간 처리의 증명은 아니다.
+위치 추정 입력은 scan+raw IMU다. GPS는 원본 시각·품질 검증 전에는 위치 추정에 넣지 않는다. wheel/PWM/truth/camera를 위치 추정 입력으로 사용하지 않는다. 실제 모터 출력·조종 활성화·펌웨어·장착 보정·미검증 실차 자율주행·새 Jetson 배포는 수행하지 않는다.
 <!-- /ROOT_VECTOR_STARTUP_CURRENT -->
 
 <!-- ROOT_PROFILE_WHOLE_CLOSED_CURRENT -->
