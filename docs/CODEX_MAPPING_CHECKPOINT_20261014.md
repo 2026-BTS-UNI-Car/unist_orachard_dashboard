@@ -1,5 +1,21 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
 
+### 2026-10-16 최신: 보관 사본 확정·최종 독립 검증, 실시간 지도 후보 재검증 중
+
+이 절이 아래 당시 상태보다 우선한다. 현재 호스트 소스는 package `e5570033` / runtime `a499c8f7`이다. 목표는 **ACTIVE / 미완료**이며 실시간 지도가 최우선이다. Jetson 배포·차량 구동은 하지 않았다.
+
+- [x] 호스트 보관 경로 검사 수정과 helper/reader 소스 연결을 적용했다. Linux 실제 경로/복사 검사12개, Windows 보관 검사18개, 공개 Python 전체 Linux51개/skip0을 통과했다. 새 경로 검사의 Windows 범위는6개 통과/실제 Linux 전용6개 명시적 skip이다. 매핑 런타임·컴파일러는 바꾸지 않았다. 전체 native 재생 증거는 같은 runtime의 이전 package `0cb5cc4d`(짧은24/21, 전체785/46)이며 호스트 package 변경 후 재실행한 것으로 표기하지 않는다.
+- [x] 이전 실패 사본1,073파일/194,406,015바이트를 같은 풀 안에서 보존 이름으로 옮겼다. 전후 전체 SHA/디렉터리 inode/전체 풀 저장량이 같고 원본은 그대로다. 새 복사는120초에 만료됐지만 매니페스트가 남았다. 명시적 후속 실행에서 사본 commit은 완료했고, 마지막 독립 검증 중 다시120초가 만료됐다. 두 음성 결과를 그대로 보존한다.
+- [x] 이미 확정된 사본에 대해 별도의 **읽기 전용 최종 검증 성분**을77.94초에 통과했다. 사본1,827파일/364,724,141바이트의 fresh 전체 SHA, 원본 close proof/catalog 관계, 기존 canonical commit 영수증, 새 Linux target-final 검증과 저장된 precommit 기준의 완전 일치, 원본 metadata·volume zero users·모든 archive helper 부재를 확인했다. 원본/사본/영수증을 수정하지 않았다. 이는 공개 CLI 한 번에 전체 완료했다는 증거가 아니다.
+- [ ] 공개 보관 CLI는 아직 전체 성공이 아니다. 이미 확정된 사본에서도 반복되는 검증을 줄이고, 과거 export 소스 버전과 현재 archiver 소스 fence를 구분하는 호환 설계가 필요하다. 원본 slot 해제·새 지도 반복·보관 viewer도 미구현이며 원본을 삭제하지 않는다. 전체 풀은 약559MB로 실패 사본까지 계속 한도에 포함한다.
+- [x] 실제 저장37→47 비교에서 선택된 셀의 로컬 입력 일치율33.0635%(6/20 submap), 기존 세계 좌표 키 일치율5.9255%를 관찰했다. 결과 SHA/집계 출력 일치와 원본 보존을 통과했지만 실제 재사용·실시간 적중률·전체 지도 커버리지·속도 향상의 증거는 아니다.
+- [ ] SQL 잠금 밖으로 초기 metadata 해석을 옮기는 후보는 실제 Linux33개 중32개만 통과했다. 동시 reader·CAS/삭제 fence 검사는 통과했지만 추가 Python peak가15,535바이트로4,096 한도를 넘었다. 후보를 적용하지 않고 실패 결과와 원본 소스를 보존했다. 한도를 올리지 않고 호출 내 cursor 재사용을 검토한다. 현재 runtime `a499c8f7`은 유지한다.
+- [x] SQLite 색인 자체 자료 실험은 값/질의 결과 일치를 통과했다. Windows bind에서 읽기는 빨라지고 쓰기는 느려졌으므로 Linux 실시간 지도 개선으로 해석하지 않는다. production 색인·quota/reopen 정책은 미적용이다.
+- [ ] 지도 지연·물리 정확도·모든 SDK 콜백/최종 최적화·최신 GUI Stop/두 브라우저·전체 센서 SIM/1080p30은 여전히 완료 기준이다. 새 browser의 localhost 차단을 우회하지 않았으며 이전 runtime GUI 증거를 현재 버전에 재표기하지 않는다.
+
+단계 기준은 `docs/CURRENT_MAPPING_GOALS.md`, 정확한 범위와 report SHA는 `docs/NATIVE_MAPPING_ARCHIVE_FINAL_QUALIFICATION_20261016.json`, 재개 상태는 `RESUME_FIRST_CURRENT.json`을 따른다.
+
+
 ### 2026-10-16 최신: 중복 검사 옵션 실제 짧은·전체 원본 재생 통과
 
 이 절이 아래 당시 상태보다 우선한다. 검증 대상은 package `0cb5cc4d` / runtime `a499c8f7`; 목표는 **ACTIVE / 미완료**다. 실제 Jetson 배포나 차량 구동은 하지 않았다.
