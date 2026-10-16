@@ -1,5 +1,19 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
 
+### 2026-10-16 최신: SQL 잠금 밖 metadata 처리 V2, 실제 짧은·전체 기록 종료 검증
+
+이 절이 아래 당시 상태보다 우선한다. 현재 로컬 소스는 package `7fb43694` / runtime `4960406e`다. 목표는 **ACTIVE / 미완료**, 우선순위는 실시간 지도 → 정확도·연속성 → 공유/Stop → 보관·반복 → 전체 센서 SIM이다. Jetson에는 배포하지 않았다.
+
+- [x] 초기 metadata 해석을 SQL 잠금 밖으로 옮기는 V2를 적용했다. 호출 내 cursor 하나를 재사용하며 4KiB 추가 메모리 한도를 유지했다. Linux 후보37개/skip0, 현재 공개 Python51개/skip0 통과. 실패했던 V1(32/33, 15,535바이트)은 그대로 보존한다. 기본 옵션은 OFF이며 시험 설정에서만 ON이다. 최종 삭제 직전 전체 재검증·CAS/FD/SHA/Stop·동적 참조 검사는 유지했다.
+- [x] **현재 package/runtime 그대로** 실제 native 짧은 기록과 523초 전체 기록을 재생했다. 짧은 결과 native21/snapshot18, 전체756/50, 전체 실행680.53초. 모두 RAW/wire/pending0, 정상 CLOSED/actor exit0, 마지막 native와 공개 지도 일치, 원래 보존 볼륨의 커널 읽기 전용 재열기, 두 HTTP 클라이언트, 중복 Start 거부, 원본/소스 보존·자원 정리를 확인했다. 이 native 번호는 센서 입력 수가 아니다.
+- [x] 전체 시험 중 HTTP 상태 조회30/30회 성공, 요청 응답 p90 약58.9ms. 조회 자체가 추가 부하이며 이미지 렌더링·전체 지도 생성 지연·이전 버전 대비 개선율은 아니다. SQL 관찰은 `recorder_busy`에서 중단된 prefix이므로 전체 실행 합계나 개선율로 쓰지 않는다.
+- [ ] **SDK 센서 수신 증거 보강:** source 발행/별도 observer의 완전한 수신은 SDK 수신을 증명하지 않는다. SDK는 SensorDataQoS를 쓰며 sampler/빈 scan/TF/비단조 시각의 조기 반환 경로가 있다. 현재 로그는 정확한 callback/post-AddSensorData 수를 제공하지 않는다. 누락이 실제 발생했다는 뜻은 아니다. 고정 크기 진단 카운터·원본 첫/마지막 header를 별도로 설계하고, 알고리즘·QoS 변경 없이 새 빌드로 검증한다. 최종 collator 처리·최적화 완료도 별도다.
+- [ ] **다음 병목:** 기존 layouts 복합 기본키 `(body,n0,n1,x,y)`와 tile을 이용한 fresh 조회 후보를 독립 폴더에서 구현·검토한다. 새 색인/쓰기/캐시/메모리 한도 증가는 하지 않는다. 같은 body의 여러 crop·좌표/공유 digest·오류·Stop·prefetch 결합을 검증한 뒤 채택한다. 현재 통과 버전과 원본은 그대로 둔다.
+- [ ] 최신 브라우저 GUI Stop/두 화면/확대 유지, 물리 정확도, 나머지10월3일→새 현장→9월10일, 전체 센서 SIM1080p30은 미완료다. localhost 제어 도구 차단을 우회하지 않는다. 실차 자율 출력·장착 보정·펌웨어 변경은 수행하지 않았다.
+
+이번 범위의 수치는 `docs/NATIVE_MAPPING_SCOPED39_V2_QUALIFICATION_20261016.json`, 완료 기준은 `docs/CURRENT_MAPPING_GOALS.md`, 재개 상태는 `RESUME_FIRST_CURRENT.json`을 따른다. 보관 CLI 전체 성공/원본 slot 해제는 아래 기존 미완료 상태를 유지한다.
+
+
 ### 2026-10-16 최신: 보관 사본 확정·최종 독립 검증, 실시간 지도 후보 재검증 중
 
 이 절이 아래 당시 상태보다 우선한다. 현재 호스트 소스는 package `e5570033` / runtime `a499c8f7`이다. 목표는 **ACTIVE / 미완료**이며 실시간 지도가 최우선이다. Jetson 배포·차량 구동은 하지 않았다.
