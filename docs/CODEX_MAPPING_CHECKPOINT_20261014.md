@@ -1,5 +1,20 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
 
+### 2026-10-16 최신: 기존 기본키 타일 조회 적용·실제 전체 기록 검증
+
+이 절이 아래 당시 상태보다 우선한다. 현재 로컬 package `bc605c8b` / runtime `8f0e3ae1`. 목표는 **ACTIVE / 미완료**, 실시간 지도가 최우선이다. Jetson 배포·차량 출력은 하지 않았다.
+
+- [x] 원래 layouts 복합 기본키와 tile을 함께 사용해 fresh 참조를 조회한다. 새 색인·schema·쓰기·캐시를 추가하지 않았다. 기존 digest-only 호출은 유지하고, 정합하는 body/크기/로컬 좌표가 없으면 거부한다. owner/scope/Stop·CAS/FD/SHA 검사는 유지한다. 독립 Linux12그룹과 공개 Python62개/skip0을 통과했다. 새11개 회귀 검사는 저장소의 실제 모듈을 쓰는 표준 unittest다.
+- [x] 기존 저장 작업자·지도API 통합 검사를 Linux 내부 저장소에서 이전 버전11개와 후보11개 모두 통과했다. 첫 Windows bind 시험은10/11(128층 commit WAIT_TIMEOUT)이었고 그대로 보존한다. 시간 제한을 늘리지 않았으며, 시험용 지연 wrapper가 새 keyword 인자를 전달하도록만 수정했다. 결과가 물리 지도 정확도나 속도 개선율을 뜻하지는 않는다.
+- [x] **현재 버전 실제 native 재생:** 짧은 native21/snapshot19, 전체 native935/snapshot50. 전체 실행670.01초. RAW/wire/pending0, 정상 CLOSED/actor exit0, 마지막 native/공개 지도 일치, 원래 보존 볼륨RO·두HTTP·중복Start 거부·원본 보존·종료 정리를 통과했다. native 번호를 센서 입력 수로 해석하지 않는다.
+- [x] 전체 중 상태 조회30회, 요청 p90 52.4ms. SQL 관찰 partial=True, reason=recorder_busy. HTTP 요청 응답은 지도 생성/렌더링 지연이 아니며, 서로 다른 작업량이나 관찰 prefix로 개선율을 계산하지 않는다.
+- [ ] SDK 입력 진단은 별도 후보이며 현재 C0/actor에는 넣지 않았다. 순수 C++16그룹 시험 결과 ok=True이고 ROS/SDK 실제 수신 증거는 아니다. fresh SDK DSO·모든 ABI consumer·actor를 재빌드하고 명시적 opt-in으로 실제 수신/거부/post-Add 반환 수를 비교해야 한다. API 반환도 collator 처리·최종 최적화·모든 CDR 일치를 증명하지 않는다.
+- [ ] 다음은 SDK 진단 빌드와 IMU 단위/중력/좌표계 증거 확인, 물리 정확도 검증이다. 웹의 기존 native ROI 경로는 타일과 최신 pose를 Canvas에서 그리지만 서버 전체 지도 계산도 별도로 실행된다. 전체 지도 계산을 줄이는 경우 범위·정확도·표시 의미·메모리 한도를 유지해야 하며, 단순 WebGL 교체로 해결됐다고 하지 않는다.
+- [ ] 최신 GUI Stop/두 화면/확대 유지, 남은10월3일→새 현장→9월10일 데이터, 전체 센서 SIM1080p30, 보관 CLI 전체 성공/원본 slot 해제·새 지도 반복은 미완료다. 원본과 실패 증거를 보존한다.
+
+정확한 범위는 `docs/NATIVE_MAPPING_LAYOUT_PK_QUALIFICATION_20261016.json`, 단계 기준은 `docs/CURRENT_MAPPING_GOALS.md`, 재개 상태는 `RESUME_FIRST_CURRENT.json`이다.
+
+
 ### 2026-10-16 최신: SQL 잠금 밖 metadata 처리 V2, 실제 짧은·전체 기록 종료 검증
 
 이 절이 아래 당시 상태보다 우선한다. 현재 로컬 소스는 package `7fb43694` / runtime `4960406e`다. 목표는 **ACTIVE / 미완료**, 우선순위는 실시간 지도 → 정확도·연속성 → 공유/Stop → 보관·반복 → 전체 센서 SIM이다. Jetson에는 배포하지 않았다.
