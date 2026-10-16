@@ -1,5 +1,16 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
 
+### 2026-10-16 최신 추가: 원본 IMU 전체와 새 SDK 실행기·짧은 OFF/ON 검증
+
+- [x] 선택된 10월3일 원본 IMU10,395개/ledger17,671개를 읽기 전용으로 모두 대조했다. 원본3파일 SHA·파일 동일성은 전후 일치, 가속도·각속도 모두 finite/imu_link. 헤더 간격 중앙값50.077ms·최대111.585ms, 역전·중복0. 이 원본에서 수초 IMU 단절의 근거는 없다. 가속도 크기 평균9.77275·중앙값9.71654는 중력 크기와 일관되지만 단위·장착 보정 증명이 아니다. covariance 전부0은 미상이다. 자동 보정·필드/시각 변경은 안 했다.
+- [x] 별도 private 소스190개를 준비하고 실제 새 SDK98파일 import→새 실행기 컴파일·ldd·argc1 기본OFF를 검증했다(61.90초). actor40b2c6da / compiler6f443495 / runtimee93fc706 / SDK223852e4. SDK·실행기·원래 C0 공개본을 구분한다. 소스·실행기·실제 receipt 등252파일을 NAS에 SHA 대조해 백업했다.
+- [x] 같은 새 실행기로 짧은 원본기반 재생 OFF·ON 모두 native 종료·마지막 지도·두 HTTP·정리 통과. 별도 읽기전용 진단: OFF에는 marker0, ON에는 AVAILABLE/errors0, scan300·IMU597 ingress/callback반환/Add-return. sampler·TF·예외·헤더역전0. API 반환 카운터는 모든 CDR 동일성·collator 처리·최종 최적화·물리 지도 정확도의 증거가 아니다.
+- [ ] 같은 SDK의 전체523.8초 원본 CDR 재생과 카운터 대조를 진행한다. 실패한 검사기는 보존했다(Windows 파일시각 API 차이, covariance NumPy JSON 값, 테스트 AST선택, SDK 진행로그 CR). 오류를 제품/원본 수정이나 제한 확대로 덮지 않았다. 현재 공개 packagebc605c8b/runtime8f0e3ae1/C0 SDK는 유지한다.
+- [ ] 카메라30fps도 미완료다. V31의 JPEG passthrough/worker/명시적12MB·1080 검증과 현재 공개 경로의5MB·720 제한/중복 JPEG 재인코딩은 서로 다르다. 이전 upstream 관찰도 약29/s여서 downstream 수정만으로30fps를 주장하지 않는다. 자세한 소스 분석을 체크포인트에 보관한다.
+
+공개 증거: `docs/NATIVE_MAPPING_INPUT_DIAGNOSTIC_PROGRESS_20261016.json`. 최신 실제 작업은 `RESUME_FIRST_CURRENT.json`, 목표·완료 기준은 `docs/CURRENT_MAPPING_GOALS.md`. Jetson 배포·모터 출력·조종 활성화·펌웨어·장착 보정은 하지 않았다. 목표 ACTIVE/미완료.
+
+
 ### 2026-10-16 최신 추가: 입력 진단 SDK 실제 빌드 통과, 공개 버전에는 미선택
 
 - [x] 별도 폴더에서 새 SDK와 설정된 모든 클래스 소비자를 새로 빌드하고 실제 새 DSO 로드/metadata ABI 검사를 통과했다. DSO `223852e4`, 설치98파일/12,333,364바이트. 한 번의 빌드였고 제한을 늘리지 않았다. 전체설치파일·소스·결과136개를 NAS에 SHA 대조해 백업했다. 순수 C++16그룹/기본OFF 검사와 실제 SDK 빌드 검사는 별도다.
