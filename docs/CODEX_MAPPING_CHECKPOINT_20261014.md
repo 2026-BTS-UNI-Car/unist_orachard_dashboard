@@ -1,5 +1,21 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
 
+### 2026-10-16 현재 목표: SDK 입력 보존 → GNSS 약한 보정 → 지도·공유·전체 센서 검증
+
+목표는 ACTIVE/미완료다. 아래 완료 항목과 남은 구현·검증을 구분하고 순서대로 계속한다.
+
+- [x] TF 준비 확인만 추가한 별도 실행기를 실제 새로 컴파일했다(73.73초). SDK223852e4는 그대로이며 actor74153bed/compiler91c27beb/runtime21f4cce7다. 순수 C++11그룹·카운터 검사기17그룹과 독립 소스 검토를 통과했다.
+- [x] 같은 짧은 기록에서 SDK 카운터를 모두 켜고 TF 대기 OFF/ON을 비교했다. 둘 다 scan300·IMU597 ingress/Add 반환, 정상 native 종료·마지막 지도·두HTTP·정리 통과. ON은 실제 TF_READY가 NODE_READY보다 먼저 기록되고 STATE의 요청과 일치한다. OFF도 TF 거부0이므로 개선율·인과 효과를 주장하지 않는다. 공개 C0 제품은 유지한다.
+- [x] 원본 GNSS1018 Fix+1015 String을 전부 다시 대조했다. reported iTow 값511종류, 두 프로토콜 쌍504개·동일 프로토콜 중복0·시각 역전0이다. 독립 fix511개나 검증 UTC511개라는 뜻이 아니다. 전부 일반 autonomous/3D/quality1이고 hAcc 중앙값4.0276m다. 검증 UTC는0이며 원본 시각/내용은 바꾸지 않았다.
+- [x] 이전 전체 기록의 송신·독립DDS 로그도 원본을 바꾸지 않고 대조했다. 시험의 의도된1초 pause를 분리했다. 이를 제외해도 IMU 송신 최대 간격765.76ms(원본 bag112.17ms)다. 이것이 SDK 순개수4부족의 원인인지는 미확인이다. SDK SensorDataQoS와 별도 RELIABLE256 수신기의 증거를 구분한다.
+- [ ] TF 대기 ON으로 전체523.8초 기록을 검증하고 scan/IMU 수신·거부·완료 지도·중단 상태를 확인한다. 이전 전체 SDK scan TF거부3/IMU 순개수4부족은 해소됐다고 표시하지 않는다. 개수 일치는 모든 CDR·collator·최종최적화·물리 정확도 증명이 아니다.
+- [ ] 센서 executor에서 표시 후처리를 기존 worker로 옮기는 별도 기본OFF 후보는 새 SDK·모든 소비자·실행기를 실제 재빌드하고 별도 비교한다. 현재 소스 검토·순수 인자11그룹만 통과했다. TF와 섞어 효과를 단정하지 않는다.
+- [ ] GPS는 원본 보존·표시 단계다. 중복 측정·보고 정확도·시각 대응·좌표계를 처리하는 약한 GNSS 제약을 구현·검증한다. 카메라/PWM/truth/휠 엔코더를 위치 추정 입력으로 넣지 않는다.
+- [ ] ROI Canvas 캐시 공개 적용/실제 GUI·Stop·확대 유지, 보관 CLI 전체 성공·slot 해제·새 지도 반복, 나머지 현장 기록과 물리 정확도, 전체 센서 SIM1080p30을 완료한다. Jetson 배포·모터 출력·조종 활성화·펌웨어·장착 보정은 하지 않았다.
+
+증거: `docs/NATIVE_MAPPING_TF_GNSS_PROGRESS_20261016.json`. 목표: `docs/CURRENT_MAPPING_GOALS.md`. 재개: `RESUME_FIRST_CURRENT.json`. TODO와 NAS 체크포인트를 계속 갱신한다.
+
+
 ### 2026-10-16 최신 추가: 전체 원본 재생과 SDK 내부 수신 차이 확인
 
 - [x] 새 SDK223852e4·실행기40b2c6da로 전체523.8초 원본을 끝까지 재생했다(679.15초, native754/마지막snapshot52). RAW0/CLOSED/동일 볼륨RO/두HTTP/원본SHA/정리 통과. 원본 발행→독립DDS수신은 scan5243·IMU10395, 순서별 CDR 해시가 모두 일치했다. 공개 C0 제품은 바꾸지 않았다.
