@@ -1,5 +1,14 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
 
+### 2026-10-16 최신 추가: 입력 진단 SDK 실제 빌드 통과, 공개 버전에는 미선택
+
+- [x] 별도 폴더에서 새 SDK와 설정된 모든 클래스 소비자를 새로 빌드하고 실제 새 DSO 로드/metadata ABI 검사를 통과했다. DSO `223852e4`, 설치98파일/12,333,364바이트. 한 번의 빌드였고 제한을 늘리지 않았다. 전체설치파일·소스·결과136개를 NAS에 SHA 대조해 백업했다. 순수 C++16그룹/기본OFF 검사와 실제 SDK 빌드 검사는 별도다.
+- [ ] 아직 새 실행기(actor)를 빌드하거나 센서를 넣어 진단을 실행하지 않았다. 공개 package `bc605c8b` / runtime `8f0e3ae1` / C0 SDK는 유지한다. 다음은 독립 로컬 복사본에 SDK import·새 실행기·기본False 진단 옵션을 연결하고, 짧은 실제 기록 OFF→ON 비교 뒤 전체 기록을 검증하는 것이다. 기존 native profile8필드·Stop/RAW/소유권 조건을 바꾸지 않는다. 수신/API 반환 수가 맞아도 모든CDR 일치·collator/최종최적화·물리 정확도를 뜻하지 않는다.
+- [ ] IMU 전체기록 검사는 원래 MCAP과 ledger를 읽기 전용으로 대조하는 절차를 준비 중이다. 기존597표본의 중력 크기 일관성을 전체 기록이나 정확한 단위/장착 보정 증거로 승격하지 않는다. 보정·펌웨어·차량 출력·Jetson 배포는 하지 않았다.
+
+상세 범위는 `docs/NATIVE_MAPPING_SDK_COUNTER_BUILD_QUALIFICATION_20261016.json`, 현재 공개 버전의 재생 검증은 `docs/NATIVE_MAPPING_LAYOUT_PK_QUALIFICATION_20261016.json`을 따른다. 목표는 계속 ACTIVE다.
+
+
 ### 2026-10-16 배포 대조 정정: 외부 소스 목록의 바이트 보존
 
 - [x] 첫 Git 반영 `e8977e7`에서 실행 소스184개/runtime은 맞았으나 외부 PACKAGE_SOURCE_MANIFEST.json이 Git의 LF 정규화로 바뀌었다. 실제 시험 파일 SHA는 `bc605c8b`, 당시 Git 파일 SHA는 `11a313df`였고 차이는 CRLF뿐이었다. 같다고 기록하지 않고 두 값을 보존한다.
