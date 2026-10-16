@@ -1,5 +1,11 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
 
+### 2026-10-16 배포 대조 정정: 외부 소스 목록의 바이트 보존
+
+- [x] 첫 Git 반영 `e8977e7`에서 실행 소스184개/runtime은 맞았으나 외부 PACKAGE_SOURCE_MANIFEST.json이 Git의 LF 정규화로 바뀌었다. 실제 시험 파일 SHA는 `bc605c8b`, 당시 Git 파일 SHA는 `11a313df`였고 차이는 CRLF뿐이었다. 같다고 기록하지 않고 두 값을 보존한다.
+- [x] 이 파일도 runtime descriptor처럼 Git text 변환을 금지했다. 이미 시험한 파일 바이트를 그대로 다시 stage하고, commit의 실제 blob까지 SHA를 대조한다. 실행 소스·런타임·SDK·native 종료 증거는 변경하지 않았다. 현재 package `bc605c8b` / runtime `8f0e3ae1` 및 짧은/전체 재생 증거는 그대로다. 상세는 `docs/NATIVE_MAPPING_LAYOUT_PK_GIT_BINDING_20261016.json`이다.
+
+
 ### 2026-10-16 최신: 기존 기본키 타일 조회 적용·실제 전체 기록 검증
 
 이 절이 아래 당시 상태보다 우선한다. 현재 로컬 package `bc605c8b` / runtime `8f0e3ae1`. 목표는 **ACTIVE / 미완료**, 실시간 지도가 최우선이다. Jetson 배포·차량 출력은 하지 않았다.
