@@ -1,5 +1,16 @@
 <!-- ROOT_VECTOR_STARTUP_CURRENT -->
 
+### 2026-10-16 최신 추가: 전체 원본 재생과 SDK 내부 수신 차이 확인
+
+- [x] 새 SDK223852e4·실행기40b2c6da로 전체523.8초 원본을 끝까지 재생했다(679.15초, native754/마지막snapshot52). RAW0/CLOSED/동일 볼륨RO/두HTTP/원본SHA/정리 통과. 원본 발행→독립DDS수신은 scan5243·IMU10395, 순서별 CDR 해시가 모두 일치했다. 공개 C0 제품은 바꾸지 않았다.
+- [ ] SDK는 scan5243 ingress 중5240 Add반환(TF실패3), IMU10391 ingress/Add반환으로 원본 대비 순개수4부족이다. IMU첫/끝 헤더는 원본과 같지만 어떤 중간 메시지인지 아직 모른다. 첫scan Add는 첫ingress보다302.28ms 늦어 시작TF경쟁과 일관되며 확정 원인과 구분한다. TF준비 확인과 외부worker pump를 별도 기본OFF 후보로 검증한다. 모든CDR동일성·collator처리·최종최적화·물리 정확도는 미완료다.
+- [x] 앞선 원본 IMU10395 전체 대조·새SDK98파일 import·실제 실행기 컴파일·짧은OFF/ON·별도카운터 읽기 검증은 유지한다. OFF marker0; 짧은ON scan300/IMU597, errors0. 전체카운터 errors0은 TF거부0 또는 입력누락0이라는 뜻이 아니다.
+- [ ] 현재 C++지도 입력은 LiDAR+rawIMU다. GPS는 원본 보존/표시 단계이며 actor가 use_nav_sat=false를 강제한다. 원본GNSS 시각·품질 보고를 먼저 검증하고, per-message 정확도를 무시하는 기존SDK에 단순 GPS옵션을 켜지 않는다. 검증된 soft-GNSS 위치제약 통합은 남아 있다.
+- [x] 브라우저의 반복 Canvas할당·RGBA업로드를 줄이는 별도 ROI캐시 후보: inert9와 원래 순수프로토콜 통합5 통과. 새 pose/affine·원래 셀검증·Stop은 유지한다. 공개 적용·실제 브라우저 픽셀/속도 검증은 아직이다. 카메라1080p30, 보관·새지도 반복, 물리 정확도/현장 검증도 남아 있다.
+
+공개 증거: `docs/NATIVE_MAPPING_WHOLE_SDK_INPUT_QUALIFICATION_20261016.json`. 현재 작업은 `RESUME_FIRST_CURRENT.json`, 목표는 `docs/CURRENT_MAPPING_GOALS.md`. TODO·체크포인트를 계속 갱신한다. Jetson 배포·모터 출력·조종 활성화·펌웨어·장착 보정은 하지 않았다. 목표 ACTIVE/미완료.
+
+
 ### 2026-10-16 최신 추가: 원본 IMU 전체와 새 SDK 실행기·짧은 OFF/ON 검증
 
 - [x] 선택된 10월3일 원본 IMU10,395개/ledger17,671개를 읽기 전용으로 모두 대조했다. 원본3파일 SHA·파일 동일성은 전후 일치, 가속도·각속도 모두 finite/imu_link. 헤더 간격 중앙값50.077ms·최대111.585ms, 역전·중복0. 이 원본에서 수초 IMU 단절의 근거는 없다. 가속도 크기 평균9.77275·중앙값9.71654는 중력 크기와 일관되지만 단위·장착 보정 증명이 아니다. covariance 전부0은 미상이다. 자동 보정·필드/시각 변경은 안 했다.
