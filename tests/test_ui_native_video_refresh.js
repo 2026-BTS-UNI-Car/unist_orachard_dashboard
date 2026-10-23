@@ -22,6 +22,37 @@ function fixture(playing) {
 }
 (async () => {
   {
+    const f = fixture(true);
+    const payload = {id: 'r', video_url: 'new.mp4', source_video: {timeline_offset_s: 5}};
+    f.context.configureArchiveNativeVideo(payload, {preservePlayback: true});
+    const player = f.state.archivePlayback.videoPlayer;
+    // A second list/detail refresh finishes before the new URL's metadata.
+    f.context.configureArchiveNativeVideo({...payload, metadata: {state: 'archived'}}, {preservePlayback: true});
+    f.video.onloadedmetadata(); await Promise.resolve();
+    assert.equal(f.events.filter(e => e === 'play').length, 1,
+      'pending source resume survives another same-URL metadata refresh');
+    assert.equal(f.state.archivePlayback.videoPlayer, player, 'same URL must not replace the pending player');
+    assert.equal(f.state.archivePlayback.timeS, 20); assert.equal(f.video.currentTime, 15);
+  }
+  {
+    const f = fixture(true), payload = {video_url: 'new.mp4', source_video: {timeline_offset_s: 5}};
+    f.context.configureArchiveNativeVideo(payload, {preservePlayback: true});
+    f.context.setArchiveTime(30);
+    f.context.configureArchiveNativeVideo(payload, {preservePlayback: true});
+    f.video.onloadedmetadata(); await Promise.resolve();
+    assert.equal(f.state.archivePlayback.timeS, 30); assert.equal(f.video.currentTime, 25);
+    assert.equal(f.events.filter(e => e === 'play').length, 1, 'explicit seek survives the additional refresh');
+  }
+  {
+    const f = fixture(true), payload = {video_url: 'new.mp4'};
+    f.context.configureArchiveNativeVideo(payload, {preservePlayback: true});
+    f.state.archivePlayback.playing = false; f.state.archivePlayback.videoPlayRevision++;
+    f.context.configureArchiveNativeVideo(payload, {preservePlayback: true});
+    f.video.onloadedmetadata(); await Promise.resolve();
+    assert.ok(!f.events.includes('play'), 'Pause wins after the additional pending refresh');
+    assert.equal(f.state.archivePlayback.timeS, 20);
+  }
+  {
     for (const resume of [false, true]) {
       const f = fixture(true); let reject;
       f.video.play = () => new Promise((_, fail) => {reject = fail;});

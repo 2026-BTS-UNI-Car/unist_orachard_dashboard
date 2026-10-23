@@ -4675,8 +4675,11 @@ function configureArchiveNativeVideo(payload, { preservePlayback = false } = {})
   if (!video) return;
   const url = String(payload?.video_url || "");
   const changed = url !== state.archivePlayback.nativeVideoUrl;
-  const restorePlayback = preservePlayback && changed && Boolean(url);
-  if (restorePlayback) state.archivePlayback.sourceSwitchTimeS = state.archivePlayback.timeS;
+  // A later same-URL detail refresh must retain the pending source switch's
+  // resume intent until metadata arrives. An explicit seek already owns its cursor.
+  const restorePlayback = preservePlayback && Boolean(url) &&
+    (changed || Number.isFinite(state.archivePlayback.sourceSwitchTimeS));
+  if (restorePlayback && changed) state.archivePlayback.sourceSwitchTimeS = state.archivePlayback.timeS;
   if (changed) {
     state.archivePlayback.videoPlayRevision=(state.archivePlayback.videoPlayRevision||0)+1;
     state.archivePlayback.videoPlayRequested=false;
