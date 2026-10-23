@@ -950,7 +950,21 @@ function setConnection(kind, label) {
   el.textContent = label;
 }
 
+// E2: autonomy resource priority banner (status only; never touches rover control).
+function renderAutonomyPriority(priority) {
+  state.autonomyPriority = priority?.state || "disabled";
+  const banner = $("autonomyPriorityBanner");
+  if (!banner) return;
+  const yielding = priority?.state === "active" || priority?.state === "unknown";
+  banner.hidden = !yielding;
+  if (!yielding) return;
+  text("autonomyPriorityText", priority.state === "active"
+    ? "미리보기 축소 · 기록 지도/영상 변환 대기 · 수동 조종과 STOP 은 그대로 동작합니다."
+    : "자율주행 상태 확인 불가 · 배경 작업 대기와 중간 미리보기 제한을 적용합니다.");
+}
+
 function renderTelemetry(data) {
+  renderAutonomyPriority(data.autonomy_priority);
   const sys = data.system || {};
   const net = data.network || {};
   const docker = data.docker || {};
@@ -1359,7 +1373,7 @@ function effectiveLinkProfile() {
   const measured = state.cameraLive.effectiveProfile;
   return ["detail", "balanced", "slow", "tiny"].includes(measured) ? measured : "balanced";
 }
-window.RoverLink = { profile: effectiveLinkProfile };
+window.RoverLink = { profile: effectiveLinkProfile, autonomyPriority: () => state.autonomyPriority || "disabled" };
 function setLiveNetworkProfile(value) {
   if (!["auto", "tiny", "slow", "balanced", "detail"].includes(value)) return;
   try { localStorage.setItem("ubts-live-network-profile", value); } catch (_) {}

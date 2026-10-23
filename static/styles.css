@@ -3104,3 +3104,16 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 .sensor-overview .sim-map-note{margin:5px 0}
 @container(min-width:760px){.archive-preview.sensor-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @container(min-width:1300px){.archive-preview.sensor-overview{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* E2: autonomy resource priority banner */
+.autonomy-priority-banner {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #5a3b00;
+  color: #ffe6a8;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.autonomy-priority-banner a { color: #fff; margin-left: 8px; }
+.autonomy-priority-banner[hidden] { display: none; }

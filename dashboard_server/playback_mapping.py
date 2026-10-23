@@ -63,8 +63,20 @@ class SourceCursorLocalizer:
 
 
 _pipeline_localizer=None
+def lower_child_priority(increment=10):
+    """E3: recorded-map localizer child processes run at a lower CPU priority
+    so autonomy, sensor bridges and the dashboard's own request threads come
+    first. Only separate processes are reniced; threads of the dashboard
+    process never are (a reniced thread holding the GIL would delay the rover
+    command handlers)."""
+    if hasattr(os, 'nice'):
+        try:os.nice(increment)
+        except OSError:pass
+
+
 def initialize_localizer_process():
     global _pipeline_localizer
+    lower_child_priority()
     _pipeline_localizer=SourceCursorLocalizer()
 
 

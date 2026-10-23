@@ -16,6 +16,7 @@ from . import playback_mapping as source_module
 from .replay_state import export_localizer,restore_localizer,save_state,load_state
 
 def initialize_restored_process(state):
+    source_module.lower_child_priority()
     source_module._pipeline_localizer=restore_localizer(state) if state else SourceCursorLocalizer()
 
 def consume_state(localizer,batch,capture):

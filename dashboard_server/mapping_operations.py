@@ -31,6 +31,9 @@ class ManagedArchiveMapping(ArchiveMapping):
         self.lock=threading.RLock();self.live=live;self.lease_seconds=lease_seconds
         self.leases={};self.suspended=set();self.notes={};self.changed={};self.generations={}
         self.read_slots=threading.BoundedSemaphore(2)
+        # Callable -> True while autonomy has resource priority (E2). Recorded
+        # mapping computation then waits, like it does for live mapping.
+        self.priority=None
         self._shutdown=threading.Event();self.monitor=None
         if start_monitor:
             self.monitor=threading.Thread(target=self._monitor,daemon=True,name='mapping-job-monitor')
@@ -41,6 +44,13 @@ class ManagedArchiveMapping(ArchiveMapping):
 
     def _live_busy(self):
         return bool(self.live and getattr(self.live,'tracking',False))
+
+    def _autonomy_yield(self):
+        try:return bool(self.priority and self.priority())
+        except Exception:return True
+
+    def _compute_blocked(self):
+        return self._live_busy() or self._autonomy_yield()
 
     def _lease_client(self,control):
         if control is None:return 'legacy'
@@ -87,7 +97,7 @@ class ManagedArchiveMapping(ArchiveMapping):
                 if len(self.playback_mappers)>=2:raise MappingConflict('mapping_worker_slots_busy')
             # No asynchronous old writer survives the pointer replacement.
             result=super().new_map(archive_id)
-            worker=self.playback_mappers[archive_id];worker.allow_compute=lambda:not self._live_busy()
+            worker=self.playback_mappers[archive_id];worker.allow_compute=lambda:not self._compute_blocked()
             self.suspended.discard(archive_id);self.notes.pop(archive_id,None)
             self.generations[archive_id]=uuid.uuid4().hex
             return {**result,'mapping_generation':self.generations[archive_id]}
@@ -133,11 +143,12 @@ class ManagedArchiveMapping(ArchiveMapping):
                     if name!=archive_id:
                         self._retire(name,'worker_slot_released');self.playback_mappers.pop(name,None)
                 worker=ResumablePlaybackMapper(path,history);self.playback_mappers[archive_id]=worker
-            worker.allow_compute=lambda:not self._live_busy()
+            worker.allow_compute=lambda:not self._compute_blocked()
             result=worker.advance(value,playing,control)
             if not result.get('stale_control_ignored'):
                 self.leases[archive_id]=dict(client=client,heartbeat=time.monotonic(),epoch=history['epoch'])
-            return {**result,'waiting_live_priority':self._live_busy(),'mapping_generation':self.generations[archive_id],
+            return {**result,'waiting_live_priority':self._live_busy(),'waiting_autonomy_priority':self._autonomy_yield(),
+                'mapping_generation':self.generations[archive_id],
                 'lease_seconds':self.lease_seconds,'control_owned':True}
 
     def regenerate(self,archive_id):
@@ -163,9 +174,9 @@ class ManagedArchiveMapping(ArchiveMapping):
                 previous=self.changed.get(name)
                 if previous is None or processed!=previous[0]:self.changed[name]=(processed,now)
                 active=worker.running and not worker.closed
-                stage='complete' if h.get('complete') else 'failed' if worker.error else 'stopping' if worker.closed and worker.running else 'stopped' if worker.closed else 'waiting_live_priority' if self._live_busy() and worker.playing else 'paused' if not worker.playing else 'waiting_cursor' if h.get('waiting_for_cursor') else getattr(worker,'worker_stage','localizing')
+                stage='complete' if h.get('complete') else 'failed' if worker.error else 'stopping' if worker.closed and worker.running else 'stopped' if worker.closed else 'waiting_live_priority' if self._live_busy() and worker.playing else 'waiting_autonomy_priority' if self._autonomy_yield() and worker.playing else 'paused' if not worker.playing else 'waiting_cursor' if h.get('waiting_for_cursor') else getattr(worker,'worker_stage','localizing')
                 rows.append(dict(id='archive:'+name,kind='archive',priority=1,recording_id=name,
-                    epoch=h['epoch'],state=stage,stage=stage,active=active,processing=active and worker.playing and not self._live_busy(),
+                    epoch=h['epoch'],state=stage,stage=stage,active=active,processing=active and worker.playing and not self._compute_blocked(),
                     processed_t_s=processed,requested_t_s=worker.target,duration_s=h.get('duration_s'),
                     input_scans=h.get('input_scans',0),scan_count=len(h.get('events',[])),
                     rejected_scans=h.get('rejected_scans',0),motion_prior_scans=h.get('motion_prior_scans',0),

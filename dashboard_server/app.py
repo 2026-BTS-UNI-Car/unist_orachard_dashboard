@@ -17,7 +17,7 @@ from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from dashboard_server.telemetry import ROOT, TelemetryProvider
@@ -30,6 +30,21 @@ SESSION_COOKIE_NAME = "ubts_session"
 SESSION_TTL_S = int(os.environ.get("DASHBOARD_SESSION_TTL_S", "3600"))
 _SESSION_LOCK = threading.Lock()
 _SESSIONS: dict[str, dict[str, float]] = {}
+# Sessions that recently held the manual-drive lease -> expiry (time.time()).
+_MANUAL_DRIVERS: dict[str, float] = {}
+MANUAL_DRIVER_EXEMPT_S = 30.0
+
+
+def _note_manual_driver(session: str) -> None:
+    now = time.time()
+    _MANUAL_DRIVERS[session] = now + MANUAL_DRIVER_EXEMPT_S
+    for token, until in list(_MANUAL_DRIVERS.items()):
+        if until <= now:
+            _MANUAL_DRIVERS.pop(token, None)
+
+
+def _manual_driver(session: str | None) -> bool:
+    return bool(session) and _MANUAL_DRIVERS.get(session, 0.0) > time.time()
 _ACTIVE_LIDAR_WS: dict[str, dict[str, float | str]] = {}
 _ACTIVE_CAMERA_WS: dict[str, dict[str, float | str]] = {}
 _ACTIVE_IMU_WS: dict[str, dict[str, float | str]] = {}
@@ -179,7 +194,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path.startswith('/api/live/') or path.startswith('/api/autonomy/native-map/') or path in ('/api/autonomy','/api/autonomy/preflight','/api/autonomy/observe','/api/autonomy/supervisor'):
+        if path.startswith('/api/live/') or path.startswith('/api/autonomy/native-map/') or path in ('/api/autonomy','/api/autonomy/preflight','/api/autonomy/observe','/api/autonomy/supervisor','/api/autonomy/priority'):
             self._live_request(parsed)
         elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
@@ -211,6 +226,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.health())
         elif path == "/api/telemetry":
             payload = self._shared_telemetry().get() if isinstance(self.provider, TelemetryProvider) else self.provider.telemetry()
+            payload["autonomy_priority"] = self._autonomy_priority_snapshot()
             payload["connection"]["lidar_websocket"] = lidar_websocket_stats()
             payload["connection"]["camera_websocket"] = camera_websocket_stats()
             payload["connection"]["imu_websocket"] = imu_websocket_stats()
@@ -276,8 +292,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not isinstance(payload,dict):self.send_error(400,'Object required');return
         path=parsed.path
         try:
-            if path=='/api/live/mapping-jobs' and not action:
+            if path=='/api/autonomy/priority' and not action:
+                result={'ok':True,**self._autonomy_priority_snapshot()}
+            elif path=='/api/live/mapping-jobs' and not action:
                 result=self.mapping_operations.status()
+                priority=self._autonomy_priority_snapshot()
+                result={**result,'autonomy_priority':priority}
+                if priority.get('background_yield'):
+                    # The installed recorder pauses its media queue while any
+                    # job reports processing (priority_reason -> recorded_mapping_active).
+                    result['jobs']=[*result.get('jobs',[]),dict(id='autonomy-priority',kind='priority',
+                        state=priority.get('state'),stage='autonomy_priority',processing=True,active=True,
+                        reason='autonomy_priority',stoppable=False)]
             elif path=='/api/live/mapping-jobs/stop' and action:
                 result=self.mapping_operations.stop(payload.get('job_id'),payload.get('expected_epoch'))
             elif path=='/api/autonomy' and not action:
@@ -353,6 +379,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 else:result=self.live_mapping.status(query.get('since',[None])[0])
             elif path.startswith('/api/live/map/') and action:
                 operation=path.rsplit('/',1)[-1]
+                if operation=='start' and self._autonomy_priority_snapshot().get('state') in ('active','unknown'):
+                    self._send_json({'ok':False,'error':'autonomy_priority',
+                        'message':'자율주행 우선 모드에서는 대시보드 실시간 지도를 시작하지 않습니다.'},409);return
                 if hasattr(self.live_mapping,'task_status'):
                     result=self.live_mapping.action(operation,expected_epoch=payload.get('expected_epoch'))
                 else:result=self.live_mapping.action(operation)
@@ -397,6 +426,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             from dashboard_server.mapping_operations import MappingConflict
             self._send_json({'ok':False,'error':str(error)},409 if isinstance(error,MappingConflict) or str(error)=='mapping_epoch_changed_refresh_before_action' else 400)
+
+    def _autonomy_priority_snapshot(self):
+        priority=getattr(self,'autonomy_priority',None)
+        if priority is None:return {'state':'disabled','background_yield':False,'preview_cap':None}
+        return priority.snapshot()
+
+    def _preview_cap_state(self,label,session):
+        if label not in ('camera','lidar') or _manual_driver(session):return None
+        priority=getattr(self,'autonomy_priority',None)
+        state=getattr(priority,'state',None)
+        return state if state in ('active','unknown') else None
 
     def _native_autonomy_action(self,action,payload):
         # Actual arming remains local and requires the existing authenticated session.
@@ -492,7 +532,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             handoff=supervisor.manual_takeover()
             if path!='/api/rover/stop' and not handoff.get('loop_joined'):
                 self._send_json({'ok':False,'error':'autonomy_manual_handoff_cleanup_pending'},409);return
-        self._send_json(request({**payload, "op": operations[path], "owner": session}))
+        result = request({**payload, "op": operations[path], "owner": session})
+        # Passive bookkeeping only (the bridge reply is sent unchanged): the
+        # session that holds the manual-drive lease keeps full previews while
+        # autonomy has resource priority (plan 7.3 exception).
+        if path != "/api/rover/stop" and isinstance(result, dict) and result.get("ok") and result.get("lease"):
+            _note_manual_driver(session)
+        self._send_json(result)
 
     def log_message(self, fmt, *args):
         if os.environ.get("DASHBOARD_ACCESS_LOG", "0") == "1":
@@ -1055,7 +1101,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.close_connection = True
         dashboard_log(f"ws.{label}.open", session=session_token[:8], connection=connection_id[:8], active=websocket_stats(registry)["active"])
 
-        upstream_url = self._upstream_with_client_query(default_upstream)
+        cap_state = self._preview_cap_state(label, session_token)
+        upstream_url = self._upstream_with_client_query(default_upstream, label, cap_state)
+        cap_check = None
+        if label in ("camera", "lidar"):
+            cap_check = lambda: self._preview_cap_state(label, session_token) != cap_state
         try:
             unavailable_logged = False
             while time.time() < session_deadline:
@@ -1076,7 +1126,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     time.sleep(min(2.0, max(0.1, session_deadline - time.time())))
                     continue
                 try:
-                    self._relay_websocket(upstream, initial_upstream, session_deadline)
+                    self._relay_websocket(upstream, initial_upstream, session_deadline, cap_check)
                 finally:
                     try:
                         upstream.close()
@@ -1128,8 +1178,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         sock.settimeout(None)
         return sock, initial
 
-    def _upstream_with_client_query(self, upstream_url: str) -> str:
+    def _upstream_with_client_query(self, upstream_url: str, label: str | None = None, cap_state: str | None = None) -> str:
         client_query = urlparse(self.path).query
+        if cap_state is not None and label is not None:
+            from dashboard_server.autonomy_priority import capped_stream_query
+            query = {key: values[-1] for key, values in parse_qs(client_query, keep_blank_values=True).items()}
+            client_query = urlencode(capped_stream_query(label, cap_state, query))
         if not client_query:
             return upstream_url
         separator = "&" if urlparse(upstream_url).query else "?"
@@ -1192,13 +1246,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
         self.close_connection = True
 
-    def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b"", deadline: float | None = None):
+    def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b"", deadline: float | None = None,
+                         cap_check=None):
         if initial_upstream:
             try:
                 self.connection.sendall(initial_upstream)
             except OSError:
                 return
         sockets = [self.connection, upstream]
+        last_activity = time.time()
         while True:
             timeout = 30.0
             if deadline is not None:
@@ -1207,13 +1263,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     self._ws_send_close(self.connection)
                     return
                 timeout = min(timeout, max(0.1, remaining))
+            if cap_check is not None:
+                # Wake at least once a second to apply an autonomy-priority change.
+                timeout = min(timeout, 1.0)
             readable, _, errored = select.select(sockets, [], sockets, timeout)
+            if cap_check is not None and cap_check():
+                # The browser reconnects after 0.5 s and receives the new cap.
+                self._ws_send_frame(self.connection, 0x8, (4001).to_bytes(2, "big") + b"autonomy_priority")
+                return
             if errored:
                 break
             if not readable:
                 if deadline is not None and time.time() >= deadline:
                     self._ws_send_close(self.connection)
                     return
+                if cap_check is not None and time.time() - last_activity < 30.0:
+                    continue
+                last_activity = time.time()
                 self._ws_send_json(
                     self.connection,
                     {
@@ -1226,6 +1292,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     },
                 )
                 continue
+            last_activity = time.time()
             for sock in readable:
                 try:
                     data = sock.recv(65536)
@@ -1308,6 +1375,23 @@ def create_server(host: str, port: int, config: str | None = None, *, autonomy_b
     DashboardHandler.autonomy_supervisor=NativeAutonomyApplication(
         DashboardHandler.native_observation_client,session_valid=native_session_valid,bindings=autonomy_bindings)
     DashboardHandler.autonomy_observe_lock=threading.RLock()
+    from dashboard_server.autonomy_priority import AutonomyPriority
+    DashboardHandler.autonomy_priority=AutonomyPriority.from_env(supervisor_status=DashboardHandler.autonomy_supervisor.status)
+    for target,name in ((DashboardHandler.provider,'docker_yield'),(DashboardHandler.archive_mapping,'priority')):
+        try:setattr(target,name,DashboardHandler.autonomy_priority.background_yield)
+        except AttributeError:pass  # test doubles without these hooks
+    def _autonomy_priority_changed(previous,state,live=DashboardHandler.live_mapping):
+        # ACTIVE: stop the dashboard live mapper through its normal Stop path
+        # (the map is kept). UNKNOWN only refuses a new start (see /api/live/map/start).
+        if state=='active' and getattr(live,'active',False):
+            try:
+                live.action('stop')
+                with live.lock:
+                    live.reason='autonomy_priority';live._publish()
+            except Exception as error:
+                dashboard_log('autonomy_priority.live_stop_failed',error=str(error)[:160])
+        dashboard_log('autonomy_priority.state',previous=previous,state=state)
+    DashboardHandler.autonomy_priority.add_listener(_autonomy_priority_changed)
     DashboardHandler.autonomy_observation=AutonomyObservation(
         planner=RecordBasedAutonomy(),input_provider=DashboardHandler.native_observation_client.input
             if DashboardHandler.native_observation_client is not None else DashboardHandler.live_mapping.observation_input)
