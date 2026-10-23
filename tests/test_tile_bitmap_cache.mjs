@@ -3,11 +3,12 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import * as model from '../static/sim-map-model.mjs';
 import * as codec from '../static/grid-cell-codec.mjs';
+import * as delta from '../static/live-map-delta.mjs';
 const source=fs.readFileSync(new URL('../static/metric-map.mjs',import.meta.url),'utf8');
 const classSource=source.slice(source.indexOf('export class MetricMap {')).replace('export class','class');
 let allocations=0,draws=0;
 const canvas={addEventListener(){},getBoundingClientRect:()=>({width:720,height:400})};
-const context=vm.createContext({...model,...codec,$:()=>canvas,ResizeObserver:class{observe(){}},
+const context=vm.createContext({...model,...codec,...delta,$:()=>canvas,ResizeObserver:class{observe(){}},
   document:{createElement(){allocations++;return {getContext:()=>({
     createImageData:()=>({data:new Uint8ClampedArray(64*64*4)}),putImageData(){}})};}}});
 vm.runInContext(`${classSource}\nthis.MetricMap=MetricMap`,context);

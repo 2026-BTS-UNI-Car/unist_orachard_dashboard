@@ -1,5 +1,6 @@
 import {worldBounds, occupiedCellsFromPixels, nearbyWorldBounds, fullWorldBounds, fittedView, worldToScreen, pathOpacity, archivePath, virtualGpsPoint, orchardLayout} from './sim-map-model.mjs';
 import {decodeTileCells, cellPixels, tileOccupiedIndices, nearbyTileBounds} from './grid-cell-codec.mjs';
+import {mergeLivePath} from './live-map-delta.mjs';
 
 const $ = id => document.getElementById(id);
 export class MetricMap {
@@ -56,9 +57,12 @@ export class MetricMap {
     for (const tile of decoded) this.tileBitmaps.set(`${tile.x},${tile.y}`,tile);
     this.tileEpoch = epoch; this.bitmap = null; this.occupiedCells = undefined;
     this.pendingTiles = null;
-    const previousPath = this.snapshot.path || [];
-    const path = snapshot.path_append && !snapshot.tiles_reset ? [...previousPath,...(snapshot.path || [])] : snapshot.path;
-    this.commit({...snapshot,path,map_epoch:snapshot.view_epoch || snapshot.map_epoch || epoch});
+    // Live polls may carry only the newest path points (path_from). A
+    // response that cannot be merged keeps the previous path; the next poll
+    // then asks for the full path.
+    const merged = mergeLivePath(this.snapshot, snapshot);
+    this.pathNeedsFull = !merged.ok;
+    this.commit({...snapshot,path:merged.path,map_epoch:snapshot.view_epoch || snapshot.map_epoch || epoch});
   }
   set(snapshot) {
     if (Array.isArray(snapshot.tiles)) return this.setTiles(snapshot).catch(() => {this.tileEpoch = null;});

@@ -210,7 +210,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/health":
             self._send_json(self.provider.health())
         elif path == "/api/telemetry":
-            payload = self.provider.telemetry()
+            payload = self._shared_telemetry().get() if isinstance(self.provider, TelemetryProvider) else self.provider.telemetry()
             payload["connection"]["lidar_websocket"] = lidar_websocket_stats()
             payload["connection"]["camera_websocket"] = camera_websocket_stats()
             payload["connection"]["imu_websocket"] = imu_websocket_stats()
@@ -344,8 +344,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             elif path=='/api/live/map' and not action:
                 query=parse_qs(parsed.query)
                 if query.get('transport',[None])[0]=='tiles':
+                    extra={}
+                    if getattr(self.live_mapping,'supports_path_delta',False) and 'path_token' in query:
+                        extra=dict(path_token=query['path_token'][0],path_count=query.get('path_count',[None])[0],
+                            path_stamp=query.get('path_stamp',[None])[0])
                     result=self.live_mapping.status(query.get('since',[None])[0],transport='tiles',
-                        tile_since=query.get('tile_since',[None])[0],tile_epoch=query.get('tile_epoch',[None])[0])
+                        tile_since=query.get('tile_since',[None])[0],tile_epoch=query.get('tile_epoch',[None])[0],**extra)
                 else:result=self.live_mapping.status(query.get('since',[None])[0])
             elif path.startswith('/api/live/map/') and action:
                 operation=path.rsplit('/',1)[-1]
@@ -494,12 +498,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if os.environ.get("DASHBOARD_ACCESS_LOG", "0") == "1":
             super().log_message(fmt, *args)
 
+    def parse_request(self):
+        # Start of the server-side time reported in Server-Timing (E0).
+        self._request_started = time.perf_counter()
+        return super().parse_request()
+
+    def _server_timing_header(self):
+        started = getattr(self, "_request_started", None)
+        if started is not None:
+            self.send_header("Server-Timing", f"app;dur={(time.perf_counter() - started) * 1000:.1f}")
+
+    def _shared_telemetry(self):
+        from dashboard_server.telemetry_snapshot import SharedTelemetry
+        shared = getattr(DashboardHandler, "_telemetry_snapshot", None)
+        if shared is None or shared.provider is not self.provider:
+            shared = SharedTelemetry(self.provider, ttl_s=float(os.environ.get("TELEMETRY_SNAPSHOT_TTL_S", "1.0")))
+            DashboardHandler._telemetry_snapshot = shared
+        return shared
+
     def _send_json(self, payload, status=200):
         session_token = self._ensure_session(create=True)
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         accepts_gzip = "gzip" in self.headers.get("Accept-Encoding", "").lower()
         encoded = gzip.compress(body, compresslevel=1) if accepts_gzip and len(body) >= 1024 else body
         self.send_response(status)
+        self._server_timing_header()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "close")
@@ -801,6 +824,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         session_token = self._ensure_session(create=True)
         self.send_response(206 if partial else 200)
+        self._server_timing_header()
         self.send_header("Content-Type", str(video.get("mime") or "video/mp4"))
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("ETag", etag)

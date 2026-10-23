@@ -380,7 +380,12 @@ class SourceLiveMapping(LiveMapping):
             if self.persistence.get('native_cells'):self.snapshot['native_checkpoint']='last_native_map.json'
         packet=self.map.tile_packet()
         packet['tiles']=[dict(t,revision=self.map.tile_versions.get((t['x'],t['y']),0)) for t in packet['tiles']]
-        self.cell_snapshot={**packet,**self.snapshot}
+        # The token changes whenever previously published path points can no
+        # longer be addressed by index (new map epoch or 12k-point compaction).
+        path=packet.get('path') or []
+        self.cell_snapshot={**packet,**self.snapshot,
+            'path_token':f"{self.map_epoch}:{int(getattr(self.map,'path_compacted_at',0) or 0)}",
+            'path_count':len(path)}
 
     def task_status(self):
         now=time.monotonic()
@@ -397,7 +402,26 @@ class SourceLiveMapping(LiveMapping):
             connections=dict(self.connections),diagnostic=dict(self.diagnostic),
             body_feedback=self.feedback_status(),runtime_authority=False)
 
-    def status(self,since=None,transport=None,tile_since=None,tile_epoch=None,segment=None):
+    # Clients that send path_token/path_count/path_stamp receive only the path
+    # points after their last known point (path_from = its index), instead of
+    # the whole retained path (up to 12,000 poses) on every 100 ms poll.
+    supports_path_delta=True
+
+    @staticmethod
+    def path_delta(data,path_token,path_count,path_stamp):
+        """Return (path_from, points) or None when the client must take the full path.
+
+        The last point the client already holds is sent again so that a flag
+        set on it after publication (break_before) is refreshed."""
+        path=data.get('path') or []
+        try:count=int(path_count);stamp=float(path_stamp)
+        except (TypeError,ValueError):return None
+        if (path_token is None or path_token!=data.get('path_token') or not 1<=count<=len(path)
+                or not math.isfinite(stamp) or path[count-1].get('stamp')!=stamp):return None
+        return count-1,path[count-1:]
+
+    def status(self,since=None,transport=None,tile_since=None,tile_epoch=None,segment=None,
+               path_token=None,path_count=None,path_stamp=None):
         data=self.cell_snapshot
         if self.restored_snapshot is not None:
             return {**super().status(since),'body_feedback':self.feedback_status()}
@@ -407,6 +431,9 @@ class SourceLiveMapping(LiveMapping):
         full=not 0<=revision<=data['tile_version']
         result={**data,'tiles':data['tiles'] if full else [t for t in data['tiles'] if t['revision']>revision],
                 'tiles_reset':full,'worker':self.task_status()}
+        if not full and path_token is not None:
+            delta=self.path_delta(data,path_token,path_count,path_stamp)
+            if delta is not None:result.update(path_from=delta[0],path=delta[1],path_append=False)
         if self.tracking:
             now=time.monotonic()
             if now-self.source_times.get('scan',0)>1.5:result.update(state='waiting_for_sensors',reason='LiDAR_source_stale')
