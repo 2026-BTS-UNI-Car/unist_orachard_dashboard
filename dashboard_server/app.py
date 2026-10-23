@@ -236,7 +236,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/recordings/status":
             self._send_json(self.provider.recording_status())
         elif path == "/api/recordings":
-            self._send_json(self.provider.recordings())
+            if not self._send_archive_response('recordings',{}):
+                self._send_json(self.provider.recordings())
         elif path.startswith("/api/recordings/"):
             self._send_recording_payload(path, parsed.query)
         elif path == "/api/plan":
@@ -712,6 +713,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             start_s = (params.get("start_s") or [None])[0]
             duration_s = (params.get("duration_s") or [None])[0]
             profile = (params.get("profile") or [None])[0]
+            if self._send_archive_response('timeline',dict(recording_id=recording_id,
+                    start_s=start_s,duration_s=duration_s,profile=profile)):
+                return
             self._send_json(
                 self.provider.recording_timeline(
                     recording_id,
@@ -724,7 +728,48 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if raw.endswith("/orchard-map"):
             self.send_error(404)
             return
-        self._send_json(self.provider.recording_detail(unquote(raw)))
+        if not self._send_archive_response('detail',{'recording_id':unquote(raw)}):
+            self._send_json(self.provider.recording_detail(unquote(raw)))
+
+    def _archive_client_gone(self):
+        try:
+            readable,_,_=select.select([self.connection],[],[],0)
+            return bool(readable) and self.connection.recv(1,socket.MSG_PEEK)==b''
+        except (OSError,ValueError):return True
+
+    def _send_archive_response(self,operation,parameters):
+        worker=getattr(self,'archive_process',None)
+        if worker is None:return False
+        from dashboard_server.archive_protocol import ArchiveProcessError
+        try:
+            response=worker.request(operation,parameters,
+                gzip='gzip' in self.headers.get('Accept-Encoding','').lower(),
+                cancelled=self._archive_client_gone)
+        except ArchiveProcessError as error:
+            if error.status!=499:self._send_json({'ok':False,'error':error.code},error.status)
+            else:self.close_connection=True
+            return True
+        except (OSError,ValueError,RuntimeError):
+            self._send_json({'ok':False,'error':'archive_process_unavailable'},503)
+            return True
+        with response:
+            session_token=self._ensure_session(create=True)
+            self.send_response(200)
+            self.send_header('Content-Type','application/json; charset=utf-8')
+            self.send_header('Cache-Control','no-store');self.send_header('Connection','close')
+            self.send_header('Vary','Accept-Encoding')
+            if response.metadata['encoding']=='gzip':self.send_header('Content-Encoding','gzip')
+            self._send_session_cookie(session_token)
+            self.send_header('Content-Length',str(response.metadata['bytes']));self.end_headers()
+            try:
+                if self.command!='HEAD':
+                    for data in response.chunks():
+                        self.connection.settimeout(min(3,max(.001,response.deadline-time.monotonic())))
+                        self.wfile.write(data)
+            except (OSError,ValueError):self.close_connection=True;return True
+            finally:self.close_connection=True
+        self._log_served_json()
+        return True
 
     def _send_recording_camera_frame(self, frame: dict[str, object]):
         path = frame.get("path")
@@ -1243,6 +1288,12 @@ class DashboardServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def server_close(self):
+        try:return self._close_dashboard_resources()
+        finally:
+            worker=getattr(self,'archive_process',None)
+            if worker is not None:worker.close()
+
+    def _close_dashboard_resources(self):
         supervisor=getattr(self,'autonomy_supervisor',None)
         if supervisor is not None:
             closed=supervisor.close()
@@ -1262,6 +1313,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 def create_server(host: str, port: int, config: str | None = None, *, autonomy_bindings=None) -> ThreadingHTTPServer:
     DashboardHandler.provider = TelemetryProvider(config)
+    DashboardHandler.archive_process=None
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
     from dashboard_server.autonomy_settings import AutonomySettings
@@ -1293,6 +1345,21 @@ def create_server(host: str, port: int, config: str | None = None, *, autonomy_b
     server.autonomy_observation=DashboardHandler.autonomy_observation
     server.native_observation_client=DashboardHandler.native_observation_client
     server.autonomy_observe_lock=DashboardHandler.autonomy_observe_lock
+    server.archive_process=None
+    if os.environ.get('DASHBOARD_ARCHIVE_PROCESS','0')=='1':
+        from dashboard_server.archive_process import ArchiveProcess
+        try:
+            worker=ArchiveProcess(DashboardHandler.provider.recording_archive_dir,
+                                  DashboardHandler.provider.recording_playback_cache_dir)
+            DashboardHandler.archive_process=worker
+            DashboardHandler.provider._archive_process=worker
+            DashboardHandler.provider._archive_recovery_cache_dir=worker.original_cache
+            DashboardHandler.provider.recording_playback_cache_dir=worker.cache
+            DashboardHandler.provider._archive_cache_epoch=True
+            server.archive_process=worker
+        except BaseException:
+            server.server_close()
+            raise
     return server
 
 

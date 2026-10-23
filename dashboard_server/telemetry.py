@@ -169,6 +169,26 @@ class DockerSocketHTTPConnection(http.client.HTTPConnection):
 
 
 class TelemetryProvider:
+    @classmethod
+    def for_archive(cls, archive_dir, playback_cache_dir, *, recovery_cache=None):
+        """Explicit file-only initializer; never run live/hardware Provider init."""
+        from dashboard_server.archive_protocol import root_paths
+        self=cls.__new__(cls)
+        self.recording_archive_dir,self.recording_playback_cache_dir=root_paths(archive_dir,playback_cache_dir)
+        self._timeline_cache=OrderedDict()
+        self._timeline_cache_lock=threading.RLock()
+        self._timeline_cache_limit=2
+        self._timeline_loads={}
+        self._timeline_load_slots=threading.BoundedSemaphore(2)
+        self._timeline_wait_slots=threading.BoundedSemaphore(8)
+        self._light_timeline_cache=OrderedDict()
+        self._playback_cache_lock=threading.RLock()
+        self._archive_only=True
+        self._archive_cache_epoch=True
+        self._archive_recovery_cache_dir=(root_paths(archive_dir,recovery_cache)[1]
+                                        if recovery_cache is not None else self.recording_playback_cache_dir)
+        return self
+
     def __init__(self, config_path: str | Path | None = None):
         self.started_at = time.time()
         self.config_path = Path(
@@ -1315,7 +1335,7 @@ class TelemetryProvider:
         def response(timeline):
             if not (timeline.get('lidar') or {}).get('frames'):
                 from .lidar_preview_recovery import window
-                try: recovered = window(path,self.recording_playback_cache_dir,start_s,duration_s)
+                try: recovered = window(path,getattr(self,'_archive_recovery_cache_dir',self.recording_playback_cache_dir),start_s,duration_s)
                 except (OSError,ValueError,TypeError,KeyError): recovered = None
                 if recovered:
                     recovered = dict(recovered);recovered.pop('telemetry',None)
@@ -1344,7 +1364,7 @@ class TelemetryProvider:
             # Missing previews are prepared explicitly offline. Never scan a
             # complete raw recording in this HTTP handler or steal live CPU.
             from .lidar_preview_recovery import window
-            try: prepared = window(path,self.recording_playback_cache_dir,start_s,duration_s)
+            try: prepared = window(path,getattr(self,'_archive_recovery_cache_dir',self.recording_playback_cache_dir),start_s,duration_s)
             except (OSError,ValueError,TypeError,KeyError): prepared = None
             if prepared is None:
                 return {"ok": False, "error": "preview_recovery_required", "id": recording_id}
@@ -1386,7 +1406,7 @@ class TelemetryProvider:
             except TimelineLoadUnavailable as error:return dict(ok=False,error=str(error))
             if not timeline:
                 from .lidar_preview_recovery import window
-                try: prepared=window(path,self.recording_playback_cache_dir,start,duration)
+                try: prepared=window(path,getattr(self,'_archive_recovery_cache_dir',self.recording_playback_cache_dir),start,duration)
                 except (OSError,ValueError,TypeError,KeyError): prepared=None
                 if prepared is None:return dict(ok=False,error='preview_recovery_required')
                 timeline=light_timeline(prepared['telemetry'])
@@ -1537,12 +1557,17 @@ class TelemetryProvider:
         cache_dir = self._playback_cache_path(archive, timeline_path)
         if cache_dir is None:
             return None
-        path = (cache_dir / "frames" / filename).resolve()
+        path = cache_dir / "frames" / filename
         try:
+            if getattr(self, '_archive_cache_epoch', False):
+                # A standalone JPEG GET does not pass through worker.guard_cache.
+                # Refuse final-file links too, before resolve can hide them.
+                self._archive_cache_write_guard(path)
+            path = path.resolve()
             frame_root = (cache_dir / "frames").resolve()
             if frame_root not in path.parents or not path.is_file():
                 return None
-        except OSError:
+        except (OSError, ValueError):
             return None
         return {
             "path": path,
@@ -1580,7 +1605,27 @@ class TelemetryProvider:
         if signature is None:
             return None
         token = f"{signature[0]}-{signature[1]}-{PLAYBACK_CACHE_REVISION}"
-        return self.recording_playback_cache_dir / archive.name / token
+        path=self.recording_playback_cache_dir / archive.name / token
+        if getattr(self,'_archive_cache_epoch',False):
+            from dashboard_server.archive_protocol import no_link,signature as source_signature
+            epoch=hashlib.sha256(json.dumps(source_signature(timeline_path)).encode()).hexdigest()[:24]
+            path=path.with_name(token+'-e'+epoch)
+            no_link(path)
+            for name in ('frames','segments','manifest.json','manifest.json.tmp'):no_link(path/name)
+        return path
+
+    def _archive_cache_write_guard(self, path):
+        from dashboard_server.archive_protocol import cache_write_path
+        return cache_write_path(self.recording_playback_cache_dir,path)
+
+    def _archive_cache_reserve(self, size, entries=1):
+        from dashboard_server.archive_protocol import need
+        budget=getattr(self,'_archive_cache_budget',None)
+        need(type(budget) is dict and type(size) is int and size>=0,'archive_cache_budget_missing')
+        need(size<=budget['bytes_left'] and entries<=budget['files_left'],
+             'archive_cache_budget_exceeded',503)
+        # Conservatively charge replacements too; do not delete old epochs.
+        budget['bytes_left']-=size;budget['files_left']-=entries
 
     def _valid_playback_manifest(
         self, cache_dir: Path, timeline_path: Path
@@ -1622,6 +1667,9 @@ class TelemetryProvider:
         request: tuple[float, int],
     ) -> dict[str, Any] | None:
         with self._playback_cache_lock:
+            if getattr(self,'_archive_cache_epoch',False):
+                from dashboard_server.archive_protocol import guard_cache
+                guard_cache(self.recording_playback_cache_dir,archive.name)
             cached = self._cached_playback_segment(archive, timeline_path, request)
             if cached:
                 return cached
@@ -1631,6 +1679,7 @@ class TelemetryProvider:
                 return None
             frames_dir = cache_dir / "frames"
             segments_dir = cache_dir / "segments"
+            if getattr(self,'_archive_cache_epoch',False):self._archive_cache_reserve(0,4)
             frames_dir.mkdir(parents=True, exist_ok=True)
             segments_dir.mkdir(parents=True, exist_ok=True)
             duration = float(timeline.get("duration_s") or 0.0)
@@ -1665,8 +1714,11 @@ class TelemetryProvider:
                     digest = hashlib.sha256(jpeg).hexdigest()[:24]
                     filename = f"frame-{digest}.jpg"
                     frame_path = frames_dir / filename
+                    if getattr(self,'_archive_cache_epoch',False):self._archive_cache_write_guard(frame_path)
                     if not frame_path.exists():
                         tmp_path = frame_path.with_suffix(".jpg.tmp")
+                        if getattr(self,'_archive_cache_epoch',False):self._archive_cache_write_guard(tmp_path)
+                        if getattr(self,'_archive_cache_epoch',False):self._archive_cache_reserve(len(jpeg),2)
                         tmp_path.write_bytes(jpeg)
                         tmp_path.replace(frame_path)
                     camera_files.add(filename)
@@ -1683,15 +1735,16 @@ class TelemetryProvider:
                 }
                 segment_path = segments_dir / f"segment-{index:06d}.json"
                 tmp_segment = segment_path.with_suffix(".json.tmp")
-                tmp_segment.write_text(
-                    json.dumps(
+                if getattr(self,'_archive_cache_epoch',False):
+                    self._archive_cache_write_guard(segment_path);self._archive_cache_write_guard(tmp_segment)
+                segment_text = json.dumps(
                         segment,
                         ensure_ascii=False,
                         separators=(",", ":"),
                         allow_nan=False,
-                    ),
-                    encoding="utf-8",
-                )
+                    )
+                if getattr(self,'_archive_cache_epoch',False):self._archive_cache_reserve(len(segment_text.encode('utf-8')),2)
+                tmp_segment.write_text(segment_text,encoding="utf-8")
                 tmp_segment.replace(segment_path)
             manifest = {
                 "schema": PLAYBACK_CACHE_SCHEMA,
@@ -1705,6 +1758,10 @@ class TelemetryProvider:
                 "created_at": time.time(),
                 "source_timeline_preserved": True,
             }
+            if getattr(self,'_archive_cache_epoch',False):
+                self._archive_cache_write_guard(cache_dir/'manifest.json')
+                self._archive_cache_write_guard(cache_dir/'manifest.json.tmp')
+                self._archive_cache_reserve(len(json.dumps(manifest,indent=2,ensure_ascii=False).encode('utf-8'))+16,2)
             _write_json_atomic(cache_dir / "manifest.json", manifest)
             return self._cached_playback_segment(archive, timeline_path, request)
 
@@ -1719,6 +1776,14 @@ class TelemetryProvider:
             # Dropping the expensive full view must not force another cold parse.
 
     def _prewarm_playback_cache(self, recording_id: str) -> None:
+        archive_process=getattr(self,'_archive_process',None)
+        if archive_process is not None:
+            # Existing best-effort background prewarm keeps heavy work out of
+            # the live process whenever the explicitly enabled worker is used.
+            try:
+                with archive_process.request('prewarm',{'recording_id':recording_id}):pass
+            except (OSError,ValueError,RuntimeError):pass
+            return
         archive = self.recording_archive_path(recording_id)
         if archive is None or not archive.is_dir():
             return
