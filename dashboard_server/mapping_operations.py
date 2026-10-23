@@ -20,6 +20,11 @@ class MappingConflict(ValueError):
     pass
 
 
+class MappingDeferred(MappingConflict):
+    """A read that must wait (HTTP 503 + Retry-After), not a failure."""
+    retry_after_s=5
+
+
 UNSPECIFIED=object()
 
 
@@ -31,6 +36,10 @@ class ManagedArchiveMapping(ArchiveMapping):
         self.lock=threading.RLock();self.live=live;self.lease_seconds=lease_seconds
         self.leases={};self.suspended=set();self.notes={};self.changed={};self.generations={}
         self.read_slots=threading.BoundedSemaphore(2)
+        # C2 (S14): building a map window is the long read; it gets its own
+        # slot so short status reads are not refused while one is built.
+        self.window_slot=threading.BoundedSemaphore(1)
+        self.read_wait_s=1.0
         # Callable -> True while autonomy has resource priority (E2). Recorded
         # mapping computation then waits, like it does for live mapping.
         self.priority=None
@@ -186,7 +195,7 @@ class ManagedArchiveMapping(ArchiveMapping):
         return rows
 
     def status(self,*args,**kwargs):
-        if not self.read_slots.acquire(timeout=.1):
+        if not self.read_slots.acquire(timeout=self.read_wait_s):
             raise MappingConflict('mapping_read_capacity_busy')
         try:
             result=super().status(*args,**kwargs)
@@ -199,14 +208,20 @@ class ManagedArchiveMapping(ArchiveMapping):
         return result
 
     def window(self,*args,**kwargs):
-        if not self.read_slots.acquire(timeout=.1):
-            raise MappingConflict('mapping_read_capacity_busy')
+        name=args[0] if args else kwargs['archive_id']
+        if self._autonomy_yield():
+            # E2: while autonomy has priority only already computed windows are served.
+            history=getattr(self,'tile_history',None)
+            cached=history.cached_window(self.directory(name),*args[1:],**{k:v for k,v in kwargs.items() if k!='archive_id'}) if history else None
+            if cached is None:raise MappingDeferred('autonomy_priority')
+            return {**cached,'mapping_generation':self.generations.setdefault(name,uuid.uuid4().hex),'from_cache':True}
+        if not self.window_slot.acquire(timeout=self.read_wait_s):
+            raise MappingDeferred('mapping_read_capacity_busy')
         try:
             result=super().window(*args,**kwargs)
-            name=args[0] if args else kwargs['archive_id']
             return {**result,'mapping_generation':self.generations.setdefault(name,uuid.uuid4().hex)}
         finally:
-            self.read_slots.release()
+            self.window_slot.release()
 
     def close(self):
         self._shutdown.set()

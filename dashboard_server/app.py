@@ -424,7 +424,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             else:self.send_error(404);return
             self._send_json(result)
         except ValueError as error:
-            from dashboard_server.mapping_operations import MappingConflict
+            from dashboard_server import mapping_operations as operations
+            MappingConflict=operations.MappingConflict
+            deferred=getattr(operations,'MappingDeferred',None)
+            if isinstance(deferred,type) and isinstance(error,deferred):
+                # A deferred read (autonomy priority, busy window slot) is a wait, not an error.
+                self._send_json({'ok':False,'error':str(error),'deferred':True,'retry_after_s':error.retry_after_s},503,
+                                headers={'Retry-After':str(error.retry_after_s)});return
             self._send_json({'ok':False,'error':str(error)},409 if isinstance(error,MappingConflict) or str(error)=='mapping_epoch_changed_refresh_before_action' else 400)
 
     def _autonomy_priority_snapshot(self):
@@ -562,7 +568,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             DashboardHandler._telemetry_snapshot = shared
         return shared
 
-    def _send_json(self, payload, status=200):
+    def _send_json(self, payload, status=200, headers=None):
         session_token = self._ensure_session(create=True)
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         accepts_gzip = "gzip" in self.headers.get("Accept-Encoding", "").lower()
@@ -575,6 +581,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Vary", "Accept-Encoding")
         if encoded is not body:
             self.send_header("Content-Encoding", "gzip")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self._send_session_cookie(session_token)
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
