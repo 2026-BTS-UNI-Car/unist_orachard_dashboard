@@ -18,7 +18,7 @@ let triedCausalMap=false,nextExplicitResume=false,lastJobsPoll=0,liveActionBusy=
 let liveMapEpoch=null,archiveMapEpoch=null,liveActionError='';
 // S17: a poll that departed before (or during) a New map/Start/Stop action
 // must not bring back the previous map or epoch.
-let liveActionSeq=0,liveRttMs=0,autonomyPending=false;
+let liveActionSeq=0,liveRttMs=0,autonomyPending=false,archiveWaitReason='';
 let inlinePlaybackMap=false,immutableCursorMap=false,bufferedCursorMap=false,availableCursorPrefix=0;
 const playbackClient=globalThis.crypto?.randomUUID?.()||`map-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;let playbackSequence=0;
 const segments=new ArchiveSegmentGallery(archive,time=>window.setArchiveTime?.(time,{pause:true}));
@@ -48,10 +48,30 @@ function archiveQuality(value){
   if(value.tracking==='relocalizing')return ' · 위치 다시 찾는 중 · 이전 지도 유지';
   return Number(value.segments)>1?` · 구간 ${(value.segment??0)+1} · 이전 지도 보존 · 구간 연결 미확정`:'';
 }
+// S22: AbortSignal.any / AbortSignal.timeout are missing in older browsers.
+function requestScope(signal,timeout){
+  const controller=new AbortController(),abort=()=>controller.abort();
+  let expired=false;
+  const timer=setTimeout(()=>{expired=true;abort();},timeout);
+  if(signal){if(signal.aborted)abort();else signal.addEventListener('abort',abort,{once:true});}
+  return {signal:controller.signal,expired:()=>expired,dispose(){clearTimeout(timer);signal?.removeEventListener('abort',abort);}};
+}
 async function request(path,body,signal,timeoutMs){
   const timeout=timeoutMs??(path.includes('/map-window')||path.includes('/map?')||path.endsWith('/map-playback')?30000:8000);
-  const response=await fetch(path,{cache:'no-store',priority:path.includes('/map')?'high':'auto',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(timeout)]):AbortSignal.timeout(timeout),...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
-  const value=await response.json();
+  const scope=requestScope(signal,timeout);
+  try{
+  const response=await fetch(path,{cache:'no-store',priority:path.includes('/map')?'high':'auto',signal:scope.signal,...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
+  // S41: a proxy/tunnel HTML error page (502/524) is reported as 'HTTP <status>'.
+  const type=response.headers?.get?.('content-type')||'';
+  let value;
+  try{
+    if(type&&!type.toLowerCase().includes('json'))throw new Error('not_json');
+    value=await response.json();
+  }catch(cause){
+    if(cause?.name==='AbortError')throw cause;
+    if(scope.signal.aborted){const aborted=new Error('aborted');aborted.name='AbortError';throw aborted;}
+    const error=new Error(`HTTP ${response.status}`);error.code=`HTTP ${response.status}`;error.status=response.status;throw error;
+  }
   if(!response.ok||value.ok===false){
     const code=value.error||value.message||`HTTP ${response.status}`;
     const messages={another_device_controls_this_recording:'다른 기기가 이 기록의 매핑을 제어하고 있습니다.',another_recording_mapping_active_stop_it_first:'다른 기록을 매핑 중입니다. 작업 관리에서 중단한 뒤 재생하세요.',mapping_stopped_press_play_to_resume:'매핑이 중단되었습니다. 재생을 눌러 이어가세요.',mapping_epoch_changed_refresh_before_action:'다른 기기에서 지도가 변경되었습니다. 지도를 확인한 뒤 다시 시도하세요.',mapping_worker_stopping_retry:'이전 매핑 작업을 정리 중입니다. 잠시 후 다시 시도하세요.',mapping_read_capacity_busy:'지도 조회가 많습니다. 잠시 후 다시 시도하세요.'};
@@ -62,10 +82,23 @@ async function request(path,body,signal,timeoutMs){
     throw error;
   }
   return value;
+  }catch(error){
+    // Caller cancellation is intentionally silent. A deadline must remain a
+    // retryable TimeoutError, including on browsers without AbortSignal.any.
+    if(scope.expired()){const timeoutError=new Error('요청 시간 초과');timeoutError.name='TimeoutError';throw timeoutError;}
+    throw error;
+  }finally{scope.dispose();}
 }
 // S14/E2: deferred reads are shown as a wait with its reason, not as an error.
 function deferredArchiveText(error){
-  return error.code==='autonomy_priority'?'자율주행 우선 · 기록 지도 계산 대기 · 마지막 지도 유지':'지도 조회 대기 중 · 마지막 지도 유지';
+  archiveWaitReason=error.code==='autonomy_priority'?'자율주행 우선 · 기록 지도 계산 대기':'지도 조회 대기 중';
+  return `${archiveWaitReason} · 마지막 지도 유지`;
+}
+function updateArchiveWaitReason(value){
+  const stage=value?.mapping_job?.stage||value?.generation?.stage;
+  archiveWaitReason=value?.waiting_autonomy_priority||stage==='waiting_autonomy_priority'?
+    '자율주행 우선 · 기록 지도 계산 대기':value?.waiting_live_priority||stage==='waiting_live_priority'?
+    '실시간 지도 우선 · 기록 지도 계산 대기':'';
 }
 function paint(value){
   liveMapEpoch=value.map_epoch;
@@ -84,9 +117,13 @@ for(const operation of ['start','stop','reset'])$('liveMap'+operation[0].toUpper
 for(const button of document.querySelectorAll('[data-live-zoom]'))button.addEventListener('click',()=>live.zoom(button.dataset.liveZoom));
 for(const button of document.querySelectorAll('[data-archive-zoom]'))button.addEventListener('click',()=>archive.zoom(button.dataset.archiveZoom));
 async function selectArchive(id){
+  // S18: re-selecting the same recording keeps its epoch and generation
+  // (clearing them made the next New map a 409).
+  if(id===selected)return;
+  archiveWaitReason='';
   archiveMappingGeneration=null;
   archiveMapEpoch=null;
-  if(id===selected)return;selected=id;const epoch=++archiveEpoch;
+  selected=id;const epoch=++archiveEpoch;
   clearTimeout(archiveTimer);archiveTimer=null;archivePending?.controller.abort();
   mapBuffer=null;nextMapBuffer=null;windowSupported=null;mapWindowPending?.controller.abort();mapWindowPending=null;
   archiveTimeS=0;archivePlaying=false;followGeneration=false;archiveGenerating=false;cursorMapping=false;lastPlaybackPush=-Infinity;
@@ -161,6 +198,7 @@ async function acceptArchiveMap(value){
     archiveMapEpoch=value.map_epoch;
     if(archivePlaying && value.tile_epoch===archive.tileEpoch &&
        Number(value.tile_version)<Number(archive.snapshot.tile_version))return;
+    updateArchiveWaitReason(value);
     cursorMapping=value.playback_driven===true;
     immutableCursorMap=cursorMapping && value.state==='saved' && value.generation?.stage==='complete' && !value.needs_regeneration;
     availableCursorPrefix=cursorMapping?Number(value.generation?.processed_t_s)||0:0;
@@ -173,7 +211,7 @@ async function acceptArchiveMap(value){
     // A causal worker can be interrupted by New map. Only the legacy bulk
     // regeneration requires waiting; it must not lock this new workflow.
     archiveGenerating=!cursorMapping&&value.state==='regenerating';$('liveArchiveRegenerate').disabled=archiveGenerating;
-    text('liveArchiveStatus',value.mapping_error?`지도 처리 오류 · ${value.mapping_error} · 이전 지도 유지`:value.regeneration_error?`재생성 실패 · ${value.regeneration_error}`:
+    text('liveArchiveStatus',archiveWaitReason?`${archiveWaitReason} · 마지막 지도 유지`:value.mapping_error?`지도 처리 오류 · ${value.mapping_error} · 이전 지도 유지`:value.regeneration_error?`재생성 실패 · ${value.regeneration_error}`:
       cursorMapping?`${value.grid?(archivePlaying?'재생하며 지도 저장 중':'저장된 지도 유지'):'재생하면 새 지도가 쌓입니다'} · ${(value.frame_t_s||0).toFixed(1)}초${archiveQuality(value)}`:
       value.state==='regenerating'?(generation.stage==='localizing'?'LiDAR·IMU 위치 추정 계산 중…':`지도 생성 ${Math.round((generation.progress||0)*100)}% · ${(generation.processed_t_s||0).toFixed(1)} / ${duration.toFixed(1)}초`):
       value.needs_regeneration?'이전 방식의 지도입니다. 새 지도 만들기 후 재생하세요.':
@@ -277,6 +315,8 @@ async function pushPlayback(force=false){
     if(epoch===archiveEpoch){
       nextExplicitResume=false;
       triedCausalMap=true;
+      // S15: remember why the recorded map is waiting, for the playback label.
+      updateArchiveWaitReason(value);
       if(value.mapping_generation)archiveMappingGeneration=value.mapping_generation;
       if(value.map_snapshot && !value.stale_control_ignored && playbackPending===pending){
         let snapshot=value.map_snapshot;
@@ -296,6 +336,10 @@ async function pushPlayback(force=false){
         cursorMapping=true;mapBuffer=null;nextMapBuffer=null;
         mapWindowPending?.controller.abort();mapWindowPending=null;scheduleArchive();
       }
+      // A retained inline snapshot may carry older job metadata. The current
+      // control reply is authoritative about a live/autonomy priority wait.
+      updateArchiveWaitReason(value);
+      if(archiveWaitReason)text('liveArchiveStatus',`${archiveWaitReason} · 마지막 지도 유지`);
     }
   }catch(error){if(epoch===archiveEpoch&&error.name!=='AbortError'){
     if(['another_device_controls_this_recording','another_recording_mapping_active_stop_it_first','mapping_stopped_press_play_to_resume','mapping_control_revoked_refresh'].includes(error.code)){
@@ -320,6 +364,7 @@ $('liveArchiveRegenerate').addEventListener('click',async()=>{
     if(epoch!==archiveEpoch)return;
     archiveMappingGeneration=value.mapping_generation;
     archiveMapEpoch=value.map_epoch;
+    archiveWaitReason='';
     cursorMapping=true;triedCausalMap=true;inlinePlaybackMap=false;immutableCursorMap=false;bufferedCursorMap=false;availableCursorPrefix=0;
     archiveTimeS=0;archivePlaying=false;archiveGenerating=false;followGeneration=false;
     segments.reset();archive.set({map_epoch:value.map_epoch,preserve_view_on_seek:true,version:0,scan_count:0,tiles:[],tiles_reset:true,playback_driven:true});
@@ -402,7 +447,7 @@ async function pollJobs(){
 }
 $('mappingJobsPanel')?.addEventListener('toggle',()=>{if($('mappingJobsPanel').open)pollJobs().catch(error=>text('mappingJobsResources',error.message));});
 function routeChanged(){live.draw();archive.draw();if(active()){poll();if(selected)scheduleArchive();}}
-window.LiveMap={selectArchive,archiveTime,archiveReady,routeChanged};
+window.LiveMap={selectArchive,archiveTime,archiveReady,routeChanged,waitReason:()=>archiveWaitReason};
 document.addEventListener('visibilitychange',routeChanged);window.addEventListener('popstate',routeChanged);
 // The main application exposes route changes through the GPS hook.
 const gps=window.RoverGps;if(gps){const original=gps.routeChanged;gps.routeChanged=(...args)=>{original?.(...args);routeChanged();};}

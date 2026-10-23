@@ -226,9 +226,12 @@ function paintLive() {
 }
 function connect() {
   if (!active() || socket) return;
-  let profile = 'tiny';
-  try { profile = localStorage.getItem('ubts-live-network-profile') || 'tiny'; } catch (_) {}
-  if (profile === 'auto') profile = 'tiny';
+  let profile = 'auto';
+  try { profile = localStorage.getItem('ubts-live-network-profile') || 'auto'; } catch (_) {}
+  if (!['detail', 'balanced', 'slow', 'tiny'].includes(profile)) {
+    const measured = window.RoverLink?.cameraEffectiveProfile?.() || '';
+    profile = measured === 'balanced' || measured === 'detail' ? 'balanced' : 'slow';
+  }
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/gps?profile=${encodeURIComponent(profile)}`);
   socket = ws;
   ws.onmessage = event => {

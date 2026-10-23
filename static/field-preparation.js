@@ -96,7 +96,12 @@
         credentials:'same-origin',cache:'no-store',signal:abort.signal,
         headers:payload===undefined?{}:{'Content-Type':'application/json'},
         body:payload===undefined?undefined:JSON.stringify(payload)});
-      const value=await response.json();
+      const type=response.headers?.get?.('content-type')||'';
+      let value;
+      try{
+        if(type&&!type.toLowerCase().includes('json'))throw new Error('not_json');
+        value=await response.json();
+      }catch(error){if(error?.name==='AbortError')throw error;throw new Error(`HTTP ${response.status}`);}  // S41: proxy HTML error pages
       if(!response.ok)throw new Error(value.error || `HTTP ${response.status}`);
       return value;
     } finally {clearTimeout(timer);}
