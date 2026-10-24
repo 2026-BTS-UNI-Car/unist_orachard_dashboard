@@ -1,0 +1,14 @@
+{
+  "SDK_ROS_or_motor": false,
+  "device_IO": false,
+  "errors": 0,
+  "existing_test_SHA256": "1412fa3adf9f1bbdeaa11bbf0a80a1ca87af94174d34e56d6788fcc09615ebeb",
+  "existing_tests": 23,
+  "failures": 0,
+  "log_SHA256": "43042f26e4f61f3a5da1dd59de716159a46685a3a77c4ff10afce03527b98fdc",
+  "ok": true,
+  "overlay_SHA256": "29f83fc0b8808b76cb445c1ca125a925e3326eedfc82555e613ab1ca83158bbc",
+  "skipped": 0,
+  "software_unit_threads_only": true,
+  "wall_s": 0.5798729000380263
+}

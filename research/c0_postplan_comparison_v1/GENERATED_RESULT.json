@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "tests": 16,
+  "errors": 0,
+  "failures": 0,
+  "skipped": 0,
+  "actual_IO": false,
+  "SDK_ROS_threads_or_motors": false,
+  "wall_s": 0.21999500005040318,
+  "test_source_SHA256": "8f6f4f503d24b2eb860e02736aa3ed769a8575e77bb38d9c87b45fc7b5886eb9",
+  "stdout_SHA256": "2ef3414fcc7d697081555a932288296f029719393704a4615872097305903a9e",
+  "stderr_SHA256": "0433aa4800b9a869ff47c6972f5fdc62356bed43d9cbff7682c4d53380c7e299",
+  "all_product_source_pins_checked": true
+}

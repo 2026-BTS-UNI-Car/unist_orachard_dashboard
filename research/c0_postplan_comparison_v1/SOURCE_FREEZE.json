@@ -1,0 +1,82 @@
+{
+  "TTL_kernel_rawsensors_or_actuators_modified": false,
+  "file_count": 17,
+  "files": {
+    "DRAFT_ERRATA_KO.md": {
+      "SHA256": "4fa03f18928c61d7b0d6b8db95461709b4be0f51f09e00e250be44749e7ef14d",
+      "bytes": 1466
+    },
+    "EXISTING_RESULT.json": {
+      "SHA256": "a63e14826effacaa84afa1d6cd222609ddca78fc3983dbf8627c3385aeb71944",
+      "bytes": 476
+    },
+    "EXPECTED_PROTOCOL.json": {
+      "SHA256": "0c16cf05d6095eb5edf1f5d46d3a4bc87fe359c67283e4a6b04b1a0dd76ebcef",
+      "bytes": 1290
+    },
+    "GENERATED_RESULT.json": {
+      "SHA256": "3e34549900177597e2f3acb9ff8ea41ac70224ea9e611ec11e8e3cfe682b7d61",
+      "bytes": 482
+    },
+    "README_KO.md": {
+      "SHA256": "6d2ebc1caf7a4611372c73bcbaf0ec96ce97d27822a313f43949293cc1989d0f",
+      "bytes": 6215
+    },
+    "SOURCE_PINS.json": {
+      "SHA256": "d708b3e9476fe8d186733230da4d67f88c8812903439da44297dc1fa7fc4b079",
+      "bytes": 2520
+    },
+    "overlays/dashboard_server/app.py": {
+      "SHA256": "9fe65ad466bf768eb9430ca050863876882c388fd0e2f04e7f1dccc7238001a0",
+      "bytes": 69226
+    },
+    "overlays/dashboard_server/autonomy_observation.py": {
+      "SHA256": "29f83fc0b8808b76cb445c1ca125a925e3326eedfc82555e613ab1ca83158bbc",
+      "bytes": 38631
+    },
+    "overlays/dashboard_server/native_observation_client.py": {
+      "SHA256": "765355415498f645856b3de82e11fa6d98e0c9f5a592eaeba69510e99d54677b",
+      "bytes": 7618
+    },
+    "overlays/deploy/native_sensor_stream/NATIVE_MAP_SOURCE.json": {
+      "SHA256": "49fc2b3f7cd388f5313050a990d5f2dc2a0fc655ddd5748f23735fb059d2ba08",
+      "bytes": 2449
+    },
+    "overlays/deploy/native_sensor_stream/native_observation_service.py": {
+      "SHA256": "5c3cccdeec55cdc0a7950661238fdc3152e35684d1b8b667a9be780da959ad10",
+      "bytes": 19778
+    },
+    "overlays/deploy/native_sensor_stream/stream_rows.py": {
+      "SHA256": "8c892bd700597cc6de7b2a24d45dea99cc34b2593505815bfc60e947af18269d",
+      "bytes": 62294
+    },
+    "overlays/deploy/native_sensor_stream/stream_rows_map.py": {
+      "SHA256": "49c6beba371ff6764b44e984ded67c1c3d2b0dcb8dd74730c31ad14c157a06bb",
+      "bytes": 63320
+    },
+    "rebind_stream_provenance.py": {
+      "SHA256": "0b137b3ede43ee1ab5276ee27fbb93bfa44e7a72bb8c915301c7888d5fe5279f",
+      "bytes": 3007
+    },
+    "run_existing_tests_once.py": {
+      "SHA256": "61a5af629e67d4bd37efc1465bcc8da86b830ea7bf840ad77cc4406e972acb5a",
+      "bytes": 1514
+    },
+    "run_role_preflight.py": {
+      "SHA256": "005f596c1d407dec63dfc4da55928aeeb278da82c7e5a71e711ea87304bd48d2",
+      "bytes": 3279
+    },
+    "test_comparison.py": {
+      "SHA256": "8f6f4f503d24b2eb860e02736aa3ed769a8575e77bb38d9c87b45fc7b5886eb9",
+      "bytes": 14972
+    }
+  },
+  "map_manifest_overlays": 1,
+  "original_full_getters_AST_unchanged_both_adapters": true,
+  "original_observation_safety_methods_AST_unchanged": true,
+  "product_Python_overlays": 6,
+  "runtime_or_device_execution": false,
+  "schema": "ubts.C0_postplan_comparison_source_freeze.v1",
+  "source_only": true,
+  "total_bytes": 298537
+}

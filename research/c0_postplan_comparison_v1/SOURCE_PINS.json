@@ -1,0 +1,37 @@
+{
+  "dashboard_server/autonomy_observation.py": {
+    "source": "mapping-rotation-20261022/c0_field10_freshness_observability_candidate_v1/overlays/dashboard_server/autonomy_observation.py",
+    "source_SHA256": "451b786b983f69d596a74525d71fbe45c789466d8cb530144f2bee024a0757e3",
+    "overlay_SHA256": "29f83fc0b8808b76cb445c1ca125a925e3326eedfc82555e613ab1ca83158bbc"
+  },
+  "dashboard_server/native_observation_client.py": {
+    "source": "mapping-rotation-20261022/field10_C0_current_source_snapshot_20261025_r1/source/dashboard_server/native_observation_client.py",
+    "source_SHA256": "81e54589bfb2aa50dc0a9d3119c4f8771ec809197bdb5d6e8858c73b1deafa6f",
+    "overlay_SHA256": "765355415498f645856b3de82e11fa6d98e0c9f5a592eaeba69510e99d54677b"
+  },
+  "dashboard_server/app.py": {
+    "source": "mapping-rotation-20261022/field10_C0_release_20261025_r2/dashboard_server/app.py",
+    "source_SHA256": "69c5955dfd5b255b120cc601d1d7d69ec6d799116db152bd7ae8e2a6b365c324",
+    "overlay_SHA256": "9fe65ad466bf768eb9430ca050863876882c388fd0e2f04e7f1dccc7238001a0"
+  },
+  "deploy/native_sensor_stream/stream_rows.py": {
+    "source": "mapping-rotation-20261022/field10_C0_release_20261025_r2/deploy/native_sensor_stream/stream_rows.py",
+    "source_SHA256": "5334d6502a90f9c880054e9b44a730ade518064c55a1719d3c29983e21333c7d",
+    "overlay_SHA256": "8c892bd700597cc6de7b2a24d45dea99cc34b2593505815bfc60e947af18269d"
+  },
+  "deploy/native_sensor_stream/native_observation_service.py": {
+    "source": "mapping-rotation-20261022/field10_C0_release_20261025_r2/deploy/native_sensor_stream/native_observation_service.py",
+    "source_SHA256": "5f2de86034203aee27aeeba55e90f5bf18737e6ece558ad9937c8d10a5305af5",
+    "overlay_SHA256": "5c3cccdeec55cdc0a7950661238fdc3152e35684d1b8b667a9be780da959ad10"
+  },
+  "deploy/native_sensor_stream/stream_rows_map.py": {
+    "source": "mapping-rotation-20261022/field10_C0_release_20261025_r2/deploy/native_sensor_stream/stream_rows_map.py",
+    "source_SHA256": "4211f1ad32157b71c1b5d83508f471ee49f51147ce498eb93ae01b733f746079",
+    "overlay_SHA256": "49c6beba371ff6764b44e984ded67c1c3d2b0dcb8dd74730c31ad14c157a06bb"
+  },
+  "deploy/native_sensor_stream/NATIVE_MAP_SOURCE.json": {
+    "source": "mapping-rotation-20261022/field10_C0_release_20261025_r2/deploy/native_sensor_stream/NATIVE_MAP_SOURCE.json",
+    "source_SHA256": "f76091b09e6be5f6d11b5be51daec2c3f51c04d633fa060635f72045e1f01fe7",
+    "overlay_SHA256": "49fc2b3f7cd388f5313050a990d5f2dc2a0fc655ddd5748f23735fb059d2ba08"
+  }
+}

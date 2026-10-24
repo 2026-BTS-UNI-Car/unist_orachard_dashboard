@@ -1,0 +1,51 @@
+{
+  "READY": true,
+  "SOURCE_FREEZE_SHA256": "f483610f2dac68c36f4d4770e605cdc6eab01f2a01f6cf60bfa5a872c48564d6",
+  "actual_new_deployment": false,
+  "actual_performance_or_freshness_qualified": false,
+  "default_comparison_provider": null,
+  "existing_tests": {
+    "SDK_ROS_or_motor": false,
+    "device_IO": false,
+    "errors": 0,
+    "existing_test_SHA256": "1412fa3adf9f1bbdeaa11bbf0a80a1ca87af94174d34e56d6788fcc09615ebeb",
+    "existing_tests": 23,
+    "failures": 0,
+    "log_SHA256": "43042f26e4f61f3a5da1dd59de716159a46685a3a77c4ff10afce03527b98fdc",
+    "ok": true,
+    "overlay_SHA256": "29f83fc0b8808b76cb445c1ca125a925e3326eedfc82555e613ab1ca83158bbc",
+    "skipped": 0,
+    "software_unit_threads_only": true,
+    "wall_s": 0.5798729000380263
+  },
+  "explicit_whole_release_enable": "UBTS_NATIVE_CONTROL_COMPARISON_V1=1",
+  "fresh_image_only_preflight": [
+    "python -B /kit/run_role_preflight.py --root-import-only --role stream",
+    "python -B /kit/run_role_preflight.py --root-import-only --role dashboard"
+  ],
+  "generated_tests": {
+    "SDK_ROS_threads_or_motors": false,
+    "actual_IO": false,
+    "all_product_source_pins_checked": true,
+    "errors": 0,
+    "failures": 0,
+    "ok": true,
+    "skipped": 0,
+    "stderr_SHA256": "0433aa4800b9a869ff47c6972f5fdc62356bed43d9cbff7682c4d53380c7e299",
+    "stdout_SHA256": "2ef3414fcc7d697081555a932288296f029719393704a4615872097305903a9e",
+    "test_source_SHA256": "8f6f4f503d24b2eb860e02736aa3ed769a8575e77bb38d9c87b45fc7b5886eb9",
+    "tests": 16,
+    "wall_s": 0.21999500005040318
+  },
+  "local_freeze_files_immutable_after_READY": true,
+  "requires_two_role_safe_install_and_exact_runtime_preservation": true,
+  "root_commands": [
+    "python -B D:\\Develop\\UBTS\\mapping-rotation-20261022\\c0_postplan_comparison_candidate_v1\\test_comparison.py",
+    "python -B D:\\Develop\\UBTS\\mapping-rotation-20261022\\c0_postplan_comparison_candidate_v1\\run_existing_tests_once.py --run-pure"
+  ],
+  "schema": "ubts.C0_postplan_comparison_source_READY.v1",
+  "source_adapters": [
+    "stream_rows.StreamObserverRows",
+    "stream_rows_map.StreamObserverRows"
+  ]
+}
