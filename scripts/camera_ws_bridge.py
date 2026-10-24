@@ -12,6 +12,7 @@ import struct
 import sys
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -550,8 +551,11 @@ def client_settings(actual_path: str) -> dict[str, Any]:
     if transport not in {"json-base64", "binary-v1"}:
         transport = "json-base64"
     flow = str((params.get("flow") or ["none"])[0]).strip().lower()
-    if flow not in {"none", "decode-ack", "latest-ack"}:
+    if flow not in {"none", "decode-ack", "latest-ack", "decode-ack-v2"}:
         flow = "none"
+    window_values=params.get("ack_window")or[]
+    ack_window=int(window_values[0])if len(window_values)==1 and window_values[0]in("2","3")and flow=="decode-ack-v2"and transport=="binary-v1"else 1
+    if flow=="decode-ack-v2"and ack_window==1:flow="decode-ack"
     return {
         "profile": str((params.get("profile") or ["auto"])[0]),
         "width": width,
@@ -560,6 +564,7 @@ def client_settings(actual_path: str) -> dict[str, Any]:
         "quality": max(35, min(92, quality)),
         "transport": transport,
         "flow": flow if transport == "binary-v1" else "none",
+        "ack_window": ack_window,
     }
 
 
@@ -644,11 +649,13 @@ def network_preview(frame_snap, settings, budget, compressed):
     return (jpeg, elapsed, width, height, source_width, source_height)
 
 
-def camera_stream_budget(profile):
-    from scripts.camera_stream_policy import CameraStreamBudget
+def camera_stream_budget(profile, *, ack_window=1):
+    from scripts.camera_stream_policy import CameraStreamBudget,CameraWindowStreamBudget
     local = (os.environ.get("DASHBOARD_MODE") == "simulation"
              and os.environ.get("CAMERA_PREVIEW_LOCAL_FPS") == "30")
-    return CameraStreamBudget(profile, local_camera_30fps=local)
+    factory=CameraWindowStreamBudget if ack_window in(2,3)else CameraStreamBudget
+    options=dict(ack_window=ack_window)if ack_window in(2,3)else{}
+    return factory(profile, local_camera_30fps=local, **options)
 
 
 class CameraPreviewCache:
@@ -706,6 +713,7 @@ async def serve_websocket(
         except RuntimeError:
             pass  # The server is already shutting down.
     state.frame_notify = notify_frame
+    lag_handle=None
 
     async def handler(websocket, legacy_path=None):
         request = getattr(websocket, "request", None)
@@ -721,9 +729,71 @@ async def serve_websocket(
         if state.snapshot(include_frame=False)["client_count"] >= 4:
             await websocket.close(code=1013, reason="camera viewer limit")
             return
-        budget = camera_stream_budget(settings["profile"])
+        budget = camera_stream_budget(settings["profile"],ack_window=settings['ack_window'])
         binary = settings["transport"] == "binary-v1"
         ack_flow = binary and settings["flow"] != "none"
+        from scripts.camera_stream_policy import CameraAckWindow
+        window=CameraAckWindow(settings['ack_window'],uuid.uuid4().hex,timeout_s=CAMERA_ACK_TIMEOUT_S)if settings['ack_window']in(2,3)else None
+        flow_name='decode-ack-v2'if window is not None else'decode-ack'if ack_flow else'none'
+        credit=asyncio.Event();window_failed=asyncio.Event();receiver=None;feedback=dict(error=None)
+        def source_key(frame,compressed):
+            return(compressed,frame.get('frame_id'),frame.get('source_width'),frame.get('source_height'),
+                frame.get('raw_preview_width'),frame.get('raw_preview_height'))
+        async def receive_window_acks():
+            try:
+                while not stop.is_set():
+                    deadline=window.deadline();now=time.monotonic()
+                    timeout=.5 if deadline is None else max(.001,min(.5,deadline-now))
+                    try:raw=await asyncio.wait_for(websocket.recv(),timeout)
+                    except asyncio.TimeoutError:
+                        if window.expired():raise asyncio.TimeoutError()
+                        continue
+                    try:payload=json.loads(raw)if isinstance(raw,str)else None
+                    except(ValueError,TypeError):payload=None
+                    acknowledged=window.acknowledge(payload)
+                    if acknowledged is not None:
+                        elapsed=acknowledged['elapsed']
+                        budget.acknowledge(elapsed,acknowledged['bytes'],decode_status=acknowledged['decode_status'])
+                        credit.set()
+                    if sum(v for k,v in window.counts.items()if k not in('accepted','accepted_out_of_order'))>=64:
+                        raise ValueError('camera_V2_invalid_ACK_limit64')
+            except asyncio.CancelledError:raise
+            except Exception as exc:feedback['error']=exc
+            finally:credit.set();window_failed.set()
+        async def wait_window_credit(size=1):
+            if size>window.MAX_PACKET_BYTES:
+                await websocket.close(code=1009,reason='camera preview packet limit');return False
+            while not stop.is_set():
+                if feedback['error']is not None or window.expired():
+                    timeout=isinstance(feedback['error'],asyncio.TimeoutError)or window.expired()
+                    await websocket.close(code=1013 if timeout else 1008,reason='preview acknowledgement timeout'if timeout else'camera V2 acknowledgement rejected')
+                    return False
+                if window.can_send(size):return True
+                credit.clear()
+                if window.can_send(size):return True
+                deadline=window.deadline()
+                remaining=CAMERA_ACK_TIMEOUT_S if deadline is None else max(0.,deadline-time.monotonic())
+                try:await asyncio.wait_for(credit.wait(),remaining)
+                except asyncio.TimeoutError:
+                    await websocket.close(code=1013,reason='preview acknowledgement timeout');return False
+            return False
+        async def pace_window(fps,byte_rate):
+            # Keep the original FramePacer math. Only V2's background receiver
+            # can interrupt its sleep when the oldest absolute ACK expires or
+            # the connection closes; no sleeping send/ACK task survives close.
+            paced=asyncio.create_task(pacer.wait(fps,byte_rate))
+            failed=asyncio.create_task(window_failed.wait())
+            try:
+                deadline=window.deadline()
+                timeout=None if deadline is None else max(0.,deadline-time.monotonic())
+                done,_=await asyncio.wait((paced,failed),timeout=timeout,return_when=asyncio.FIRST_COMPLETED)
+                if paced not in done:
+                    await wait_window_credit();return None
+                return paced.result()
+            finally:
+                for task in(paced,failed):
+                    if not task.done():task.cancel()
+                await asyncio.gather(paced,failed,return_exceptions=True)
         last_count = -1
         last_status = 0.0
         pacer = FramePacer()
@@ -735,13 +805,19 @@ async def serve_websocket(
                         "type": "socket",
                         "ok": True,
                         "transport": settings["transport"],
-                        "flow": "decode-ack" if ack_flow else "none",
+                        "flow": flow_name,
                         "latest_only": True,
+                        **(dict(stream_session=window.stream_session,**window.status())if window is not None else{}),
                     }
                 )
             )
+            if window is not None:receiver=asyncio.create_task(receive_window_acks())
             while not stop.is_set():
-                await pacer.wait(min(settings["fps"], budget.values[2]), budget.values[4])
+                if window is not None and not await wait_window_credit():return
+                pace_started=time.monotonic()
+                paced=(await pace_window(min(settings["fps"],budget.values[2]),budget.values[4])if window is not None
+                    else await pacer.wait(min(settings["fps"], budget.values[2]), budget.values[4]))
+                if window is not None and paced is None:return
                 started = time.monotonic()
                 frame_ready.clear()
                 preview = state.preview_snapshot(include_jpeg=False)
@@ -768,11 +844,12 @@ async def serve_websocket(
                                     "ack_latency_ms": budget.ack_latency_ms,
                                     "budget_bytes_s": budget.values[4],
                                     "latest_only": True,
-                                    "max_inflight_frames": 1 if ack_flow else None,
-                                    "flow": "decode-ack" if ack_flow else "none",
+                                    "max_inflight_frames": window.limit if window is not None else 1 if ack_flow else None,
+                                    "flow": flow_name,
                                     "preview_decoupled": True,
                                     "ack_deadline_s": CAMERA_ACK_TIMEOUT_S,
                                     **budget.status(),
+                                    **(window.status()if window is not None else{}),
                                 },
                                 separators=(",", ":"),
                             )
@@ -781,6 +858,10 @@ async def serve_websocket(
                     )
                     last_status = started
                 count = int(snap["frame_count"] or 0)
+                if window is not None and alive and count>0:
+                    try:window.observe_source(source_key(snap,compressed),count,snap['stamp_s'])
+                    except ValueError:
+                        await websocket.close(code=1012,reason='camera source changed');return
                 if not alive or count == last_count:
                     try:
                         await asyncio.wait_for(frame_ready.wait(), timeout=.5)
@@ -807,7 +888,7 @@ async def serve_websocket(
                     "frame_count": count,
                     "source_fps": frame["source_fps"],
                     "transport": settings["transport"],
-                    "flow": "decode-ack" if ack_flow else "none",
+                    "flow": flow_name,
                     "encoded_bytes": len(jpeg),
                     "encode_ms": round(elapsed, 2),
                     "source_transport": "ros2-compressed-jpeg"
@@ -817,6 +898,14 @@ async def serve_websocket(
                     "ack_deadline_s": CAMERA_ACK_TIMEOUT_S,
                     **budget.status(),
                 }
+                if window is not None:
+                    # Encoder waiting may select a newer frame. Bind the exact
+                    # selected source before registering its delivery credit.
+                    try:window.observe_source(source_key(frame,compressed),count,frame['stamp_s'])
+                    except ValueError:
+                        await websocket.close(code=1012,reason='camera source changed');return
+                    metadata.update(stream_session=window.stream_session,delivery_sequence=window.last_sequence+1,
+                        inflight_measurement='before_this_delivery_sequence_is_registered',**window.status())
                 if binary:
                     message = encode_binary_camera_frame(metadata, jpeg)
                 else:
@@ -824,14 +913,22 @@ async def serve_websocket(
                     message = json.dumps(metadata, separators=(",", ":"))
                 sent = time.monotonic()
                 deadline = sent + CAMERA_ACK_TIMEOUT_S
+                if window is not None:
+                    if not window.can_send(len(message)):
+                        if not await wait_window_credit(len(message)):return
+                        # No stale frame FIFO: re-read newest source after credit.
+                        continue
+                    window.register(count,len(message),now=sent)
                 try:
-                    await asyncio.wait_for(websocket.send(message), timeout=CAMERA_ACK_TIMEOUT_S)
+                    send_timeout=(max(0.,window.deadline()-time.monotonic())if window is not None else CAMERA_ACK_TIMEOUT_S)
+                    await asyncio.wait_for(websocket.send(message), timeout=send_timeout)
                 except asyncio.TimeoutError:
                     await websocket.close(code=1013, reason="preview acknowledgement timeout")
                     return
                 last_count = count
                 pacer.sent(sent, len(message))
-                if ack_flow:
+                if ack_flow and window is None:
+                    ack_wait_started=time.monotonic()
                     acknowledged = await wait_for_camera_decode_ack(
                         websocket, count, timeout_s=max(0.0, deadline-time.monotonic())
                     )
@@ -845,6 +942,9 @@ async def serve_websocket(
         except Exception as exc:
             bridge_log("preview_closed", reason=type(exc).__name__)
         finally:
+            if receiver is not None:
+                receiver.cancel();await asyncio.gather(receiver,return_exceptions=True)
+            if window is not None:window.close()
             state.adjust_clients(-1)
 
     async with websockets.serve(
@@ -861,6 +961,7 @@ async def serve_websocket(
     ):
         while not stop.is_set():
             await asyncio.sleep(0.2)
+    if lag_handle is not None:lag_handle.cancel()
     state.frame_notify = None
 
 

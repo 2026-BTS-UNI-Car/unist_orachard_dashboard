@@ -1355,6 +1355,13 @@ function cameraWebSocketUrl() {
     transport: "binary-v1",
     flow: "decode-ack",
   });
+  // V1 remains the default. Only an explicit supported-client opt-in asks
+  // the server to negotiate more than one outstanding preview frame.
+  const explicitWindow = new URLSearchParams(location.search).get("camera_ack_window") ?? window.UBTS_CAMERA_ACK_WINDOW;
+  if (["2", "3"].includes(String(explicitWindow))) {
+    params.set("flow", "decode-ack-v2");
+    params.set("ack_window", String(explicitWindow));
+  }
   if (window.UBTS_CAMERA_WS_URL) {
     const separator = String(window.UBTS_CAMERA_WS_URL).includes("?") ? "&" : "?";
     return `${window.UBTS_CAMERA_WS_URL}${separator}${params.toString()}`;
@@ -1422,6 +1429,7 @@ function startCameraLive() {
         state.cameraLive.error = "영상 응답 지연으로 일시 정지했습니다. 회선 상태나 전송 품질을 확인한 뒤 다시 시작하세요.";
       }
       const shouldReconnect = state.cameraLive.enabled && !state.cameraLive.userStopped && routeSupportsCameraLive();
+      resetCameraWindowDecode(socket);
       state.cameraLive.socket = null;
       state.cameraLive.connected = false;
       state.cameraLive.frameTopicAlive = false;
@@ -1455,6 +1463,7 @@ function closeCameraLive(message = "disconnected", options = {}) {
   const userStopped = options.userStopped !== undefined ? Boolean(options.userStopped) : true;
   if (options.clearReconnect !== false) clearCameraReconnectTimer();
   const socket = state.cameraLive.socket;
+  resetCameraWindowDecode(socket);
   state.cameraLive.enabled = false;
   state.cameraLive.userStopped = userStopped;
   state.cameraLive.socket = null;
@@ -1500,6 +1509,7 @@ function restartCameraLiveForSettings() {
   clearCameraReconnectTimer();
   state.cameraLive.pendingRestart = false;
   if (socket) {
+    resetCameraWindowDecode(socket);
     state.cameraLive.socket = null;
     state.cameraLive.connected = false;
     closeSocketAfterConnect(socket, "camera settings changed");
@@ -1607,7 +1617,8 @@ function handleCameraLivePayload(payload, binary = null) {
     state.cameraLive.encodeMs = Number.isFinite(Number(payload.encode_ms)) ? Number(payload.encode_ms) : null;
     state.cameraLive.error = "";
     if (binary?.blob) {
-      displayBinaryCameraFrame(binary.blob, payload, binary.socket);
+      if (payload.ack_protocol === 2) displayWindowedCameraFrame(binary.blob, payload, binary.socket);
+      else displayBinaryCameraFrame(binary.blob, payload, binary.socket);
     } else {
       const src = payload.data ? `data:${payload.mime || "image/jpeg"};base64,${payload.data}` : "";
       const image = $("cameraLiveImage");
@@ -1638,7 +1649,56 @@ function handleCameraLivePayload(payload, binary = null) {
   }
 }
 
-function displayBinaryCameraFrame(blob, payload, socket) {
+function resetCameraWindowDecode(socket = null) {
+  const queue = state.cameraLive.v2Decode;
+  if (!queue || (socket && queue.socket !== socket)) return;
+  queue.closed = true;
+  queue.pending = null;
+  queue.cancelActive?.();
+  queue.cancelActive = null;
+  state.cameraLive.v2Decode = null;
+}
+
+function displayWindowedCameraFrame(blob, payload, socket, timing = null) {
+  if (socket !== state.cameraLive.socket) return;
+  const valid = payload.ack_protocol === 2 && /^[0-9a-f]{32}$/.test(payload.stream_session ?? "") &&
+    Number.isSafeInteger(payload.source_epoch) && payload.source_epoch > 0 &&
+    Number.isSafeInteger(payload.delivery_sequence) && payload.delivery_sequence > 0 &&
+    Number.isSafeInteger(payload.frame_count) && payload.frame_count > 0 && blob.size <= 5 * 1024 * 1024;
+  if (!valid) throw new Error("camera V2 frame identity or byte bound");
+  let queue = state.cameraLive.v2Decode;
+  if (queue && queue.socket === socket && (queue.session !== payload.stream_session || queue.epoch !== payload.source_epoch)) {
+    resetCameraWindowDecode(socket);
+    socket.close(1002, "camera source changed");
+    return;
+  }
+  if (!queue || queue.socket !== socket) {
+    resetCameraWindowDecode();
+    queue = {socket, session: payload.stream_session, epoch: payload.source_epoch, lastSequence: 0, active: false, pending: null, cancelActive: null, closed: false};
+    state.cameraLive.v2Decode = queue;
+  }
+  if (payload.delivery_sequence <= queue.lastSequence) return;
+  queue.lastSequence = payload.delivery_sequence;
+  const newest = {blob, payload, socket, timing};
+  if (queue.active) {
+    if (queue.pending) acknowledgeCameraFrame(socket, queue.pending.payload.frame_count, "superseded", queue.pending.payload);
+    queue.pending = newest;
+    return;
+  }
+  function start(item) {
+    if (queue.closed || queue !== state.cameraLive.v2Decode || socket !== state.cameraLive.socket) return;
+    queue.active = true;
+    queue.cancelActive = displayBinaryCameraFrame(item.blob, item.payload, socket, item.timing, () => {
+      if (queue.closed || queue !== state.cameraLive.v2Decode || socket !== state.cameraLive.socket) return;
+      queue.active = false; queue.cancelActive = null;
+      const next = queue.pending; queue.pending = null;
+      if (next) start(next);
+    });
+  }
+  start(newest);
+}
+
+function displayBinaryCameraFrame(blob, payload, socket, timing = null, onSettled = null) {
   // Decode only the visible route; the hidden second image used to double decode work.
   const targets = [$(currentRoute() === "/rover-control" ? "roverCameraImage" : "cameraLiveImage")].filter(Boolean);
   const url = URL.createObjectURL(blob);
@@ -1647,7 +1707,8 @@ function displayBinaryCameraFrame(blob, payload, socket) {
   if (!targets.length) {
     URL.revokeObjectURL(url);
     state.cameraLive.objectUrl = previousUrl;
-    acknowledgeCameraFrame(socket, payload.frame_count, "not_visible");
+    acknowledgeCameraFrame(socket, payload.frame_count, "not_visible", payload);
+    onSettled?.();
     return;
   }
   let settled = false;
@@ -1658,6 +1719,7 @@ function displayBinaryCameraFrame(blob, payload, socket) {
     if (timer !== null) window.clearTimeout(timer);
     if (socket !== state.cameraLive.socket || state.cameraLive.objectUrl !== url) {
       URL.revokeObjectURL(url);
+      onSettled?.();
       return;
     }
     for (const image of targets) { image.onload = null; image.onerror = null; }
@@ -1672,8 +1734,9 @@ function displayBinaryCameraFrame(blob, payload, socket) {
       state.cameraLive.objectUrl = previousUrl;
       URL.revokeObjectURL(url);
     }
-    acknowledgeCameraFrame(socket, payload.frame_count, status);
+    acknowledgeCameraFrame(socket, payload.frame_count, status, payload);
     if (statusChanged) renderCameraLiveState();
+    onSettled?.();
   };
   for (const image of targets) {
     image.onload = () => {
@@ -1684,12 +1747,25 @@ function displayBinaryCameraFrame(blob, payload, socket) {
     image.src = url;
   }
   timer = window.setTimeout(() => finish("timeout"), 500);
+  return () => {
+    if (settled) return;
+    settled = true;
+    if (timer !== null) window.clearTimeout(timer);
+    if (state.cameraLive.objectUrl === url) {
+      for (const image of targets) { image.onload = null; image.onerror = null; image.src = previousUrl || ""; }
+      state.cameraLive.objectUrl = previousUrl;
+    }
+    URL.revokeObjectURL(url);
+  };
 }
 
-function acknowledgeCameraFrame(socket, frameCount, decodeStatus = "unknown") {
+function acknowledgeCameraFrame(socket, frameCount, decodeStatus = "unknown", delivery = null) {
   if (socket !== state.cameraLive.socket || socket?.readyState !== WebSocket.OPEN) return;
   try {
-    socket.send(JSON.stringify({ type: "frame_ack", frame_count: Number(frameCount) || 0, decode_status: decodeStatus }));
+    const ack = { type: "frame_ack", frame_count: Number(frameCount) || 0, decode_status: decodeStatus };
+    if (delivery?.ack_protocol === 2) Object.assign(ack, {ack_protocol: 2, stream_session: delivery.stream_session,
+      source_epoch: delivery.source_epoch, delivery_sequence: delivery.delivery_sequence});
+    socket.send(JSON.stringify(ack));
   } catch (err) {
     debugLog("camera", "frame ack failed", err);
   }
