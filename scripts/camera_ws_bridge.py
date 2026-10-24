@@ -27,6 +27,7 @@ CAMERA_ACK_TIMEOUT_S = 8.0
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from scripts.camera_original_preview import OriginalPreviewState, original_jpeg_metadata, original_subscription_policy
 CAMERA_INFO_IMAGE_PROVENANCE_REVISION = "camera_info_image_header_integrity_v2"
 DEFAULT_CAMERA_INFO_SYNC_MAX_DELTA_S = 0.12
 CAMERA_BINARY_MAGIC = b"UBCF"
@@ -110,6 +111,7 @@ def camera_info_payload(msg: Any) -> dict[str, Any]:
 
 @dataclass
 class CameraState:
+    original: OriginalPreviewState = field(default_factory=OriginalPreviewState)
     image_frame_id: str = "camera_link_optical"
     stamp_sec: int = 0
     stamp_nanosec: int = 0
@@ -330,6 +332,9 @@ def status_payload(state, *, image_topic, compressed_topic, camera_info_topic):
     preview = state.preview_snapshot(False)
     raw = state.snapshot(False)
     snap = preview if preview_topic_alive(preview) else raw
+    original = state.original.snapshot(False)
+    if not frame_topic_alive(snap) and preview_topic_alive(original):
+        snap = original
     alive = frame_topic_alive(snap)
     return {
         "type": "camera_bridge_status",
@@ -419,6 +424,7 @@ def ros_thread(
     camera_info_topic: str,
     ready: threading.Event,
     stop: threading.Event,
+    original_topic: str = "/camera/recording/jpeg",
 ) -> None:
     try:
         import rclpy
@@ -447,10 +453,9 @@ def ros_thread(
     class BridgeNode(Node):
         def __init__(self):
             super().__init__("ubts_camera_ws_bridge", parameter_overrides=[Parameter("use_sim_time", value=os.environ.get("DASHBOARD_MODE") == "simulation")])
-            self.create_subscription(Image, image_topic, self.on_image, sensor_qos)
-            self.create_subscription(
-                CompressedImage, compressed_topic, self.on_compressed, sensor_qos
-            )
+            self.raw_sub = self.create_subscription(Image, image_topic, self.on_image, sensor_qos)
+            self.preview_sub = self.create_subscription(CompressedImage, compressed_topic, self.on_compressed, sensor_qos)
+            self.original_sub = None
             self.create_subscription(
                 CameraInfo, camera_info_topic, self.on_camera_info, sensor_qos
             )
@@ -504,6 +509,39 @@ def ros_thread(
             except Exception as exc:
                 state.set_error(str(exc))
 
+        def on_original(self, msg: Any) -> None:
+            try:
+                if state.original.update(msg.header.frame_id, msg.header.stamp.sec,
+                                         msg.header.stamp.nanosec, bytes(msg.data), str(msg.format or "")):
+                    if state.frame_notify is not None:
+                        state.frame_notify()
+            except (ValueError, TypeError):
+                # An invalid original never overwrites a usable frame. Staleness
+                # activates the existing preview/raw fallback; no capture write.
+                pass
+
+        def sync_preview_subscriptions(self):
+            original = state.original.snapshot(False)
+            with state.original.lock:
+                original_count = state.original.clients
+            with state.lock:
+                client_count = state.client_count
+            wanted, legacy = original_subscription_policy(client_count, original_count, preview_topic_alive(original))
+            if wanted and self.original_sub is None:
+                self.original_sub = self.create_subscription(CompressedImage, original_topic, self.on_original, sensor_qos)
+            elif not wanted and self.original_sub is not None:
+                self.destroy_subscription(self.original_sub); self.original_sub = None
+            if legacy:
+                if self.raw_sub is None:
+                    self.raw_sub = self.create_subscription(Image, image_topic, self.on_image, sensor_qos)
+                if self.preview_sub is None:
+                    self.preview_sub = self.create_subscription(CompressedImage, compressed_topic, self.on_compressed, sensor_qos)
+            else:
+                if self.raw_sub is not None:
+                    self.destroy_subscription(self.raw_sub); self.raw_sub = None
+                if self.preview_sub is not None:
+                    self.destroy_subscription(self.preview_sub); self.preview_sub = None
+
     rclpy.init()
     node = BridgeNode()
     ready.set()
@@ -511,6 +549,7 @@ def ros_thread(
         from scripts.ros_executor import persistent_executor
         with persistent_executor(node) as executor:
             while rclpy.ok() and (not stop.is_set()):
+                node.sync_preview_subscriptions()
                 executor.spin_once(timeout_sec=0.1)
     finally:
         node.destroy_node()
@@ -565,6 +604,7 @@ def client_settings(actual_path: str) -> dict[str, Any]:
         "transport": transport,
         "flow": flow if transport == "binary-v1" else "none",
         "ack_window": ack_window,
+        "quality_mode": "original" if (params.get("quality_mode") or [""])[0] == "original" and (width, height) == (1920, 1080) and transport == "binary-v1" else "target",
     }
 
 
@@ -627,6 +667,11 @@ def network_preview(frame_snap, settings, budget, compressed):
     """Resize/re-encode even compressed ROS previews; never alter source frames."""
     from scripts.stream_policy import fit_size
 
+    if compressed == "original" and settings.get("quality_mode") == "original":
+        metadata = original_jpeg_metadata(frame_snap["jpeg"], frame_snap["original_format"])
+        width, height = metadata["source_width"], metadata["source_height"]
+        return frame_snap["jpeg"], 0.0, width, height, width, height
+
     frame = (
         cv2.imdecode(
             np.frombuffer(frame_snap["jpeg"], dtype=np.uint8), cv2.IMREAD_COLOR
@@ -671,6 +716,8 @@ class CameraPreviewCache:
 
     @staticmethod
     def key(frame, settings, budget, compressed):
+        if compressed == "original":
+            return ("original", frame["frame_count"], frame.get("source_width"), frame.get("source_height"), frame.get("display_rotation_deg"))
         from scripts.stream_policy import fit_size
         max_width, max_height, _, max_quality, _ = budget.values
         width, height = min(settings["width"], max_width), min(settings["height"], max_height)
@@ -683,11 +730,11 @@ class CameraPreviewCache:
 
     async def latest(self, state, settings, budget, compressed):
         async with self.lock:
-            frame = state.preview_snapshot(include_jpeg=False) if compressed else state.snapshot(include_frame=False)
+            frame = camera_source_snapshot(state, compressed, False)
             key = self.key(frame, settings, budget, compressed)
             if key in self.frames:
                 return frame, self.frames[key]
-            frame = state.preview_snapshot() if compressed else state.snapshot()
+            frame = camera_source_snapshot(state, compressed)
             key = self.key(frame, settings, budget, compressed)
             encoded = await asyncio.to_thread(network_preview, frame, settings, budget, compressed)
             if len(self.frames) >= 8:
@@ -697,6 +744,12 @@ class CameraPreviewCache:
             frame.pop("frame_bgr", None)
             frame.pop("jpeg", None)
             return frame, encoded
+
+
+def camera_source_snapshot(state, compressed, include=True):
+    if compressed == "original":
+        return state.original.snapshot(include)
+    return state.preview_snapshot(include_jpeg=include) if compressed else state.snapshot(include_frame=include)
 
 
 async def serve_websocket(
@@ -738,7 +791,8 @@ async def serve_websocket(
         credit=asyncio.Event();window_failed=asyncio.Event();receiver=None;feedback=dict(error=None)
         def source_key(frame,compressed):
             return(compressed,frame.get('frame_id'),frame.get('source_width'),frame.get('source_height'),
-                frame.get('raw_preview_width'),frame.get('raw_preview_height'))
+                frame.get('raw_preview_width'),frame.get('raw_preview_height'),
+                frame.get('display_rotation_deg'),frame.get('jpeg_provenance'))
         async def receive_window_acks():
             try:
                 while not stop.is_set():
@@ -798,6 +852,10 @@ async def serve_websocket(
         last_status = 0.0
         pacer = FramePacer()
         state.adjust_clients(1)
+        original_requested = settings.get("quality_mode") == "original"
+        original_wait_until = time.monotonic() + 1.5
+        if original_requested:
+            state.original.adjust_clients(1)
         try:
             await websocket.send(
                 json.dumps(
@@ -824,6 +882,12 @@ async def serve_websocket(
                 compressed = preview_topic_alive(preview)
                 snap = preview if compressed else state.snapshot(include_frame=False)
                 alive = compressed or frame_topic_alive(snap)
+                if original_requested:
+                    original = state.original.snapshot(False)
+                    if preview_topic_alive(original):
+                        snap, compressed, alive = original, "original", True
+                    elif started < original_wait_until:
+                        snap, alive = original, False
                 if started - last_status >= 1:
                     await asyncio.wait_for(
                         websocket.send(
@@ -898,6 +962,15 @@ async def serve_websocket(
                     "ack_deadline_s": CAMERA_ACK_TIMEOUT_S,
                     **budget.status(),
                 }
+                passthrough = compressed == "original"
+                metadata.update(jpeg_passthrough=passthrough,
+                    preview_quality_mode="original_source_jpeg" if passthrough else "target_reencoded",
+                    display_rotation_deg=frame.get("display_rotation_deg", 0) if passthrough else 0)
+                if passthrough:
+                    metadata.update(source_transport="ros2-original-jpeg", preview_quality=None,
+                        source_jpeg_numeric_quality="not_inferred", jpeg_provenance=frame["jpeg_provenance"],
+                        source_jpeg_sha256=frame["source_jpeg_sha256"],
+                        output_limit_width=source_width, output_limit_height=source_height)
                 if window is not None:
                     # Encoder waiting may select a newer frame. Bind the exact
                     # selected source before registering its delivery credit.
@@ -946,6 +1019,8 @@ async def serve_websocket(
                 receiver.cancel();await asyncio.gather(receiver,return_exceptions=True)
             if window is not None:window.close()
             state.adjust_clients(-1)
+            if original_requested:
+                state.original.adjust_clients(-1)
 
     async with websockets.serve(
         handler,
@@ -978,6 +1053,10 @@ def main():
         default=os.environ.get("CAMERA_COMPRESSED_TOPIC", "/camera/image_jpeg"),
     )
     parser.add_argument(
+        "--original-topic",
+        default=os.environ.get("CAMERA_ORIGINAL_TOPIC", "/camera/recording/jpeg"),
+    )
+    parser.add_argument(
         "--camera-info-topic",
         default=os.environ.get("CAMERA_INFO_TOPIC", "/camera/camera_info"),
     )
@@ -1006,6 +1085,7 @@ def main():
                 args.camera_info_topic,
                 ready,
                 stop,
+                args.original_topic,
             ),
             daemon=True,
         ),

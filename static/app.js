@@ -1355,6 +1355,12 @@ function cameraWebSocketUrl() {
     transport: "binary-v1",
     flow: "decode-ack",
   });
+  const originalPreview = new URLSearchParams(location.search).get("camera_preview") ??
+    (window.UBTS_CAMERA_ORIGINAL_PREVIEW === true ? "original" : "legacy");
+  if (originalPreview === "original") {
+    params.set("resolution", "1920x1080");
+    params.set("quality_mode", "original");
+  }
   // V1 remains the default. Only an explicit supported-client opt-in asks
   // the server to negotiate more than one outstanding preview frame.
   const explicitWindow = new URLSearchParams(location.search).get("camera_ack_window") ?? window.UBTS_CAMERA_ACK_WINDOW;
@@ -1579,6 +1585,7 @@ function handleCameraLivePayload(payload, binary = null) {
     state.cameraLive.deliveryState = payload.delivery_state || state.cameraLive.deliveryState;
     state.cameraLive.effectiveProfile = payload.effective_profile || state.cameraLive.effectiveProfile;
     state.cameraLive.previewQuality = payload.preview_quality ?? state.cameraLive.previewQuality;
+    if (payload.type === "frame") state.cameraLive.originalJpeg = payload.jpeg_passthrough === true;
     state.cameraLive.ackLatencyMs = payload.ack_latency_ms ?? state.cameraLive.ackLatencyMs;
   }
   if (payload.type === "status") {
@@ -1726,6 +1733,9 @@ function displayBinaryCameraFrame(blob, payload, socket, timing = null, onSettle
     const statusChanged = state.cameraLive.decodeStatus !== status;
     state.cameraLive.decodeStatus = status;
     if (status === "decoded") {
+      // Original sensor pixels declare orientation; preview pixels are already
+      // upright. Replace the transform once after decode, never accumulate it.
+      for (const image of targets) image.style.transform = cameraDisplayRotation(payload);
       state.cameraLive.lastDecodedAt = performance.now();
       if (previousUrl) URL.revokeObjectURL(previousUrl);
     } else {
@@ -1757,6 +1767,11 @@ function displayBinaryCameraFrame(blob, payload, socket, timing = null, onSettle
     }
     URL.revokeObjectURL(url);
   };
+}
+
+function cameraDisplayRotation(payload) {
+  return payload.jpeg_passthrough === true && payload.source_transport === "ros2-original-jpeg" &&
+    payload.display_rotation_deg === 180 ? "rotate(180deg)" : "";
 }
 
 function acknowledgeCameraFrame(socket, frameCount, decodeStatus = "unknown", delivery = null) {
@@ -1791,6 +1806,7 @@ function renderCameraLiveState(overrideLabel) {
   const cameraDelivery = state.cameraLive.deliveryState === "bandwidth_limited" ? "회선 제한 · 화질 유지, FPS 조절"
     : state.cameraLive.decodeStatus === "timeout" ? "영상 해독 지연"
     : state.cameraLive.decodeStatus === "error" ? "영상 해독 실패 · 이전 화면 유지"
+    : state.cameraLive.originalJpeg ? "원본 JPEG · 재압축 없음"
     : `${state.cameraLive.effectiveProfile || "auto"} · Q${state.cameraLive.previewQuality ?? "--"}`;
   const ackLabel = Number.isFinite(state.cameraLive.ackLatencyMs) ? ` · ACK ${Math.round(state.cameraLive.ackLatencyMs)}ms` : "";
   const observedDetail = `ROS ${cameraFpsLabel(state.cameraLive.sourceFps)} · WS ${cameraFpsLabel(state.cameraLive.displayFps)} · ${cameraDelivery}${ackLabel}`;
