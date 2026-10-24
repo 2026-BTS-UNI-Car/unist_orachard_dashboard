@@ -1,0 +1,89 @@
+{
+  "actual_IO_or_service_change": false,
+  "app_js_modified": false,
+  "edits": [
+    {
+      "new_SHA256": "3f1ee0b584ee2d189b331dfc0c2e66449dcf575f0f5ff063b76381c1f5bdc0e2",
+      "old_SHA256": "73d0ae3664aa76bd5761ec03f0a3124b365f38539a06165b4f13c04f9ee67854"
+    },
+    {
+      "new_SHA256": "c6fac946d47c4b958fb3d10690972aa329306fd6c811f56d2c0207c00ef90624",
+      "old_SHA256": "1c9cc7810a4fc524fd5bc433175c2916e6a2867a7e3f0e7b6227311828b96953"
+    },
+    {
+      "new_SHA256": "76ebc161b73653e1ad4729f6a4f3aa9a59e41632a825022a9cd85b5e6addc24d",
+      "old_SHA256": "c14a741523ccdf83505e7aaa4b8c069b2e70af1de6e0c16e6bbd3d9af409e3bc"
+    },
+    {
+      "new_SHA256": "3d57187bae9dc1ec750d3378aefc851d170b8995d54ac9517eff9c81693560bb",
+      "old_SHA256": "615bd6d695755964df0909349ce9913129595b8495b3e7e91f9acb697d76619a"
+    },
+    {
+      "new_SHA256": "1f2f3f05e86252cf9b66a7bf9f649bd2d919ebbb9db661e267219458db290c89",
+      "old_SHA256": "bc2cbad3bdd3b9084e4fc35c66b40b8da73354cdfde92f571582f41c270e01e3"
+    },
+    {
+      "new_SHA256": "a3310aafa66988479a67a3aed476e790e780b5211ec4feceddcb1fa76b08a094",
+      "old_SHA256": "3d2f2cd361e52de88a9418455cc7296f853550279242a1fcf24140ceb5244d4d"
+    },
+    {
+      "new_SHA256": "82d8b09757792b0fc027f31ab9fd2f1ee8cee47ff898c28fdfb7bd9c7ac4c83a",
+      "old_SHA256": "45824a941d6f38d12b90644d53904be585104248961843c6cd85a51b255bdd44"
+    },
+    {
+      "new_SHA256": "07f419b0ee7c7ebea5a2a7bb1601b4747f589c642c7e8e8474aab0f544228ce3",
+      "old_SHA256": "c84cef703f855e735e01845ca0edf84b709ba1909be49878335645694c9fa49d"
+    },
+    {
+      "new_SHA256": "be8c8d0ac69c00433322f93bd2c0902ba27d9858e3efbc63c7ab9e8d1c6e6d6d",
+      "old_SHA256": "6bcda477589dd65e22ec62f3702b75c0de09b3c2441bf03b65db03f91ec1297c"
+    },
+    {
+      "new_SHA256": "e867f40ee85bae1625a90328fd90843cae607f12a1fbef96086fed8f1d6ee06d",
+      "old_SHA256": "9ea639f32f7d72dd1a3a9be4967a763a62296eb000eb7292ed92c2fd5d2016bc"
+    },
+    {
+      "new_SHA256": "61e8ba4e828da597da3148b5a87b2c4688f7a607029b19455ee855b3c781d7bd",
+      "old_SHA256": "0269b7de4d0e4a5e78b6129c26d87e9f79ac91ba8c3f2ce9d5bcbd906dfe237e"
+    },
+    {
+      "new_SHA256": "e957351298efdd7d7ac82713af4e2d30681e17a0eadcbe21b0a28631bf32e077",
+      "old_SHA256": "ff958844f595f30442b72288e1bd52b0840924ccbdf135804314805e2fc99251"
+    },
+    {
+      "new_SHA256": "ffc33e85bdba39803319adcca860dca0d62ef032458a4b7328eff86bc62a60ba",
+      "old_SHA256": "4d6bbcec05e9c2ba1725a8b839280615b9090f61804c4e63e102819307db11a1"
+    }
+  ],
+  "input_age_default_ns_unchanged": 250000000,
+  "original_source_SHA256": "344733ebb8b1a3b773e20380107a10d2897e47c50886173166cbf1691e3653fa",
+  "overlay_SHA256": "451b786b983f69d596a74525d71fbe45c789466d8cb530144f2bee024a0757e3",
+  "physical_control_modified": false,
+  "reverse_patch_original_bytes_exact": true,
+  "source_only": true,
+  "unchanged_methods_exact_AST": {
+    "AutonomyObservation": [
+      "__init__",
+      "cruise",
+      "factory",
+      "start",
+      "set_cruise_percent",
+      "set_speed",
+      "stop",
+      "manual_takeover",
+      "input_token",
+      "submit",
+      "evidence"
+    ],
+    "_ObservationWorker": [
+      "fail",
+      "enqueue",
+      "validate",
+      "expired",
+      "wait_input",
+      "request_stop",
+      "join",
+      "close"
+    ]
+  }
+}

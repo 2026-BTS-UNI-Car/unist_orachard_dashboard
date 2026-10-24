@@ -1,0 +1,10 @@
+{
+  "actual_board_install_or_observe": false,
+  "camera_Git_static_js_not_deployment_SHA256": "1259b899b9fddbce0bd32c2466ed8b224d86ea13211768ed7fcb7eff8fe6617f",
+  "camera_source_Git_commit": "c02a53829f7f2653ebb990fa69982a9f068b660b",
+  "deployed_snapshot_observation_SHA256": "344733ebb8b1a3b773e20380107a10d2897e47c50886173166cbf1691e3653fa",
+  "existing_tests_SHA256": "1412fa3adf9f1bbdeaa11bbf0a80a1ca87af94174d34e56d6788fcc09615ebeb",
+  "local_client_diff_is_added_control_input_method_only": true,
+  "preserved_deployed_camera_static_js_SHA256": "925cf73cfdfd3f774693dcd8309b67d6c749ce16660ac0e9bb9cdf6586b3f1ba",
+  "source_header_stamp_receipt_clock_TTL_modified": false
+}

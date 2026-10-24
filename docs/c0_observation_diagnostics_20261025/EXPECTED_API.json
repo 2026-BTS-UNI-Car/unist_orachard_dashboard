@@ -1,0 +1,58 @@
+{
+  "API": {
+    "active_schema": "ubts.observation.processing_diagnostics.v1",
+    "clock_role": "HOST_MONOTONIC_RELATIVE_DURATION_ONLY",
+    "counter_cap": 9223372036854775807,
+    "inactive_without_resource": null,
+    "input_source_fields_modified": false,
+    "last_discard_reason": [
+      null,
+      "POST_PLAN_INPUT_UNAVAILABLE",
+      "POST_PLAN_POSITIVE_AGE_EXPIRY",
+      "PREFERENCE_CHANGED",
+      "CANCELLED"
+    ],
+    "last_plan_sequence": "original scan sequence or null",
+    "last_planner_counts": "only nonnegative bounded integer scans_fed/imus_fed/scans_processed/imu_fed; metadata before postcheck, not an authorization or published-decision count",
+    "last_published_sequence": "original scan sequence only after all original postchecks and publication; or null",
+    "missing_source_or_age_remains_UNKNOWN": true,
+    "new_top_level": "processing_diagnostics",
+    "physical_authority": false,
+    "planner_counter_phase": "AFTER_PLAN_BEFORE_POSTCHECK_NOT_PUBLICATION",
+    "plans_finished": "bounded successful actual planner returns; WAIT_IMU/WAIT_LOCALIZATION are not planner calls",
+    "provider_unavailable": [
+      "poll_input",
+      "post_plan_input"
+    ],
+    "route": "GET /api/autonomy/observe",
+    "stage_shape": [
+      "calls",
+      "total_ns",
+      "max_ns",
+      "last_ns",
+      "invalid_samples"
+    ],
+    "stage_timing_ns": [
+      "poll_input",
+      "post_plan_input",
+      "planner_and_validation"
+    ]
+  },
+  "Root_must_freshly_verify_all_runtime_pins_before_install": true,
+  "default_install_OFF": true,
+  "display_only_change": {
+    "actual_published_preference_version_changed": "PREFERENCE_CHANGED_WAITING_INPUT preserved",
+    "existing_publication_preference_fence": "unchanged",
+    "never_published_preference_None": "WAIT_RESULT or the original higher-priority WAIT/STOP reason"
+  },
+  "install_or_observe_executed_by_this_candidate": false,
+  "preserve_camera_source_Git_revision": "c02a53829f7f2653ebb990fa69982a9f068b660b",
+  "preserve_static_app_js_SHA256": "925cf73cfdfd3f774693dcd8309b67d6c749ce16660ac0e9bb9cdf6586b3f1ba",
+  "required_after_SHA256": "451b786b983f69d596a74525d71fbe45c789466d8cb530144f2bee024a0757e3",
+  "required_before_SHA256": "344733ebb8b1a3b773e20380107a10d2897e47c50886173166cbf1691e3653fa",
+  "runtime_identity_is_Root_supplied_private_deployment_input": true,
+  "schema": "ubts.C0_observation.processing_diagnostics.release_contract.v1",
+  "single_overlay": "dashboard_server/autonomy_observation.py",
+  "source_input_fields_config_TTL_control_and_STOP_changed": false,
+  "static_app_js_pin_authority": "camera_original1080_install_v1 SOURCE_FREEZE/static/app.js and the successful production probe exact installed-source pre/post check; source Git commit is lineage, not identical deployment bytes"
+}

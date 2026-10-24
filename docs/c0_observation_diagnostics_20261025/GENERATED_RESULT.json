@@ -1,0 +1,12 @@
+{
+  "actual_IO_threads_or_sensors": false,
+  "clock_or_TTL_or_source_fields_modified": false,
+  "false_preference_message_fixed": true,
+  "generated_groups": 10,
+  "metadata_only_timing_bounded": true,
+  "ok": true,
+  "processing_vs_published_counters_distinct": true,
+  "source_absence_expiry_context_and_Stop_fail_closed": true,
+  "true_preference_change_fence_and_message_exact": true,
+  "wall_s": 0.016652699909172952
+}
