@@ -13,6 +13,7 @@ import json
 import math
 import re
 import threading
+import time
 
 from common.original_cdr import LASER_TYPE, IMU_TYPE, WireScan, decode, MAX_CDR_BYTES
 from common.native_ownership import RawReceipt, RAW_SCHEMA, _ns, _sha
@@ -23,6 +24,125 @@ SCHEMA = 'ubts.private.actual_native_cdr_observer.v1'
 MAX_COUNTER = 2**63 - 1
 MAX_METADATA_BYTES = 8192
 MAX_LINE_BYTES = 2 * MAX_CDR_BYTES + MAX_METADATA_BYTES
+
+"""Private immutable JSON fragments, never an RPC-supplied raw-JSON facility.
+
+Only the same-process adapter constructs these values. No sensor/source stamp
+is rewritten: the two comparison clocks are inserted at the getter's read.
+The production JSON parser and its reply schema remain unchanged.
+"""
+import json
+
+MAX_REPLY_BYTES = 262144
+_KEY = object()
+_SOURCE = object()
+_RAW = object()
+
+
+def _require(value, reason):
+    if not value:
+        raise ValueError(reason)
+
+
+def _dump(value):
+    return json.dumps(value, allow_nan=False, separators=(',', ':')).encode('utf8')
+
+
+class _Body(tuple):
+    __slots__ = ()
+
+    def __new__(cls, key, original, template, payload):
+        _require(key is _KEY, 'private_sealed_body_constructor')
+        return tuple.__new__(cls, (key, original, template, payload))
+
+
+class _Input(tuple):
+    __slots__ = ()
+
+    def __new__(cls, key, data):
+        _require(key is _KEY and type(data) is bytes, 'private_sealed_input_constructor')
+        return tuple.__new__(cls, (key, data))
+
+
+def seal_body(private, payload):
+    """Called once on the private deepcopy used for scalar publication.
+
+    Each top-level value is stdlib-encoded once, including the large scan.
+    Splitting only at the known top-level dict avoids string/JSON scanning and
+    preserves stdlib key order, integers, -0.0 and Unicode escapes. Existing
+    comparison-clock keys retain their original position; absent keys append
+    in the same order as dict.update(source_now_ns=..., receipt_now_ns=...).
+    """
+    _require(type(private) is dict and all(type(k) is str for k in private),
+             'sealed_top_level_exact_string_dict_required')
+    original = []
+    template = []
+    seen = set()
+    for key, value in private.items():
+        prefix = _dump(key) + b':'
+        encoded = _dump(value)  # still rejects every nonfinite/cyclic value
+        original.append(prefix + encoded)
+        if template:
+            template.append(b',')
+        template.append(prefix)
+        template.append(_SOURCE if key == 'source_now_ns' else _RAW if key == 'receipt_now_ns' else encoded)
+        seen.add(key)
+    for key, slot in (('source_now_ns', _SOURCE), ('receipt_now_ns', _RAW)):
+        if key not in seen:
+            if template:
+                template.append(b',')
+            template.extend((_dump(key) + b':', slot))
+    encoded = b'{' + b','.join(original) + b'}'
+    _require(len(encoded) <= MAX_REPLY_BYTES, 'bounded_immutable_full_proposal_required')
+    # Coalesce constants once. Getter work is at most five byte fragments.
+    compact = []
+    pending = [b'{']
+    for part in template + [b'}']:
+        if part is _SOURCE or part is _RAW:
+            compact.append(b''.join(pending)); pending = []
+            compact.append(part)
+        else:
+            pending.append(part)
+    compact.append(b''.join(pending))
+    return _Body(_KEY, encoded, tuple(compact), payload)
+
+
+def original_bytes(body):
+    _require(type(body) is _Body and body[0] is _KEY, 'exact_private_sealed_body_required')
+    return body[1]
+
+
+def same_payload(body, payload):
+    return type(body) is _Body and body[0] is _KEY and body[3] is payload
+
+
+def bind_current_clocks(body, source_now_ns, receipt_now_ns):
+    _require(type(body) is _Body and body[0] is _KEY, 'exact_private_sealed_body_required')
+    _require(all(type(n) is int and 0 <= n <= 2**63-1 for n in (source_now_ns, receipt_now_ns)),
+             'bounded_current_comparison_clocks_required')
+    source = str(source_now_ns).encode('ascii')
+    raw = str(receipt_now_ns).encode('ascii')
+    data = b''.join(source if p is _SOURCE else raw if p is _RAW else p for p in body[2])
+    _require(len(data) <= MAX_REPLY_BYTES, 'bounded_sealed_input_required')
+    return _Input(_KEY, data)
+
+
+def encode_input_reply(result):
+    """Explicit input-only serializer. Arbitrary bytes/str never become JSON."""
+    _require(type(result) is dict and tuple(result)[-1:] == ('input',), 'sealed_input_last_reply_field_required')
+    _require(all(result.get(k) is False for k in ('runtime_authority', 'motor_command_sent', 'autonomy_output_enabled')),
+             'sealed_reply_authority_forbidden')
+    value = result['input']
+    if value is None:
+        data = _dump(result) + b'\n'
+    else:
+        _require(type(value) is _Input and value[0] is _KEY, 'exact_private_sealed_input_required')
+        outer = _dump({k: v for k, v in result.items() if k != 'input'})
+        data = outer[:-1] + b',"input":' + value[1] + b'}\n'
+    _require(len(data) <= MAX_REPLY_BYTES, 'bounded_sensor_owner_reply')
+    _require(data.endswith(b'\n') and data.count(b'\n') == 1, 'single_reply_newline_required')
+    return data
+
 
 
 def _counter(value):
@@ -56,6 +176,16 @@ def _finite_float(value):
     require(math.isfinite(result), 'nonfinite_native_stream_JSON_number')
     return result
 
+
+
+def _comparison_now():
+    try:
+        return time.monotonic_ns()
+    except Exception:
+        return None
+
+def _comparison_elapsed(start,end):
+    return end-start if type(start) is int and type(end) is int and 0<=end-start<=60_000_000_000 else None
 
 class StreamObserverRows:
     """Strict contiguous streaming protocol with bounded latest state only.
@@ -99,6 +229,7 @@ class StreamObserverRows:
         self.observer_contract_sha256 = observer_contract_sha256
         self._binding = self._context()
         self._lock, self._stopping = threading.RLock(), threading.Event()
+        self._comparison_snapshot_init()
         self.expected_pid = self.expected_time_namespace = None
         self.begin = None
         self.ready = self.ended = self._done = False
@@ -117,6 +248,8 @@ class StreamObserverRows:
         self._last_original_raw = self._last_original_system = None
         self._observed_header_floors = {LASER_TYPE: None, IMU_TYPE: None}
         self._proposal_input = None
+        self._comparison_timing_lock=threading.Lock()
+        self._comparison_timing={k:[0,0,0,0] for k in ('lock_wait','locked_read','service_dispatch')}
         self._invalidate_control()
         self.factory_failure_timing = None
         self.factory_failure_timing_error = None
@@ -444,6 +577,7 @@ class StreamObserverRows:
     def stop(self):
         # Events become visible before any original ownership mutex is acquired.
         self._stopping.set()
+        self._comparison_snapshot_poison()
         if self._gnss_dispatcher is not None:self._gnss_dispatcher.stop()
         self.factory.stop_intent.set()
         if self._control_adapter is not None:self._control_adapter.stop()
@@ -808,7 +942,10 @@ class StreamObserverRows:
                     accepted=True, map_eligible=True, path_break=False, motion_prior=False,
                     body_mount_verified=False, accuracy_verified=False),
                 imu=dict(stamp_ns=lower.wire.header.stamp_ns, receipt_ns=lower.receipt.ns,
-                    yaw_rate_rad_s=vertical, original_native=True),
+                    yaw_rate_rad_s=vertical, original_native=True,
+                    frame_id=lower.wire.header.frame_id, original_CDR_sha256=lower.original_sha256,
+                    angular_velocity_xyz=[float(v) for v in angular],
+                    linear_acceleration_xyz=[float(v) for v in _linear]),
                 estimated_mount=True, physical_autonomy_qualified=False,
                 runtime_authority=False, motor_command_sent=False)
             # Native numpy calculations can return float64 scalars. Serialize
@@ -846,6 +983,336 @@ class StreamObserverRows:
                     adapter.invalidate_gap('control_input_unavailable')
             return dict(adapter.status(), input=current)
 
+    def _comparison_snapshot_init(self):
+        self._comparison_snapshot_lock=threading.Lock()
+        self._comparison_snapshot=None
+        self._full_proposal_snapshot=None
+        self._comparison_snapshot_revision=0
+        self._comparison_snapshot_exhausted=False
+        self._comparison_snapshot_counts=dict(reads=0,returns=0,empty=0,invalidated=0,changed=0,expired=0)
+        self._full_snapshot_counts=dict(reads=0,returns=0,empty=0,changed=0,unavailable=0)
+        self._comparison_snapshot_source_identity=(id(self.ingress),id(self.ingress.source_now),id(self.ingress.raw),id(self.ingress.source_clock_kind),id(getattr(self,'factory',None)))
+        self._proposal_value=None
+        self._fault_value=None
+
+    def _comparison_snapshot_bump_locked(self):
+        if self._comparison_snapshot_revision>=MAX_COUNTER:
+            self._comparison_snapshot_exhausted=True
+            self._comparison_snapshot=None
+            self._full_proposal_snapshot=None
+            return False
+        self._comparison_snapshot_revision+=1
+        return not self._comparison_snapshot_exhausted
+
+    def _comparison_snapshot_poison(self):
+        with self._comparison_snapshot_lock:
+            self._comparison_snapshot=None
+            self._full_proposal_snapshot=None
+            self._comparison_snapshot_bump_locked()
+            self._comparison_snapshot_counts['invalidated']=min(MAX_COUNTER,self._comparison_snapshot_counts['invalidated']+1)
+
+    @property
+    def fault(self):
+        return self._fault_value
+
+    @fault.setter
+    def fault(self,value):
+        if value is not None:self._comparison_snapshot_poison()
+        self._fault_value=value
+
+    @property
+    def _proposal_input(self):
+        return self._proposal_value
+
+    @_proposal_input.setter
+    def _proposal_input(self,value):
+        # All existing None/commit assignments pass through this descriptor.
+        # Build only bounded scalar tuples before acquiring the short lock.
+        try:
+            private=None if value is None else copy.deepcopy(value)
+            payload=None if private is None else self._comparison_snapshot_payload(private)
+            sealed=None if private is None else seal_body(private,payload)
+            encoded=None if sealed is None else original_bytes(sealed)
+            require(encoded is None or len(encoded)<=262144,'bounded_immutable_full_proposal_required')
+        except Exception:
+            self._comparison_snapshot_poison()
+            # Publishing diagnostics must not replace original assignment or
+            # manufacture a producer fault. Fast comparison stays UNKNOWN.
+            self._proposal_value=value
+            return
+        with self._comparison_snapshot_lock:
+            self._proposal_value=value
+            available=self._comparison_snapshot_bump_locked()
+            self._comparison_snapshot=(self._comparison_snapshot_revision,payload)if payload is not None and available else None
+            self._full_proposal_snapshot=(self._comparison_snapshot,encoded)if self._comparison_snapshot is not None else None
+            self._sealed_full_snapshot=(self._full_proposal_snapshot,sealed)if self._full_proposal_snapshot is not None else None
+            if payload is None:self._comparison_snapshot_counts['invalidated']=min(MAX_COUNTER,self._comparison_snapshot_counts['invalidated']+1)
+
+    def _comparison_snapshot_payload(self,row):
+        fields=(('source_session','epoch','generation','source_clock_domain','receipt_clock_domain'),
+                ('sequence','frame_id','stamp_ns','receipt_ns'),('stamp_ns','receipt_ns'),
+                ('previous_scan_stamp_ns','current_scan_stamp_ns','receipt_ns'))
+        values=tuple(tuple(row[name][k]for k in keys)for name,keys in zip(('context','scan','imu','motion'),fields))
+        require(all(type(v)in(int,str)and(type(v)is not str or 0<len(v.encode('utf-8'))<=256)
+                    for group in values for v in group),'bounded_immutable_comparison_scalars_required')
+        context,scan,imu,motion=values
+        require(type(context[2])is int and 0<=context[2]<=MAX_COUNTER and
+                all(type(v)is str for v in(context[0],context[1],context[3],context[4],scan[1])) and
+                all(type(v)is int and 0<=v<=MAX_COUNTER for v in(scan[0],scan[2],scan[3],*imu,*motion)),
+                'exact_immutable_comparison_scalar_types_required')
+        require(self._context()==self._binding and context[0]==self.ingress.clock_session and
+                context[2]==self.ingress.generation and context[3]=='ROS_SYSTEM_TIME'and
+                type(self.begin)is dict and self.begin.get('observer_process_session')==context[1]and
+                context[4]=='CLOCK_MONOTONIC_RAW:'+self.ingress.domain,
+                'committed_comparison_context_required')
+        identities=(id(self.ingress),id(self.ingress.source_now),id(self.ingress.raw),id(self.ingress.source_clock_kind),id(getattr(self,'factory',None)))
+        require(identities==self._comparison_snapshot_source_identity,'original_comparison_clock_accessors_required')
+        return(self._binding,values,identities)
+
+    def _comparison_snapshot_context_matches(self,payload):
+        binding,values,identities=payload;context=values[0]
+        flags=tuple(getattr(self,'_factory_'+name+'_feature')()for name in('registration','preparation','receiver','final','nearest'))
+        if any(type(v)is not bool for v in flags)or flags!=binding[-5:]:return False
+        # Only read-only scalar/context providers. Never acquire the long lock
+        # or call _fail/stop from this comparison reader.
+        return(not self._stopping.is_set()and self.fault is None and not self.ended and
+               self.ingress.fault is None and self.factory.fault is None and not self.factory.stop_intent.is_set()and
+               self._binding==binding and self._context()==binding and
+               self.ingress.clock_session==context[0]and type(self.ingress.generation)is int and self.ingress.generation==context[2]and
+               type(self.begin)is dict and self.begin.get('observer_process_session')==context[1]and
+               self.ingress.source_clock_kind()=='ROS_SYSTEM_TIME'and
+               context[4]=='CLOCK_MONOTONIC_RAW:'+self.ingress.domain and
+               (id(self.ingress),id(self.ingress.source_now),id(self.ingress.raw),id(self.ingress.source_clock_kind),id(getattr(self,'factory',None)))==identities==self._comparison_snapshot_source_identity)
+
+    def _comparison_snapshot_discard(self,reference,reason):
+        with self._comparison_snapshot_lock:
+            self._comparison_snapshot_counts[reason]=min(MAX_COUNTER,self._comparison_snapshot_counts[reason]+1)
+            if self._comparison_snapshot is reference:
+                self._comparison_snapshot=None
+                self._full_proposal_snapshot=None
+                self._comparison_snapshot_bump_locked()
+
+    def proposal_comparison_committed(self):
+        with self._comparison_snapshot_lock:
+            self._comparison_snapshot_counts['reads']=min(MAX_COUNTER,self._comparison_snapshot_counts['reads']+1)
+            reference=self._comparison_snapshot
+            if reference is None:
+                self._comparison_snapshot_counts['empty']=min(MAX_COUNTER,self._comparison_snapshot_counts['empty']+1)
+                return None
+        _revision,payload=reference
+        try:
+            if not self._comparison_snapshot_context_matches(payload):
+                self._comparison_snapshot_discard(reference,'changed');return None
+            _binding,values,_identities=payload;context,scan,imu,motion=values
+            result=dict(schema='ubts.native_observation.control_comparison.v1',
+                context=dict(zip(('source_session','epoch','generation','source_clock_domain','receipt_clock_domain'),context)),
+                scan=dict(zip(('sequence','frame_id','stamp_ns','receipt_ns'),scan)),
+                imu=dict(zip(('stamp_ns','receipt_ns'),imu)),
+                motion=dict(zip(('previous_scan_stamp_ns','current_scan_stamp_ns','receipt_ns'),motion)),
+                source_now_ns=self.ingress.source_now(),receipt_now_ns=self.ingress.raw.sample().ns)
+            if not(type(result['source_now_ns'])is int and type(result['receipt_now_ns'])is int and
+                0<=result['source_now_ns']-result['scan']['stamp_ns']<SOURCE_AGE_NS and
+                all(0<=result['receipt_now_ns']-result[k]['receipt_ns']<RECEIPT_AGE_NS for k in('scan','motion','imu'))and
+                0<=result['source_now_ns']-result['imu']['stamp_ns']<SOURCE_AGE_NS):
+                self._comparison_snapshot_discard(reference,'expired');return None
+            if not self._comparison_snapshot_context_matches(payload):
+                self._comparison_snapshot_discard(reference,'changed');return None
+        except Exception:
+            self._comparison_snapshot_discard(reference,'changed');return None
+        with self._comparison_snapshot_lock:
+            # Stop's Event precedes poison; check BOTH even in that tiny window.
+            if self._comparison_snapshot is not reference or self._comparison_snapshot_exhausted:
+                self._comparison_snapshot_counts['changed']=min(MAX_COUNTER,self._comparison_snapshot_counts['changed']+1)
+                return None
+            try:
+                invalid=(self._stopping.is_set()or self.fault is not None or self.ended or
+                    self.ingress.fault is not None or self.factory.fault is not None or self.factory.stop_intent.is_set()or
+                    type(self.ingress.generation)is not int or self.ingress.generation!=context[2]or
+                    self.ingress.clock_session!=context[0]or self.begin.get('observer_process_session')!=context[1])
+            except Exception:invalid=True
+            if invalid:
+                self._comparison_snapshot=None
+                self._full_proposal_snapshot=None
+                self._comparison_snapshot_bump_locked()
+                self._comparison_snapshot_counts['changed']=min(MAX_COUNTER,self._comparison_snapshot_counts['changed']+1)
+                return None
+            self._comparison_snapshot_counts['returns']=min(MAX_COUNTER,self._comparison_snapshot_counts['returns']+1)
+            return result
+
+    def proposal_input_committed(self):
+        """Immutable exact full row with current original strict clock guards."""
+        with self._comparison_snapshot_lock:
+            counts=self._full_snapshot_counts
+            counts['reads']=min(MAX_COUNTER,counts['reads']+1)
+            frozen=self._full_proposal_snapshot
+            if frozen is None:
+                counts['empty']=min(MAX_COUNTER,counts['empty']+1)
+                return None
+        reference,encoded=frozen
+        try:
+            result=json.loads(encoded)
+            # This existing reader performs all current SOURCE250/RAW200,
+            # feature/context/source clock/Stop/ABA checks after private decode.
+            comparison=self.proposal_comparison_committed()
+            if comparison is None:
+                with self._comparison_snapshot_lock:
+                    counts['unavailable']=min(MAX_COUNTER,counts['unavailable']+1)
+                return None
+            require(type(result)is dict and result['context']==comparison['context'] and
+                all(result[key][name]==value for key in('scan','imu','motion')
+                    for name,value in comparison[key].items()),'exact_full_scalar_commit_cohort_required')
+            result.update(source_now_ns=comparison['source_now_ns'],receipt_now_ns=comparison['receipt_now_ns'])
+            if not self._comparison_snapshot_context_matches(reference[1]):
+                self._comparison_snapshot_discard(reference,'changed');return None
+        except Exception:
+            self._comparison_snapshot_discard(reference,'changed');return None
+        with self._comparison_snapshot_lock:
+            if (self._full_proposal_snapshot is not frozen or self._comparison_snapshot is not reference or
+                    self._comparison_snapshot_exhausted):
+                counts['changed']=min(MAX_COUNTER,counts['changed']+1);return None
+            context=reference[1][1][0]
+            try:
+                invalid=(self._stopping.is_set()or self.fault is not None or self.ended or
+                    self.ingress.fault is not None or self.factory.fault is not None or self.factory.stop_intent.is_set()or
+                    type(self.ingress.generation)is not int or self.ingress.generation!=context[2]or
+                    self.ingress.clock_session!=context[0]or self.begin.get('observer_process_session')!=context[1]or
+                    id(self.factory)!=self._comparison_snapshot_source_identity[-1])
+            except Exception:invalid=True
+            if invalid:
+                self._comparison_snapshot=None
+                self._full_proposal_snapshot=None
+                self._comparison_snapshot_bump_locked()
+                counts['changed']=min(MAX_COUNTER,counts['changed']+1);return None
+            counts['returns']=min(MAX_COUNTER,counts['returns']+1)
+            return result
+
+    def proposal_input_committed_wire(self):
+        """Sealed same-cohort body; all clocks/fences run before returning typed wire bytes."""
+        with self._comparison_snapshot_lock:
+            counts=self._full_snapshot_counts
+            counts['reads']=min(MAX_COUNTER,counts['reads']+1)
+            frozen=self._full_proposal_snapshot
+            wire=getattr(self,'_sealed_full_snapshot',None)
+            if frozen is None or wire is None or wire[0] is not frozen:
+                counts['empty']=min(MAX_COUNTER,counts['empty']+1)
+                return None
+        reference,encoded=frozen
+        try:
+            body=wire[1]
+            require(same_payload(body,reference[1]) and original_bytes(body) is encoded,
+                    'exact_sealed_full_scalar_commit_cohort_required')
+            # This existing reader performs all current SOURCE250/RAW200,
+            # feature/context/source clock/Stop/ABA checks before rendering any wire reply.
+            comparison=self.proposal_comparison_committed()
+            if comparison is None:
+                with self._comparison_snapshot_lock:
+                    counts['unavailable']=min(MAX_COUNTER,counts['unavailable']+1)
+                return None
+            result=bind_current_clocks(body,comparison['source_now_ns'],comparison['receipt_now_ns'])
+            if not self._comparison_snapshot_context_matches(reference[1]):
+                self._comparison_snapshot_discard(reference,'changed');return None
+        except Exception:
+            self._comparison_snapshot_discard(reference,'changed');return None
+        with self._comparison_snapshot_lock:
+            if (self._full_proposal_snapshot is not frozen or getattr(self,'_sealed_full_snapshot',None) is not wire or self._comparison_snapshot is not reference or
+                    self._comparison_snapshot_exhausted):
+                counts['changed']=min(MAX_COUNTER,counts['changed']+1);return None
+            context=reference[1][1][0]
+            try:
+                invalid=(self._stopping.is_set()or self.fault is not None or self.ended or
+                    self.ingress.fault is not None or self.factory.fault is not None or self.factory.stop_intent.is_set()or
+                    type(self.ingress.generation)is not int or self.ingress.generation!=context[2]or
+                    self.ingress.clock_session!=context[0]or self.begin.get('observer_process_session')!=context[1]or
+                    id(self.factory)!=self._comparison_snapshot_source_identity[-1])
+            except Exception:invalid=True
+            if invalid:
+                self._comparison_snapshot=None
+                self._full_proposal_snapshot=None
+                self._comparison_snapshot_bump_locked()
+                counts['changed']=min(MAX_COUNTER,counts['changed']+1);return None
+            counts['returns']=min(MAX_COUNTER,counts['returns']+1)
+            return result
+
+
+    def _comparison_snapshot_status(self):
+        with self._comparison_snapshot_lock:
+            return dict(schema='ubts.native_comparison.last_committed.v1',counts=dict(self._comparison_snapshot_counts),full_input_counts=dict(self._full_snapshot_counts),
+                available=self._comparison_snapshot is not None,revision_exhausted=self._comparison_snapshot_exhausted,
+                processing_new_input_does_not_restamp_previous_commit=True)
+
+    def _record_comparison_timing(self,phase,elapsed):
+        # Metadata only. Failure cannot replace a return or an original fault.
+        try:
+            if phase not in ('lock_wait','locked_read','service_dispatch'):
+                return
+            with self._comparison_timing_lock:
+                value=self._comparison_timing[phase]
+                value[0]=min(MAX_COUNTER,value[0]+1)
+                if type(elapsed) is not int or not 0<=elapsed<=60_000_000_000:
+                    value[3]=min(MAX_COUNTER,value[3]+1)
+                    return
+                value[1]=min(MAX_COUNTER,value[1]+elapsed)
+                value[2]=max(value[2],elapsed)
+        except Exception:
+            pass
+
+    def _comparison_timing_snapshot(self):
+        try:
+            with self._comparison_timing_lock:
+                return dict(schema='ubts.native_comparison.relative_timing.v1',
+                    clock_role='HOST_MONOTONIC_RELATIVE_DURATION_ONLY',
+                    columns=['calls','total_ns','max_ns','invalid_samples'],
+                    phases={k:list(self._comparison_timing[k]) for k in
+                            ('lock_wait','locked_read','service_dispatch')},
+                    service_count_scope='same_resource_attempts_not_publications')
+        except Exception:
+            return None
+
+    def proposal_comparison(self):
+        """Same original comparison plus relative diagnostic durations only."""
+        started=_comparison_now()
+        with self._lock:
+            acquired=_comparison_now()
+            try:
+                if self._stopping.is_set() or self.fault is not None or self._proposal_input is None:
+                    return None
+                try:
+                    require(self._factory_preparation_feature() == self._binding[-4],
+                            "native_stream_preparation_recovery_configuration_changed")
+                    require(self._factory_receiver_feature() == self._binding[-3],
+                            "native_stream_receiver_recovery_configuration_changed")
+                    require(self._factory_final_feature() == self._binding[-2],
+                            "native_stream_final_scalar_recovery_configuration_changed")
+                    require(self._factory_nearest_feature() == self._binding[-1],
+                            "native_stream_strict_nearest_configuration_changed")
+                    require(self._factory_registration_feature() == self._binding[-5],
+                            "native_stream_registration_recovery_configuration_changed")
+                except Exception as error:
+                    self._fail(error)
+                    return None
+                row = self._proposal_input
+                result = dict(schema='ubts.native_observation.control_comparison.v1',
+                    context=dict(row['context']),
+                    scan={k:row['scan'][k] for k in ('sequence','frame_id','stamp_ns','receipt_ns')},
+                    imu={k:row['imu'][k] for k in ('stamp_ns','receipt_ns')},
+                    motion={k:row['motion'][k] for k in
+                            ('previous_scan_stamp_ns','current_scan_stamp_ns','receipt_ns')},
+                    source_now_ns=self.ingress.source_now(),receipt_now_ns=self.ingress.raw.sample().ns)
+                if not (0 <= result['source_now_ns']-result['scan']['stamp_ns'] < SOURCE_AGE_NS and
+                        all(0 <= result['receipt_now_ns']-result[key]['receipt_ns'] < RECEIPT_AGE_NS
+                            for key in ('scan','motion','imu')) and
+                        0 <= result['source_now_ns']-result['imu']['stamp_ns'] < SOURCE_AGE_NS):
+                    return None
+                return result
+
+            finally:
+                # No source/RAW clock, input or decision is changed here.
+                try:
+                    ended=_comparison_now()
+                    self._record_comparison_timing('lock_wait',_comparison_elapsed(started,acquired))
+                    self._record_comparison_timing('locked_read',_comparison_elapsed(acquired,ended))
+                except Exception:
+                    pass
     def proposal_input(self):
         """Latest native-derived planning input only; no body/actuator permit.
 
@@ -884,6 +1351,8 @@ class StreamObserverRows:
     def status(self):
         with self._lock:
             return dict(schema='ubts.physical.native_stream_status.v1',
+                comparison_processing_timing=self._comparison_timing_snapshot(),
+                comparison_committed_snapshot=self._comparison_snapshot_status(),
                 native_control_input=None if self._control_adapter is None else self._control_adapter.status(),
                 optional_GNSS=None if self._gnss_dispatcher is None else self._gnss_dispatcher.status(),
                 optional_GNSS_delivery=dict(enabled=self._gnss_dispatcher is not None,

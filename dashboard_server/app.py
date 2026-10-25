@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from dashboard_server.telemetry import ROOT, TelemetryProvider
+from dashboard_server.ws_relay import relay_sensor_stream
 
 
 STATIC_ROOT = ROOT / "static"
@@ -1169,51 +1170,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.close_connection = True
 
     def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b"", deadline: float | None = None):
-        if initial_upstream:
-            try:
-                self.connection.sendall(initial_upstream)
-            except OSError:
-                return
-        sockets = [self.connection, upstream]
-        while True:
-            timeout = 30.0
-            if deadline is not None:
-                remaining = deadline - time.time()
-                if remaining <= 0:
-                    self._ws_send_close(self.connection)
-                    return
-                timeout = min(timeout, max(0.1, remaining))
-            readable, _, errored = select.select(sockets, [], sockets, timeout)
-            if errored:
-                break
-            if not readable:
-                if deadline is not None and time.time() >= deadline:
-                    self._ws_send_close(self.connection)
-                    return
-                self._ws_send_json(
-                    self.connection,
-                    {
-                        "type": "status",
-                        "device_found": False,
-                        "scan_topic_alive": False,
-                        "last_scan_age_sec": None,
-                        "point_count": 0,
-                        "error": "LiDAR WebSocket bridge timeout",
-                    },
-                )
-                continue
-            for sock in readable:
-                try:
-                    data = sock.recv(65536)
-                except OSError:
-                    return
-                if not data:
-                    return
-                target = upstream if sock is self.connection else self.connection
-                try:
-                    target.sendall(data)
-                except OSError:
-                    return
+        # Sensor previews only. A slow reader must not block reverse ACKs or
+        # retain this registry entry/upstream after the write/session deadline.
+        # Opaque TCP chunks do not establish WS frame boundaries. Injecting an
+        # idle JSON frame could corrupt a delayed JPEG/scan payload; source
+        # bridge status and the existing client sensor-age display remain.
+        result = relay_sensor_stream(self.connection, upstream, initial_upstream,
+                                     session_deadline=deadline)
+        dashboard_log("ws.relay.end", reason=result.reason,
+                      to_client_bytes=result.to_client_bytes,
+                      to_upstream_bytes=result.to_upstream_bytes,
+                      peak_to_client_bytes=result.peak_to_client_bytes,
+                      peak_to_upstream_bytes=result.peak_to_upstream_bytes)
 
     def _ws_send_json(self, sock: socket.socket, payload: dict) -> bool:
         return self._ws_send_frame(sock, 0x1, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
@@ -1241,6 +1209,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
 class DashboardServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True, *,
+                 autonomy_supervisor=None, autonomy_observation=None,
+                 native_observation_client=None, autonomy_observe_lock=None):
+        # TCPServer.__init__ may call our server_close() if bind/activate fails.
+        # Establish instance ownership BEFORE that call, including direct
+        # DashboardServer users which intentionally have no observation worker.
+        self.autonomy_supervisor = autonomy_supervisor
+        self.autonomy_observation = autonomy_observation
+        self.native_observation_client = native_observation_client
+        self.autonomy_observe_lock = (threading.RLock() if autonomy_observe_lock is None
+                                      else autonomy_observe_lock)
+        super().__init__(server_address, RequestHandlerClass, bind_and_activate)
 
     def server_close(self):
         supervisor=getattr(self,'autonomy_supervisor',None)
@@ -1284,11 +1265,25 @@ def create_server(host: str, port: int, config: str | None = None, *, autonomy_b
     DashboardHandler.autonomy_supervisor=NativeAutonomyApplication(
         DashboardHandler.native_observation_client,session_valid=native_session_valid,bindings=autonomy_bindings)
     DashboardHandler.autonomy_observe_lock=threading.RLock()
+    from dashboard_server.field10_shadow import make_field10_shadow_planner
+    # Enabled only by a release that pins BOTH roles to the scalar protocol.
+    # An old/unsupported server returns None; it is never a full-getter fallback.
+    comparison_protocol=os.environ.get('UBTS_NATIVE_CONTROL_COMPARISON_V1','0')
+    if comparison_protocol not in ('0','1'):
+        raise ValueError('explicit_native_comparison_protocol_required')
+    if comparison_protocol=='1' and DashboardHandler.native_observation_client is None:
+        raise ValueError('native_comparison_protocol_requires_native_source')
     DashboardHandler.autonomy_observation=AutonomyObservation(
-        planner=RecordBasedAutonomy(),input_provider=DashboardHandler.native_observation_client.input
-            if DashboardHandler.native_observation_client is not None else DashboardHandler.live_mapping.observation_input)
+        planner=make_field10_shadow_planner(),input_provider=DashboardHandler.native_observation_client.input
+            if DashboardHandler.native_observation_client is not None else DashboardHandler.live_mapping.observation_input,
+        comparison_provider=DashboardHandler.native_observation_client.control_comparison
+            if comparison_protocol=='1' else None)
     dashboard_log("server.create", host=host, port=port, session_ttl_s=SESSION_TTL_S)
-    server=DashboardServer((host, port), DashboardHandler)
+    server=DashboardServer((host, port), DashboardHandler,
+        autonomy_supervisor=DashboardHandler.autonomy_supervisor,
+        autonomy_observation=DashboardHandler.autonomy_observation,
+        native_observation_client=DashboardHandler.native_observation_client,
+        autonomy_observe_lock=DashboardHandler.autonomy_observe_lock)
     server.autonomy_supervisor=DashboardHandler.autonomy_supervisor
     server.autonomy_observation=DashboardHandler.autonomy_observation
     server.native_observation_client=DashboardHandler.native_observation_client

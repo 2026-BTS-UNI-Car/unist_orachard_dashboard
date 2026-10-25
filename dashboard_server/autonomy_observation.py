@@ -15,6 +15,7 @@ import threading
 import time
 
 from dashboard_server.native_owner_lifecycle import NativeOwnerLifecycle, ResourceHooks
+from dashboard_server.original_row_age_budget import OriginalRowAgeBudget
 
 NS_MAX = (1 << 63) - 1
 QUEUE_LIMIT = 8
@@ -138,6 +139,66 @@ class _ObservationWorker:
         self.planner_initialized = self.reanchor_required = False
         self.comparison_frontier = self.last_wait_record = None
         self.planner_stop_reason = None
+        # Diagnostic clocks are relative host MONOTONIC only. They never
+        # replace or qualify sensor/source/receipt clocks or freshness checks.
+        self.stage_timing = {key: dict(calls=0, total_ns=0, max_ns=0,
+            last_ns=None, invalid_samples=0) for key in
+            ("poll_input", "post_plan_input", "planner_and_validation")}
+        self.provider_unavailable = {key: 0 for key in ("poll_input", "post_plan_input")}
+        self.plans_finished = 0
+        self.last_plan_sequence = self.last_published_sequence = None
+        self.last_planner_counts = {}
+        self.last_discard_reason = None
+        self.original_age_budget = OriginalRowAgeBudget()
+
+    def pin_age_budget(self,row):
+        try:
+            pinned=None if self.parent.clock is not None else self.original_age_budget.pin(row)
+            self.original_age_budget.observe('PROVIDER_SAMPLED',pinned)
+            return pinned
+        except Exception:return None
+
+    def record_age_budget(self,phase,pin):
+        try:self.original_age_budget.observe(phase,pin)
+        except Exception:pass
+
+    def record_stage(self, phase, started):
+        elapsed = time.monotonic_ns()-started
+        with self.lock:
+            value = self.stage_timing[phase]
+            value["calls"] = min(NS_MAX, value["calls"]+1)
+            if not 0 <= elapsed <= 60_000_000_000:
+                value["last_ns"] = None
+                value["invalid_samples"] = min(NS_MAX, value["invalid_samples"]+1)
+                return
+            value["last_ns"] = elapsed
+            value["max_ns"] = max(value["max_ns"], elapsed)
+            value["total_ns"] = min(NS_MAX, value["total_ns"]+elapsed)
+
+    def read_input(self, phase):
+        started = time.monotonic_ns()
+        try:
+            value = self.parent.input_provider()
+            if value is None:
+                with self.lock:
+                    self.provider_unavailable[phase] = min(NS_MAX, self.provider_unavailable[phase]+1)
+            return value
+        finally:
+            self.record_stage(phase, started)
+
+    def finish_plan_diagnostic(self, sequence, decision):
+        # Only bounded non-authoritative counters, never ranges/pose/command.
+        field = decision.get("field10")
+        counts = {}
+        if type(field) is dict:
+            for key in ("scans_fed", "imus_fed", "scans_processed", "imu_fed"):
+                value = field.get(key)
+                if type(value) is int and 0 <= value <= NS_MAX:
+                    counts[key] = value
+        with self.lock:
+            self.plans_finished = min(NS_MAX, self.plans_finished+1)
+            self.last_plan_sequence = sequence
+            self.last_planner_counts = counts
 
     def fail(self, reason):
         with self.lock:
@@ -180,13 +241,73 @@ class _ObservationWorker:
         self.wake.set()
         return True
 
+    def read_comparison(self):
+        started = time.monotonic_ns()
+        try:
+            value = self.parent.comparison_provider()
+            if value is None:
+                with self.lock:
+                    self.provider_unavailable["post_plan_input"] = min(
+                        NS_MAX, self.provider_unavailable["post_plan_input"]+1)
+            return value
+        finally:
+            self.record_stage("post_plan_input", started)
+
+    def validate_comparison(self, row, comparison):
+        require(set(comparison) == {"schema", "context", "scan", "imu", "motion",
+                                   "source_now_ns", "receipt_now_ns"} and
+                comparison.get("schema") == "ubts.native_observation.control_comparison.v1",
+                "observation_scalar_comparison_schema_required")
+        require(context_of(comparison) == context_of(row),
+                "observation_source_reconnected_during_plan")
+        fields = {"scan": {"sequence", "frame_id", "stamp_ns", "receipt_ns"},
+                  "imu": {"stamp_ns", "receipt_ns"},
+                  "motion": {"previous_scan_stamp_ns", "current_scan_stamp_ns", "receipt_ns"}}
+        for key, expected in fields.items():
+            value = comparison.get(key)
+            require(type(value) is dict and set(value) == expected and
+                    all(ns(value[k]) for k in expected-{"frame_id"}),
+                    "observation_scalar_comparison_endpoints_required")
+        scan, imu, motion = comparison["scan"], comparison["imu"], comparison["motion"]
+        require(scan["frame_id"] == row["scan"]["frame_id"] and
+                scan["sequence"] >= row["scan"]["sequence"],
+                "observation_source_rewind_during_plan")
+        require(imu["stamp_ns"] <= scan["stamp_ns"] and
+                motion["previous_scan_stamp_ns"] < motion["current_scan_stamp_ns"] == scan["stamp_ns"] and
+                motion["receipt_ns"] == scan["receipt_ns"],
+                "observation_scalar_comparison_causal_endpoints_required")
+        require(all(ns(comparison.get(k)) for k in ("source_now_ns", "receipt_now_ns")) and
+                comparison["source_now_ns"] >= scan["stamp_ns"] and
+                comparison["source_now_ns"] >= imu["stamp_ns"] and
+                all(comparison["receipt_now_ns"] >= comparison[k]["receipt_ns"]
+                    for k in ("scan", "imu", "motion")),
+                "observation_scalar_comparison_future_endpoint")
+        if scan["sequence"] == row["scan"]["sequence"]:
+            require(all(row.get(key) is not None and
+                        all(value == row[key].get(k) for k, value in comparison[key].items())
+                        for key in fields), "observation_same_comparison_sequence_changed")
+        else:
+            require(scan["stamp_ns"] > row["scan"]["stamp_ns"] and
+                    scan["receipt_ns"] > row["scan"]["receipt_ns"] and
+                    motion["previous_scan_stamp_ns"] >= row["scan"]["stamp_ns"] and
+                    (row.get("imu") is None or
+                     (imu["stamp_ns"] >= row["imu"]["stamp_ns"] and
+                      imu["receipt_ns"] >= row["imu"]["receipt_ns"] and
+                      (imu["stamp_ns"] != row["imu"]["stamp_ns"] or
+                       imu["receipt_ns"] == row["imu"]["receipt_ns"]))),
+                    "observation_scalar_comparison_original_timing_rewind")
+
     def current_clock(self, row, *, refresh=False):
         context = context_of(row)
         comparison = row
         if refresh and self.parent.input_provider is not None:
-            comparison = self.parent.input_provider()
+            scalar = getattr(self.parent, "comparison_provider", None) is not None
+            comparison = self.read_comparison() if scalar else self.read_input("post_plan_input")
             if comparison is None:
                 raise _InputUnavailable()
+            if scalar:
+                require(type(comparison) is dict, "observation_scalar_comparison_required")
+                self.validate_comparison(row, comparison)
             require(type(comparison) is dict and context_of(comparison) == context,
                     "observation_source_reconnected_during_plan")
             require(type(comparison.get("scan")) is dict and
@@ -328,31 +449,48 @@ class _ObservationWorker:
             cruise, version = self.parent.cruise_percent, self.parent.preference_version
         planning = bounded_copy(row)
         planning.update(source_now_ns=current["source_now_ns"], receipt_now_ns=current["receipt_now_ns"])
+        age_budget_pin = self.pin_age_budget(planning)
         if imu is None:
             decision = zero_decision("WAIT_IMU")
         elif row.get("motion") is None:
             decision = zero_decision("WAIT_LOCALIZATION")
         else:
-            plan = getattr(self.parent.planner, "plan", None)
-            decision = checked_decision(plan(planning, cruise_percent=cruise) if callable(plan)
-                                        else self.parent.planner(planning, cruise))
+            self.record_age_budget("PRE_PLAN", age_budget_pin)
+            started = time.monotonic_ns()
+            try:
+                plan = getattr(self.parent.planner, "plan", None)
+                decision = checked_decision(plan(planning, cruise_percent=cruise) if callable(plan)
+                                            else self.parent.planner(planning, cruise))
+            finally:
+                self.record_stage("planner_and_validation", started)
+                self.record_age_budget("POST_PLAN_BEFORE_RPC", age_budget_pin)
+            self.finish_plan_diagnostic(scan["sequence"], decision)
         if self.context.cancelled:
             with self.lock:
+                self.last_discard_reason = "CANCELLED"
                 self.late_results += 1
             return
         try:
-            after = self.current_clock(row, refresh=True)
+            try:
+                after = self.current_clock(row, refresh=True)
+            finally:
+                self.record_age_budget("POST_RPC", age_budget_pin)
         except _InputUnavailable:
+            with self.lock:
+                self.last_discard_reason = "POST_PLAN_INPUT_UNAVAILABLE"
             self.wait_input(row, source, None, reason="WAIT_INPUT", post_plan=True)
             return
         _, final_age = self.validate(row, after)
         if self.expired(final_age):
+            with self.lock:
+                self.last_discard_reason = "POST_PLAN_POSITIVE_AGE_EXPIRY"
             self.wait_input(row, source, final_age, post_plan=True)
             return
         with self.parent.lock:
             unchanged = version == self.parent.preference_version
         if not unchanged or self.context.cancelled:
             with self.lock:
+                self.last_discard_reason = "PREFERENCE_CHANGED" if not unchanged else "CANCELLED"
                 self.late_results += 1
             return
         evidence = dict(source=source, input_age_ns=final_age, cruise_percent=cruise,
@@ -361,6 +499,8 @@ class _ObservationWorker:
         if self.context.publish(decision, evidence):
             with self.lock:
                 self.decisions += 1
+                self.last_published_sequence = scan["sequence"]
+                self.last_discard_reason = None
                 if decision["decision"] == "STOP":
                     self.planner_stop_reason = self.planner_stop_reason or decision["reason"]
                 self.preference_version, self.age = version, final_age
@@ -371,7 +511,7 @@ class _ObservationWorker:
         try:
             while not self.context.cancelled:
                 if self.parent.input_provider is not None:
-                    supplied = self.parent.input_provider()
+                    supplied = self.read_input("poll_input")
                     if supplied is not None:
                         if not self.enqueue(supplied):
                             break
@@ -436,6 +576,18 @@ class _ObservationWorker:
     def snapshot(self):
         with self.lock:
             return dict(source=bounded_copy(self.source), input_age=bounded_copy(self.age),
+                processing_diagnostics=dict(schema="ubts.observation.processing_diagnostics.v1",
+                    original_row_age_budget=self.original_age_budget.snapshot(),
+                    clock_role="HOST_MONOTONIC_RELATIVE_DURATION_ONLY",
+                    physical_authority=False, input_source_fields_modified=False,
+                    plans_finished=self.plans_finished,
+                    last_plan_sequence=self.last_plan_sequence,
+                    last_published_sequence=self.last_published_sequence,
+                    planner_counter_phase="AFTER_PLAN_BEFORE_POSTCHECK_NOT_PUBLICATION",
+                    last_planner_counts=bounded_copy(self.last_planner_counts),
+                    last_discard_reason=self.last_discard_reason,
+                    provider_unavailable=bounded_copy(self.provider_unavailable),
+                    stage_timing_ns=bounded_copy(self.stage_timing)),
                 stop_reason=self.stop_reason, phase=self.phase, preference_version=self.preference_version,
                 planner_stop_reason=self.planner_stop_reason,
                 wait_reason=self.wait_reason,
@@ -449,10 +601,12 @@ class _ObservationWorker:
 
 class AutonomyObservation:
     """Explicit observation only. Getter returns the latest snapshot, not a pop."""
-    def __init__(self, planner=None, *, input_provider=None, clock=None, cruise_percent=10.,
+    def __init__(self, planner=None, *, input_provider=None, comparison_provider=None, clock=None, cruise_percent=10.,
                  input_age_ns=250_000_000, poll_interval_s=.05, thread_factory=threading.Thread):
         require(planner is None or callable(planner), "injected_observation_planner_required")
         require(input_provider is None or callable(input_provider), "latest_input_getter_required")
+        require(comparison_provider is None or (callable(comparison_provider) and callable(input_provider)),
+                "comparison_requires_explicit_latest_input_getter")
         require(clock is None or callable(clock), "injected_observation_clock_required")
         require(ns(input_age_ns) and 0 < input_age_ns <= 5_000_000_000 and
                 finite(poll_interval_s) and .001 <= poll_interval_s <= 1 and callable(thread_factory),
@@ -460,6 +614,7 @@ class AutonomyObservation:
         self.lock, self.resource = threading.RLock(), None
         self.pending_stop = None
         self.planner, self.input_provider, self.clock = planner, input_provider, clock
+        self.comparison_provider = comparison_provider
         self.input_age_ns, self.poll_interval_s, self.thread_factory = input_age_ns, float(poll_interval_s), thread_factory
         self.cruise_percent, self.preference_version = self.cruise(cruise_percent), 0
         self.lifecycle = NativeOwnerLifecycle(self.factory, max_records=EVIDENCE_LIMIT,
@@ -550,7 +705,7 @@ class AutonomyObservation:
         owner = self.lifecycle.status()
         with self.lock:
             resource, cruise, version = self.resource, self.cruise_percent, self.preference_version
-        details = dict(source=None, input_age=None, stop_reason=None, planner_stop_reason=None, phase="waiting_input", wait_reason="WAIT_INPUT",
+        details = dict(source=None, input_age=None, processing_diagnostics=None, stop_reason=None, planner_stop_reason=None, phase="waiting_input", wait_reason="WAIT_INPUT",
             counters=dict(received=0, processed=0, decisions=0, duplicates=0, rejected=0, late_results=0,
                           discarded_after_cleanup=0, stale_inputs=0, stale_results=0), queue=dict(depth=0, limit=QUEUE_LIMIT, peak=0),
             preference_version=None, resources_closed=False) if resource is None else resource.snapshot()
@@ -561,6 +716,8 @@ class AutonomyObservation:
             current = zero_decision(details["stop_reason"] or (owner.first_failure_reason or details["planner_stop_reason"])[:128], "STOP")
         elif active and details["wait_reason"]:
             current = zero_decision(details["wait_reason"])
+        elif active and latest is not None and details["preference_version"] is None:
+            current = zero_decision("WAIT_RESULT")
         elif active and latest is not None and details["preference_version"] != version:
             current = zero_decision("PREFERENCE_CHANGED_WAITING_INPUT")
         state = "fault" if owner.first_failure_reason else details["phase"] if active else owner.state
@@ -571,6 +728,7 @@ class AutonomyObservation:
             current_decision=current, trajectory=current["trajectory"], latest_decision=latest,
             latest_stale=owner.latest_stale or bool(details["wait_reason"]), source=details["source"], input_age=details["input_age"],
             counters=details["counters"], progress=details["counters"], queue=details["queue"],
+            processing_diagnostics=details["processing_diagnostics"],
             cruise_percent=cruise, speed_percent=cruise, cruise_preference_is_estimate=True,
             calibrated_speed_m_s=None, retained_evidence=owner.retained_records,
             evidence_limit=EVIDENCE_LIMIT, retained_evidence_bytes=owner.retained_bytes,

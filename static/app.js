@@ -560,6 +560,7 @@ function normalizeCameraModes(rawModes) {
 }
 
 function applyCameraModeCatalog(rawModes, source = "fallback") {
+  if (source !== "settings" && !cameraTelemetryCanApply()) return;
   const modes = normalizeCameraModes(rawModes);
   const signature = JSON.stringify(modes);
   if (signature === state.cameraModesSignature && source === state.cameraModesSource) return;
@@ -583,7 +584,7 @@ function applyCameraStatus(camera = {}, cameraBridge = {}) {
     state.cameraLive.sourceWidth = cameraBridge.source_width;
     state.cameraLive.sourceHeight = cameraBridge.source_height;
   }
-  if (state.cameraLive.settingsInFlight) return;
+  if (!cameraTelemetryCanApply()) return;
   const requested = camera.settings || camera.driver_requested || {};
   const resolution = requested.resolution || (requested.width && requested.height ? `${requested.width}x${requested.height}` : "");
   const fps = Number(requested.fps);
@@ -595,6 +596,13 @@ function applyCameraStatus(camera = {}, cameraBridge = {}) {
   state.cameraLive.resolution = resolution;
   state.cameraLive.fps = nextFps;
   if (changed) updateCameraControls();
+}
+
+function cameraTelemetryCanApply() {
+  if (state.cameraLive.settingsInFlight || Date.now() < (state.cameraLive.settingsIgnoreUntil || 0)) return false;
+  // A slow telemetry response may have left before the latest settings POST.
+  return state.telemetryCameraSettingsRevision === undefined ||
+    state.telemetryCameraSettingsRevision === (state.cameraLive.settingsRevision || 0);
 }
 
 function cameraResolutionOptions() {
@@ -634,7 +642,22 @@ const CAMERA_SETTINGS_ERRORS = {
   camera_resolution_change_needs_idle_recorder: "녹화기 상태를 확인할 수 없어 해상도를 바꾸지 않았습니다",
 };
 
+async function readJsonResponse(res) {
+  // Proxy/tunnel error pages (502/524 HTML) must not surface as JSON parse errors (S41).
+  const type = res.headers?.get?.("content-type") || "";
+  if (type && !type.toLowerCase().includes("json")) throw new Error(`HTTP ${res.status}`);
+  try { return await res.json(); } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    throw new Error(`HTTP ${res.status}`);
+  }
+}
+
 async function setCameraSettings(next) {
+  if (state.cameraLive.settingsInFlight) { updateCameraControls(true); return; }
+  const previousCamera = { resolution: state.cameraLive.resolution, fps: state.cameraLive.fps };
+  state.cameraLive.settingsRevision = (state.cameraLive.settingsRevision || 0) + 1;
+  state.cameraLive.settingsIgnoreUntil = Date.now() + 2000;
+  state.cameraLive.settingsInFlight = true;
   if (next.resolution) {
     const resolutions = cameraResolutionOptions();
     state.cameraLive.resolution = resolutions.includes(next.resolution) ? next.resolution : (resolutions[0] || "1280x720");
@@ -647,15 +670,17 @@ async function setCameraSettings(next) {
   } catch (_) {
     // Ignore storage failures.
   }
-  updateCameraControls();
+  updateCameraControls(true);
   state.cameraLive.settingsError = "";
-  state.cameraLive.settingsInFlight = true;
   setCameraResult("testing", `카메라 캡처 설정 적용 중 · ${state.cameraLive.resolution} · ${state.cameraLive.fps} fps`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const [width, height] = state.cameraLive.resolution.split("x").map((value) => Number(value));
     const res = await fetch("/api/camera/settings", {
       method: "POST",
       cache: "no-store",
+      signal: controller.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         resolution: state.cameraLive.resolution,
@@ -664,7 +689,7 @@ async function setCameraSettings(next) {
         fps: state.cameraLive.fps,
       }),
     });
-    const result = await res.json();
+    const result = await readJsonResponse(res);
     if (!res.ok || !result.ok) {
       throw new Error(CAMERA_SETTINGS_ERRORS[result.error] || result.error || `HTTP ${res.status}`);
     }
@@ -675,14 +700,25 @@ async function setCameraSettings(next) {
     scheduleCameraReconnectForSettings(900);
   } catch (err) {
     state.cameraLive.settingsError = err.message || String(err);
-    setCameraResult("bad", `카메라 설정 적용 실패: ${state.cameraLive.settingsError}`);
+    // S27: the rejected value must not stay selected or stored.
+    state.cameraLive.resolution = previousCamera.resolution;
+    state.cameraLive.fps = previousCamera.fps;
+    try {
+      localStorage.setItem(CAMERA_RESOLUTION_KEY, state.cameraLive.resolution);
+      localStorage.setItem(CAMERA_FPS_KEY, String(state.cameraLive.fps));
+    } catch (_) {
+      // Ignore storage failures.
+    }
+    setCameraResult("bad", `카메라 설정 적용 실패: ${state.cameraLive.settingsError} · 이전 설정 유지`);
   } finally {
+    clearTimeout(timeout);
     state.cameraLive.settingsInFlight = false;
-    updateCameraControls();
+    state.cameraLive.settingsIgnoreUntil = Date.now() + 2000;
+    updateCameraControls(true);
   }
 }
 
-function updateCameraControls() {
+function updateCameraControls(force = false) {
   text("cameraResolutionValue", state.cameraLive.resolution);
   text("cameraFpsValue", `${state.cameraLive.fps} fps`);
   document.querySelectorAll("[data-camera-resolution-value]").forEach((el) => {
@@ -693,11 +729,13 @@ function updateCameraControls() {
   });
   document.querySelectorAll("[data-camera-resolution-select]").forEach((resolution) => {
     syncSelectOptions(resolution, cameraResolutionOptionLabels());
-    if (document.activeElement !== resolution) resolution.value = state.cameraLive.resolution;
+    resolution.disabled = Boolean(state.cameraLive.settingsInFlight);
+    if (force || document.activeElement !== resolution) resolution.value = state.cameraLive.resolution;
   });
   document.querySelectorAll("[data-camera-fps-select]").forEach((fps) => {
     syncSelectOptions(fps, cameraFpsOptions().map((value) => ({ value: String(value), label: `${value} fps` })));
-    if (document.activeElement !== fps) fps.value = String(state.cameraLive.fps);
+    fps.disabled = Boolean(state.cameraLive.settingsInFlight);
+    if (force || document.activeElement !== fps) fps.value = String(state.cameraLive.fps);
   });
 }
 
@@ -857,7 +895,8 @@ async function loadDocs() {
 }
 
 async function tick() {
-  const interval = liveNetworkProfile() === "tiny" ? 10000 : ["auto", "slow"].includes(liveNetworkProfile()) ? 3000 : 1000;
+  if (document.hidden) return;
+  const interval = telemetryIntervalMs();
   if (state.lastTelemetryPoll && Date.now() - state.lastTelemetryPoll < interval) return;
   state.lastTelemetryPoll = Date.now();
   if (state.tickInFlight) {
@@ -865,10 +904,12 @@ async function tick() {
     return;
   }
   state.tickInFlight = true;
+  const cameraSettingsRevision = state.cameraLive?.settingsRevision || 0;
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 6000);
   try {
     state.telemetry = await getJson("/api/telemetry", { signal: controller.signal });
+    state.telemetryCameraSettingsRevision = cameraSettingsRevision;
     pushHistory(state.telemetry);
     renderTelemetry(state.telemetry);
     state.telemetryFailures = 0;
@@ -882,6 +923,13 @@ async function tick() {
     window.clearTimeout(timeout);
     state.tickInFlight = false;
   }
+}
+
+function telemetryIntervalMs(profile = liveNetworkProfile()) {
+  return profile === "tiny" ? 10000 : ["auto", "slow"].includes(profile) ? 3000 : 1000;
+}
+function chartWindowLabel() {
+  return `X 최근 ${Math.round(MAX_POINTS * telemetryIntervalMs() / 1000)}초`;
 }
 
 function pushHistory(data) {
@@ -907,7 +955,7 @@ function pushHistory(data) {
   pruneCoreHistory(cores.map(coreKey));
   state.chartShift = 1;
   state.chartShiftStartedAt = performance.now();
-  state.chartShiftDurationMs = Math.max(500, POLL_INTERVAL_MS * 1.08);
+  state.chartShiftDurationMs = Math.max(500, telemetryIntervalMs() * 1.08);
 }
 
 function addPoint(key, value) {
@@ -1280,6 +1328,14 @@ function liveNetworkProfile() {
   try { return localStorage.getItem("ubts-live-network-profile") || (SIMULATION ? "detail" : "auto"); }
   catch (_) { return SIMULATION ? "detail" : "auto"; }
 }
+function effectiveLinkProfile() {
+  const chosen = liveNetworkProfile();
+  if (chosen !== "auto") return chosen;
+  const measured = state.cameraLive.effectiveProfile;
+  return ["detail", "balanced", "slow", "tiny"].includes(measured) ? measured : "balanced";
+}
+window.RoverLink = { profile: effectiveLinkProfile, cameraEffectiveProfile: () => state.cameraLive.effectiveProfile || "",
+  autonomyPriority: () => state.autonomyPriority || "disabled" };
 function setLiveNetworkProfile(value) {
   if (!["auto", "tiny", "slow", "balanced", "detail"].includes(value)) return;
   try { localStorage.setItem("ubts-live-network-profile", value); } catch (_) {}
@@ -1299,6 +1355,19 @@ function cameraWebSocketUrl() {
     transport: "binary-v1",
     flow: "decode-ack",
   });
+  const originalPreview = new URLSearchParams(location.search).get("camera_preview") ??
+    (window.UBTS_CAMERA_ORIGINAL_PREVIEW === true ? "original" : "legacy");
+  if (originalPreview === "original") {
+    params.set("resolution", "1920x1080");
+    params.set("quality_mode", "original");
+  }
+  // V1 remains the default. Only an explicit supported-client opt-in asks
+  // the server to negotiate more than one outstanding preview frame.
+  const explicitWindow = new URLSearchParams(location.search).get("camera_ack_window") ?? window.UBTS_CAMERA_ACK_WINDOW;
+  if (["2", "3"].includes(String(explicitWindow))) {
+    params.set("flow", "decode-ack-v2");
+    params.set("ack_window", String(explicitWindow));
+  }
   if (window.UBTS_CAMERA_WS_URL) {
     const separator = String(window.UBTS_CAMERA_WS_URL).includes("?") ? "&" : "?";
     return `${window.UBTS_CAMERA_WS_URL}${separator}${params.toString()}`;
@@ -1366,6 +1435,7 @@ function startCameraLive() {
         state.cameraLive.error = "영상 응답 지연으로 일시 정지했습니다. 회선 상태나 전송 품질을 확인한 뒤 다시 시작하세요.";
       }
       const shouldReconnect = state.cameraLive.enabled && !state.cameraLive.userStopped && routeSupportsCameraLive();
+      resetCameraWindowDecode(socket);
       state.cameraLive.socket = null;
       state.cameraLive.connected = false;
       state.cameraLive.frameTopicAlive = false;
@@ -1399,6 +1469,7 @@ function closeCameraLive(message = "disconnected", options = {}) {
   const userStopped = options.userStopped !== undefined ? Boolean(options.userStopped) : true;
   if (options.clearReconnect !== false) clearCameraReconnectTimer();
   const socket = state.cameraLive.socket;
+  resetCameraWindowDecode(socket);
   state.cameraLive.enabled = false;
   state.cameraLive.userStopped = userStopped;
   state.cameraLive.socket = null;
@@ -1444,6 +1515,7 @@ function restartCameraLiveForSettings() {
   clearCameraReconnectTimer();
   state.cameraLive.pendingRestart = false;
   if (socket) {
+    resetCameraWindowDecode(socket);
     state.cameraLive.socket = null;
     state.cameraLive.connected = false;
     closeSocketAfterConnect(socket, "camera settings changed");
@@ -1513,6 +1585,7 @@ function handleCameraLivePayload(payload, binary = null) {
     state.cameraLive.deliveryState = payload.delivery_state || state.cameraLive.deliveryState;
     state.cameraLive.effectiveProfile = payload.effective_profile || state.cameraLive.effectiveProfile;
     state.cameraLive.previewQuality = payload.preview_quality ?? state.cameraLive.previewQuality;
+    if (payload.type === "frame") state.cameraLive.originalJpeg = payload.jpeg_passthrough === true;
     state.cameraLive.ackLatencyMs = payload.ack_latency_ms ?? state.cameraLive.ackLatencyMs;
   }
   if (payload.type === "status") {
@@ -1551,7 +1624,8 @@ function handleCameraLivePayload(payload, binary = null) {
     state.cameraLive.encodeMs = Number.isFinite(Number(payload.encode_ms)) ? Number(payload.encode_ms) : null;
     state.cameraLive.error = "";
     if (binary?.blob) {
-      displayBinaryCameraFrame(binary.blob, payload, binary.socket);
+      if (payload.ack_protocol === 2) displayWindowedCameraFrame(binary.blob, payload, binary.socket);
+      else displayBinaryCameraFrame(binary.blob, payload, binary.socket);
     } else {
       const src = payload.data ? `data:${payload.mime || "image/jpeg"};base64,${payload.data}` : "";
       const image = $("cameraLiveImage");
@@ -1582,7 +1656,56 @@ function handleCameraLivePayload(payload, binary = null) {
   }
 }
 
-function displayBinaryCameraFrame(blob, payload, socket) {
+function resetCameraWindowDecode(socket = null) {
+  const queue = state.cameraLive.v2Decode;
+  if (!queue || (socket && queue.socket !== socket)) return;
+  queue.closed = true;
+  queue.pending = null;
+  queue.cancelActive?.();
+  queue.cancelActive = null;
+  state.cameraLive.v2Decode = null;
+}
+
+function displayWindowedCameraFrame(blob, payload, socket, timing = null) {
+  if (socket !== state.cameraLive.socket) return;
+  const valid = payload.ack_protocol === 2 && /^[0-9a-f]{32}$/.test(payload.stream_session ?? "") &&
+    Number.isSafeInteger(payload.source_epoch) && payload.source_epoch > 0 &&
+    Number.isSafeInteger(payload.delivery_sequence) && payload.delivery_sequence > 0 &&
+    Number.isSafeInteger(payload.frame_count) && payload.frame_count > 0 && blob.size <= 5 * 1024 * 1024;
+  if (!valid) throw new Error("camera V2 frame identity or byte bound");
+  let queue = state.cameraLive.v2Decode;
+  if (queue && queue.socket === socket && (queue.session !== payload.stream_session || queue.epoch !== payload.source_epoch)) {
+    resetCameraWindowDecode(socket);
+    socket.close(1002, "camera source changed");
+    return;
+  }
+  if (!queue || queue.socket !== socket) {
+    resetCameraWindowDecode();
+    queue = {socket, session: payload.stream_session, epoch: payload.source_epoch, lastSequence: 0, active: false, pending: null, cancelActive: null, closed: false};
+    state.cameraLive.v2Decode = queue;
+  }
+  if (payload.delivery_sequence <= queue.lastSequence) return;
+  queue.lastSequence = payload.delivery_sequence;
+  const newest = {blob, payload, socket, timing};
+  if (queue.active) {
+    if (queue.pending) acknowledgeCameraFrame(socket, queue.pending.payload.frame_count, "superseded", queue.pending.payload);
+    queue.pending = newest;
+    return;
+  }
+  function start(item) {
+    if (queue.closed || queue !== state.cameraLive.v2Decode || socket !== state.cameraLive.socket) return;
+    queue.active = true;
+    queue.cancelActive = displayBinaryCameraFrame(item.blob, item.payload, socket, item.timing, () => {
+      if (queue.closed || queue !== state.cameraLive.v2Decode || socket !== state.cameraLive.socket) return;
+      queue.active = false; queue.cancelActive = null;
+      const next = queue.pending; queue.pending = null;
+      if (next) start(next);
+    });
+  }
+  start(newest);
+}
+
+function displayBinaryCameraFrame(blob, payload, socket, timing = null, onSettled = null) {
   // Decode only the visible route; the hidden second image used to double decode work.
   const targets = [$(currentRoute() === "/rover-control" ? "roverCameraImage" : "cameraLiveImage")].filter(Boolean);
   const url = URL.createObjectURL(blob);
@@ -1591,7 +1714,8 @@ function displayBinaryCameraFrame(blob, payload, socket) {
   if (!targets.length) {
     URL.revokeObjectURL(url);
     state.cameraLive.objectUrl = previousUrl;
-    acknowledgeCameraFrame(socket, payload.frame_count, "not_visible");
+    acknowledgeCameraFrame(socket, payload.frame_count, "not_visible", payload);
+    onSettled?.();
     return;
   }
   let settled = false;
@@ -1602,12 +1726,16 @@ function displayBinaryCameraFrame(blob, payload, socket) {
     if (timer !== null) window.clearTimeout(timer);
     if (socket !== state.cameraLive.socket || state.cameraLive.objectUrl !== url) {
       URL.revokeObjectURL(url);
+      onSettled?.();
       return;
     }
     for (const image of targets) { image.onload = null; image.onerror = null; }
     const statusChanged = state.cameraLive.decodeStatus !== status;
     state.cameraLive.decodeStatus = status;
     if (status === "decoded") {
+      // Original sensor pixels declare orientation; preview pixels are already
+      // upright. Replace the transform once after decode, never accumulate it.
+      for (const image of targets) image.style.transform = cameraDisplayRotation(payload);
       state.cameraLive.lastDecodedAt = performance.now();
       if (previousUrl) URL.revokeObjectURL(previousUrl);
     } else {
@@ -1616,8 +1744,9 @@ function displayBinaryCameraFrame(blob, payload, socket) {
       state.cameraLive.objectUrl = previousUrl;
       URL.revokeObjectURL(url);
     }
-    acknowledgeCameraFrame(socket, payload.frame_count, status);
+    acknowledgeCameraFrame(socket, payload.frame_count, status, payload);
     if (statusChanged) renderCameraLiveState();
+    onSettled?.();
   };
   for (const image of targets) {
     image.onload = () => {
@@ -1628,12 +1757,30 @@ function displayBinaryCameraFrame(blob, payload, socket) {
     image.src = url;
   }
   timer = window.setTimeout(() => finish("timeout"), 500);
+  return () => {
+    if (settled) return;
+    settled = true;
+    if (timer !== null) window.clearTimeout(timer);
+    if (state.cameraLive.objectUrl === url) {
+      for (const image of targets) { image.onload = null; image.onerror = null; image.src = previousUrl || ""; }
+      state.cameraLive.objectUrl = previousUrl;
+    }
+    URL.revokeObjectURL(url);
+  };
 }
 
-function acknowledgeCameraFrame(socket, frameCount, decodeStatus = "unknown") {
+function cameraDisplayRotation(payload) {
+  return payload.jpeg_passthrough === true && payload.source_transport === "ros2-original-jpeg" &&
+    payload.display_rotation_deg === 180 ? "rotate(180deg)" : "";
+}
+
+function acknowledgeCameraFrame(socket, frameCount, decodeStatus = "unknown", delivery = null) {
   if (socket !== state.cameraLive.socket || socket?.readyState !== WebSocket.OPEN) return;
   try {
-    socket.send(JSON.stringify({ type: "frame_ack", frame_count: Number(frameCount) || 0, decode_status: decodeStatus }));
+    const ack = { type: "frame_ack", frame_count: Number(frameCount) || 0, decode_status: decodeStatus };
+    if (delivery?.ack_protocol === 2) Object.assign(ack, {ack_protocol: 2, stream_session: delivery.stream_session,
+      source_epoch: delivery.source_epoch, delivery_sequence: delivery.delivery_sequence});
+    socket.send(JSON.stringify(ack));
   } catch (err) {
     debugLog("camera", "frame ack failed", err);
   }
@@ -1659,6 +1806,7 @@ function renderCameraLiveState(overrideLabel) {
   const cameraDelivery = state.cameraLive.deliveryState === "bandwidth_limited" ? "회선 제한 · 화질 유지, FPS 조절"
     : state.cameraLive.decodeStatus === "timeout" ? "영상 해독 지연"
     : state.cameraLive.decodeStatus === "error" ? "영상 해독 실패 · 이전 화면 유지"
+    : state.cameraLive.originalJpeg ? "원본 JPEG · 재압축 없음"
     : `${state.cameraLive.effectiveProfile || "auto"} · Q${state.cameraLive.previewQuality ?? "--"}`;
   const ackLabel = Number.isFinite(state.cameraLive.ackLatencyMs) ? ` · ACK ${Math.round(state.cameraLive.ackLatencyMs)}ms` : "";
   const observedDetail = `ROS ${cameraFpsLabel(state.cameraLive.sourceFps)} · WS ${cameraFpsLabel(state.cameraLive.displayFps)} · ${cameraDelivery}${ackLabel}`;
@@ -1826,8 +1974,9 @@ function renderImuLiveState(overrideLabel) {
 }
 
 function drawImuAttitude(canvas, roll, pitch, yaw) {
-  if (!canvas) return;
+  if (!canvas || document.hidden) return;
   const rect = canvas.getBoundingClientRect();
+  if (!(rect.width >= 1 && rect.height >= 1)) return;
   const width = Math.max(240, rect.width || 520);
   const height = Math.max(180, rect.height || 220);
   const dpr = Math.min(window.devicePixelRatio || 1, DPR_LIMIT);
@@ -1972,9 +2121,16 @@ function handleLidarLiveMessage(raw) {
 	        points: result.points.length,
 	      });
 	    }
-    renderLidarScan(result, "live_websocket");
-    if (state.lidarLive.socket?.readyState === WebSocket.OPEN && Number.isInteger(payload.sequence)) {
-      state.lidarLive.socket.send(JSON.stringify({type: "scan_ack", sequence: payload.sequence}));
+    try {
+      renderLidarScan(result, "live_websocket");
+    } catch (err) {
+      // A render error must not stop the stream: the bridge waits for this ACK.
+      state.lidarLive.renderErrors = (state.lidarLive.renderErrors || 0) + 1;
+      debugLog("ws", "scan render failed", err);
+    } finally {
+      if (state.lidarLive.socket?.readyState === WebSocket.OPEN && Number.isInteger(payload.sequence)) {
+        state.lidarLive.socket.send(JSON.stringify({type: "scan_ack", sequence: payload.sequence}));
+      }
     }
     renderLidarLiveState();
     renderLiveSensorLinks();
@@ -2616,7 +2772,7 @@ function createCoreChart() {
     <div class="core-chart-head">
       <span data-role="name"></span>
       <b data-role="value"></b>
-      <small>Y 0-100%<br />X 최근 90초</small>
+      <small>Y 0-100%<br /><span data-role="window">${chartWindowLabel()}</span></small>
     </div>
   `;
   return article;
@@ -2625,6 +2781,8 @@ function createCoreChart() {
 function updateCoreChart(el, core) {
   el.querySelector('[data-role="name"]').textContent = cpuLabel(core);
   el.querySelector('[data-role="value"]').textContent = fmtPercent(core.percent);
+  const windowLabel = el.querySelector('[data-role="window"]');
+  if (windowLabel) windowLabel.textContent = chartWindowLabel();
 }
 
 function renderTemperatures(rows) {
@@ -4035,40 +4193,62 @@ function recordingDurationSeconds(status) {
 async function loadRecordings() {
   state.recordings.loading = true;
   renderRecordings();
-  await refreshRecordingStatus();
   try {
+    await refreshRecordingStatus();
+    const selectedId = state.recordings.selectedId;
+    const before = state.recordings.items.find(item => item.id === selectedId);
     const payload = await getJson("/api/recordings");
     state.recordings.items = payload.recordings || [];
     // Fetch archive frames and maps only after an explicit selection.
     renderRecordings();
-    if (state.recordings.selectedId) await selectRecording(state.recordings.selectedId);
+    const after = state.recordings.items.find(item => item.id === selectedId);
+    // Refreshing a list must not reset the playback clock, tiles or sensor
+    // cache, even if post-processing changed the selected record's metadata.
+    if (selectedId && selectedId === state.recordings.selectedId &&
+        (!state.recordings.selected || recordingListSignature(before) !== recordingListSignature(after))) {
+      await selectRecording(selectedId, { preservePlayback: true });
+    }
   } finally {
     state.recordings.loading = false;
     renderRecordings();
   }
 }
 
-async function selectRecording(id) {
+function recordingListSignature(item) {
+  if (!item) return "";
+  const stable = (value) => value && typeof value === "object" && !Array.isArray(value)
+    ? Object.keys(value).sort().reduce((out, key) => { out[key] = stable(value[key]); return out; }, {})
+    : Array.isArray(value) ? value.map(stable) : value;
+  return JSON.stringify(stable(item));
+}
+
+async function selectRecording(id, { preservePlayback = false } = {}) {
+  const preserve = preservePlayback && id === state.recordings.selectedId && Boolean(state.recordings.timeline);
+  const revision = (state.recordings.detailRevision || 0) + 1;
+  state.recordings.detailRevision = revision;
   state.recordings.selectedId = id;
-  stopArchivePlayback(true);
-  state.recordings.timeline = null;
-  clearArchiveFrameCache();
-  renderArchiveMotor(null, [], 0);
+  if (!preserve) {
+    stopArchivePlayback(true);
+    state.recordings.timeline = null;
+    clearArchiveFrameCache();
+    renderArchiveMotor(null, [], 0);
+  }
 
   renderRecordings();
   try {
     const detail = await getJson(`/api/recordings/${encodeURIComponent(id)}`);
-    if (id !== state.recordings.selectedId) return;
+    if (id !== state.recordings.selectedId || revision !== state.recordings.detailRevision) return;
     state.recordings.selected = detail;
-    state.recordings.timeline = timelineShellFromRecording(detail?.recording || detail);
-    renderRecordingDetail(detail);
-    if (state.recordings.timeline) {
+    state.recordings.timeline = timelineShellFromRecording(detail?.recording || detail) ||
+      (preserve ? state.recordings.timeline : null);
+    renderRecordingDetail(detail, { preservePlayback: preserve });
+    if (state.recordings.timeline && !preserve) {
       await scheduleArchiveSegmentsForTime(0, { force: true, reschedule: true }).catch((err) => debugLog("archive", "first segment load failed", err));
       renderArchiveFrame();
 
     }
   } catch (err) {
-    if (id !== state.recordings.selectedId) return;
+    if (id !== state.recordings.selectedId || revision !== state.recordings.detailRevision) return;
     renderStatusRows("roverArchiveDetails", [
       { title: "Archive", sub: id, ok: false, level: "bad", value: err.message },
     ]);
@@ -4520,7 +4700,7 @@ function renderRecordings() {
   }
 }
 
-function renderRecordingDetail(detail) {
+function renderRecordingDetail(detail, options = {}) {
   const payload = detail?.recording || detail;
   const metadata = payload?.metadata || {};
   const archiveMedia = document.querySelector(".archive-media-grid");
@@ -4533,7 +4713,7 @@ function renderRecordingDetail(detail) {
   const id = payload ? payload.id || metadata.id || state.recordings.selectedId || "" : "";
   window.LiveMap?.selectArchive(id);
   if (!id) state.recordings.timeline = null;
-  setupArchivePlayback(payload, normalizedPreview);
+  setupArchivePlayback(payload, normalizedPreview, options);
   const rows = id ? [
     { title: "ID", sub: recordingSensorLabel(payload), ok: true, level: "ok", value: id },
     { title: "Duration", sub: `${formatShortDate(payload.display_started_at || metadata.started_at)}${payload.clock_quality === "gnss_estimated" ? ` · GPS 시각 보정 (원본 ${formatShortDate(metadata.started_at)})` : ""}`, ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
@@ -4546,7 +4726,9 @@ function renderRecordingDetail(detail) {
   renderArchiveDownloadButton(payload, id);
 }
 
-function configureArchiveNativeVideo(payload) {
+function configureArchiveNativeVideo(payload, { preservePlayback = false } = {}) {
+  // A metadata refresh must not switch an explicitly selected camera source.
+  if (preservePlayback && state.archivePlayback.selectedSourceVideo) return;
   const selector = $("roverArchiveCameraSource");
   const alternatives = payload?.adaptive_video?.alternative_sources || [];
   const archiveId = payload?.id || state.recordings.selectedId;
@@ -4585,6 +4767,11 @@ function configureArchiveNativeVideo(payload) {
   if (!video) return;
   const url = String(payload?.video_url || "");
   const changed = url !== state.archivePlayback.nativeVideoUrl;
+  // A later same-URL detail refresh must retain the pending source switch's
+  // resume intent until metadata arrives. An explicit seek already owns its cursor.
+  const restorePlayback = preservePlayback && Boolean(url) &&
+    (changed || Number.isFinite(state.archivePlayback.sourceSwitchTimeS));
+  if (restorePlayback && changed) state.archivePlayback.sourceSwitchTimeS = state.archivePlayback.timeS;
   if (changed) {
     state.archivePlayback.videoPlayRevision=(state.archivePlayback.videoPlayRevision||0)+1;
     state.archivePlayback.videoPlayRequested=false;
@@ -4620,6 +4807,19 @@ function configureArchiveNativeVideo(payload) {
     }
     if (!state.archivePlayback.playing && Math.abs(video.currentTime - archiveVideoTime(state.archivePlayback.timeS)) > 0.08) {
       video.currentTime = archiveVideoTime(state.archivePlayback.timeS);
+    }
+    if (restorePlayback && state.archivePlayback.playing) {
+      const revision = state.archivePlayback.videoPlayRevision || 0;
+      Promise.resolve(video.play()).then(() => {
+        if (revision !== (state.archivePlayback.videoPlayRevision || 0) || !state.archivePlayback.playing) {
+          if (!state.archivePlayback.playing && !state.archivePlayback.videoPlayRequested) video.pause();
+        }
+      }).catch(error => {
+        if (url !== state.archivePlayback.nativeVideoUrl || revision !== (state.archivePlayback.videoPlayRevision || 0) ||
+            !state.archivePlayback.playing) return;
+        state.archivePlayback.nativeVideoError = error?.message || "native video play failed";
+        stopArchivePlayback(false);
+      });
     }
     // Another metadata listener restores the fallback's saved media cursor.
     renderArchiveFrame({sampleMedia:false});
@@ -4675,10 +4875,10 @@ function syncArchiveScrubberBounds() {
   }
 }
 
-function setupArchivePlayback(payload, fallbackPreview) {
+function setupArchivePlayback(payload, fallbackPreview, { preservePlayback = false } = {}) {
   const timeline = state.recordings.timeline;
-  configureArchiveNativeVideo(payload);
-  prepareArchiveTimelineCache(timeline);
+  configureArchiveNativeVideo(payload, { preservePlayback });
+  if (!preservePlayback) prepareArchiveTimelineCache(timeline);
   const metadata = payload?.metadata || {};
   const duration = Number(timeline?.duration_s || metadata.duration_s || 0);
   const lidarFrames = state.archivePlayback.cache.lidarFrames || [];
@@ -4839,6 +5039,11 @@ function archivePlaybackTick(now = performance.now()) {
 function setArchiveTime(value, options = {}) {
   if (options.pause) stopArchivePlayback(false);
   state.archivePlayback.timeS = Math.max(0, Math.min(state.archivePlayback.durationS, Number(value) || 0));
+  // An explicit seek while the replacement video's metadata is loading wins
+  // over the cursor saved when the source switch began.
+  if (Number.isFinite(state.archivePlayback.sourceSwitchTimeS)) {
+    state.archivePlayback.sourceSwitchTimeS = state.archivePlayback.timeS;
+  }
   window.LiveMap?.archiveTime(state.recordings.selectedId,state.archivePlayback.timeS,state.archivePlayback.playing,true);
   const video = archiveNativeVideo();
   if (video && Math.abs(Number(video.currentTime || 0) - archiveVideoTime(state.archivePlayback.timeS)) > 0.04) {
@@ -4925,7 +5130,8 @@ function renderArchiveFrame(options={}) {
   text("roverArchiveImuTime", imuFrame ? `IMU ${fmtNumber(imuFrame.t_s, 3)}s / Δ ${fmtNumber(imuSyncDeltaS, 3)}s` : "IMU -- / Δ --");
   text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data · base_link corrected" : "/imu/data_raw · sensor-native"} · playback ${fmtNumber(timeS, 3)}s` : waitingForImu?"IMU 버퍼 수신 중 · 재생 시각 동기화 대기":"동기 IMU sample 대기");
   drawImuAttitude($("roverArchiveImuCanvas"), Number(imuEuler.roll), Number(imuEuler.pitch), Number(imuEuler.yaw));
-  text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}${state.archivePlayback.mapBuffering?' · 지도 버퍼링':''}`);
+  const mapWait = state.archivePlayback.mapBuffering ? (window.LiveMap?.waitReason?.() || '지도 버퍼링') : '';
+  text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}${mapWait ? ` · ${mapWait}` : ''}`);
   text("roverOrchardMapTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   const scrubber = $("roverArchiveScrubber");
   if (scrubber && document.activeElement !== scrubber) scrubber.value = String(timeS);
@@ -5481,10 +5687,10 @@ setInterval(() => {
 // Reuse the same widgets, playback clock and network streams in the overview.
 const overviewToggle = document.getElementById('roverArchiveOverviewToggle');
 if (overviewToggle) {
-  overviewToggle.checked = localStorage.getItem('ubts-archive-overview-v1') === '1';
+  try { overviewToggle.checked = localStorage.getItem('ubts-archive-overview-v1') === '1'; } catch (_) { /* storage blocked */ }
   const applyOverview = () => {
     document.querySelector('.archive-preview')?.classList.toggle('sensor-overview', overviewToggle.checked);
-    localStorage.setItem('ubts-archive-overview-v1', overviewToggle.checked ? '1' : '0');
+    try { localStorage.setItem('ubts-archive-overview-v1', overviewToggle.checked ? '1' : '0'); } catch (_) { /* storage blocked */ }
     window.dispatchEvent(new Event('resize'));
     window.LiveMap?.routeChanged();
     window.RoverGps?.routeChanged();
