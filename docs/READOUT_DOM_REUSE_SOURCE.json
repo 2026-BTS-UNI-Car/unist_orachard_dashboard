@@ -1,0 +1,22 @@
+{
+  "Jetson_installation_or_actual_FPS_qualified": false,
+  "actual": 0,
+  "after": "function renderReadout(targetId, rows) {\n  const target = $(targetId);\n  if (!target) return;\n  const renderKey = JSON.stringify(rows.map((row) => [row.label, row.value, row.sub, row.color]));\n  const cache = renderReadout._ubtsRows ||= new WeakMap();\n  let slots = cache.get(target);\n  const intact = slots && target.childNodes.length === slots.length && slots.every((slot, index) => {\n    const parts = [slot.swatch, slot.label, slot.value, slot.sub];\n    const texts = [[slot.label, slot.labelText], [slot.value, slot.valueText], [slot.sub, slot.subText]];\n    return target.childNodes[index] === slot.root && slot.root.parentNode === target &&\n      slot.root.className === \"readout-row\" && slot.swatch.className === \"swatch\" &&\n      slot.root.childNodes.length === 4 && parts.every((part, i) => slot.root.childNodes[i] === part) &&\n      texts.every(([element, text]) => element.childNodes.length === 1 && element.firstChild === text && text.nodeType === 3);\n  });\n  if (!intact) {\n    target.innerHTML = \"\";\n    slots = [];\n    cache.set(target, slots);\n  }\n  while (slots.length > rows.length) slots.pop().root.remove();\n  for (let index = 0; index < rows.length; index++) {\n    const row = rows[index];\n    let slot = slots[index];\n    if (!slot) {\n      const root = document.createElement(\"div\"), swatch = document.createElement(\"i\");\n      const label = document.createElement(\"span\"), value = document.createElement(\"b\"), sub = document.createElement(\"small\");\n      const labelText = document.createTextNode(\"\"), valueText = document.createTextNode(\"\"), subText = document.createTextNode(\"\");\n      root.className = \"readout-row\"; swatch.className = \"swatch\";\n      label.append(labelText); value.append(valueText); sub.append(subText);\n      root.append(swatch, label, value, sub); target.append(root);\n      slot = {root, swatch, label, value, sub, labelText, valueText, subText, inputColor: {}, appliedStyle: null};\n      slots.push(slot);\n    }\n    // Text node data has the same literal display as escapeHtml + innerHTML,\n    // without parsing markup or allocating new rows/text on every sensor tick.\n    const values = [String(row.label ?? \"\"), String(row.value ?? \"\"), String(row.sub || \"\")];\n    [slot.labelText, slot.valueText, slot.subText].forEach((node, i) => { if (node.data !== values[i]) node.data = values[i]; });\n    if (slot.inputColor !== row.color || slot.swatch.style.cssText !== slot.appliedStyle) {\n      slot.swatch.style.cssText = \"\";\n      slot.swatch.style.background = row.color; slot.swatch.style.color = row.color;\n      slot.inputColor = row.color; slot.appliedStyle = slot.swatch.style.cssText;\n    }\n  }\n  target.dataset.renderKey = renderKey;\n}\n",
+  "all_other_app_bytes_exact_by_inverse": true,
+  "before": "function renderReadout(targetId, rows) {\n  const target = $(targetId);\n  if (!target) return;\n  const renderKey = JSON.stringify(rows.map((row) => [row.label, row.value, row.sub, row.color]));\n  if (target.dataset.renderKey === renderKey) return;\n  target.dataset.renderKey = renderKey;\n  target.innerHTML = \"\";\n  for (const row of rows) {\n    const div = document.createElement(\"div\");\n    div.className = \"readout-row\";\n    div.innerHTML = `\n      <i class=\"swatch\"></i>\n      <span>${escapeHtml(row.label)}</span>\n      <b>${escapeHtml(row.value)}</b>\n      <small>${escapeHtml(row.sub || \"\")}</small>\n    `;\n    div.querySelector(\".swatch\").style.background = row.color;\n    div.querySelector(\".swatch\").style.color = row.color;\n    target.append(div);\n  }\n}\n",
+  "changed_function": "renderReadout",
+  "derived_SHA256": "2b4863e04e6d6ca5e6f8ca0f66074158e08ae2ea9bd2308e209e40069c840496",
+  "derived_bytes": 252087,
+  "inverse_whole_app_exact": true,
+  "no_control_ACK_camera_JPEG_resolution_quality_source_or_subscription_change": true,
+  "original_SHA256": "925cf73cfdfd3f774693dcd8309b67d6c749ce16660ac0e9bb9cdf6586b3f1ba",
+  "original_bytes": 250132,
+  "original_escape_display_preserved_as_literal_Text_data": true,
+  "parent_commit": "fded009df37b93d376a2b553f0c88702b554f580",
+  "raw_CRLF_preserved": true,
+  "rejected_v8_decode_promise_not_inherited": true,
+  "remaining91_manifest_rows_unchanged": true,
+  "schema": "ubts.dashboard.readout_DOM_reuse.source.v1",
+  "source_only": true,
+  "target_WeakMap_and_DOM_reference_validation": true
+}

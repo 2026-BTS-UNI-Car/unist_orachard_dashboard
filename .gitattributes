@@ -11,3 +11,12 @@ docs/AUTONOMY_SOFTWARE_DELIVERY_20261010.md text eol=lf
 # Preserve raw source bytes used by file-hash verification.
 /deploy/native_sensor_stream/keyframe_registration.py -text
 /static/app.js -text
+
+# These hash-checked package members are LF on every checkout.
+/dashboard_server/_field10/row_executor/NATIVE_NAVIGATION_KO.md text eol=lf
+/dashboard_server/_field10/row_executor/OPERATIONS.txt text eol=lf
+/dashboard_server/_field10/row_executor/README_FIELD.txt text eol=lf
+/dashboard_server/_field10/row_executor/SHA256SUMS text eol=lf
+/dashboard_server/_field10/row_executor/TURN_ASSIST.txt text eol=lf
+/dashboard_server/_field10/row_executor/tests/page_js_harness.js text eol=lf
+/dashboard_server/_field10/row_executor/vendor/SOURCE_MANIFEST.json text eol=lf
