@@ -1,0 +1,74 @@
+{
+  "base_commit": "fd9fd1c54ffbdc3dcd61eb252b16ffd9c14be6e5",
+  "files": {
+    "dashboard_server/autonomy_observation.py": {
+      "SHA256": "9d321f104bfd4e4d1d5fce2a3939594f87e34bda40b51a4313a74607b54cb39a",
+      "bytes": 39837,
+      "current_sealed_reader_preserved": true,
+      "digest_semantics": "EXACT_RAW_FILE_BYTES",
+      "empty_input_wake_event_preserved": true,
+      "inverse_timing_edits_recover_parent_bytes": true,
+      "parent_SHA256": "d736a2ac07977e07975b16b16ff27818ae06fdb1c453a210c09113733b7d0f77",
+      "timing_sites_changed": 3
+    },
+    "static/native-accepted-map.mjs": {
+      "SHA256": "dc0478774b3c116a5a165809245ad3760af81c485d90a0f0ea85ea179e0af52a",
+      "bytes": 14807,
+      "digest_semantics": "CANONICAL_GIT_LF_BYTES",
+      "exact_upstream_public_commit_bytes": "37e76a74f0834112d6fb806606f22b0cc20aaf2e",
+      "inverse_timing_edits_recover_parent_bytes": true,
+      "outside_92_file_manifest": true,
+      "parent_SHA256": "92c00ff13bd0db685f50b76284cacb8280cf280cac7d217984985d3ac151688a",
+      "timing_sites_changed": 2
+    }
+  },
+  "git_attributes": {
+    "LF_override_rules": 7,
+    "SHA256": "be3c57761b61668da3a0019ed16a8f1d7b18faf3fa18b784005a2bf83a5e0e10",
+    "all_92_files_filter_preserves_manifest_bytes": true,
+    "raw_byte_rules": 2,
+    "unchanged_from_base": true
+  },
+  "manifest_changed_entries": [
+    "dashboard_server/autonomy_observation.py"
+  ],
+  "manifest_entries": 92,
+  "manifest_other_entries_exact": 91,
+  "ported_public_commits": {
+    "native_map_poll_budget": "37e76a74f0834112d6fb806606f22b0cc20aaf2e",
+    "observation_cadence": "59d977fbaecd973450e8187fac4ffdd255502754"
+  },
+  "qualification": {
+    "complete_deployed_image_source_closure": false,
+    "control_ready": false,
+    "full_autonomy_qualified": false,
+    "inherited_unpinned_app_imports": 10,
+    "installed_UI_body_verified": false,
+    "installed_client_load_verified": false,
+    "live_map_latency_gain_measured": false,
+    "mapping_accuracy_qualified": false,
+    "physical_authority": false,
+    "reproducible_build_verified": false
+  },
+  "schema": "ubts.public.observation_ui_integration.source.v1",
+  "source_manifest": "docs/C0_SOURCE_SHA256.json",
+  "tests": {
+    "asynchronous_client_cases": 9,
+    "execution_scope": "SYNTHETIC_UNIT_ONLY",
+    "existing_pose_history_notice_check": "PASS",
+    "files": {
+      "tests/test_autonomy_observation_poll_cadence.py": {
+        "SHA256": "75ef5203fa03dfa6d2c7cfbe7cfc798e3c224f566a3a66d443f901ba719972a6",
+        "bytes": 10232,
+        "digest_semantics": "CANONICAL_GIT_LF_BYTES"
+      },
+      "tests/test_native_map_poll_budget.mjs": {
+        "SHA256": "129b80dca83cfcd07e3ee4b07a7eb9e058bc464bcbb2e90a15cee01579f9e7a3",
+        "bytes": 8381,
+        "digest_semantics": "CANONICAL_GIT_LF_BYTES"
+      }
+    },
+    "python_subtests": 37,
+    "python_tests": 51
+  }
+}

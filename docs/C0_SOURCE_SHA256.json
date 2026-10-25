@@ -289,8 +289,8 @@
       "bytes": 69226
     },
     "dashboard_server/autonomy_observation.py": {
-      "SHA256": "d736a2ac07977e07975b16b16ff27818ae06fdb1c453a210c09113733b7d0f77",
-      "bytes": 39559
+      "SHA256": "9d321f104bfd4e4d1d5fce2a3939594f87e34bda40b51a4313a74607b54cb39a",
+      "bytes": 39837
     },
     "dashboard_server/field10_shadow.py": {
       "SHA256": "185e6b58edf04666622ac34e850ba2aa51237e68ff2f3859cceab350fa7cc960",
