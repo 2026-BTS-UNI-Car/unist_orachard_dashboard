@@ -61,7 +61,8 @@ export class NativeAcceptedMapClient {
   }
   async poll() {
     if(!this.running||this.busy)return;
-    this.busy=true;const revision=this.revision,abort=new AbortController();this.controller=abort;
+    this.busy=true;const pollStarted=performance.now();
+    const revision=this.revision,abort=new AbortController();this.controller=abort;
     // A fixed 120s server pin does not expire during ordinary slow paging.
     // Single-flight and this 60s total bound prevent accumulating generations.
     const timeout=setTimeout(()=>abort.abort(),60000);
@@ -136,7 +137,7 @@ export class NativeAcceptedMapClient {
     } catch(error) {if(revision===this.revision&&this.running)this.notify({state:'unavailable',retained:!!this.last,reason:'native_map_transport_unavailable'});}
     finally {clearTimeout(timeout);if(this.controller===abort)this.controller=null;await this.releaseLease();this.busy=false;
       // A Stop/Start during an old in-flight request schedules only this new owner.
-      if(this.running)this.schedule(this.pollMs);}
+      if(this.running)this.schedule(Math.max(0,this.pollMs-(performance.now()-pollStarted)));}
   }
 }
 
