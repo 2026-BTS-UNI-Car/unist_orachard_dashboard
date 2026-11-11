@@ -10,11 +10,15 @@
 <link href="/static/assets/apple-touch-icon.png" rel="apple-touch-icon"/>
 <script>
       try {
-        document.documentElement.dataset.theme = localStorage.getItem("ubts-theme") || "dark";
+        document.documentElement.dataset.theme = localStorage.getItem("ubts-theme") || "light";
       } catch (_) {
-        document.documentElement.dataset.theme = "dark";
+        document.documentElement.dataset.theme = "light";
       }
     </script>
+<link href="/static/css/tokens.css" rel="stylesheet"/>
+<link href="/static/css/base.css" rel="stylesheet"/>
+<link href="/static/css/components.css" rel="stylesheet"/>
+<link href="/static/css/frame.css" rel="stylesheet"/>
 <link href="/static/styles.css" rel="stylesheet"/>
 <link href="/static/vendor/maplibre-gl/maplibre-gl.css" rel="stylesheet"/>
 <link href="/static/gps-map.css" rel="stylesheet"/>
@@ -22,41 +26,38 @@
 </head>
 <body>
 <div hidden="" class="simulation-banner" role="status">SIMULATION · Gazebo 센서 · 실제 Jetson에 연결되지 않음</div>
-<button aria-label="메뉴 닫기" class="mobile-nav-backdrop" id="mobileNavBackdrop" type="button"></button>
-<header class="mobile-topbar">
-<a class="mobile-brand" data-route="/" href="/">UBTS Dashboard</a>
-<button aria-controls="sidebar" aria-expanded="false" aria-label="사이트맵 열기" class="menu-button" id="mobileMenuButton" type="button">
+<header class="statusbar" id="statusBar">
+<button aria-controls="sidebar" aria-expanded="false" aria-label="메뉴 열기" class="menu-button" id="mobileMenuButton" type="button">
 <span></span>
 <span></span>
 <span></span>
 </button>
+<strong class="statusbar-brand">UBTS</strong>
+<div class="statusbar-items">
+<span class="status-chip" id="connectionState">확인 중</span>
+<span class="status-chip" id="frameDriveState">조종 비활성</span>
+<span class="status-chip" id="frameRecordState">기록 미확인</span>
+<time class="statusbar-clock" id="frameClock">--:--:--</time>
+</div>
+<button class="stop-button" data-ui-check="stop" id="frameStopButton" type="button">STOP</button>
 </header>
+<button aria-label="메뉴 닫기" class="mobile-nav-backdrop" id="mobileNavBackdrop" type="button"></button>
 <div class="app-shell">
-<aside aria-label="Site map" class="sidebar" id="sidebar">
-<a class="brand-block" data-route="/" href="/">
-<span>
-<small>UBTS</small>
-<strong>Dashboard</strong>
-</span>
-</a>
+<aside aria-label="메뉴" class="sidebar" id="sidebar">
 <nav class="nav-list">
-<a data-route="/" href="/">Overview</a>
-<a data-route="/connection" href="/connection">Connection</a>
-<a data-route="/system" href="/system">System</a>
-<a data-route="/network" href="/network">Network</a>
-<a data-route="/docker" href="/docker">Docker</a>
-<a data-route="/fan" href="/fan">Fan Control</a>
-<a data-route="/research" href="/research">Research</a>
-<a data-route="/rover-control" href="/rover-control">Rover Control</a>
-<a data-route="/docs" href="/docs">Docs</a>
+<a data-route="/rover-control" href="/rover-control">주행</a>
+<a data-route="/connection" href="/connection">연결</a>
+<a data-route="/" href="/">개요</a>
+<a data-route="/system" href="/system">시스템</a>
+<a data-route="/network" href="/network">네트워크</a>
+<a data-route="/docker" href="/docker">컨테이너</a>
+<a data-route="/fan" href="/fan">팬</a>
+<a data-route="/docs" href="/docs">문서</a>
+<a data-route="/research" href="/research">연구</a>
 </nav>
 <div class="sidebar-footer">
-<button aria-label="테마 변경" aria-pressed="false" class="theme-toggle" id="themeToggle" type="button">
-<span class="theme-track"><i></i></span>
-<b id="themeLabel">Dark</b>
-</button>
-<span class="status-pill neutral" id="connectionState">checking</span>
-<small id="updatedAt">--</small>
+<button aria-pressed="false" class="toggle" id="themeToggle" type="button"><span class="toggle-track"></span><span id="themeLabel">다크 테마</span></button>
+<small>최근 수신 <span id="updatedAt">--</span></small>
 </div>
 </aside>
 <main class="main-surface">

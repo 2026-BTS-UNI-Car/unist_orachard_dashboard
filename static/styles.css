@@ -50,45 +50,6 @@
   --chart-bg-bottom: rgba(242, 27, 88, 0.018);
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  overflow-x: hidden;
-  background:
-    linear-gradient(135deg, rgba(17, 85, 230, 0.16), transparent 26%),
-    linear-gradient(315deg, rgba(242, 27, 88, 0.12), transparent 34%),
-    linear-gradient(180deg, var(--bg), var(--bg-2));
-  color: var(--text);
-  font-family: Inter, "Noto Sans KR", "Apple SD Gothic Neo", Arial, sans-serif;
-  transition: background 240ms ease, color 180ms ease;
-}
-
-body::before {
-  position: fixed;
-  inset: 0;
-  content: "";
-  pointer-events: none;
-  opacity: 0.42;
-  background-image:
-    linear-gradient(var(--chart-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: linear-gradient(to bottom, black, transparent 84%);
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
 h1,
 h2,
 p {
@@ -107,39 +68,6 @@ h2 {
   letter-spacing: 0;
 }
 
-.app-shell {
-  position: relative;
-  display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
-  min-height: 100vh;
-}
-
-.mobile-topbar,
-.mobile-nav-backdrop {
-  display: none;
-}
-
-.sidebar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  padding: 18px;
-  border-right: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  backdrop-filter: blur(18px);
-}
-
-.brand-block {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.brand-block small,
 .eyebrow,
 .kpi span,
 .detail-list dt {
@@ -148,137 +76,6 @@ h2 {
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
-}
-
-.brand-block strong {
-  display: block;
-  margin-top: 2px;
-}
-
-.logo-badge {
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--logo-line);
-  border-radius: 8px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(235, 240, 255, 0.92)),
-    var(--logo-base);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.45),
-    0 18px 44px rgba(11, 37, 111, 0.18);
-}
-
-.logo-badge img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  padding: 6%;
-}
-
-.logo-badge-sm {
-  width: 54px;
-  height: 54px;
-  flex: 0 0 auto;
-}
-
-.nav-list {
-  display: grid;
-  gap: 7px;
-}
-
-.nav-list a {
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 900;
-  transition: color 180ms ease, background 180ms ease, border-color 180ms ease, transform 180ms ease;
-}
-
-.nav-list a:hover,
-.nav-list a.active {
-  color: var(--text);
-  border-color: var(--line-strong);
-  background: linear-gradient(90deg, rgba(17, 85, 230, 0.14), rgba(242, 27, 88, 0.09));
-}
-
-.sidebar-footer {
-  margin-top: auto;
-  display: grid;
-  gap: 9px;
-}
-
-.sidebar-footer small {
-  color: var(--dim);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.theme-toggle {
-  width: 100%;
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--text);
-  background: var(--surface-2);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.theme-track {
-  position: relative;
-  width: 48px;
-  height: 24px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--blue), var(--rose));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
-}
-
-.theme-track i {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.26);
-  transform: translate3d(0, 0, 0);
-  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-:root[data-theme="light"] .theme-track i {
-  transform: translate3d(24px, 0, 0);
-}
-
-.main-surface {
-  position: relative;
-  padding: 22px;
-}
-
-.page {
-  display: none;
-  gap: 20px;
-}
-
-.page.active {
-  display: grid;
-  /* One explicit track: an implicit column grows to the widest unbreakable
-     string of any panel and pushes the whole page past the viewport. */
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .page-head,
@@ -958,7 +755,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 
 .rover-layout.drive-collapsed .rover-drive-panel {
   min-height: auto;
-  position: static;
 }
 
 .rover-layout.drive-collapsed .rover-drive-panel > :not(.panel-head) {
@@ -1610,9 +1406,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   .rover-drive-panel {
     grid-column: 3;
     grid-row: 1;
-    position: sticky;
-    top: 22px;
-    z-index: 2;
     padding: 12px;
   }
 
@@ -2192,28 +1985,33 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   overflow-wrap: break-word;
 }
 
-.page[data-page="/docs"].active {
-  height: calc(100dvh - 44px);
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-}
-
 .page[data-page="/docs"] .page-head {
   min-height: 150px;
 }
 
-.page[data-page="/docs"] .docs-layout {
-  min-height: 0;
-  overflow: hidden;
-}
+/* Two panes that fill the height below the status bar and scroll on their
+   own. A short screen (a phone on its side) has no room for that: there the
+   page scrolls as a whole. */
+@media (min-height: 600px) {
+  .page[data-page="/docs"].active {
+    height: calc(100dvh - var(--statusbar-height) - var(--banner-height) - 2 * var(--space-4));
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
 
-.page[data-page="/docs"] .docs-index,
-.page[data-page="/docs"] .markdown-body {
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 6px;
-  scrollbar-gutter: stable;
+  .page[data-page="/docs"] .docs-layout {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .page[data-page="/docs"] .docs-index,
+  .page[data-page="/docs"] .markdown-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 6px;
+    scrollbar-gutter: stable;
+  }
 }
 
 .markdown-body h1,
@@ -2686,9 +2484,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 }
 
 @supports not (background: color-mix(in srgb, white 50%, black)) {
-  .sidebar,
-  .theme-toggle,
-  .status-pill,
   .tag,
   .chip,
   .disk-row,
@@ -2708,127 +2503,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 }
 
 @media (max-width: 1180px) {
-  body.nav-open {
-    overflow: hidden;
-  }
-
-  .mobile-topbar {
-    position: sticky;
-    top: 0;
-    z-index: 35;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    min-height: 62px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--line);
-    background: color-mix(in srgb, var(--surface) 90%, transparent);
-    backdrop-filter: blur(18px);
-  }
-
-  .mobile-brand {
-    min-width: 0;
-    color: var(--text);
-    font-size: 15px;
-    font-weight: 950;
-    letter-spacing: 0;
-  }
-
-  .menu-button {
-    position: relative;
-    width: 44px;
-    height: 40px;
-    display: inline-grid;
-    place-items: center;
-    flex: 0 0 auto;
-    border: 1px solid var(--line-strong);
-    border-radius: 8px;
-    color: var(--text);
-    background: var(--surface-2);
-    cursor: pointer;
-  }
-
-  .menu-button span {
-    position: absolute;
-    width: 18px;
-    height: 2px;
-    border-radius: 999px;
-    background: currentColor;
-    transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease;
-  }
-
-  .menu-button span:nth-child(1) {
-    transform: translateY(-6px);
-  }
-
-  .menu-button span:nth-child(3) {
-    transform: translateY(6px);
-  }
-
-  body.nav-open .menu-button span:nth-child(1) {
-    transform: rotate(45deg);
-  }
-
-  body.nav-open .menu-button span:nth-child(2) {
-    opacity: 0;
-    transform: scaleX(0.5);
-  }
-
-  body.nav-open .menu-button span:nth-child(3) {
-    transform: rotate(-45deg);
-  }
-
-  .mobile-nav-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
-    display: block;
-    border: 0;
-    opacity: 0;
-    pointer-events: none;
-    background: rgba(2, 6, 18, 0.56);
-    backdrop-filter: blur(2px);
-    transition: opacity 240ms ease;
-  }
-
-  body.nav-open .mobile-nav-backdrop {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .app-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 40;
-    width: min(84vw, 312px);
-    height: 100dvh;
-    padding: 20px;
-    transform: translate3d(-104%, 0, 0);
-    opacity: 0.92;
-    pointer-events: none;
-    overflow-y: auto;
-    box-shadow: 22px 0 52px rgba(0, 0, 0, 0.32);
-    transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 220ms ease;
-    will-change: transform;
-  }
-
-  body.nav-open .sidebar {
-    transform: translate3d(0, 0, 0);
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .sidebar-footer {
-    margin-top: auto;
-    margin-left: 0;
-    min-width: 0;
-  }
-
   .kpi-grid,
 	  .fan-control-grid,
 	  .dashboard-grid,
@@ -2874,9 +2548,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   .rover-drive-panel {
     grid-column: 3;
     grid-row: 1;
-    position: sticky;
-    top: 76px;
-    z-index: 2;
   }
 
   .rover-layout.drive-collapsed .rover-record-panel {
@@ -2930,24 +2601,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 }
 
 @media (max-width: 760px) {
-  .main-surface {
-    padding: 14px;
-  }
-
-  .sidebar {
-    gap: 18px;
-    padding: 18px;
-  }
-
-  .sidebar-footer {
-    margin-left: 0;
-    min-width: 0;
-  }
-
-  .page {
-    gap: 14px;
-  }
-
   .page-head,
   .panel,
   .kpi {
@@ -3117,8 +2770,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   }
 }
 
-.simulation-banner { position: sticky; top: 0; z-index: 100; padding: 8px 18px; background: #174a68; color: #fff; text-align: center; font-weight: 700; }
-.simulation-banner[hidden] { display: none; }
 .archive-video-quality {
   position: absolute; right: 10px; top: 10px; z-index: 2;
   padding: 5px 8px; border-radius: 6px; background: #111827dd; color: #fff;

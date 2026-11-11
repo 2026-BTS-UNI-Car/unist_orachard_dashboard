@@ -1,6 +1,4 @@
 .rover-gps-panel { min-width: 0; }
-/* Keep the drive card in its grid cell so it cannot cover the map or archive. */
-.rover-layout:has(.rover-gps-panel) .rover-drive-panel { position: static; }
 .gps-map { position: relative; width: 100%; height: clamp(340px, 38vw, 540px); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
 .gps-map-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .gps-map .maplibregl-canvas { outline: none; }

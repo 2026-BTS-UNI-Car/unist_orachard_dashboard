@@ -91,6 +91,12 @@
   background: currentColor;
 }
 
+.menu-button[aria-expanded="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
 .menu-button span:nth-child(1) {
   transform: translateY(-6px);
 }
@@ -301,6 +307,8 @@ html:has(.simulation-banner:not([hidden])) {
     left: 0;
     z-index: var(--z-drawer);
     width: min(280px, 84vw);
+    /* Fill the space between the two insets (align-self: start would shrink it). */
+    align-self: stretch;
     height: auto;
     border-right: 1px solid var(--color-border);
     transform: translateX(-100%);

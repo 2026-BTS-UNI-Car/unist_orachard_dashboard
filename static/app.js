@@ -404,6 +404,8 @@ function renderRoute() {
   if (!routeSupportsImuLive(route) && (state.imuLive.socket || state.imuLive.enabled)) {
     closeImuLive("Live 화면 밖에서는 IMU WebSocket을 닫습니다.", { userStopped: false });
   }
+  // The recording indicator of the status bar has a different source off the drive page.
+  if (route !== "/rover-control") renderRecordingStatus();
   window.RoverGps?.routeChanged();
   requestChartAnimation();
 }
@@ -417,7 +419,7 @@ function initMobileNav() {
     if (event.key === "Escape") setMobileNav(false);
   });
   window.addEventListener("resize", () => {
-    if (window.innerWidth > 1180) setMobileNav(false);
+    if (window.innerWidth > 1023) setMobileNav(false);
     if (routeSupportsLidarLive()) requestChartAnimation();
   });
 }
@@ -427,7 +429,7 @@ function setMobileNav(open) {
   const button = $("mobileMenuButton");
   if (button) {
     button.setAttribute("aria-expanded", String(Boolean(open)));
-    button.setAttribute("aria-label", open ? "사이트맵 닫기" : "사이트맵 열기");
+    button.setAttribute("aria-label", open ? "메뉴 닫기" : "메뉴 열기");
   }
 }
 
@@ -438,7 +440,7 @@ function initTheme() {
   } catch (_) {
     stored = null;
   }
-  const theme = stored || "dark";
+  const theme = stored || "light";
   applyTheme(theme);
   $("themeToggle")?.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
@@ -454,9 +456,9 @@ function applyTheme(theme) {
     // Ignore storage failures; theme switching should remain usable.
   }
   const isLight = theme === "light";
+  // The switch reads "다크 테마": pressed means dark.
   const toggle = $("themeToggle");
-  if (toggle) toggle.setAttribute("aria-pressed", String(isLight));
-  text("themeLabel", isLight ? "Light" : "Dark");
+  if (toggle) toggle.setAttribute("aria-pressed", String(!isLight));
   requestChartAnimation();
 }
 
@@ -926,11 +928,11 @@ async function tick() {
     pushHistory(state.telemetry);
     renderTelemetry(state.telemetry);
     state.telemetryFailures = 0;
-    setConnection("ok", "online");
+    setConnection("ok", "연결됨");
     requestChartAnimation({ redrawLidar: false });
   } catch (err) {
     state.telemetryFailures += 1;
-    if (state.telemetryFailures >= 3) setConnection("bad", "offline");
+    if (state.telemetryFailures >= 3) setConnection("bad", "연결 끊김");
     else debugLog("api", `/api/telemetry transient failure ${state.telemetryFailures}`, err);
   } finally {
     window.clearTimeout(timeout);
@@ -1006,8 +1008,10 @@ function pruneCoreHistory(keys) {
 function setConnection(kind, label) {
   const el = $("connectionState");
   if (!el) return;
-  el.className = `status-pill ${kind}`;
+  el.className = `status-chip ${kind}`;
   el.textContent = label;
+  // Telemetry stopped: the status bar must not keep an old recorder state.
+  if (kind !== "ok") renderRecordingStatus();
 }
 
 function renderTelemetry(data) {
@@ -3676,6 +3680,7 @@ function initRoverControl() {
   }
   $("roverSpeedSlider")?.addEventListener("input", (event) => setRoverSpeed(Number(event.target.value), true));
   $("roverStopButton")?.addEventListener("click", () => stopRoverNow("operator_stop"));
+  initFrameStop();
   $("roverDrivePanelToggle")?.addEventListener("click", () => setRoverDrivePanelCollapsed(!state.roverControl.panelCollapsed, true));
   $("roverCameraToggle")?.addEventListener("click", toggleCameraLive);
   $("roverLidarToggle")?.addEventListener("click", toggleLidarLive);
@@ -3983,6 +3988,11 @@ async function stopRoverNow(reason = "operator_stop") {
 function roverCommandMessage(payload) { return payload.ok ? (SIMULATION ? "가상 로버 요청 접수" : "ESP 요청 접수") : payload.error || "제어 실패"; }
 
 function setRoverCommandStatus(kind, message) {
+  // stopRoverNow() reports its result while it is still disarming. A STOP that
+  // got no answer or was refused ("not confirmed") stays visible in the status
+  // bar on every route.
+  state.roverControl.stopFailed = kind === "bad" && Boolean(state.roverControl.disarming);
+  renderFrameDriveState();
   const target = $("roverCommandStatus");
   if (!target) return;
   target.className = `test-result ${kind}`;
@@ -4006,6 +4016,36 @@ function renderRoverButtons() {
       || (action === "right" && state.roverControl.activeKeys.has("d"));
     button.classList.toggle("active", Boolean(action && (action === state.roverControl.activeButton || activeByKey)));
   });
+  renderFrameDriveState();
+}
+
+// ---- Status bar (application frame) -----------------------------------
+// The STOP in the status bar is the drive panel STOP on every route: the same
+// function with the same reason, so the same request.
+function initFrameStop() {
+  $("frameStopButton")?.addEventListener("click", () => stopRoverNow("operator_stop"));
+}
+
+// Drive control state. It stays visible when the drive panel is collapsed and
+// on the other routes. Who holds control is not decided here.
+function renderFrameDriveState() {
+  const el = $("frameDriveState");
+  if (!el) return;
+  const c = state.roverControl;
+  const [level, label] = c.arming ? ["", "활성화 중"]
+    : c.disarming ? ["", "정지 요청 중"]
+    : c.lease ? ["warn", "조종 활성"]
+    : c.stopFailed ? ["bad", "정지 미확인"]
+    : ["", "조종 비활성"];
+  const className = level ? `status-chip ${level}` : "status-chip";
+  if (el.className !== className) el.className = className;
+  if (el.textContent !== label) el.textContent = label;
+}
+
+function renderFrameClock() {
+  const now = new Date();
+  const two = (value) => String(value).padStart(2, "0");
+  text("frameClock", `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`);
 }
 
 function renderRoverMotionReadout() {
@@ -4194,6 +4234,25 @@ function renderRecordingStatus(override) {
     imuToggle.checked = includeImu;
     imuToggle.disabled = state.recordings.actionInFlight || active || !known;
   }
+  renderFrameRecordState(known, active);
+}
+
+// Recording indicator of the status bar. On the drive page it shows what the
+// recorder panel shows (ordered status reads with the 5 s freshness gate).
+// The other routes do not poll the recorder: there the newest telemetry row
+// is used, and nothing is claimed once telemetry has stopped.
+function renderFrameRecordState(known, active) {
+  const el = $("frameRecordState");
+  if (!el) return;
+  if (currentRoute() !== "/rover-control") {
+    const service = state.telemetry?.services?.data_recorder;
+    known = Boolean(service?.ok) && !(state.telemetryFailures >= 3);
+    active = known && service.active === true;
+  }
+  const className = active ? "status-chip recording" : "status-chip";
+  const label = !known ? "기록 미확인" : active ? "기록 중" : "기록 대기";
+  if (el.className !== className) el.className = className;
+  if (el.textContent !== label) el.textContent = label;
 }
 
 function recordingDurationSeconds(status) {
@@ -5764,6 +5823,8 @@ loadPlan().catch(console.error);
 loadDocs().catch(console.error);
 tick();
 setInterval(tick, POLL_INTERVAL_MS);
+renderFrameClock();
+setInterval(renderFrameClock, 1000);
 setInterval(() => {
   // Recorder polling and UI expiry are independent of general telemetry.
   maybeRefreshRecordingStatus();
