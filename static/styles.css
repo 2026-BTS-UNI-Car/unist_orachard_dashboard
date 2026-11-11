@@ -276,6 +276,9 @@ h2 {
 
 .page.active {
   display: grid;
+  /* One explicit track: an implicit column grows to the widest unbreakable
+     string of any panel and pushes the whole page past the viewport. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .page-head,
@@ -425,6 +428,7 @@ h2 {
 }
 
 .kpi {
+  min-width: 0;
   min-height: 112px;
   padding: 16px;
   background:
@@ -451,6 +455,8 @@ h2 {
   color: var(--dim);
   font-size: 12px;
   line-height: 1.35;
+  /* Device paths and host names have no spaces. */
+  overflow-wrap: anywhere;
 }
 
 .dashboard-grid,
@@ -663,7 +669,9 @@ h2 {
 }
 
 .camera-frame img:not([src]),
-.camera-frame img[src=""] {
+.camera-frame img[src=""],
+.rover-camera-frame img:not([src]),
+.rover-camera-frame img[src=""] {
   opacity: 0;
 }
 
@@ -958,6 +966,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 
 .rover-live-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   min-width: 0;
 }
@@ -1030,9 +1039,27 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   justify-content: flex-start;
 }
 
+/* Keep the label beside its check box and wrap the words inside the label.
+   With flex-wrap the whole label dropped below the box when it was one word
+   too long (the GPS row). The padding keeps a wrapped label off the next box;
+   a one-line row keeps its 40px height. */
+.switch-control.record-imu-option {
+  flex-wrap: nowrap;
+  padding: 4px 0;
+}
+
+.switch-control.record-imu-option > input {
+  flex: 0 0 auto;
+}
+
+.switch-control.record-imu-option > span {
+  min-width: 0;
+}
+
 .rover-drive-panel,
 .rover-record-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   min-width: 0;
 }
@@ -1207,15 +1234,20 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   min-height: 0;
 }
 
+/* Three equal buttons while every label fits. A button is never narrower than
+   its label ("LiDAR+Camera" is one word): the others give way first, and in a
+   very narrow panel the last button moves to a second row. */
 .record-button-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 12px 0 14px;
 }
 
 .record-button-grid .action-button {
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: min-content;
+  padding: 0 8px;
 }
 
 .record-start-button {
@@ -1379,7 +1411,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 
 @media (max-width: 900px) {
   .archive-imu-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1522,7 +1554,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 
 @media (max-width: 1180px) {
   .orchard-map-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .orchard-map-canvas {
@@ -1615,7 +1647,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   }
 
   .rover-sensor-controls {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .rover-drive-panel .chart-readout.compact {
@@ -1797,6 +1829,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   font-size: 11px;
   font-weight: 800;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .cpu-mode-view[hidden] {
@@ -2051,6 +2084,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 .docs-index-panel {
   min-height: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -2101,6 +2135,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 .docs-reader-panel {
   min-height: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -2111,6 +2146,20 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   margin-bottom: 16px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The source path keeps its place beside the title while the title has at
+   least 200px; a longer path moves below the title and may break there. */
+.doc-reader-head > div {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.doc-reader-head > .text-link {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .doc-reader-head h2 {
@@ -2131,6 +2180,8 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   color: var(--text);
   font-size: 15px;
   line-height: 1.72;
+  /* Break a word only when it does not fit its line; tables keep their columns. */
+  overflow-wrap: break-word;
 }
 
 .page[data-page="/docs"].active {
@@ -2231,6 +2282,8 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 
 .markdown-body pre code {
   display: block;
+  /* As wide as its longest line, so the scrolling <pre> holds the whole box. */
+  min-width: max-content;
   padding: 0;
   border: 0;
   color: var(--text);
@@ -2737,7 +2790,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   }
 
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar {
@@ -2782,11 +2835,11 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 	  .camera-live-layout,
 	  .archive-layout,
 	  .archive-media-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .page[data-page="/connection"] .dashboard-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -2845,7 +2898,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   }
 
   .rover-sensor-controls {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .rover-drive-panel .chart-readout.compact {
@@ -2895,7 +2948,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 
   .page-head {
     min-height: 150px;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     padding: 20px;
   }
 
@@ -2910,7 +2963,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   .live-status-grid,
   .core-grid,
   .core-chart-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .resource-chart {
@@ -2931,12 +2984,16 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   }
 
 	  .record-button-grid {
-	    grid-template-columns: 1fr;
+	    flex-direction: column;
+	  }
+
+	  .record-button-grid .action-button {
+	    flex: 0 0 auto;
 	  }
 
 	  .rover-sensor-controls,
 	  .archive-media-grid {
-	    grid-template-columns: 1fr;
+	    grid-template-columns: minmax(0, 1fr);
 	  }
 
   .rover-camera-frame {
@@ -2960,12 +3017,12 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   .container-row,
   .disk-row,
   .detail-list div {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 7px;
   }
 
   .container-detail-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .container-row b,
@@ -3019,11 +3076,11 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   }
 
   .slider-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .probe-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .page[data-page="/docs"].active {
@@ -3044,6 +3101,11 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 
   .doc-reader-head {
     flex-direction: column;
+    flex-wrap: nowrap;
+  }
+
+  .doc-reader-head > div {
+    flex: 0 0 auto;
   }
 }
 

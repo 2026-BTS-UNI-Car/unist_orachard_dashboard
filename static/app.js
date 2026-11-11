@@ -5605,12 +5605,22 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
 }
 
 function drawLidarEmpty(ctx, w, h, message) {
+  // Top-left corner, where the point count is written once a scan arrives.
+  // The centre holds the origin mark, the axes and the ring labels, and the
+  // top centre holds the "180°" label: the text must reach none of them.
   ctx.save();
   ctx.fillStyle = cssVar("--muted", "#a9b4d2");
   ctx.font = "900 14px Inter, Arial, sans-serif";
-  ctx.textAlign = "center";
+  ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(message, w / 2, h / 2);
+  const left = 14;
+  const maxWidth = Math.max(24, w / 2 - 24 - left);
+  let label = String(message ?? "");
+  if (ctx.measureText(label).width > maxWidth) {
+    while (label.length > 1 && ctx.measureText(`${label}…`).width > maxWidth) label = label.slice(0, -1);
+    label = `${label}…`;
+  }
+  ctx.fillText(label, left, 22);
   ctx.restore();
 }
 

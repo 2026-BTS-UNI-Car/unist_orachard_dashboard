@@ -4,7 +4,14 @@
 .gps-map { position: relative; width: 100%; height: clamp(340px, 38vw, 540px); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
 .gps-map-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .gps-map .maplibregl-canvas { outline: none; }
-.gps-readouts { display: grid; grid-template-columns: 2fr 1.1fr 1.1fr 1fr; gap: 12px; margin-top: 14px; }
+/* Five read-outs. The position takes two tracks, so every row is full: 2+1 and 1+1+1 in three tracks,
+   2 / 1+1 / 1+1 in two tracks. The wide live panel shows all five in one row. */
+.gps-readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.gps-readouts > div:first-child { grid-column: span 2; }
+@media (min-width: 1181px) {
+  .rover-gps-panel .gps-readouts { grid-template-columns: 2fr 1.1fr 1.1fr 1fr 1fr; }
+  .rover-gps-panel .gps-readouts > div:first-child { grid-column: auto; }
+}
 .gps-readouts > div { min-width: 0; display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
 .gps-readouts span { font-size: 11px; color: var(--muted); }
 .gps-readouts strong { font-size: 13px; line-height: 1.6; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -25,7 +32,7 @@
 .gps-map .maplibregl-ctrl-attrib { color: #333; background: #ffffffdc; }
 .gps-map .maplibregl-ctrl-attrib a { color: #333; }
 @media (max-width: 720px) {
-  .gps-readouts { grid-template-columns: 1fr 1fr; }
+  .gps-readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .gps-map { height: 350px; }
   .rover-gps-panel .panel-head { flex-wrap: wrap; gap: 12px; }
   .gps-map-actions { justify-content: space-between; width: 100%; }
