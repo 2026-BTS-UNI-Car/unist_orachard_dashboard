@@ -54,6 +54,13 @@ const ROUTES = ['/', '/connection', '/system', '/network', '/docker', '/fan', '/
   assert.match(phone, /\.stop-button \{\s*min-width: 88px;\s*\}/, 'STOP keeps 88px on phones');
   assert.doesNotMatch(phone, /\.stop-button \{[^}]*(display: none|height)/);
   assert.match(read('css/tokens.css'), /--statusbar-height: 56px;/);
+  // Phones show the states in two rows of two; the narrowest phones in one column, where only the clock gives way.
+  assert.match(phone, /\.statusbar-items \{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  const narrowest = frameCss.slice(frameCss.indexOf('@media (max-width: 379px)'));
+  assert.match(narrowest, /\.statusbar-items \{\s*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.deepEqual([...narrowest.matchAll(/([.#][\w-]+) \{\s*display: none;/g)].map(match => match[1]), ['.statusbar-clock']);
+  // No rule anywhere hides the drive state, the recording state or STOP.
+  assert.doesNotMatch(frameCss + read('styles.css'), /#frame(DriveState|RecordState|StopButton)[^{]*\{[^}]*display: none/);
   // The drawer and its backdrop start below the status bar, so STOP is never covered by the menu.
   const drawer = frameCss.slice(frameCss.indexOf('@media (max-width: 1023px)'), frameCss.indexOf('@media (max-width: 639px)'));
   assert.equal([...drawer.matchAll(/top: calc\(var\(--statusbar-height\) \+ var\(--banner-height\)\);/g)].length, 2);

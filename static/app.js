@@ -3784,7 +3784,7 @@ function setRoverDrivePanelCollapsed(collapsed, persist) {
   document.querySelector(".rover-layout")?.classList.toggle("drive-collapsed", state.roverControl.panelCollapsed);
   const button = $("roverDrivePanelToggle");
   if (button) {
-    button.textContent = state.roverControl.panelCollapsed ? "조종 패널 보이기" : "조종 패널 숨기기";
+    button.textContent = state.roverControl.panelCollapsed ? "패널 펴기" : "패널 접기";
     button.classList.toggle("active", state.roverControl.panelCollapsed);
   }
   if (persist) {

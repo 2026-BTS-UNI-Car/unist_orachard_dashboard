@@ -380,9 +380,10 @@ input[type="range"] {
 .status-chip,
 .tag {
   display: inline-flex;
+  /* A chip keeps the width of its words; the row around it gives way. */
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  min-width: 0;
   color: var(--color-text);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);

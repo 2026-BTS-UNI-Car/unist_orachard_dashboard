@@ -31,7 +31,10 @@
   min-width: 0;
 }
 
+/* In the status bar a chip may shrink (with an ellipsis) rather than push STOP out. */
 .statusbar-items > * {
+  flex-shrink: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -385,5 +388,18 @@ html:has(.simulation-banner:not([hidden])) {
 
   .stop-button {
     min-width: 88px;
+  }
+}
+
+/* The narrowest phones: the three states in one column so that none is cut
+   whatever the font of the device; the clock gives way. */
+@media (max-width: 379px) {
+  .statusbar-items {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .statusbar-clock {
+    display: none;
   }
 }

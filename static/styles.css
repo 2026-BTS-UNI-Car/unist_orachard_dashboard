@@ -969,6 +969,7 @@
 .disk-list,
 .docs-index {
   display: grid;
+  align-content: start;
   min-width: 0;
 }
 
@@ -1214,7 +1215,7 @@
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
   gap: var(--space-4);
-  align-items: stretch;
+  align-items: start;
   min-height: 0;
 }
 
@@ -1319,6 +1320,7 @@
   }
 
   .page[data-page="/docs"] .docs-layout {
+    align-items: stretch;
     min-height: 0;
     overflow: hidden;
   }
