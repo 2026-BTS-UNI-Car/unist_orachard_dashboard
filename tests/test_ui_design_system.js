@@ -74,7 +74,7 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
 {
   const scripts = fs.readdirSync(staticDir).filter(name => /\.(js|mjs)$/.test(name)).map(read).join('\n');
   const fromScript = new Set([...scripts.matchAll(/setProperty\(\s*['"](--[a-z0-9-]+)['"]/g)].map(match => match[1]));
-  const sources = [...systemSheets, 'ui-kit.html'];
+  const sources = [...systemSheets, ...pageSheets, 'index.html', 'ui-kit.html'];
   const missing = [];
   for (const name of sources) {
     for (const match of read(name).matchAll(/var\(\s*(--[a-z0-9-]+)/g)) {
@@ -83,16 +83,17 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   }
   assert.deepEqual([...new Set(missing)], [], 'custom property that tokens.css does not define');
   // Custom properties are declared in the token file only (a sheet may still set one for its own subtree from script).
-  for (const name of systemSheets.filter(sheet => sheet !== 'css/tokens.css')) {
+  for (const name of [...systemSheets.filter(sheet => sheet !== 'css/tokens.css'), ...pageSheets]) {
     const declared = [...stripComments(read(name)).matchAll(/(?:^|[;{\s])(--[a-z0-9-]+)\s*:/g)].map(match => match[1])
       .filter(variable => variable !== '--banner-height');
     assert.deepEqual(declared, [], `${name} declares a custom property; put it in css/tokens.css`);
   }
 }
 
-// The design system sheets hold no raw values and no decoration.
+// No sheet but the token file holds raw values, and no sheet carries decoration.
+// (Vendored sheets under static/vendor are not ours and are not read here.)
 {
-  for (const name of systemSheets.filter(sheet => sheet !== 'css/tokens.css')) {
+  for (const name of [...systemSheets.filter(sheet => sheet !== 'css/tokens.css'), ...pageSheets]) {
     const css = stripComments(read(name));
     assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, `${name}: colour outside the token file`);
     assert.doesNotMatch(css, /\brgba?\(|\bhsla?\(|color-mix\(/, `${name}: colour outside the token file`);
@@ -133,7 +134,7 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   for (const name of [...systemSheets, ...pageSheets]) {
     for (const match of stripComments(read(name)).matchAll(/font-family\s*:\s*([^;}]+)/g)) {
       const value = match[1].trim();
-      assert.ok(/^(inherit|var\(--font-(sans|mono)\))$/.test(value) || !systemSheets.includes(name), `${name}: font-family ${value} (use the font tokens)`);
+      assert.match(value, /^(inherit|var\(--font-(sans|mono)\))$/, `${name}: font-family ${value} (use the font tokens)`);
     }
   }
   assert.match(read('css/base.css'), /font-variant-numeric: tabular-nums;/, 'read-outs keep their width while digits change');
@@ -181,4 +182,18 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   assert.doesNotMatch(read('index.html'), /ui-kit/, 'the check page is not linked from the dashboard');
 }
 
-console.log('PASS: token scales, both themes with text contrast, defined custom properties, no raw values or decoration in the design system, no external resources, check page');
+// The old variable names are gone from the sheets, the pages and the scripts.
+{
+  const scripts = fs.readdirSync(staticDir).filter(name => /\.(js|mjs)$/.test(name));
+  for (const name of [...systemSheets, ...pageSheets, 'index.html', ...scripts]) {
+    const found = read(name).match(/--(?:bg|bg-2|surface|surface-2|panel|line|line-strong|text|muted|dim|blue|cyan|violet|rose|amber|red|good|shadow|accent|chart-(?:blue|cyan|rose|amber|good|bg-top|bg-bottom))(?![\w-])/g);
+    assert.equal(found, null, `${name}: old style variable ${found}`);
+  }
+  // Banner, card and upper-case label classes of the old look have no rule and no markup left.
+  const everything = [...systemSheets, ...pageSheets, 'index.html'].map(read).join('\n');
+  for (const gone of ['eyebrow', 'hero-copy', 'kpi-grid', 'logo-badge', 'theme-track', 'status-pill', 'mobile-topbar', 'brand-block']) {
+    assert.ok(!everything.includes(gone), `${gone} is still referenced`);
+  }
+}
+
+console.log('PASS: token scales, both themes with text contrast, defined custom properties, no raw values or decoration in any sheet, device fonts and a fixed request list, check page');

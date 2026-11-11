@@ -7,7 +7,8 @@
 
 /* ---- Button ------------------------------------------------------------ */
 .btn,
-.action-button {
+.action-button,
+.container-actions button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -31,7 +32,8 @@
 }
 
 .btn:hover,
-.action-button:hover {
+.action-button:hover,
+.container-actions button:hover {
   background: var(--color-fill);
   text-decoration: none;
 }
@@ -77,6 +79,9 @@
 }
 
 .btn:disabled,
+.btn-primary:disabled,
+.btn-danger:disabled,
+.container-actions button:disabled,
 .action-button:disabled {
   /* Disabled is not "busy": some of these buttons never become available. */
   border-color: var(--color-border);
@@ -301,9 +306,12 @@ input[type="range"] {
   color: var(--color-text);
 }
 
-/* Joined choice buttons: one of a few options. */
+/* Joined buttons: one of a few options, or a small set of steps (- Auto +). */
 .segmented,
-.segmented-control {
+.segmented-control,
+.map-zoom-buttons,
+.preset-grid,
+.sim-map-zoom {
   display: inline-grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
@@ -316,10 +324,13 @@ input[type="range"] {
 }
 
 .segmented > button,
-.segmented-control > button {
+.segmented-control > button,
+.map-zoom-buttons > button,
+.preset-grid > button,
+.sim-map-zoom > button {
   min-width: 0;
-  min-height: calc(var(--control-height) - 2px);
-  padding: 0 var(--space-3);
+  min-height: var(--control-height);
+  padding: 0 var(--space-2);
   border: 0;
   border-left: 1px solid var(--color-border);
   background: transparent;
@@ -331,32 +342,42 @@ input[type="range"] {
 }
 
 .segmented > button:first-child,
-.segmented-control > button:first-child {
+.segmented-control > button:first-child,
+.map-zoom-buttons > button:first-child,
+.preset-grid > button:first-child,
+.sim-map-zoom > button:first-child {
   border-left: 0;
 }
 
 .segmented > button:hover,
-.segmented-control > button:hover {
+.segmented-control > button:hover,
+.map-zoom-buttons > button:hover,
+.preset-grid > button:hover,
+.sim-map-zoom > button:hover {
   background: var(--color-fill);
 }
 
 .segmented > button[aria-pressed="true"],
 .segmented > button.active,
-.segmented-control > button.active {
+.segmented-control > button.active,
+.sim-map-zoom > button.active {
   background: var(--color-accent-soft);
   color: var(--color-accent);
   font-weight: var(--weight-strong);
 }
 
 .segmented > button:disabled,
-.segmented-control > button:disabled {
+.segmented-control > button:disabled,
+.map-zoom-buttons > button:disabled,
+.preset-grid > button:disabled,
+.sim-map-zoom > button:disabled {
+  background: var(--color-fill);
   color: var(--color-text-disabled);
   cursor: not-allowed;
 }
 
 /* ---- Status chip: a dot and one or two words ---------------------------- */
 .status-chip,
-.status-pill,
 .tag {
   display: inline-flex;
   align-items: center;
@@ -369,7 +390,6 @@ input[type="range"] {
 }
 
 .status-chip::before,
-.status-pill::before,
 .tag.ok::before,
 .tag.warn::before,
 .tag.bad::before,
@@ -383,14 +403,12 @@ input[type="range"] {
 }
 
 .status-chip.ok::before,
-.status-pill.ok::before,
 .tag.ok::before,
 .status-dot.ok {
   background: var(--color-ok);
 }
 
 .status-chip.warn::before,
-.status-pill.warn::before,
 .tag.warn::before,
 .status-dot.warn {
   background: var(--color-warning);
@@ -398,7 +416,6 @@ input[type="range"] {
 
 .status-chip.bad::before,
 .status-chip.recording::before,
-.status-pill.bad::before,
 .tag.bad::before,
 .status-dot.bad {
   background: var(--color-danger);
@@ -508,7 +525,8 @@ input[type="range"] {
 }
 
 /* ---- Table ------------------------------------------------------------- */
-.table {
+.table,
+.archive-motor-table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-xs);
@@ -517,13 +535,16 @@ input[type="range"] {
 }
 
 .table th,
-.table td {
+.table td,
+.archive-motor-table th,
+.archive-motor-table td {
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--color-border);
   vertical-align: top;
 }
 
-.table thead th {
+.table thead th,
+.archive-motor-table thead th {
   color: var(--color-text-secondary);
   background: var(--color-fill);
   white-space: nowrap;

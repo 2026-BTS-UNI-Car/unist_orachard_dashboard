@@ -1,37 +1,185 @@
-.rover-gps-panel { min-width: 0; }
-.gps-map { position: relative; width: 100%; height: clamp(340px, 38vw, 540px); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
-.gps-map-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.gps-map .maplibregl-canvas { outline: none; }
+/* GPS map panels. Colours and sizes come from css/tokens.css. */
+.rover-gps-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.rover-gps-panel > .panel-head {
+  margin-bottom: 0;
+}
+
+.gps-map {
+  position: relative;
+  width: 100%;
+  height: clamp(340px, 38vw, 540px);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-fill);
+}
+
+.gps-map .maplibregl-canvas {
+  outline: none;
+}
+
+.gps-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* Fix state beside the title: a status mark and words. */
+.gps-map-actions [data-state] {
+  color: var(--color-text);
+}
+
+.gps-map-actions [data-state]::before {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-round);
+  background: var(--color-text-disabled);
+  content: "";
+}
+
+.gps-map-actions [data-state="fix"]::before {
+  background: var(--color-ok);
+}
+
+.gps-map-actions [data-state="waiting"]::before {
+  background: var(--color-warning);
+}
+
 /* Five read-outs. The position takes two tracks, so every row is full: 2+1 and 1+1+1 in three tracks,
    2 / 1+1 / 1+1 in two tracks. The wide live panel shows all five in one row. */
-.gps-readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
-.gps-readouts > div:first-child { grid-column: span 2; }
-@media (min-width: 1181px) {
-  .rover-gps-panel .gps-readouts { grid-template-columns: 2fr 1.1fr 1.1fr 1fr 1fr; }
-  .rover-gps-panel .gps-readouts > div:first-child { grid-column: auto; }
+.gps-readouts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
 }
-.gps-readouts > div { min-width: 0; display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
-.gps-readouts span { font-size: 11px; color: var(--muted); }
-.gps-readouts strong { font-size: 13px; line-height: 1.6; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.gps-map-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 11px; color: var(--muted); }
-.gps-caption, .gps-diagnostics { font-size: 12px; line-height: 1.7; color: var(--muted); }
-.gps-diagnostics summary { cursor: pointer; }
-.gps-diagnostics p { margin: 7px 0; }
-.gps-map-actions [data-state="fix"] { color: #16a085; }
-.gps-map-actions [data-state="waiting"] { color: #ba851c; }
-.gps-rover-marker { width: 30px; height: 30px; pointer-events: none; }
-.gps-marker-dot { position: absolute; inset: 5px; border: 3px solid #fff; border-radius: 50%; background: #008ea8; box-shadow: 0 0 0 5px #13bedb35, 0 1px 8px #0006; }
-.gps-rover-marker.stale .gps-marker-dot { background: #7d8995; box-shadow: 0 0 0 5px #7d899533; }
-.gps-marker-arrow { position: absolute; inset: -4px; transform: rotate(var(--gps-course, 0deg)); display: none; }
-.gps-marker-arrow::before { content: ''; display: block; width: 0; height: 0; margin: -8px auto 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 15px solid #008ea8; }
-.gps-rover-marker.has-course .gps-marker-arrow { display: block; }
-.archive-gps-panel { margin: 18px 0; padding-top: 15px; border-top: 1px solid var(--line); }
-.gps-archive-map { height: 350px; }
-.gps-map .maplibregl-ctrl-attrib { color: #333; background: #ffffffdc; }
-.gps-map .maplibregl-ctrl-attrib a { color: #333; }
+
+.gps-readouts > div:first-child {
+  grid-column: span 2;
+}
+
+@media (min-width: 1181px) {
+  .rover-gps-panel .gps-readouts {
+    grid-template-columns: 2fr 1.1fr 1.1fr 1fr 1fr;
+  }
+
+  .rover-gps-panel .gps-readouts > div:first-child {
+    grid-column: auto;
+  }
+}
+
+.gps-readouts > div {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.gps-readouts span {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.gps-readouts strong {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  overflow-wrap: anywhere;
+}
+
+.gps-map-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.gps-diagnostics p {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+/* Rover mark on the map. The map tiles are light in both themes, so the mark
+   keeps one colour pair. */
+.gps-rover-marker {
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
+}
+
+.gps-marker-dot {
+  position: absolute;
+  inset: 5px;
+  border: 3px solid var(--color-media-text);
+  border-radius: var(--radius-round);
+  background: var(--chart-1);
+  outline: 1px solid var(--color-media-bg);
+}
+
+.gps-rover-marker.stale .gps-marker-dot {
+  background: var(--color-text-disabled);
+}
+
+.gps-marker-arrow {
+  position: absolute;
+  inset: -4px;
+  display: none;
+  transform: rotate(var(--gps-course, 0deg));
+}
+
+.gps-marker-arrow::before {
+  display: block;
+  width: 0;
+  height: 0;
+  margin: -8px auto 0;
+  border-right: 7px solid transparent;
+  border-bottom: 15px solid var(--chart-1);
+  border-left: 7px solid transparent;
+  content: "";
+}
+
+.gps-rover-marker.has-course .gps-marker-arrow {
+  display: block;
+}
+
+.gps-archive-map {
+  height: 350px;
+}
+
+.gps-map .maplibregl-ctrl-attrib {
+  background: var(--color-media-text);
+  color: var(--color-media-bg);
+}
+
+.gps-map .maplibregl-ctrl-attrib a {
+  color: var(--color-media-bg);
+}
+
 @media (max-width: 720px) {
-  .gps-readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .gps-map { height: 350px; }
-  .rover-gps-panel .panel-head { flex-wrap: wrap; gap: 12px; }
-  .gps-map-actions { justify-content: space-between; width: 100%; }
+  .gps-readouts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gps-map {
+    height: 350px;
+  }
+
+  .gps-map-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
 }

@@ -1,7 +1,6 @@
 const SIMULATION = document.documentElement.dataset.runtimeMode === "simulation";
 const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/docs"];
 const HISTORY_KEYS = ["cpu", "memory", "swap", "power", "temp", "rx", "tx", "dockerCpu", "dockerMemory", "fanTemp", "fanPwm"];
-const CORE_COLORS = ["#55e2b2", "#38d8ff", "#2f76ff", "#8238c9", "#f21b58", "#f4bd4f", "#7dd3fc", "#fb7185"];
 const MAX_POINTS = 90;
 const CHART_BUFFER_POINTS = MAX_POINTS + 1;
 const POLL_INTERVAL_MS = 1000;
@@ -1044,7 +1043,7 @@ function renderTelemetry(data) {
   text("overviewNetwork", net.external_ip || "확인 중");
   text("overviewNetworkText", `host ${net.primary_ipv4 || "--"} · RX ${fmtBps(net.total_rx_bps)} · TX ${fmtBps(net.total_tx_bps)}`);
   text("overviewDocker", docker.available ? `${docker.summary?.running || 0}/${docker.summary?.total || 0}` : "N/A");
-  text("overviewDockerText", docker.available ? "running / total" : docker.error || "socket unavailable");
+  text("overviewDockerText", docker.available ? "실행 중 / 전체" : docker.error || "Docker 소켓 없음");
   text("hostName", sys.hostname || "--");
   text("hostUptime", fmtDuration(sys.os_uptime_s));
   text("hostTemp", fmtTemp(sys.temperature_c));
@@ -1064,11 +1063,11 @@ function renderTelemetry(data) {
   text("networkExternalIpText", net.external_ip ? "공개 주소" : "확인 대기");
   text("networkInternalIp", net.primary_ipv4 || "--");
   text("networkInternalIpText", [net.primary_interface, net.hostname].filter(Boolean).join(" · ") || "--");
-  text("networkThroughput", `${fmtBps(net.total_rx_bps)} RX · ${fmtBps(net.total_tx_bps)} TX`);
+  text("networkThroughput", `RX ${fmtBps(net.total_rx_bps)} · TX ${fmtBps(net.total_tx_bps)}`);
   renderNetworkMode(net.control || {});
 
   text("dockerContainerCount", docker.available ? docker.summary?.total ?? "--" : "N/A");
-  text("dockerRunningText", docker.available ? `${docker.summary?.running || 0} running · ${docker.summary?.stopped || 0} stopped` : docker.error || "--");
+  text("dockerRunningText", docker.available ? `실행 ${docker.summary?.running || 0} · 정지 ${docker.summary?.stopped || 0}` : docker.error || "--");
   text("dockerImageCount", docker.available ? docker.engine?.images ?? "--" : "N/A");
   text("dockerVersion", docker.available ? `Docker ${docker.engine?.server_version || "--"}` : "--");
   text("dockerCpuTotal", fmtPercent(docker.summary?.cpu_percent));
@@ -1118,9 +1117,9 @@ function renderNetworkMode(control) {
       : "자동 전환 대기";
   const colors = chartColors();
   renderReadout("networkModeReadout", [
-    { label: "Mode", value: mode, sub: control.connection || control.transition || "--", color: colors.cyan },
+    { label: "방식", value: mode, sub: control.connection || control.transition || "--", color: colors.cyan },
     { label: "AP", value: control.ap_ssid || "BTS_Jetson", sub: control.ap_address || "10.77.0.1", color: colors.blue },
-    { label: "AP clients", value: control.ap_clients ?? 0, sub: countdownText, color: colors.good },
+    { label: "AP 접속 기기", value: control.ap_clients ?? 0, sub: countdownText, color: colors.good },
     { label: "Ethernet", value: control.ethernet_connected ? "connected" : "not connected", sub: control.last_error || control.reason || "--", color: control.ethernet_connected ? colors.good : colors.amber },
   ]);
   const apButton = $("networkEnableApButton");
@@ -1842,9 +1841,9 @@ function renderCameraLiveState(overrideLabel) {
   const observedDetail = `ROS ${cameraFpsLabel(state.cameraLive.sourceFps)} · WS ${cameraFpsLabel(state.cameraLive.displayFps)} · ${cameraDelivery}${ackLabel}`;
   const colors = chartColors();
   renderReadout("cameraLiveStats", [
-    { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
-    { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
-    { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
+    { label: "WebSocket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
+    { label: "캡처 설정", value: state.cameraLive.resolution, sub: `목표 ${state.cameraLive.fps} fps`, color: colors.amber },
+    { label: "출처", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
     { label: "수신 FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · ${frameAge}`, color: colors.blue },
   ]);
   text("roverCameraCaption", state.cameraLive.frameTopicAlive ? `${state.cameraLive.frameId} · ${frameAge} · ${cameraDelivery}${ackLabel}` : socketText);
@@ -1856,9 +1855,9 @@ function renderCameraLiveState(overrideLabel) {
     roverButton.classList.toggle("active", state.cameraLive.connected);
   }
   renderReadout("roverCameraStats", [
-    { label: "Socket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
-    { label: "Capture", value: state.cameraLive.resolution, sub: `${state.cameraLive.fps} fps target`, color: colors.amber },
-    { label: "Source", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
+    { label: "WebSocket", value: state.cameraLive.connected ? "ON" : "OFF", sub: socketText, color: state.cameraLive.connected ? colors.good : colors.rose },
+    { label: "캡처 설정", value: state.cameraLive.resolution, sub: `목표 ${state.cameraLive.fps} fps`, color: colors.amber },
+    { label: "출처", value: source, sub: state.cameraLive.frameId || "camera_link_optical", color: colors.cyan },
     { label: "수신 FPS", value: cameraFpsLabel(observedFps), sub: `${observedDetail} · ${frameAge}`, color: colors.blue },
   ]);
 }
@@ -1989,16 +1988,16 @@ function renderImuLiveState(overrideLabel) {
   }
   text("roverImuCaption", statusLabel);
   text("roverImuHeading", Number.isFinite(yaw) ? `${fmtNumber(yaw, 1)}°` : "--°");
-  text("roverImuProcessingState", "raw · unmodified");
+  text("roverImuProcessingState", "원본 그대로");
   const acceleration = sample.availability?.linear_acceleration?.available === false ? {} : sample.linear_acceleration || {};
   const gyro = sample.availability?.angular_velocity?.available === false ? {} : sample.angular_velocity || {};
   const magnetic = state.imuLive.magnetic?.magnetic_field_uT || {};
   const colors = chartColors();
   renderReadout("roverImuStats", [
     { label: "Roll / Pitch", value: Number.isFinite(roll) && Number.isFinite(pitch) ? `${fmtNumber(roll, 1)}° / ${fmtNumber(pitch, 1)}°` : "--", sub: sourceLabel, color: colors.cyan },
-    { label: "Acceleration", value: vectorNorm(acceleration) === null ? "--" : `${fmtNumber(vectorNorm(acceleration), 3)} m/s²`, sub: `x ${fmtNumber(acceleration.x, 2)} · y ${fmtNumber(acceleration.y, 2)} · z ${fmtNumber(acceleration.z, 2)}`, color: colors.good },
-    { label: "Angular velocity", value: vectorNorm(gyro) === null ? "--" : `${fmtNumber(vectorNorm(gyro), 4)} rad/s`, sub: `x ${fmtNumber(gyro.x, 3)} · y ${fmtNumber(gyro.y, 3)} · z ${fmtNumber(gyro.z, 3)}`, color: colors.amber },
-    { label: "Magnetic field", value: vectorNorm(magnetic) === null ? "--" : `${fmtNumber(vectorNorm(magnetic), 2)} µT`, sub: "sensor-native", color: colors.blue },
+    { label: "가속도", value: vectorNorm(acceleration) === null ? "--" : `${fmtNumber(vectorNorm(acceleration), 3)} m/s²`, sub: `x ${fmtNumber(acceleration.x, 2)} · y ${fmtNumber(acceleration.y, 2)} · z ${fmtNumber(acceleration.z, 2)}`, color: colors.good },
+    { label: "각속도", value: vectorNorm(gyro) === null ? "--" : `${fmtNumber(vectorNorm(gyro), 4)} rad/s`, sub: `x ${fmtNumber(gyro.x, 3)} · y ${fmtNumber(gyro.y, 3)} · z ${fmtNumber(gyro.z, 3)}`, color: colors.amber },
+    { label: "자기장", value: vectorNorm(magnetic) === null ? "--" : `${fmtNumber(vectorNorm(magnetic), 2)} µT`, sub: "sensor-native", color: colors.blue },
   ]);
   drawImuAttitude($("roverImuCanvas"), roll, pitch, yaw);
 }
@@ -2253,9 +2252,9 @@ function renderLidarLiveState(overrideLabel) {
     : "--";
   const colors = chartColors();
   renderReadout("roverLidarStats", [
-    { label: "Socket", value: state.lidarLive.connected ? "ON" : "OFF", sub: socketText, color: state.lidarLive.connected ? colors.good : colors.rose },
-    { label: "Source", value: state.lidarLive.scanTopicAlive ? "live" : lidarSourceLabel(state.lidarLive.source), sub: state.telemetry?.connection?.lidar?.device || "/scan", color: colors.cyan },
-    { label: "Points", value: pointLabel, sub: lidarAgeLabel(), color: colors.blue },
+    { label: "WebSocket", value: state.lidarLive.connected ? "ON" : "OFF", sub: socketText, color: state.lidarLive.connected ? colors.good : colors.rose },
+    { label: "출처", value: state.lidarLive.scanTopicAlive ? "live" : lidarSourceLabel(state.lidarLive.source), sub: state.telemetry?.connection?.lidar?.device || "/scan", color: colors.cyan },
+    { label: "점 수", value: pointLabel, sub: lidarAgeLabel(), color: colors.blue },
   ]);
 }
 
@@ -2393,8 +2392,7 @@ function downloadLidarPng(filename) {
   canvas.width = source.width;
   canvas.height = source.height;
   const ctx = canvas.getContext("2d");
-  const isLight = document.documentElement.dataset.theme === "light";
-  ctx.fillStyle = isLight ? "#ffffff" : "#050816";
+  ctx.fillStyle = cssVar("--chart-surface", "#ffffff");
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(source, 0, 0);
   canvas.toBlob((blob) => {
@@ -2555,9 +2553,9 @@ function renderLidarScan(result, source = result?.source || "ros2_scan") {
   setScanResult(ok ? "ok" : "bad", message);
   const colors = chartColors();
 	  renderReadout("lidarScanStats", [
-	    { label: "Rendered", value: String(renderedPoints), sub: `limit ${requestedPoints} · source ${sourcePoints}`, color: colors.cyan },
-	    { label: "Coverage", value: `${fmtNumber(metrics.coverage_deg, 0)}°`, sub: "1° bins", color: colors.good },
-	    { label: "Range", value: `${fmtNumber(metrics.min_distance_m, 2)}-${fmtNumber(metrics.max_distance_m, 2)} m`, sub: "valid points", color: colors.blue },
+	    { label: "그린 점", value: String(renderedPoints), sub: `상한 ${requestedPoints} · 원본 ${sourcePoints}`, color: colors.cyan },
+	    { label: "각도 범위", value: `${fmtNumber(metrics.coverage_deg, 0)}°`, sub: "1° 단위", color: colors.good },
+	    { label: "거리 범위", value: `${fmtNumber(metrics.min_distance_m, 2)}-${fmtNumber(metrics.max_distance_m, 2)} m`, sub: "유효한 점", color: colors.blue },
 	  ]);
   updateLidarExport(result, source);
   renderActiveLidarMap();
@@ -2867,15 +2865,15 @@ function createInterfaceCard() {
     </div>
     <div class="interface-metrics">
       <div><span>IPv4</span><b data-role="ip"></b></div>
-      <div><span>Link</span><b data-role="link"></b></div>
-      <div><span>RX / TX</span><b data-role="traffic"></b></div>
+      <div><span>링크</span><b data-role="link"></b></div>
+      <div><span>RX · TX</span><b data-role="traffic"></b></div>
     </div>
   `;
   return div;
 }
 
 function updateInterfaceCard(el, iface, primaryInterface) {
-  el.querySelector('[data-role="name"]').textContent = iface.name === primaryInterface ? `${iface.name} · primary` : iface.name;
+  el.querySelector('[data-role="name"]').textContent = iface.name === primaryInterface ? `${iface.name} · 기본` : iface.name;
   const stateEl = el.querySelector('[data-role="state"]');
   stateEl.className = `tag ${iface.state === "up" ? "ok" : ""}`;
   stateEl.textContent = iface.state || "unknown";
@@ -3031,12 +3029,12 @@ function renderContainerDetail(detailPayload, logsPayload) {
   if (detail) {
     detail.innerHTML = `
       <div class="container-detail-grid">
-        ${containerDetailCell("State", containerStateLabel(stateInfo), stateInfo.StartedAt ? `since ${formatShortDate(stateInfo.StartedAt)}` : "")}
-        ${containerDetailCell("Image", detailPayload.image || "--", detailPayload.full_id || detailPayload.id || "")}
-        ${containerDetailCell("CPU", fmtPercent(stats.cpu_percent), "one-shot stat")}
-        ${containerDetailCell("Memory", `${fmtBytes(stats.memory_usage)} / ${fmtBytes(stats.memory_limit)}`, fmtPercent(stats.memory_percent))}
-        ${containerDetailCell("Network", `${fmtBytes(stats.rx_bytes)} RX / ${fmtBytes(stats.tx_bytes)} TX`, detailPayload.network_mode || "")}
-        ${containerDetailCell("Restart", restartPolicyLabel(restartPolicy), "policy")}
+        ${containerDetailCell("상태", containerStateLabel(stateInfo), stateInfo.StartedAt ? `${formatShortDate(stateInfo.StartedAt)}부터` : "")}
+        ${containerDetailCell("이미지", detailPayload.image || "--", detailPayload.full_id || detailPayload.id || "")}
+        ${containerDetailCell("CPU", fmtPercent(stats.cpu_percent), "한 번 잰 값")}
+        ${containerDetailCell("메모리", `${fmtBytes(stats.memory_usage)} / ${fmtBytes(stats.memory_limit)}`, fmtPercent(stats.memory_percent))}
+        ${containerDetailCell("네트워크", `RX ${fmtBytes(stats.rx_bytes)} · TX ${fmtBytes(stats.tx_bytes)}`, detailPayload.network_mode || "")}
+        ${containerDetailCell("재시작", restartPolicyLabel(restartPolicy), "재시작 정책")}
       </div>
     `;
   }
@@ -3062,7 +3060,7 @@ function renderContainerActions(detailPayload) {
     return;
   }
   if (detailPayload.self) {
-    target.innerHTML = `<span class="container-self-lock">Dashboard self</span>`;
+    target.innerHTML = `<span class="container-self-lock">이 대시보드</span>`;
     return;
   }
   const running = Boolean(detailPayload.state?.Running);
@@ -3244,51 +3242,51 @@ function renderChartReadouts(data) {
   const dockerMemPercent = docker.summary?.memory_limit ? (docker.summary.memory_usage / docker.summary.memory_limit) * 100 : null;
   renderReadout("overviewSystemReadout", [
     { label: "CPU", value: fmtPercent(sys.cpu?.total_percent), sub: "전체 사용률", color: colors.good },
-    { label: "Memory", value: fmtPercent(memoryPercent(sys.memory)), sub: `${fmtBytes(sys.memory?.used)} / ${fmtBytes(memoryTotal(sys.memory))}`, color: colors.cyan },
+    { label: "메모리", value: fmtPercent(memoryPercent(sys.memory)), sub: `${fmtBytes(sys.memory?.used)} / ${fmtBytes(memoryTotal(sys.memory))}`, color: colors.cyan },
   ]);
   renderReadout("overviewNetworkReadout", [
     { label: "RX", value: fmtBps(net.total_rx_bps), sub: "수신", color: colors.blue },
     { label: "TX", value: fmtBps(net.total_tx_bps), sub: "송신", color: colors.rose },
   ]);
   renderReadout("cpuReadout", [
-    { label: "Total", value: fmtPercent(sys.cpu?.total_percent), sub: `${(sys.cpu?.cores || []).length} cores · 0-100%`, color: colors.good },
+    { label: "전체", value: fmtPercent(sys.cpu?.total_percent), sub: `코어 ${(sys.cpu?.cores || []).length}개 · 0-100%`, color: colors.good },
     ...((sys.cpu?.cores || []).slice(0, 6).map((core, index) => ({
       label: cpuLabel(core),
       value: fmtPercent(core.percent),
       sub: "개별 사용률",
-      color: CORE_COLORS[index % CORE_COLORS.length],
+      color: colors.good,
     }))),
   ]);
   renderReadout("memoryReadout", [
-    { label: "Usage", value: fmtPercent(memoryPercent(sys.memory)), sub: memoryLabel(sys.memory), color: colors.cyan },
-    { label: "Used", value: fmtBytes(sys.memory?.used), sub: `of ${fmtBytes(memoryTotal(sys.memory))}`, color: colors.blue },
-    { label: "Available", value: fmtBytes(sys.memory?.available), sub: "실제 MemAvailable", color: colors.good },
+    { label: "사용률", value: fmtPercent(memoryPercent(sys.memory)), sub: memoryLabel(sys.memory), color: colors.cyan },
+    { label: "사용", value: fmtBytes(sys.memory?.used), sub: `전체 ${fmtBytes(memoryTotal(sys.memory))}`, color: colors.blue },
+    { label: "사용 가능", value: fmtBytes(sys.memory?.available), sub: "MemAvailable", color: colors.good },
   ]);
   renderReadout("swapReadout", [
-    { label: "Usage", value: fmtPercent(sys.swap?.percent), sub: `${fmtBytes(sys.swap?.used)} / ${fmtBytes(sys.swap?.total)}`, color: colors.rose },
-    { label: "Free", value: fmtBytes(sys.swap?.free), sub: "swap available", color: colors.good },
+    { label: "사용률", value: fmtPercent(sys.swap?.percent), sub: `${fmtBytes(sys.swap?.used)} / ${fmtBytes(sys.swap?.total)}`, color: colors.rose },
+    { label: "여유", value: fmtBytes(sys.swap?.free), sub: "쓸 수 있는 swap", color: colors.good },
   ]);
   renderReadout("systemNetworkReadout", [
     { label: "RX", value: fmtBps(net.total_rx_bps), sub: "수신", color: colors.blue },
     { label: "TX", value: fmtBps(net.total_tx_bps), sub: "송신", color: colors.rose },
   ]);
   renderReadout("powerReadout", [
-    { label: "Power", value: fmtPower(sys.power?.total_w), sub: sys.power?.source || "ina3221", color: colors.amber },
-    { label: "Rails", value: String((sys.power?.rails || []).length || 0), sub: sys.power?.available ? "available" : "unavailable", color: colors.cyan },
+    { label: "전력", value: fmtPower(sys.power?.total_w), sub: sys.power?.source || "ina3221", color: colors.amber },
+    { label: "전원 레일", value: String((sys.power?.rails || []).length || 0), sub: sys.power?.available ? "측정 가능" : "측정 불가", color: colors.cyan },
   ]);
   renderReadout("networkReadout", [
     { label: "RX", value: fmtBps(net.total_rx_bps), sub: "수신 속도", color: colors.blue },
     { label: "TX", value: fmtBps(net.total_tx_bps), sub: "송신 속도", color: colors.rose },
-    { label: "Host", value: net.primary_ipv4 || "--", sub: net.primary_interface || "interface", color: colors.cyan },
+    { label: "호스트", value: net.primary_ipv4 || "--", sub: net.primary_interface || "--", color: colors.cyan },
   ]);
   renderReadout("dockerCpuReadout", [
     { label: "CPU", value: fmtPercent(docker.summary?.cpu_percent), sub: "컨테이너 합산", color: colors.good },
   ]);
   renderReadout("dockerMemReadout", [
-    { label: "Memory", value: fmtPercent(dockerMemPercent), sub: `${fmtBytes(docker.summary?.memory_usage)} / ${fmtBytes(docker.summary?.memory_limit)}`, color: colors.cyan },
+    { label: "메모리", value: fmtPercent(dockerMemPercent), sub: `${fmtBytes(docker.summary?.memory_usage)} / ${fmtBytes(docker.summary?.memory_limit)}`, color: colors.cyan },
   ]);
   renderReadout("fanTempReadout", [
-    { label: "Temp", value: fmtTemp(fan.temperature_c), sub: fanTemperatureLabel(fan), color: colors.amber },
+    { label: "온도", value: fmtTemp(fan.temperature_c), sub: fanTemperatureLabel(fan), color: colors.amber },
     { label: "PWM", value: fan.pwm === null || fan.pwm === undefined ? "--" : `${fan.pwm}`, sub: "수동 출력", color: colors.rose },
   ]);
 }
@@ -4765,11 +4763,11 @@ function renderRecordings() {
   if (!target) return;
   target.innerHTML = "";
   if (state.recordings.loading && !state.recordings.items.length) {
-    target.innerHTML = "<span>loading</span>";
+    target.innerHTML = "<span>불러오는 중</span>";
     return;
   }
   if (!state.recordings.items.length) {
-    target.innerHTML = "<span>archive empty</span>";
+    target.innerHTML = "<span>기록 없음</span>";
     renderRecordingDetail(null);
     return;
   }
@@ -5186,7 +5184,7 @@ function renderArchiveFrame(options={}) {
       ? `${nativeVideo.videoHeight || state.archivePlayback.videoQuality?.height || sourceVideo.height || ""}p · ${state.archivePlayback.videoQuality?.auto ? "자동 · " : ""}${fmtNumber(sourceVideo.fps || 0, 1)} fps · ${fmtClock(timeS)}`
     : cameraFrame
       ? `${nativeVideo ? `native ${fmtNumber(sourceVideo.fps || 0, 0)} fps · ` : ""}${cameraFrame.frame_id || "camera"} · ${fmtClock(timeS)} · ${cameraFrame.source_width || cameraFrame.width}x${cameraFrame.source_height || cameraFrame.height}`
-      : state.archivePlayback.sync ? "camera preview 없음" : "동시 재생 꺼짐";
+      : state.archivePlayback.sync ? "카메라 화면 없음" : "동시 재생 꺼짐";
   text("roverArchiveCameraCaption", cameraCaption);
   const imuSample = imuFrame?.corrected || imuFrame?.raw || {};
   const imuEuler = imuSample.euler_deg || {};
@@ -5212,9 +5210,9 @@ function renderArchiveFrame(options={}) {
       sub: imuFrame ? `${imuFrame.corrected ? "start-corrected" : "raw"} · calibration ${imuCalibrationState}` : waitingForImu?"IMU 버퍼 수신 중":"현재 재생 시각 안에 IMU frame 없음",
       color: imuFrame?.corrected ? colors.good : colors.amber,
     },
-    { label: "Acceleration", value: imuFrame && vectorNorm(imuAcceleration) !== null ? `${fmtNumber(vectorNorm(imuAcceleration), 3)} m/s²` : "--", sub: `x ${fmtNumber(imuAcceleration.x, 3)} · y ${fmtNumber(imuAcceleration.y, 3)} · z ${fmtNumber(imuAcceleration.z, 3)}`, color: colors.good },
-    { label: "Angular velocity", value: imuFrame && vectorNorm(imuGyro) !== null ? `${fmtNumber(vectorNorm(imuGyro), 4)} rad/s` : "--", sub: `x ${fmtNumber(imuGyro.x, 4)} · y ${fmtNumber(imuGyro.y, 4)} · z ${fmtNumber(imuGyro.z, 4)}`, color: colors.amber },
-    { label: "Magnetic field", value: imuFrame && vectorNorm(imuMagnetic) !== null ? `${fmtNumber(vectorNorm(imuMagnetic), 2)} µT` : "--", sub: imuFrame?.calibration_reference_id ? `reference ${imuFrame.calibration_reference_id}` : "magnetometer unavailable", color: colors.blue },
+    { label: "가속도", value: imuFrame && vectorNorm(imuAcceleration) !== null ? `${fmtNumber(vectorNorm(imuAcceleration), 3)} m/s²` : "--", sub: `x ${fmtNumber(imuAcceleration.x, 3)} · y ${fmtNumber(imuAcceleration.y, 3)} · z ${fmtNumber(imuAcceleration.z, 3)}`, color: colors.good },
+    { label: "각속도", value: imuFrame && vectorNorm(imuGyro) !== null ? `${fmtNumber(vectorNorm(imuGyro), 4)} rad/s` : "--", sub: `x ${fmtNumber(imuGyro.x, 4)} · y ${fmtNumber(imuGyro.y, 4)} · z ${fmtNumber(imuGyro.z, 4)}`, color: colors.amber },
+    { label: "자기장", value: imuFrame && vectorNorm(imuMagnetic) !== null ? `${fmtNumber(vectorNorm(imuMagnetic), 2)} µT` : "--", sub: imuFrame?.calibration_reference_id ? `reference ${imuFrame.calibration_reference_id}` : "magnetometer unavailable", color: colors.blue },
   ]);
   text("roverArchiveImuTime", imuFrame ? `IMU ${fmtNumber(imuFrame.t_s, 3)}s / Δ ${fmtNumber(imuSyncDeltaS, 3)}s` : "IMU -- / Δ --");
   text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data · base_link corrected" : "/imu/data_raw · sensor-native"} · playback ${fmtNumber(timeS, 3)}s` : waitingForImu?"IMU 버퍼 수신 중 · 재생 시각 동기화 대기":"동기 IMU sample 대기");
@@ -5448,13 +5446,17 @@ function normalizeSeries(values, rawValues) {
   return values.map((value) => (value === null ? null : (value / max) * 100));
 }
 
+// Series colours of the charts and read-out marks, from the tokens of the
+// current theme. The keys are the names the call sites already use; the hues
+// are the five chart series: cyan = series 1 (blue), rose = 2 (orange),
+// good = 3 (aqua), amber = 4 (yellow), blue = 5 (violet).
 function chartColors() {
   return {
-    blue: cssVar("--chart-blue", "#2f76ff"),
-    cyan: cssVar("--chart-cyan", "#38d8ff"),
-    rose: cssVar("--chart-rose", "#f21b58"),
-    amber: cssVar("--chart-amber", "#f4bd4f"),
-    good: cssVar("--chart-good", "#55e2b2"),
+    blue: cssVar("--chart-5", "#6250d6"),
+    cyan: cssVar("--chart-1", "#2a78d6"),
+    rose: cssVar("--chart-2", "#eb6834"),
+    amber: cssVar("--chart-4", "#eda100"),
+    good: cssVar("--chart-3", "#1baf7a"),
   };
 }
 
@@ -5465,11 +5467,12 @@ function cssVar(name, fallback) {
 function drawCoreCharts() {
   const target = $("cpuSeparateView");
   if (!target) return;
-  [...target.children].forEach((row, index) => {
+  const coreColor = chartColors().good;
+  [...target.children].forEach((row) => {
     const canvas = row.querySelector("canvas");
     const key = row.dataset.key;
     if (!canvas || !key) return;
-    drawMultiLine(canvas, [{ values: state.visualCoreHistory[key] || [], color: CORE_COLORS[index % CORE_COLORS.length], max: 100 }]);
+    drawMultiLine(canvas, [{ values: state.visualCoreHistory[key] || [], color: coreColor, max: 100 }]);
   });
 }
 
@@ -5480,10 +5483,7 @@ function drawMultiLine(target, series) {
   if (!prepared) return;
   const { ctx, w, h } = prepared;
   ctx.clearRect(0, 0, w, h);
-  const gradient = ctx.createLinearGradient(0, 0, 0, h);
-  gradient.addColorStop(0, cssVar("--chart-bg-top", "rgba(255,255,255,0.05)"));
-  gradient.addColorStop(1, cssVar("--chart-bg-bottom", "rgba(255,255,255,0.01)"));
-  ctx.fillStyle = gradient;
+  ctx.fillStyle = cssVar("--chart-surface", "#ffffff");
   ctx.fillRect(0, 0, w, h);
   drawGrid(ctx, w, h);
   ctx.save();
@@ -5571,7 +5571,7 @@ function redrawImuLiveCanvas() {
 
 function drawGrid(ctx, w, h) {
   ctx.save();
-  ctx.strokeStyle = cssVar("--chart-grid", "rgba(255,255,255,0.1)");
+  ctx.strokeStyle = cssVar("--chart-grid", "#e3e6ea");
   ctx.lineWidth = 1;
   for (let i = 1; i < 4; i += 1) {
     const y = (h / 4) * i;
@@ -5596,11 +5596,9 @@ function drawLine(ctx, values, color, max, w, h) {
   });
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2.8;
+  ctx.lineWidth = 2;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 8;
   ctx.beginPath();
   let segment = [];
   for (const point of points) {
@@ -5656,10 +5654,7 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
   const gridStep = lidarGridStep(range);
 
   ctx.clearRect(0, 0, w, h);
-  const gradient = ctx.createRadialGradient(cx, cy, radius * 0.12, cx, cy, radius);
-  gradient.addColorStop(0, cssVar("--chart-bg-top", "rgba(255,255,255,0.05)"));
-  gradient.addColorStop(1, cssVar("--chart-bg-bottom", "rgba(255,255,255,0.01)"));
-  ctx.fillStyle = gradient;
+  ctx.fillStyle = cssVar("--chart-surface", "#ffffff");
   ctx.fillRect(0, 0, w, h);
   drawLidarGrid(ctx, cx, cy, radius, range, gridStep);
 
@@ -5684,8 +5679,8 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
 
 
   ctx.save();
-  ctx.fillStyle = cssVar("--text", "#f7f9ff");
-  ctx.font = "800 12px Inter, Arial, sans-serif";
+  ctx.fillStyle = cssVar("--color-text", "#1b2027");
+  ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
   ctx.fillText(`${showPoints ? points.length : 0} points`, 14, 22);
   ctx.fillText(`${fmtNumber(result?.metrics?.coverage_deg ?? angleCoverage(points), 0)}° coverage`, 14, 40);
   ctx.textAlign = "right";
@@ -5719,15 +5714,15 @@ function lidarGridStep(range) {
 
 function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.save();
-  ctx.strokeStyle = cssVar("--chart-grid", "rgba(255,255,255,0.1)");
+  ctx.strokeStyle = cssVar("--chart-grid", "#e3e6ea");
   ctx.lineWidth = 1;
   for (let meters = gridStep; meters <= range + 0.001; meters += gridStep) {
     const r = (meters / range) * radius;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillStyle = cssVar("--dim", "#7480a3");
-    ctx.font = "800 10px Inter, Arial, sans-serif";
+    ctx.fillStyle = cssVar("--color-text-secondary", "#586270");
+    ctx.font = '400 12px system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
     ctx.fillText(`${fmtNumber(meters, 0)}m`, cx + 7, cy - r + 13);
   }
   ctx.beginPath();
@@ -5736,8 +5731,8 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.moveTo(cx, cy - radius);
   ctx.lineTo(cx, cy + radius);
   ctx.stroke();
-  ctx.fillStyle = cssVar("--muted", "#a9b4d2");
-  ctx.font = "900 11px Inter, Arial, sans-serif";
+  ctx.fillStyle = cssVar("--color-text-secondary", "#586270");
+  ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const labelOffset = 20;
@@ -5745,7 +5740,7 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.fillText("90°", cx + radius + labelOffset, cy);
   ctx.fillText("0°", cx, cy + radius + labelOffset);
   ctx.fillText("270°", cx - radius - labelOffset, cy);
-  ctx.fillStyle = cssVar("--text", "#f7f9ff");
+  ctx.fillStyle = cssVar("--color-text", "#1b2027");
   ctx.beginPath();
   ctx.arc(cx, cy, 5, 0, Math.PI * 2);
   ctx.fill();
@@ -5757,8 +5752,8 @@ function drawLidarEmpty(ctx, w, h, message) {
   // The centre holds the origin mark, the axes and the ring labels, and the
   // top centre holds the "180°" label: the text must reach none of them.
   ctx.save();
-  ctx.fillStyle = cssVar("--muted", "#a9b4d2");
-  ctx.font = "900 14px Inter, Arial, sans-serif";
+  ctx.fillStyle = cssVar("--color-text-secondary", "#586270");
+  ctx.font = '600 14px system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   const left = 14;

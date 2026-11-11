@@ -1,7 +1,29 @@
-.media-jobs { margin-top: 12px; }
-.media-jobs summary { cursor: pointer; font-weight: 600; }
-.media-jobs-note { margin: 10px 0; font-size: .85rem; }
-.media-job { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line, #364152); }
-.media-job-description { flex: 1 1 280px; overflow-wrap: anywhere; font-size: .85rem; }
-.media-job-controls { display: flex; flex-wrap: wrap; gap: 6px; }
-.media-job-controls button[hidden] { display: none; }
+/* Recording video conversion jobs. Colours and sizes come from css/tokens.css. */
+.media-jobs-note {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.media-job {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.media-job-description {
+  flex: 1 1 280px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.media-job-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
