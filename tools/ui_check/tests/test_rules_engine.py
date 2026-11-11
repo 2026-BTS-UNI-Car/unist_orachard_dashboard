@@ -164,6 +164,29 @@ class RulesFileTest(unittest.TestCase):
         self.assertTrue(any(rule["metric"] == "overlaps" for rule in rules["fixed_rules"]))
         self.assertTrue(any(rule["metric"] == "stop_in_first_viewport" and rule.get("routes") for rule in rules["fixed_rules"]))
 
+    def test_fixed_layout_rules_are_enforced(self):
+        """1차 버그 수정으로 고친 것은 fail이어야 한다(되돌아가면 compare.py가 실패한다)."""
+        rules = json.loads((TOOL_DIR / "rules.json").read_text(encoding="utf-8"))
+        modes = {rule["id"]: rule["mode"] for rule in rules["fixed_rules"]}
+        for rule_id in ("no-horizontal-overflow", "no-content-overflow", "no-clipped-text", "no-clipped-text-844x390",
+                        "no-broken-image", "canvas-matches-box", "canvas-follows-resize", "no-overlap", "no-console-error"):
+            self.assertEqual(modes.get(rule_id), "fail", rule_id)
+
+    def test_accepted_record_passes_and_the_record_before_the_overhaul_does_not(self):
+        rules = json.loads((TOOL_DIR / "rules.json").read_text(encoding="utf-8"))
+
+        def failing_rule_ids(name):
+            run = json.loads((TOOL_DIR / name / "ui_check.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(run["pages"]), 90, name)
+            self.assertFalse(Path(run["static_dir"]).is_absolute(), f"{name}: static_dir must not be a local absolute path")
+            rows = rules_engine.evaluate_fixed_rules(run["pages"], rules) + rules_engine.load_error_violations(run["pages"], rules)
+            return sorted({row.get("rule_id", row["kind"]) for row in rows if row["mode"] == "fail"})
+
+        self.assertEqual(failing_rule_ids("accepted"), [])
+        self.assertEqual(failing_rule_ids("baseline"), [
+            "canvas-follows-resize", "canvas-matches-box", "no-broken-image", "no-clipped-text",
+            "no-clipped-text-844x390", "no-content-overflow", "no-horizontal-overflow"])
+
     def test_validation_rejects_bad_rules(self):
         for broken in (
             {"schema": "other", "schema_version": 1},
