@@ -41,7 +41,8 @@ SETTLE_SAMPLE_MS = 250
 SETTLE_STABLE_SAMPLES = 3
 
 SETTLE_JS = "() => [document.documentElement.scrollWidth, document.documentElement.scrollHeight, document.body ? document.body.getElementsByTagName('*').length : 0].join('x')"
-FONTS_READY_JS = "() => (document.fonts && document.fonts.ready ? document.fonts.ready.then(() => true) : true)"
+POINTER_COARSE_JS = "() => window.matchMedia('(pointer: coarse)').matches"
+FONTS_READY_JS ="() => (document.fonts && document.fonts.ready ? document.fonts.ready.then(() => true) : true)"
 STOP_SCROLL_JS = """(config) => {
   const el = window.__uiCheckStopElement;
   if (!el) return [];
@@ -271,6 +272,11 @@ async def check_page(browser, base_url: str, dataset: str, route: str, viewport:
         await page.goto(base_url + route, wait_until="load", timeout=options.page_timeout_ms)
         record["load_ms"] = round((time.monotonic() - started) * 1000)
         record.update(await settle(page, options.settle_ms, options.max_settle_ms))
+        # 화면은 손가락 기기(pointer: coarse)에서 조작 요소를 44px로 키운다. 터치 기기로 흉내 낸 쪽인데
+        # 브라우저가 굵은 포인터로 답하지 않으면(드물게 흉내가 늦게 걸린다) 그 쪽은 잰 값이 달라지므로 다시 연다.
+        record["pointer_coarse"] = await page.evaluate(POINTER_COARSE_JS)
+        if viewport["mobile"] and not record["pointer_coarse"]:
+            raise RuntimeError("touch emulation did not report a coarse pointer")
         config = {
             "viewportWidth": viewport["width"],
             "viewportHeight": viewport["height"],
