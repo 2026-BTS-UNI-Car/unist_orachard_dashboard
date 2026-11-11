@@ -63,33 +63,13 @@
 <main class="main-surface">
 <section class="page page-overview" data-page="/">
 <header class="page-head">
-<div class="hero-copy">
-<p class="eyebrow">Live operations</p>
-<h1>UBTS Dashboard</h1>
-<p>Jetson Orin Nano, 네트워크, 컨테이너, 로버 연결 상태를 실시간으로 확인합니다.</p>
-</div>
+<h1>개요</h1>
 </header>
-<section class="kpi-grid">
-<article class="kpi">
-<span>CPU</span>
-<strong id="overviewCpu">--</strong>
-<small id="overviewLoad">load --</small>
-</article>
-<article class="kpi">
-<span>Memory</span>
-<strong id="overviewMemory">--</strong>
-<small id="overviewMemoryText">--</small>
-</article>
-<article class="kpi">
-<span>External IP</span>
-<strong id="overviewNetwork">--</strong>
-<small id="overviewNetworkText">--</small>
-</article>
-<article class="kpi">
-<span>Docker</span>
-<strong id="overviewDocker">--</strong>
-<small id="overviewDockerText">--</small>
-</article>
+<section class="status-strip">
+<div class="status-strip-item"><span>CPU</span><strong id="overviewCpu">--</strong><small id="overviewLoad">load --</small></div>
+<div class="status-strip-item"><span>메모리</span><strong id="overviewMemory">--</strong><small id="overviewMemoryText">--</small></div>
+<div class="status-strip-item"><span>외부 IP</span><strong id="overviewNetwork">--</strong><small id="overviewNetworkText">--</small></div>
+<div class="status-strip-item"><span>Docker</span><strong id="overviewDocker">--</strong><small id="overviewDockerText">--</small></div>
 </section>
 <section class="dashboard-grid">
 <article class="panel chart-panel">
@@ -147,33 +127,13 @@
 </section>
 <section class="page" data-page="/connection">
 <header class="page-head">
-<div class="hero-copy">
-<p class="eyebrow">Connection</p>
-<h1>연결 상태</h1>
-<p>LiDAR, ROS2 bridge, sensor link를 실제 장치 점유 상태를 고려해서 확인합니다.</p>
-</div>
+<h1>연결</h1>
 </header>
-<section class="kpi-grid">
-<article class="kpi">
-<span>LiDAR</span>
-<strong id="connectionLidarState">--</strong>
-<small id="connectionLidarDevice">--</small>
-</article>
-<article class="kpi">
-<span>Protocol</span>
-<strong id="connectionLidarProtocol">--</strong>
-<small id="connectionLidarSubtext">--</small>
-</article>
-<article class="kpi">
-<span>Health</span>
-<strong id="connectionLidarHealth">--</strong>
-<small id="connectionLidarHealthText">--</small>
-</article>
-<article class="kpi">
-<span>Camera</span>
-<strong id="connectionCameraState">--</strong>
-<small id="connectionCameraDevice">--</small>
-</article>
+<section class="status-strip">
+<div class="status-strip-item"><span>LiDAR</span><strong id="connectionLidarState">--</strong><small data-shorten="24" id="connectionLidarDevice">--</small></div>
+<div class="status-strip-item"><span>프로토콜</span><strong id="connectionLidarProtocol">--</strong><small id="connectionLidarSubtext">--</small></div>
+<div class="status-strip-item"><span>스캔 수신</span><strong id="connectionLidarHealth">--</strong><small id="connectionLidarHealthText">--</small></div>
+<div class="status-strip-item"><span>카메라</span><strong id="connectionCameraState">--</strong><small data-shorten="24" id="connectionCameraDevice">--</small></div>
 </section>
 <section class="dashboard-grid">
 <article class="panel">
@@ -331,9 +291,7 @@
 </section>
 <section class="page" data-page="/system">
 <header class="page-head">
-<p class="eyebrow">System resources</p>
-<h1>시스템 리소스</h1>
-<p>CPU, Memory, Swap, Network, Power를 실시간 그래프로 표시합니다.</p>
+<h1>시스템</h1>
 </header>
 <section class="resource-grid">
 <article class="panel resource-card">
@@ -400,21 +358,11 @@
 </section>
 <section class="page" data-page="/network">
 <header class="page-head">
-<p class="eyebrow">Network</p>
-<h1>네트워크 상태</h1>
-<p>외부 접속 주소와 Jetson host 주소, 실시간 RX/TX 처리량만 우선 표시합니다.</p>
+<h1>네트워크</h1>
 </header>
-<section class="network-focus-grid">
-<article class="kpi">
-<span>External IP</span>
-<strong id="networkExternalIp">--</strong>
-<small id="networkExternalIpText">public endpoint</small>
-</article>
-<article class="kpi">
-<span>Internal Host</span>
-<strong id="networkInternalIp">--</strong>
-<small id="networkInternalIpText">host route</small>
-</article>
+<section class="status-strip cols-2">
+<div class="status-strip-item"><span>외부 IP</span><strong id="networkExternalIp">--</strong><small id="networkExternalIpText">--</small></div>
+<div class="status-strip-item"><span>내부 주소</span><strong id="networkInternalIp">--</strong><small id="networkInternalIpText">--</small></div>
 </section>
 <section class="panel network-mode-panel">
 <div class="panel-head">
@@ -453,15 +401,13 @@
 </section>
 <section class="page" data-page="/docker">
 <header class="page-head">
-<p class="eyebrow">Docker</p>
-<h1>컨테이너 대시보드</h1>
-<p>Docker Engine과 컨테이너 리소스 사용량을 표시합니다.</p>
+<h1>컨테이너</h1>
 </header>
-<section class="kpi-grid">
-<article class="kpi"><span>Containers</span><strong id="dockerContainerCount">--</strong><small id="dockerRunningText">--</small></article>
-<article class="kpi"><span>Images</span><strong id="dockerImageCount">--</strong><small id="dockerVersion">--</small></article>
-<article class="kpi"><span>Container CPU</span><strong id="dockerCpuTotal">--</strong><small>sum of visible stats</small></article>
-<article class="kpi"><span>Container Memory</span><strong id="dockerMemTotal">--</strong><small id="dockerMemText">--</small></article>
+<section class="status-strip">
+<div class="status-strip-item"><span>컨테이너</span><strong id="dockerContainerCount">--</strong><small id="dockerRunningText">--</small></div>
+<div class="status-strip-item"><span>이미지</span><strong id="dockerImageCount">--</strong><small id="dockerVersion">--</small></div>
+<div class="status-strip-item"><span>컨테이너 CPU</span><strong id="dockerCpuTotal">--</strong><small>보이는 컨테이너의 합</small></div>
+<div class="status-strip-item"><span>컨테이너 메모리</span><strong id="dockerMemTotal">--</strong><small id="dockerMemText">--</small></div>
 </section>
 <section class="dashboard-grid">
 <article class="panel chart-panel">
@@ -501,12 +447,10 @@
 </section>
 <section class="page" data-page="/fan">
 <header class="page-head">
-<p class="eyebrow">Jetson cooling</p>
-<h1>Fan Control</h1>
-<p>Jetson 온도를 확인하면서 팬 PWM을 직접 조정합니다.</p>
+<h1>팬</h1>
 </header>
 <section class="fan-control-grid">
-<article class="kpi"><span>Temperature</span><strong id="fanTempValue">--</strong><small id="fanTempText">thermal max</small></article>
+<div class="status-strip cols-1"><div class="status-strip-item"><span>온도</span><strong id="fanTempValue">--</strong><small id="fanTempText">--</small></div></div>
 <article class="panel fan-pwm-panel">
 <div class="panel-head">
 <div>
@@ -550,9 +494,8 @@
 </section>
 <section class="page" data-page="/research">
 <header class="page-head">
-<p class="eyebrow">Research</p>
-<h1>연구 연결 상태</h1>
-<p>실제 ROS2 bridge가 연결되면 이 페이지에 연구 지표가 채워집니다.</p>
+<h1>연구</h1>
+<p class="page-note">ROS 2 bridge가 연결되면 연구 지표가 채워집니다.</p>
 </header>
 <section class="dashboard-grid">
 <article class="panel">
@@ -581,15 +524,15 @@
 </section>
 <section class="page" data-page="/rover-control">
 <header class="page-head">
-<p class="eyebrow" id="roverModeLabel">LIVE ROVER</p>
-<h1>Rover Control</h1><label>전송 품질 <select aria-label="전송 품질 선택" data-network-profile=""><option value="auto">자동 조절</option><option value="tiny">64 kbps</option><option value="slow">매우 느린 망</option><option value="balanced">균형</option><option value="detail">고화질</option></select></label>
-<p>조종 활성화를 켠 뒤 WASD 또는 방향 버튼을 누르세요. Q/E로 주행 중 속도를 조절할 수 있습니다.</p>
+<h1>주행</h1>
+<span class="status-chip" id="roverModeLabel">실차</span>
+<div class="page-head-actions"><label class="field-inline">전송 품질 <select aria-label="전송 품질 선택" data-network-profile=""><option value="auto">자동 조절</option><option value="tiny">64 kbps</option><option value="slow">매우 느린 망</option><option value="balanced">균형</option><option value="detail">고화질</option></select></label></div>
 </header>
-<section class="kpi-grid">
-<article class="kpi"><span id="roverControllerLabel">ESP8266</span><strong id="roverControlState">--</strong><small id="roverControlBase">--</small></article>
-<article class="kpi"><span>Mode</span><strong id="roverProxyState">--</strong><small>단일 사용자 수동 조종</small></article>
-<article class="kpi"><span>ROS2</span><strong id="roverRosState">--</strong><small>모터 상태 관측</small></article>
-<article class="kpi"><span>Archive</span><strong id="roverRecorderState">--</strong><small id="roverRecorderKind">대기</small></article>
+<section class="status-strip">
+<div class="status-strip-item"><span id="roverControllerLabel">ESP8266</span><strong id="roverControlState">--</strong><small data-shorten="24" id="roverControlBase">--</small></div>
+<div class="status-strip-item"><span>모드</span><strong id="roverProxyState">--</strong><small>단일 사용자 수동 조종</small></div>
+<div class="status-strip-item"><span>ROS 2</span><strong id="roverRosState">--</strong><small>모터 상태 관측</small></div>
+<div class="status-strip-item"><span>기록</span><strong id="roverRecorderState">--</strong><small id="roverRecorderKind">대기</small></div>
 </section>
 <section class="rover-layout">
 <article class="panel rover-live-panel rover-lidar-panel">
@@ -759,8 +702,8 @@
 <button data-rover-drive="right" type="button">D</button>
 <button data-rover-drive="backward" type="button">S</button>
 </div>
-<p>키를 놓으면 감속 · STOP/Esc/창 이탈 시 즉시 정지·조종 해제</p>
-<p>대각선 키로 주행 중 회전 · 100% 속도에서는 회전 제한</p>
+<p class="help-text">조종 활성화를 켠 뒤 WASD 키나 방향 버튼으로 주행합니다. 키를 놓으면 감속합니다.</p>
+<p class="help-text">STOP, Esc, 창 이탈은 즉시 정지와 조종 해제입니다. 대각선 키는 주행 중 회전이며 속도 100%에서는 회전이 제한됩니다.</p>
 <div class="test-result" id="roverCommandStatus">명령 대기 중</div>
 </article>
 <article class="panel rover-record-panel">
@@ -905,9 +848,7 @@
 </section>
 <section class="page" data-page="/docs">
 <header class="page-head">
-<p class="eyebrow">Docs</p>
 <h1>문서</h1>
-<p>대시보드 운영, Jetson 배포, LiDAR 연결, telemetry schema를 한 곳에서 확인합니다.</p>
 </header>
 <section class="docs-layout">
 <aside class="panel docs-index-panel">

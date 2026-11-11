@@ -231,8 +231,22 @@ const $ = (id) => document.getElementById(id);
 function text(id, value) {
   const el = $(id);
   if (!el) return;
-  const next = String(value);
+  const full = String(value);
+  // data-shorten="N": a long value without spaces (device path, host name) is
+  // cut in the middle to N characters; the title keeps the whole value.
+  const limit = Number(el.dataset?.shorten) || 0;
+  const next = limit ? shortenMiddle(full, limit) : full;
   if (el.textContent !== next) el.textContent = next;
+  if (limit) {
+    if (next === full) el.removeAttribute("title");
+    else if (el.getAttribute("title") !== full) el.setAttribute("title", full);
+  }
+}
+
+function shortenMiddle(value, limit) {
+  if (value.length <= limit) return value;
+  const kept = Math.max(2, limit - 1);
+  return `${value.slice(0, Math.ceil(kept / 2))}\u2026${value.slice(-Math.floor(kept / 2))}`;
 }
 
 function fmtPercent(value, digits = 1) {
@@ -1047,9 +1061,9 @@ function renderTelemetry(data) {
   text("memoryDetail", `${fmtBytes(sys.memory?.used)} used / ${fmtBytes(memoryTotal(sys.memory))} · ${memoryLabel(sys.memory)} · ${fmtBytes(sys.memory?.available)} available`);
 
   text("networkExternalIp", net.external_ip || "--");
-  text("networkExternalIpText", net.external_ip ? "public endpoint" : "확인 대기");
+  text("networkExternalIpText", net.external_ip ? "공개 주소" : "확인 대기");
   text("networkInternalIp", net.primary_ipv4 || "--");
-  text("networkInternalIpText", [net.primary_interface, net.hostname].filter(Boolean).join(" · ") || "host route");
+  text("networkInternalIpText", [net.primary_interface, net.hostname].filter(Boolean).join(" · ") || "--");
   text("networkThroughput", `${fmtBps(net.total_rx_bps)} RX · ${fmtBps(net.total_tx_bps)} TX`);
   renderNetworkMode(net.control || {});
 
@@ -3587,7 +3601,7 @@ function serviceLabel(key) {
 }
 
 function renderRoverControl(data) {
-  text("roverModeLabel", SIMULATION ? "SIMULATED ROVER" : "LIVE ROVER");
+  text("roverModeLabel", SIMULATION ? "시뮬레이션" : "실차");
   text("roverControllerLabel", SIMULATION ? "Gazebo" : "ESP8266");
   const rover = data.rover || data.connection?.rover || {};
   const services = data.services || data.connection?.services || {};

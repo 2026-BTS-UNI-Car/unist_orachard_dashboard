@@ -56,20 +56,12 @@ p {
   margin: 0;
 }
 
-h1 {
-  margin-top: 8px;
-  font-size: clamp(30px, 4vw, 54px);
-  line-height: 1.05;
-  letter-spacing: 0;
-}
-
 h2 {
   font-size: 18px;
   letter-spacing: 0;
 }
 
 .eyebrow,
-.kpi span,
 .detail-list dt {
   color: var(--muted);
   font-size: 12px;
@@ -78,47 +70,11 @@ h2 {
   text-transform: uppercase;
 }
 
-.page-head,
-.panel,
-.kpi {
+.panel {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   box-shadow: var(--shadow);
-}
-
-.page-head {
-  min-height: 176px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: end;
-  gap: 24px;
-  padding: 30px;
-  background:
-    linear-gradient(115deg, rgba(17, 85, 230, 0.18), transparent 42%),
-    linear-gradient(295deg, rgba(242, 27, 88, 0.15), transparent 46%),
-    var(--panel);
-}
-
-.page-head > .eyebrow,
-.page-head > h1,
-.page-head > p {
-  grid-column: 1 / -1;
-}
-
-.hero-copy p:last-child,
-.page-head > p:last-child {
-  max-width: 760px;
-  margin-top: 12px;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.kpi-grid,
-.network-focus-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
 }
 
 .fan-control-grid {
@@ -218,42 +174,6 @@ h2 {
   font-size: 11px;
   font-weight: 800;
   line-height: 1.25;
-}
-
-.network-focus-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.kpi {
-  min-width: 0;
-  min-height: 112px;
-  padding: 16px;
-  background:
-    linear-gradient(145deg, rgba(17, 85, 230, 0.08), rgba(242, 27, 88, 0.045)),
-    var(--panel);
-}
-
-.kpi strong {
-  display: block;
-  margin-top: 14px;
-  overflow-wrap: anywhere;
-  font-size: clamp(22px, 3vw, 30px);
-  line-height: 1;
-  transition: color 180ms ease;
-}
-
-.network-focus-grid .kpi strong {
-  font-size: clamp(24px, 4vw, 38px);
-}
-
-.kpi small {
-  display: block;
-  margin-top: 10px;
-  color: var(--dim);
-  font-size: 12px;
-  line-height: 1.35;
-  /* Device paths and host names have no spaces. */
-  overflow-wrap: anywhere;
 }
 
 .dashboard-grid,
@@ -747,11 +667,6 @@ h2 {
 .rover-drive-panel h2 { white-space: nowrap; }
 .rover-drive-panel .drive-head-actions { margin-top: 12px; justify-content: space-between; }
 .rover-arm-controls { display: grid; gap: 8px; margin: 12px 0; min-width: 0; }
-select[data-network-profile] {
-  width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line);
-  border-radius: 8px; color: var(--text); background: var(--surface); font: inherit;
-}
-select[data-network-profile] { width: auto; margin-left: 8px; }
 
 .rover-layout.drive-collapsed .rover-drive-panel {
   min-height: auto;
@@ -1985,10 +1900,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   overflow-wrap: break-word;
 }
 
-.page[data-page="/docs"] .page-head {
-  min-height: 150px;
-}
-
 /* Two panes that fill the height below the status bar and scroll on their
    own. A short screen (a phone on its side) has no room for that: there the
    page scrolls as a whole. */
@@ -2503,8 +2414,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 }
 
 @media (max-width: 1180px) {
-  .kpi-grid,
-	  .fan-control-grid,
+  .fan-control-grid,
 	  .dashboard-grid,
 	  .rover-layout,
 	  .resource-grid,
@@ -2526,10 +2436,6 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 }
 
 @media (min-width: 900px) and (max-width: 1180px) {
-  .kpi-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
   .rover-layout {
     grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr) minmax(220px, 0.78fr);
     align-items: start;
@@ -2601,21 +2507,7 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 }
 
 @media (max-width: 760px) {
-  .page-head,
-  .panel,
-  .kpi {
-    border-radius: 8px;
-  }
-
-  .page-head {
-    min-height: 150px;
-    grid-template-columns: minmax(0, 1fr);
-    padding: 20px;
-  }
-
-  .kpi-grid,
-  .network-focus-grid,
-	  .fan-control-grid,
+  .fan-control-grid,
 	  .dashboard-grid,
 	  .rover-layout,
 	  .resource-grid,

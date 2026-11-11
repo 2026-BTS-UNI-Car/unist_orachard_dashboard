@@ -211,5 +211,53 @@ function setup(route = '/rover-control') {
     context.applyTheme('light');
     assert.deepEqual([context.document.documentElement.dataset.theme, stored['ubts-theme'], toggle.attributes['aria-pressed']], ['light', 'light', 'false']);
   }
-  console.log('PASS: status bar on every route, STOP in the bar takes the drive panel STOP path, drive state and recording indicators, clock, theme default');
+  // ---- Page header: one compact row per page, titled like its menu item; no banner ----
+  {
+    const labels = Object.fromEntries([...html.matchAll(/<a data-route="([^"]+)" href="[^"]+">([^<]+)<\/a>/g)].map(match => [match[1], match[2]]));
+    const pages = html.split(/<section class="page[^"]*" data-page="/).slice(1);
+    assert.equal(pages.length, 9);
+    for (const page of pages) {
+      const route = page.slice(0, page.indexOf('"'));
+      const heads = [...page.matchAll(/<header class="page-head">([\s\S]*?)<\/header>/g)];
+      assert.equal(heads.length, 1, `${route}: one page header`);
+      assert.ok(page.indexOf('<header class="page-head">') < 40, `${route}: the header is the first element of the page`);
+      assert.deepEqual([...heads[0][1].matchAll(/<h1>([^<]*)<\/h1>/g)].map(match => match[1]), [labels[route]], `${route}: title is the menu label`);
+      assert.doesNotMatch(heads[0][1], /eyebrow|hero-copy/, `${route}: no banner parts`);
+      assert.ok((heads[0][1].match(/<p /g) || []).length <= 1, `${route}: at most one note line`);
+    }
+    assert.doesNotMatch(html, /hero-copy|class="kpi"|kpi-grid|network-focus-grid/, 'banner and card markup is gone');
+    assert.match(html, /<span class="status-chip" id="roverModeLabel">실차<\/span>/);
+    assert.match(html, /<div class="page-head-actions"><label class="field-inline">전송 품질 <select aria-label="전송 품질 선택" data-network-profile="">/);
+  }
+  // ---- Status strip: name, value, detail; a full row of cells ----
+  {
+    const strips = [...html.matchAll(/<section class="status-strip( cols-2)?">([\s\S]*?)<\/section>\n/g),
+      ...html.matchAll(/<div class="status-strip( cols-1)">(.*)<\/div>\n/g)];
+    assert.equal(strips.length, 6, 'overview, connection, network, docker, drive, and the one cell of the fan page');
+    for (const strip of strips) {
+      const items = [...strip[2].matchAll(/<div class="status-strip-item"><span[^>]*>[^<]+<\/span><strong id="[^"]+">--<\/strong><small[^>]*>[^<]*<\/small>(?:<\/div>)?/g)];
+      const expected = strip[1] === ' cols-2' ? 2 : strip[1] === ' cols-1' ? 1 : 4;
+      assert.equal(items.length, expected, strip[0].slice(0, 60));
+      assert.equal((strip[2].match(/status-strip-item/g) || []).length, expected, 'every cell has name, value and detail');
+    }
+    assert.match(frameCss, /\.status-strip \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+    assert.match(frameCss.slice(frameCss.indexOf('@media (max-width: 639px)')), /\.status-strip,\n  \.status-strip\.cols-2 \{\n    grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/, 'two by two on phones');
+    // Values that hold a device path are shortened in the middle; the title keeps the whole value.
+    assert.deepEqual([...html.matchAll(/data-shorten="(\d+)" id="([^"]+)"/g)].map(match => `${match[2]}:${match[1]}`),
+      ['connectionLidarDevice:24', 'connectionCameraDevice:24', 'roverControlBase:24']);
+    const element = shorten => ({dataset: shorten ? {shorten} : {}, textContent: '', attributes: {},
+      getAttribute(name) { return this.attributes[name] ?? null; }, setAttribute(name, value) { this.attributes[name] = value; }, removeAttribute(name) { delete this.attributes[name]; }});
+    const nodes = {path: element('24'), plain: element('')};
+    const context = {$: id => nodes[id] || null, String, Number, Math};
+    vm.createContext(context); vm.runInContext(between('function text(', 'function fmtPercent('), context);
+    const long = '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0';
+    context.text('path', long);
+    assert.equal(nodes.path.textContent, '/dev/serial/…-if00-port0'); assert.equal(nodes.path.textContent.length, 24);
+    assert.equal(nodes.path.attributes.title, long, 'the full value stays available');
+    context.text('path', '/dev/ubts-motor');
+    assert.equal(nodes.path.textContent, '/dev/ubts-motor'); assert.equal('title' in nodes.path.attributes, false, 'no title when nothing was cut');
+    context.text('plain', long); assert.equal(nodes.plain.textContent, long); assert.equal('title' in nodes.plain.attributes, false);
+    context.text('missing', 'x');
+  }
+  console.log('PASS: status bar on every route, STOP in the bar takes the drive panel STOP path, drive state and recording indicators, clock, theme default, page headers, status strips');
 })().catch(error => { console.error(error); process.exitCode = 1; });
