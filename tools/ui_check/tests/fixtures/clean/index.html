@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ui-check fixture: clean</title>
+<style>
+  body { margin: 0; padding: 64px 0 72px; font: 16px/1.5 sans-serif; }
+  button, a.tab { font: inherit; min-width: 48px; min-height: 48px; }
+  #statusBar { position: fixed; left: 0; right: 0; top: 0; height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: #eee; }
+  #roverStopButton { width: 120px; height: 48px; }
+  #bottomNav { position: fixed; left: 0; right: 0; bottom: 0; height: 64px; display: flex; background: #eee; }
+  a.tab { flex: 1; display: flex; align-items: center; justify-content: center; }
+  section { margin: 8px; }
+  #longText { width: 160px; overflow-wrap: anywhere; border: 1px solid #888; }
+  #chart { width: 100%; height: 120px; display: block; }
+  /* 문서와 함께 흐르는 버튼. 스크롤 0일 때 휴대폰 높이(844)에서 아래 막대(780~844) 밑에 깔린다. */
+  #underNav { position: absolute; left: 8px; top: 790px; width: 160px; height: 48px; }
+  #tail { height: 2600px; }
+</style>
+</head>
+<body>
+<header id="statusBar">
+  <button id="roverStopButton" type="button">STOP</button>
+  <span>연결됨</span>
+</header>
+<main>
+  <section><div id="longText">LONG_TEXT_WITHOUT_SPACES_THAT_WRAPS_INSIDE_ITS_BOX_0000000001</div></section>
+  <section><canvas id="chart"></canvas></section>
+  <button id="underNav" type="button">아래 막대 밑 버튼</button>
+  <div id="tail"></div>
+</main>
+<nav id="bottomNav">
+  <a class="tab" href="/">주행</a>
+  <a class="tab" href="/system">시스템</a>
+  <a class="tab" href="/docs">문서</a>
+</nav>
+<script>
+  const chart = document.getElementById('chart');
+  new ResizeObserver(() => {
+    const rect = chart.getBoundingClientRect();
+    chart.width = Math.round(rect.width * devicePixelRatio);
+    chart.height = Math.round(rect.height * devicePixelRatio);
+  }).observe(chart);
+</script>
+</body>
+</html>

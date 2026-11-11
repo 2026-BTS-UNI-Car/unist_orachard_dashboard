@@ -1,0 +1,53 @@
+{
+ "schema": "ubts.ui_check.rules",
+ "schema_version": 1,
+ "note_ko": "mode가 fail이면 어길 때 compare.py가 실패로 끝난다. report는 알리기만 한다. 지금 화면(main)이 이미 어기고 있는 규칙은 report로 두었다. 새 배치가 들어온 화면부터 fail로 바꾼다.",
+ "fixed_rules": [
+  {"id": "no-horizontal-overflow", "title_ko": "가로 넘침 없음", "metric": "horizontal_overflow_px", "op": "<=", "value": 0, "mode": "report"},
+  {"id": "no-content-overflow", "title_ko": "자기 상자 밖으로 넘친 글 없음", "metric": "overflowing_elements", "op": "<=", "value": 0, "mode": "report"},
+  {"id": "no-clipped-text", "title_ko": "잘린 글 없음", "metric": "clipped_texts", "op": "<=", "value": 0, "mode": "report"},
+  {"id": "no-overlap", "title_ko": "조작 요소끼리 겹침 없음", "metric": "overlaps", "op": "<=", "value": 0, "mode": "fail"},
+  {"id": "touch-target-44", "title_ko": "누름 영역 44px 이상", "metric": "small_targets", "op": "<=", "value": 0, "mode": "report"},
+  {"id": "canvas-matches-box", "title_ko": "캔버스 버퍼가 표시 크기와 일치", "metric": "canvas_mismatches", "op": "<=", "value": 0, "mode": "report"},
+  {"id": "canvas-follows-resize", "title_ko": "화면 크기를 바꾼 뒤 캔버스가 따라옴", "metric": "canvas_stale_after_resize", "op": "<=", "value": 0, "mode": "report"},
+  {"id": "stop-in-first-viewport", "title_ko": "STOP이 첫 화면 안", "metric": "stop_in_first_viewport", "op": "is_true", "routes": ["/rover-control"], "mode": "report"},
+  {"id": "stop-always-in-viewport", "title_ko": "STOP이 어느 스크롤 위치에서도 화면 안", "metric": "stop_always_in_viewport", "op": "is_true", "routes": ["/rover-control"], "mode": "report"},
+  {"id": "no-broken-image", "title_ko": "깨진 그림 없음", "metric": "broken_images", "op": "<=", "value": 0, "mode": "report"},
+  {"id": "no-script-error", "title_ko": "스크립트 오류 없음", "metric": "page_errors", "op": "<=", "value": 0, "mode": "fail"},
+  {"id": "no-console-error", "title_ko": "콘솔 오류 없음", "metric": "console_errors", "op": "<=", "value": 0, "mode": "fail"},
+  {"id": "no-failed-request", "title_ko": "실패한 요청 없음", "metric": "failed_requests", "op": "<=", "value": 0, "mode": "fail"},
+  {"id": "no-http-error", "title_ko": "4xx·5xx 응답 없음", "metric": "http_errors", "op": "<=", "value": 0, "mode": "fail"},
+  {"id": "no-external-request", "title_ko": "127.0.0.1 밖으로 나가는 요청 없음", "metric": "blocked_external_requests", "op": "<=", "value": 0, "mode": "fail"},
+  {"id": "probe-ok", "title_ko": "측정 코드가 끝까지 돎", "metric": "probe_problems", "op": "<=", "value": 0, "mode": "fail"}
+ ],
+ "regression": {
+  "note_ko": "기준선과 같은 쪽(자료 묶음 · 경로 · 화면 크기)끼리 견준다. better가 lower면 값이 커질 때, true면 참이던 값이 거짓이 될 때 나빠진 것으로 본다.",
+  "missing_page_mode": "fail",
+  "new_page_mode": "report",
+  "load_error_mode": "fail",
+  "metrics": {
+   "horizontal_overflow_px": {"better": "lower", "tolerance": 1, "mode": "fail", "title_ko": "가로 넘침 px"},
+   "outside_viewport_elements": {"better": "lower", "tolerance": 0, "mode": "report", "title_ko": "화면 밖으로 나간 요소 수"},
+   "overflowing_elements": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "자기 상자 밖으로 넘친 요소 수"},
+   "overflowing_elements_vertical": {"better": "lower", "tolerance": 0, "mode": "report", "title_ko": "세로로 넘친 요소 수"},
+   "clipped_texts": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "잘린 글 수"},
+   "overlaps": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "조작 요소 겹침 수"},
+   "small_targets": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "44px 미만 누름 영역 수"},
+   "canvas_mismatches": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "표시 크기와 다른 캔버스 수"},
+   "canvas_stale_after_resize": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "화면 크기를 바꾼 뒤 따라오지 않은 캔버스 수"},
+   "broken_images": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "깨진 그림 수"},
+   "page_errors": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "스크립트 오류 수"},
+   "console_errors": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "콘솔 오류 수"},
+   "failed_requests": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "실패한 요청 수"},
+   "http_errors": {"better": "lower", "tolerance": 0, "mode": "fail", "title_ko": "4xx·5xx 응답 수"},
+   "stop_in_first_viewport": {"better": "true", "mode": "fail", "title_ko": "STOP이 첫 화면 안"},
+   "stop_always_in_viewport": {"better": "true", "mode": "fail", "title_ko": "STOP이 늘 화면 안"},
+   "stop_top_px": {"better": "lower", "tolerance": 8, "mode": "report", "title_ko": "STOP 위쪽 위치 px"},
+   "page_height_px": {"better": "lower", "tolerance_ratio": 0.05, "mode": "report", "title_ko": "쪽 높이 px"},
+   "style_gradient_elements": {"better": "lower", "tolerance": 0, "mode": "report", "title_ko": "그라디언트 요소 수"},
+   "style_blur_elements": {"better": "lower", "tolerance": 0, "mode": "report", "title_ko": "흐림 효과 요소 수"},
+   "style_shadow_kinds": {"better": "lower", "tolerance": 0, "mode": "report", "title_ko": "그림자 종류 수"},
+   "style_font_size_kinds": {"better": "lower", "tolerance": 0, "mode": "report", "title_ko": "글자 크기 종류 수"}
+  }
+ }
+}

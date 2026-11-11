@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ui-check fixture: defects</title>
+<style>
+  body { margin: 0; font: 16px/1.5 sans-serif; }
+  section { position: relative; margin: 8px; }
+  button { font: inherit; }
+  #overlapRow { height: 80px; }
+  #overlapA { position: absolute; left: 10px; top: 10px; width: 120px; height: 48px; }
+  #overlapB { position: absolute; left: 100px; top: 20px; width: 120px; height: 48px; }
+  #clipBox { width: 120px; overflow: hidden; white-space: nowrap; border: 1px solid #888; }
+  #ellipsisBox { width: 120px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 1px solid #888; }
+  #spillBox { width: 120px; border: 1px solid #888; }
+  #wide { width: 1000px; height: 20px; background: #ccc; }
+  #small { width: 30px; height: 30px; padding: 0; }
+  #checkLabel { display: flex; align-items: center; width: 200px; height: 48px; }
+  #staleFixed { width: 300px; height: 150px; display: block; }
+  #drawnOnce, #follows { width: 100%; height: 100px; display: block; }
+  #noSource { width: 80px; height: 60px; display: block; }
+  #spacer { height: 2000px; }
+  #roverStopButton { width: 120px; height: 48px; }
+</style>
+</head>
+<body>
+<main>
+  <section id="overlapRow">
+    <button id="overlapA" type="button">A</button>
+    <button id="overlapB" type="button">B</button>
+  </section>
+  <section><div id="clipBox">CLIPPED_TEXT_THAT_IS_MUCH_WIDER_THAN_ITS_BOX</div></section>
+  <section><div id="ellipsisBox">ELLIPSIS_TEXT_THAT_IS_MUCH_WIDER_THAN_ITS_BOX</div></section>
+  <section><div id="spillBox">SPILLING_TEXT_WITHOUT_SPACES_THAT_LEAVES_ITS_BOX</div></section>
+  <section><div id="wide"></div></section>
+  <section><button id="small" type="button">x</button></section>
+  <section><label id="checkLabel"><input id="check" type="checkbox"> 체크 상자</label></section>
+  <section><p>문장 속 <a id="inlineLink" href="#inline">링크</a> 하나.</p></section>
+  <section><canvas id="staleFixed" width="100" height="50"></canvas></section>
+  <section><canvas id="drawnOnce"></canvas></section>
+  <section><canvas id="follows"></canvas></section>
+  <section>
+    <img id="noSource" alt="no source">
+    <img id="missing" alt="missing file" src="/static/missing.png" width="80" height="60">
+    <img id="external" alt="external file" src="https://example.invalid/pixel.png" width="80" height="60">
+  </section>
+  <div id="spacer"></div>
+  <section><button id="roverStopButton" type="button">STOP</button></section>
+</main>
+<script>
+  const fit = (canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.round(rect.width * devicePixelRatio);
+    canvas.height = Math.round(rect.height * devicePixelRatio);
+  };
+  fit(document.getElementById('drawnOnce'));
+  const follows = document.getElementById('follows');
+  new ResizeObserver(() => fit(follows)).observe(follows);
+  console.error('fixture console error');
+  setTimeout(() => { throw new Error('fixture script error'); }, 30);
+</script>
+</body>
+</html>
