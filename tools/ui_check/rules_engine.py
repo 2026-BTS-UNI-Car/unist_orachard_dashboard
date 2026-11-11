@@ -159,7 +159,12 @@ def compare_with_baseline(pages: list, baseline_pages: list, rules: dict) -> lis
             continue
         if not old.get("metrics"):
             continue
-        for name, spec in specs.items():
+        for key_name, spec in specs.items():
+            # 항목 이름이 곧 수치 이름이다. "metric"을 적으면 같은 수치를 조건이 다른 두 항목으로 볼 수 있다
+            # (예: 터치 화면에서는 실패, 마우스 화면에서는 알리기만). routes / viewports / datasets로 대상을 좁힌다.
+            name = spec.get("metric", key_name)
+            if not page_in_scope(page, spec):
+                continue
             value, base = page["metrics"].get(name), old["metrics"].get(name)
             if worse_than_baseline(spec, base, value):
                 violations.append(
@@ -167,7 +172,7 @@ def compare_with_baseline(pages: list, baseline_pages: list, rules: dict) -> lis
                         "regression",
                         spec["mode"],
                         page,
-                        rule_id=f"baseline:{name}",
+                        rule_id=f"baseline:{key_name}",
                         title_ko=spec.get("title_ko", name),
                         metric=name,
                         value=value,

@@ -145,6 +145,30 @@ class BaselineTest(unittest.TestCase):
     def test_improvement_is_not_a_violation(self):
         self.assertEqual(rules_engine.compare_with_baseline([page()], [page(overlaps=3, page_height_px=5000, stop_in_first_viewport=False)], RULES), [])
 
+    def test_regression_metric_can_be_limited_to_viewports(self):
+        """같은 수치를 터치 화면에서는 실패로, 마우스 화면에서는 알리기만 하게 둘로 나눌 수 있다."""
+        rules = {**RULES, "regression": {"metrics": {
+            "small_targets": {"better": "lower", "mode": "fail", "viewports": ["390x844", "820x*"]},
+            "small_targets_mouse": {"metric": "small_targets", "better": "lower", "mode": "report", "viewports": ["1440x900"]},
+        }}}
+        before = [page(viewport=name, small_targets=3) for name in ("390x844", "820x1180", "1440x900", "1920x1080")]
+        after = [page(viewport=name, small_targets=5) for name in ("390x844", "820x1180", "1440x900", "1920x1080")]
+        rows = rules_engine.compare_with_baseline(after, before, rules)
+        self.assertEqual(sorted((row["viewport"], row["mode"], row["rule_id"], row["metric"]) for row in rows), [
+            ("1440x900", "report", "baseline:small_targets_mouse", "small_targets"),
+            ("390x844", "fail", "baseline:small_targets", "small_targets"),
+            ("820x1180", "fail", "baseline:small_targets", "small_targets"),
+        ])
+        self.assertEqual(rules_engine.compare_with_baseline(before, after, rules), [], "fewer is never a violation")
+        rules_engine.validate_rules({**rules, "fixed_rules": []})
+
+    def test_shipped_touch_target_gate_covers_the_touch_viewports(self):
+        rules = json.loads((TOOL_DIR / "rules.json").read_text(encoding="utf-8"))
+        metrics = rules["regression"]["metrics"]
+        self.assertEqual((metrics["small_targets"]["mode"], metrics["small_targets"]["viewports"]), ("fail", ["390x844", "844x390", "820x1180", "1180x820"]))
+        self.assertEqual((metrics["small_targets_mouse"]["metric"], metrics["small_targets_mouse"]["mode"], metrics["small_targets_mouse"]["viewports"]),
+                         ("small_targets", "report", ["1440x900"]))
+
     def test_missing_and_new_pages(self):
         rows = rules_engine.compare_with_baseline([page(route="/drive")], [page()], RULES)
         self.assertEqual({row["kind"]: row["mode"] for row in rows}, {"missing_page": "fail", "new_page": "report"})

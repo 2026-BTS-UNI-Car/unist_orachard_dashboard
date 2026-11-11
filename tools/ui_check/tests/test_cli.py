@@ -165,6 +165,8 @@ class RunChecksArgumentTest(unittest.TestCase):
         self.assertEqual(len(run_checks.DEFAULT_ROUTES), 9)
         self.assertEqual(run_checks.DEFAULT_VIEWPORTS, ["390x844", "844x390", "820x1180", "1180x820", "1440x900"])
         self.assertIn("#roverStopButton", run_checks.DEFAULT_STOP_SELECTORS)
+        # 앱 틀의 STOP 표시가 주행 패널의 STOP보다 먼저다.
+        self.assertEqual(run_checks.DEFAULT_STOP_SELECTORS[0], "[data-ui-check~='stop']")
 
     def test_probe_source_is_a_function_expression(self):
         source = run_checks.load_probe_source()
