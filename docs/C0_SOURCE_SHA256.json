@@ -378,7 +378,13 @@
     },
     "static/app.js": {
       "SHA256": "925cf73cfdfd3f774693dcd8309b67d6c749ce16660ac0e9bb9cdf6586b3f1ba",
-      "bytes": 250132
+      "bytes": 250132,
+      "repository_form": {
+        "line_endings": "LF",
+        "SHA256": "1259b899b9fddbce0bd32c2466ed8b224d86ea13211768ed7fcb7eff8fe6617f",
+        "bytes": 244433,
+        "note": "Same text. The installed file has CRLF line endings; SHA256 and bytes above are of the installed bytes."
+      }
     }
   },
   "full_autonomy_or_physical_qualification": false,
