@@ -172,7 +172,10 @@ export async function mountNativeAcceptedMap(container) {
     const note=document.createElement('p');note.textContent='기존 지도와 별도로 표시 · 주행 제어에 사용하지 않음';section.append(note);
     const start=document.createElement('button'),stop=document.createElement('button'),fresh=document.createElement('button');
     start.type=stop.type=fresh.type='button';start.textContent='지도 표시';stop.textContent='표시 멈춤';fresh.textContent='새 지도';
-    fresh.title='생산자 관찰을 먼저 멈춘 뒤에만 기존 지도를 지웁니다';section.append(start,stop,fresh);
+    // Same button style and spacing as the observation controls above (they had the browser default look).
+    for(const button of [start,stop,fresh])button.className='action-button secondary';
+    const actions=document.createElement('div');actions.className='field-observation-actions';actions.append(start,stop,fresh);
+    fresh.title='생산자 관찰을 먼저 멈춘 뒤에만 기존 지도를 지웁니다';section.append(actions);
     const canvas=document.createElement('canvas');canvas.id='nativeAcceptedMapCanvas';
     canvas.style.cssText='width:100%;height:320px;touch-action:none';section.append(canvas);
     const status=document.createElement('p');status.setAttribute('role','status');status.textContent='표시 OFF · 기존 지도 유지';

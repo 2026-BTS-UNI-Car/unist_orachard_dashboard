@@ -576,7 +576,8 @@ h2 {
 }
 
 .action-button:disabled {
-  cursor: wait;
+  /* Disabled is not "busy": some of these buttons never become available. */
+  cursor: not-allowed;
   opacity: 0.62;
 }
 
@@ -1030,7 +1031,9 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
 }
 
 .imu-heading-row strong {
-  color: var(--accent);
+  /* --accent was never defined, so this value has always been drawn in the
+     text colour. Say so instead of naming a variable that does not exist. */
+  color: var(--text);
   font-size: 1.35rem;
 }
 

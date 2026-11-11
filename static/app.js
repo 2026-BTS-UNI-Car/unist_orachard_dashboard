@@ -107,8 +107,11 @@ const state = {
     userStopped: false,
     reconnectTimer: null,
     pendingRestart: false,
+    // What this browser asks the camera bridge for. It is shown as the camera's
+    // setting only after the server reported or accepted it (settingsKnown).
     resolution: "1280x720",
     fps: 60,
+    settingsKnown: false,
     settingsInFlight: false,
     settingsError: "",
 	    lastFrameAt: null,
@@ -594,9 +597,12 @@ function applyCameraStatus(camera = {}, cameraBridge = {}) {
   const allowed = cameraFpsOptions(resolution);
   const nextFps = chooseCameraFps(allowed, fps);
   const changed = state.cameraLive.resolution !== resolution || Number(state.cameraLive.fps) !== Number(nextFps);
+  // First report from the server: the labels may now show the values.
+  const firstReport = !state.cameraLive.settingsKnown;
   state.cameraLive.resolution = resolution;
   state.cameraLive.fps = nextFps;
-  if (changed) updateCameraControls();
+  state.cameraLive.settingsKnown = true;
+  if (changed || firstReport) updateCameraControls();
 }
 
 function cameraTelemetryCanApply() {
@@ -697,6 +703,7 @@ async function setCameraSettings(next) {
     if (Array.isArray(result.supported_view_modes)) {
       applyCameraModeCatalog(result.supported_view_modes, "settings");
     }
+    state.cameraLive.settingsKnown = true; // accepted by the server
     setCameraResult("testing", `캡처 설정 저장됨 · ${state.cameraLive.resolution} · ${state.cameraLive.fps} fps`);
     scheduleCameraReconnectForSettings(900);
   } catch (err) {
@@ -720,13 +727,18 @@ async function setCameraSettings(next) {
 }
 
 function updateCameraControls(force = false) {
-  text("cameraResolutionValue", state.cameraLive.resolution);
-  text("cameraFpsValue", `${state.cameraLive.fps} fps`);
+  // Before the server has reported or accepted the capture settings, the
+  // selection is only this browser's request: show "--", not a made-up fact.
+  const known = Boolean(state.cameraLive.settingsKnown);
+  const resolutionLabel = known ? state.cameraLive.resolution : "--";
+  const fpsLabel = known ? `${state.cameraLive.fps} fps` : "--";
+  text("cameraResolutionValue", resolutionLabel);
+  text("cameraFpsValue", fpsLabel);
   document.querySelectorAll("[data-camera-resolution-value]").forEach((el) => {
-    el.textContent = state.cameraLive.resolution;
+    el.textContent = resolutionLabel;
   });
   document.querySelectorAll("[data-camera-fps-value]").forEach((el) => {
-    el.textContent = `${state.cameraLive.fps} fps`;
+    el.textContent = fpsLabel;
   });
   document.querySelectorAll("[data-camera-resolution-select]").forEach((resolution) => {
     syncSelectOptions(resolution, cameraResolutionOptionLabels());
@@ -1058,7 +1070,6 @@ function renderTelemetry(data) {
   renderSensors(data.sensors || {});
   renderCores(sys.cpu?.cores || []);
   renderCoreCharts(sys.cpu?.cores || []);
-  renderTemperatures(sys.temperatures || []);
   renderDisks(sys.disks || []);
   renderInterfaces(net.interfaces || [], net.primary_interface);
   renderContainers(docker);
@@ -2218,15 +2229,10 @@ function renderLidarLiveState(overrideLabel) {
       : state.lidarLive.connected ? "LiDAR 중지" : "LiDAR 시작";
     roverButton.classList.toggle("active", state.lidarLive.connected);
   }
-  text("lidarLiveDevice", state.telemetry?.connection?.lidar?.device || "--");
-  text("lidarLiveTopic", state.lidarLive.scanTopicAlive ? `${lidarSourceLabel(state.lidarLive.source)} live` : lidarSourceLabel(state.lidarLive.source));
   const socketText = overrideLabel || (state.lidarLive.connected ? "connected" : state.lidarLive.error || "disconnected");
-  text("lidarLiveSocket", socketText);
-  text("lidarLiveAge", lidarAgeLabel());
   const pointLabel = state.lidarLive.pointCount
     ? `${state.lidarLive.pointCount}/${state.lidarLive.sourcePointCount || state.lidarLive.pointCount}`
     : "--";
-  text("lidarLivePoints", pointLabel);
   const colors = chartColors();
   renderReadout("roverLidarStats", [
     { label: "Socket", value: state.lidarLive.connected ? "ON" : "OFF", sub: socketText, color: state.lidarLive.connected ? colors.good : colors.rose },
@@ -2467,7 +2473,6 @@ function renderConnection(connection) {
   text("lidarByIdDetail", lidar.by_id ? shortPath(lidar.by_id, 42) : "stable ID 대기");
   text("lidarDriverDetail", driverLabel(lidar.driver_hint));
   text("lidarLastTestDetail", lidarLastTestLabel(last));
-  text("lidarPolicyDetail", policyLabel(lidar.conflict_policy));
   renderStatusRows("connectionServices", serviceRows(connection.services || {}));
   renderStatusRows("connectionSensors", sensorRows(connection.sensors || {}));
   renderLidarLiveState();
@@ -2588,10 +2593,6 @@ function lidarLastTestLabel(result) {
   if (!result || (!result.ok && !result.message)) return "아직 확인 전";
   if (!result.ok) return cleanLidarError(result, "응답 없음");
   return result.state === "ros2_owned" ? "ROS2 driver 소유 중" : "장치 확인됨 · subscribe-only";
-}
-
-function policyLabel(policy) {
-  return policy || "Dashboard는 LiDAR serial port를 열지 않고 ROS2 /scan만 구독합니다.";
 }
 
 function lidarTestMessage(result) {
@@ -2785,18 +2786,6 @@ function updateCoreChart(el, core) {
   el.querySelector('[data-role="value"]').textContent = fmtPercent(core.percent);
   const windowLabel = el.querySelector('[data-role="window"]');
   if (windowLabel) windowLabel.textContent = chartWindowLabel();
-}
-
-function renderTemperatures(rows) {
-  const target = $("temperatureList");
-  if (!target) return;
-  target.innerHTML = "";
-  for (const row of rows) {
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = `${row.name} ${fmtTemp(row.temperature_c)}`;
-    target.append(chip);
-  }
 }
 
 function renderDisks(disks) {
@@ -3698,7 +3687,6 @@ function initRoverControl() {
   $("roverArchiveRefreshButton")?.addEventListener("click", () => loadRecordings().catch(console.error));
   $("roverArchivePlayButton")?.addEventListener("click", toggleArchivePlayback);
   $("roverArchiveScrubber")?.addEventListener("input", (event) => setArchiveTime(Number(event.target.value), { pause: true }));
-  $("roverOrchardMapScrubber")?.addEventListener("input", (event) => setArchiveTime(Number(event.target.value), { pause: true }));
   $("roverArchiveSyncToggle")?.addEventListener("change", (event) => {
     state.archivePlayback.sync = Boolean(event.target.checked);
     state.archivePlayback.lastCameraRenderKey = "";
@@ -4868,7 +4856,7 @@ function archiveNativeVideo() {
 }
 
 function syncArchiveScrubberBounds() {
-  for (const id of ["roverArchiveScrubber", "roverOrchardMapScrubber"]) {
+  for (const id of ["roverArchiveScrubber"]) {
     const scrubber = $(id);
     if (!scrubber) continue;
     scrubber.max = String(Math.max(0, state.archivePlayback.durationS));
@@ -5136,11 +5124,8 @@ function renderArchiveFrame(options={}) {
   drawImuAttitude($("roverArchiveImuCanvas"), Number(imuEuler.roll), Number(imuEuler.pitch), Number(imuEuler.yaw));
   const mapWait = state.archivePlayback.mapBuffering ? (window.LiveMap?.waitReason?.() || '지도 버퍼링') : '';
   text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}${mapWait ? ` · ${mapWait}` : ''}`);
-  text("roverOrchardMapTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}`);
   const scrubber = $("roverArchiveScrubber");
   if (scrubber && document.activeElement !== scrubber) scrubber.value = String(timeS);
-  const mapScrubber = $("roverOrchardMapScrubber");
-  if (mapScrubber && document.activeElement !== mapScrubber) mapScrubber.value = String(timeS);
   const play = $("roverArchivePlayButton");
   if (play) play.textContent = state.archivePlayback.playing || state.archivePlayback.videoPlayRequested ? "일시정지" : "재생";
 

@@ -280,7 +280,15 @@ def _stress_telemetry(now: float) -> dict:
                     "message": "mock: 장치 표시 확인 · ROS2 드라이버가 포트를 쓰고 있음 · " + LONG_LIDAR_DEVICE,
                 },
             },
-            "camera": {"present": True, "state": "detected", "device": LONG_CAMERA_DEVICE, "ok": True},
+            # 실제 서버(telemetry.camera_status)는 캡처 설정을 늘 함께 보낸다. 화면은 이 값을 받은 뒤에만
+            # 해상도·프레임 수를 사실로 보여 준다. empty 묶음에는 일부러 넣지 않는다('--' 상태를 보기 위해).
+            "camera": {
+                "present": True,
+                "state": "detected",
+                "device": LONG_CAMERA_DEVICE,
+                "ok": True,
+                "settings": {"resolution": "1280x720", "width": 1280, "height": 720, "fps": 60.0, "fourcc": "MJPG", "source": "mock"},
+            },
             "lidar_bridge": {"ok": True, "scan_topic_alive": True},
             "camera_bridge": {"ok": True, "frame_topic_alive": True, "source_width": 1920, "source_height": 1080, "source_fps": 29.97},
             "lidar_websocket": {"active": 99},
