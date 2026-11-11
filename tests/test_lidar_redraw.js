@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(process.argv[2] || path.join(__dirname, '../static/app.js'), 'utf8');
+const source = (process.argv[2] ? fs.readFileSync(process.argv[2], 'utf8') : require('./helpers/app_source').readAppSource());
 const between = (begin, end) => source.slice(source.indexOf(begin), source.indexOf(end));
 const animation = between('function requestChartAnimation(', 'function normalizeBps(');
 

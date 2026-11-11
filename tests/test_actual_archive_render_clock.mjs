@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';
-const source=fs.readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
+const source=(await import('node:module')).createRequire(import.meta.url)('./helpers/app_source.js').readAppSource();
 const slice=(start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a+start.length);assert.ok(a>=0&&b>a);return source.slice(a,b);};
 const functions=slice('function configureArchiveNativeVideo(','function setupArchivePlayback(')
   +slice('async function toggleArchivePlayback(','function mergeArchiveMotorSegment(')

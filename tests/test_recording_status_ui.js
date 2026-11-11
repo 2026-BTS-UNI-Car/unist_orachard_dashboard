@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../static/app.js'), 'utf8');
+const source = require('./helpers/app_source').readAppSource();
 const code = source.slice(source.indexOf('async function refreshRecordingStatus()'), source.indexOf('async function loadRecordings()'));
 // The real one-second recorder/camera interval statement and nothing after it:
 // start-up code that app.js runs later (for example the overview toggle) is not part of this timer.

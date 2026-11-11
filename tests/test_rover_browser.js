@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../static/app.js'), 'utf8');
+const source = require('./helpers/app_source').readAppSource();
 const code = source.slice(source.indexOf('function setRoverSpeed('), source.indexOf('function setRecordingKind('))
   + source.slice(source.indexOf('function roverKeyFromEvent('), source.indexOf('function setRoverCommandStatus('));
 function setup() {

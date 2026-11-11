@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
-const source=fs.readFileSync(path.join(__dirname,'../static/app.js'),'utf8');
+const source=require('./helpers/app_source').readAppSource();
 const code=source.slice(source.indexOf('function displayBinaryCameraFrame('),source.indexOf('function renderCameraLiveState('));
 function fixture(visible=true){
   const sent=[],revoked=[],timers=new Map(); let sequence=0;

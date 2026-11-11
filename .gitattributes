@@ -10,4 +10,5 @@ docs/AUTONOMY_SOFTWARE_DELIVERY_20261010.md text eol=lf
 
 # Preserve raw source bytes used by file-hash verification.
 /deploy/native_sensor_stream/keyframe_registration.py -text
-/static/app.js text eol=lf
+/static/app/*.js text eol=lf
+/tests/helpers/*.js text eol=lf

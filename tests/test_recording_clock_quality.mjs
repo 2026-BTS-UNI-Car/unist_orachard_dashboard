@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const source=fs.readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
+const source=(await import('node:module')).createRequire(import.meta.url)('./helpers/app_source.js').readAppSource();
 const start=source.indexOf('function recordingClockLabel(');
 const end=source.indexOf('function renderRecordings(',start);
 assert.ok(start>=0 && end>start);

@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../static/app.js'), 'utf8').replace(/\r\n/g, '\n');
+const source = require('./helpers/app_source').readAppSource().replace(/\r\n/g, '\n');
 const css = fs.readFileSync(path.join(__dirname, '../static/styles.css'), 'utf8').replace(/\r\n/g, '\n');
 const between = (begin, end) => { const a = source.indexOf(begin), b = source.indexOf(end, a); assert.ok(a >= 0 && b > a, begin); return source.slice(a, b); };
 // The real pad wiring and the real drive state machine (same cut as test_control_path_regression.js).

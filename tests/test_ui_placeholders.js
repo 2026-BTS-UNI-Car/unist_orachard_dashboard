@@ -7,7 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const staticDir = path.join(__dirname, '../static');
 const read = name => fs.readFileSync(path.join(staticDir, name), 'utf8').replace(/\r\n/g, '\n');
-const source = read('app.js'), html = read('index.html');
+const source = require('./helpers/app_source').readAppSource().replace(/\r\n/g, '\n'), html = read('index.html');
 const between = (begin, end) => { const a = source.indexOf(begin), b = source.indexOf(end, a); assert.ok(a >= 0 && b > a, begin); return source.slice(a, b); };
 
 (async () => {

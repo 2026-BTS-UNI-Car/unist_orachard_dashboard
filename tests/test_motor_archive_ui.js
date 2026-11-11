@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../static/app.js'), 'utf8');
+const source = require('./helpers/app_source').readAppSource();
 const html = fs.readFileSync(path.join(__dirname, '../static/index.html'), 'utf8');
 const slice = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
 // trimArchiveTimelineCache() in the first cut reads this top-level constant, which is

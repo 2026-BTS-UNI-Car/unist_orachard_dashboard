@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=fs.readFileSync(path.join(__dirname,'../static/app.js'),'utf8');
+const source=require('./helpers/app_source').readAppSource();
 const code=source.slice(source.indexOf('function resetCameraWindowDecode('),source.indexOf('function renderCameraLiveState('));
 function fixture(){
  const sent=[],closed=[],revoked=[],timers=new Map();let next=0;

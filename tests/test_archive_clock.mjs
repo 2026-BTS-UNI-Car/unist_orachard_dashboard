@@ -1,5 +1,5 @@
 import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
-const text=fs.readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
+const text=(await import('node:module')).createRequire(import.meta.url)('./helpers/app_source.js').readAppSource();
 const start=text.indexOf('function queueArchivePlaybackTick()');const end=text.indexOf('function stopArchivePlayback(',start);
 const timers=new Map(),frames=new Map();let id=0,ticks=0;
 const state={archivePlayback:{}};

@@ -1,5 +1,5 @@
 import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
-const source=fs.readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
+const source=(await import('node:module')).createRequire(import.meta.url)('./helpers/app_source.js').readAppSource();
 const functionSource=source.slice(source.indexOf('function trimArchiveTimelineCache() {'),source.indexOf('function archiveFrameKey('));
 const revoked=[];
 const cache={objectUrls:new Map(),imageElements:new Map(),gpsFrames:[{t_s:0},{t_s:1000}],motorFrames:[{t_s:0}]};

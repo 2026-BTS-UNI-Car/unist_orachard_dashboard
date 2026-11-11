@@ -1,5 +1,5 @@
 import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
-const source=fs.readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
+const source=(await import('node:module')).createRequire(import.meta.url)('./helpers/app_source.js').readAppSource();
 const functions=source.slice(source.indexOf('function suspendLiveCameraForArchive() {'),source.indexOf('async function toggleArchivePlayback() {'));
 const state={telemetry:{services:{rover_bridge:{armed:false,updated_at:100}}},roverControl:{},
   cameraLive:{socket:{},userStopped:false},archivePlayback:{resumeLiveCamera:false}};

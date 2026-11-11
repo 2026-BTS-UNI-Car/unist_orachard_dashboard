@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../static/app.js'), 'utf8');
+const source = require('./helpers/app_source').readAppSource();
 const begin = source.indexOf('function configureArchiveNativeVideo('), end = source.indexOf('function archiveRenderClock(', begin);
 assert.ok(begin >= 0 && end > begin);
 function fixture(playing) {
