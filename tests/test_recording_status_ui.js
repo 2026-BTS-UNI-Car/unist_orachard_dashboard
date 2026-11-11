@@ -4,6 +4,17 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../static/app.js'), 'utf8');
 const code = source.slice(source.indexOf('async function refreshRecordingStatus()'), source.indexOf('async function loadRecordings()'));
+// The real one-second recorder/camera interval statement and nothing after it:
+// start-up code that app.js runs later (for example the overview toggle) is not part of this timer.
+function recorderIntervalCode() {
+  const start = source.lastIndexOf('setInterval(() => {');
+  const close = '}, 1000);';
+  const end = source.indexOf(close, start);
+  assert.ok(start >= 0 && end > start, 'one-second interval statement found in app.js');
+  const cut = source.slice(start, end + close.length);
+  assert.match(cut, /maybeRefreshRecordingStatus\(\);/, 'the cut interval is the recorder poll');
+  return cut;
+}
 const ids = ['roverRecordingStatus', 'roverRecordStartButton', 'roverRecordStopButton', 'roverRecordingTimer', 'roverRecorderState', 'roverRecorderKind', 'roverRecordImuToggle', 'roverRecordGpsToggle'];
 const nodes = Object.fromEntries(ids.map(id => [id, {textContent: '', disabled: false}]));
 let now = 10000, getCalls = 0, resolveGet;
@@ -115,7 +126,7 @@ function testSecondaryRecorderRow() {
   const slice = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
   vm.runInContext(slice('function renderStatusRows(', 'function syncItems(')
     + slice('function renderRoverControl(', 'function initRoverControl(') + code, c);
-  vm.runInContext(source.slice(source.lastIndexOf('setInterval(() => {')), c);
+  vm.runInContext(recorderIntervalCode(), c);
   const telemetry = {services: {data_recorder: {...live(false), recording_id: 'stale-telemetry'}}};
   const field = selector => elements.get('roverRecorderDetail').querySelector(selector);
   c.renderRoverControl(telemetry);
@@ -180,7 +191,7 @@ async function testRecurringRecorderPolling() {
     },
   };
   vm.createContext(c);vm.runInContext(code,c);
-  vm.runInContext(source.slice(source.lastIndexOf('setInterval(() => {')),c);
+  vm.runInContext(recorderIntervalCode(),c);
   const flush=async()=>{for(let i=0;i<4;i++)await Promise.resolve();};
   const step=async()=>{
     steady+=1000;wall+=1000;

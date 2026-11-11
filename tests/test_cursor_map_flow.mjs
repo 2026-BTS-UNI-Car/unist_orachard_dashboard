@@ -1,12 +1,14 @@
 import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
-const elements=new Map(),calls=[],timers=[];
+// Fake timers keep only timers that are still pending: a request deadline that
+// request() clears when the reply arrives is not a scheduled poll.
+const elements=new Map(),calls=[],timers=new Map();let timerId=0;
 const element=id=>{if(!elements.has(id))elements.set(id,{events:{},value:30,addEventListener(event,callback){this.events[event]=callback;}});return elements.get(id);};
 class MetricMap{constructor(){this.snapshot={};}set(value){this.snapshot=value;this.tileEpoch=value.tile_epoch;return Promise.resolve();}draw(){}zoom(){}}
 const context=vm.createContext({MetricMap,ArchiveMapBuffer:class{},ArchiveSegmentGallery:class{reset(){}},decodeArchiveWindow:async value=>value,
  AbortController,AbortSignal,URLSearchParams,performance,Date,crypto:{randomUUID:()=> 'test-browser'},location:{pathname:'/other'},
  document:{hidden:false,getElementById:element,querySelectorAll:()=>[],addEventListener(){}},
  window:{addEventListener(){},setArchiveTime(t,options){calls.push({seek:t,options});}},
- setInterval(){},clearTimeout(){},setTimeout(callback,delay){timers.push({callback,delay});return timers.length;},
+ setInterval(){},clearTimeout(id){timers.delete(id);},setTimeout(callback,delay){timers.set(++timerId,{callback,delay});return timerId;},
  fetch:async(path,options)=>{
   calls.push({path,body:options.body?JSON.parse(options.body):undefined});
   return {ok:true,json:async()=>path.endsWith('/new-map')?{ok:true,map_epoch:'new'}:
@@ -35,7 +37,7 @@ vm.runInContext("archiveTime('record',.15,false)",context);
 await new Promise(resolve=>setImmediate(resolve));
 assert.ok(calls.some(c=>c.path?.endsWith('/map-playback')&&c.body.playing===false&&c.body.t_s===.15));
 assert.equal(vm.runInContext('archive.snapshot.map_epoch',context),'new');
-vm.runInContext("location.pathname='/rover-control';archiveTimer=null",context);timers.length=0;
+vm.runInContext("location.pathname='/rover-control';archiveTimer=null",context);timers.clear();
 await vm.runInContext("pollArchive('record',archiveEpoch)",context);
-assert.equal(timers.length,0,'paused causal prefix must not poll forever because history is incomplete');
+assert.deepEqual([...timers.values()].map(timer=>timer.delay),[],'paused causal prefix must not poll forever because history is incomplete');
 console.log('New map clears only derived view; play/pause sends causal cursor, no future map prefetch');

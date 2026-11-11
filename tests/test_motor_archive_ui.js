@@ -6,7 +6,11 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../static/app.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, '../static/index.html'), 'utf8');
 const slice = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
-const code = slice('function timelineShellFromRecording(', 'function archiveFrameKey(')
+// trimArchiveTimelineCache() in the first cut reads this top-level constant, which is
+// declared outside the cut range. Take the real declaration instead of a copied value.
+const segmentSeconds = source.match(/^const ARCHIVE_SEGMENT_SECONDS = \d+;/m);
+assert.ok(segmentSeconds, 'app.js declares ARCHIVE_SEGMENT_SECONDS');
+const code = segmentSeconds[0] + '\n' + slice('function timelineShellFromRecording(', 'function archiveFrameKey(')
   + slice('function mergeArchiveMotorSegment(', 'function nearestTimelineFrame(');
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
 const elements = new Map(['roverArchiveMotorPanel', 'roverArchiveMotorRows', 'roverArchiveMotorTime', 'roverArchiveMotorStatus', 'roverArchiveMotorCaption', 'roverArchiveMotorOutputLabel'].map(id => [id, {hidden: false, textContent: '', innerHTML: ''}]));
