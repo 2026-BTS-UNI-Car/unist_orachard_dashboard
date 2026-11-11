@@ -1154,6 +1154,11 @@ select[data-network-profile] { width: auto; margin-left: 8px; }
   font-size: 15px;
   font-weight: 950;
   cursor: pointer;
+  /* A held drive button is not a scroll, a text selection or a long-press menu. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .rover-pad button[data-rover-drive="forward"] {

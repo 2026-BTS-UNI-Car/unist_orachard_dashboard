@@ -3696,19 +3696,7 @@ function initRoverControl() {
   $("roverArchiveRangeSlider")?.addEventListener("input", (event) => setArchiveRange(Number(event.target.value), true));
 
 
-  document.querySelectorAll("[data-rover-drive]").forEach((button) => {
-    button.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      const action = button.dataset.roverDrive || "stop";
-      if (action === "stop") stopRoverNow("pad_stop");
-      else startRoverButtonCommand(action);
-    });
-    button.addEventListener("pointerup", () => releaseRoverInput("pad_release"));
-    button.addEventListener("pointercancel", () => releaseRoverInput("pad_cancel"));
-    button.addEventListener("pointerleave", () => {
-      if (state.roverControl.activeButton) releaseRoverInput("pad_leave");
-    });
-  });
+  initRoverPad();
   document.addEventListener("keydown", handleRoverKeyDown);
   document.addEventListener("keyup", handleRoverKeyUp);
   setRoverSpeed(state.roverControl.speedPct, false);
@@ -3721,6 +3709,39 @@ function initRoverControl() {
   renderRoverButtons();
   renderRecordingStatus();
   renderRecordings();
+}
+
+// Direction pad. Press, release, cancel and leave act exactly as before, and a
+// mouse is handled exactly as before. A finger or a pen keeps the button until
+// it lifts: without that the page took a drifting thumb over as a scroll,
+// cancelled the pointer and dropped the input while the finger was still down.
+// However the pointer is lost, the input ends through releaseRoverInput().
+function initRoverPad() {
+  let padPointerType = "mouse";
+  document.querySelectorAll("[data-rover-drive]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      padPointerType = event.pointerType || "mouse";
+      if (padPointerType !== "mouse") {
+        try { button.setPointerCapture(event.pointerId); } catch (_) { /* pointer already gone: its cancel ends the input */ }
+      }
+      const action = button.dataset.roverDrive || "stop";
+      if (action === "stop") stopRoverNow("pad_stop");
+      else startRoverButtonCommand(action);
+    });
+    button.addEventListener("pointerup", () => releaseRoverInput("pad_release"));
+    button.addEventListener("pointercancel", () => releaseRoverInput("pad_cancel"));
+    button.addEventListener("pointerleave", () => {
+      if (state.roverControl.activeButton) releaseRoverInput("pad_leave");
+    });
+    button.addEventListener("lostpointercapture", () => {
+      if (state.roverControl.activeButton) releaseRoverInput("pad_capture_lost");
+    });
+    // A long press on a touch screen must not open a menu over a held button.
+    button.addEventListener("contextmenu", (event) => {
+      if (padPointerType !== "mouse") event.preventDefault();
+    });
+  });
 }
 
 function setRoverSpeed(value, persist) {
