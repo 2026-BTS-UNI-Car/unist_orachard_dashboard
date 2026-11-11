@@ -7,7 +7,7 @@ const source=fs.readFileSync(path.join(__dirname,'../static/app.js'),'utf8');
 const code=source.slice(source.indexOf('function displayBinaryCameraFrame('),source.indexOf('function renderCameraLiveState('));
 function fixture(visible=true){
   const sent=[],revoked=[],timers=new Map(); let sequence=0;
-  const image={src:'blob:old'};
+  const image={src:'blob:old',style:{transform:''}};
   const socket={readyState:1,send:data=>sent.push(JSON.parse(data))};
   const context={state:{cameraLive:{socket,objectUrl:'blob:old'}},WebSocket:{OPEN:1},
     URL:{createObjectURL:()=>`blob:new${++sequence}`,revokeObjectURL:url=>revoked.push(url)},
