@@ -57,7 +57,9 @@ const between = (begin, end) => { const a = source.indexOf(begin), b = source.in
 
   // Every CSS custom property that is used is defined in a style sheet or set from script.
   {
-    const cssFiles = fs.readdirSync(staticDir).filter(name => name.endsWith('.css'));
+    // The page style sheets and the design system sheets in static/css (tokens, components, frame).
+    const cssFiles = [...fs.readdirSync(staticDir).filter(name => name.endsWith('.css')),
+      ...fs.readdirSync(path.join(staticDir, 'css')).filter(name => name.endsWith('.css')).map(name => `css/${name}`)];
     const css = cssFiles.map(read).join('\n');
     const scripts = fs.readdirSync(staticDir).filter(name => /\.(js|mjs)$/.test(name)).map(read).join('\n');
     const defined = new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map(match => match[1]));

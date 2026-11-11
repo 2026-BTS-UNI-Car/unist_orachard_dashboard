@@ -1,0 +1,145 @@
+/* Design tokens of the dashboard. Loaded before every other style sheet.
+   Light is the default theme. Dark is chosen with the theme switch
+   (html[data-theme="dark"]) and remembered in localStorage "ubts-theme".
+   Rules for the rest of the CSS: sizes, colours and radii come from here;
+   no gradients, no blur, no glow; a shadow only on overlays. */
+
+/* The one font file that ships with the dashboard (Noto Sans KR, weight 400,
+   Latin + Hangul). There is no heavier file: weight 600 is drawn from it. */
+@font-face {
+  font-family: "UBTS Sans";
+  src: url("/static/vendor/korean-font/korean.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Spacing: 4, 8, 12, 16, 24, 32. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Type: 12, 14, 16, 20, 28 with a fixed line height each; weights 400 and 600. */
+  --font-sans: "UBTS Sans", system-ui, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 28px;
+  --leading-xs: 16px;
+  --leading-sm: 20px;
+  --leading-md: 24px;
+  --leading-lg: 28px;
+  --leading-xl: 36px;
+  --weight-regular: 400;
+  --weight-strong: 600;
+
+  /* Radius: controls, panels, and round for status dots only. */
+  --radius-control: 4px;
+  --radius-panel: 8px;
+  --radius-round: 50%;
+
+  /* Sizes of the frame and of controls. Controls grow to 44px for fingers (below). */
+  --control-height: 36px;
+  --hold-height: 56px;
+  --statusbar-height: 56px;
+  --rail-width: 200px;
+  --banner-height: 0px;
+
+  /* Layers, lowest to highest. */
+  --z-raised: 2;
+  --z-statusbar: 30;
+  --z-backdrop: 40;
+  --z-drawer: 50;
+  --z-dialog: 60;
+
+  /* Neutral palette. */
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-fill: #eef0f3;
+  --color-border: #d8dce2;
+  --color-border-strong: #858f9c;
+  --color-text: #1b2027;
+  --color-text-secondary: #586270;
+  --color-text-disabled: #9aa3ae;
+
+  /* One accent: primary buttons, selection, links, focus ring. */
+  --color-accent: #1f5fbf;
+  --color-accent-soft: #e6eefa;
+  --color-on-accent: #ffffff;
+
+  /* Three status colours: status marks only. */
+  --color-ok: #1a7f4b;
+  --color-warning: #9a5a00;
+  --color-on-warning: #ffffff;
+  --color-danger: #c62828;
+  --color-on-danger: #ffffff;
+
+  /* STOP red is for STOP only. */
+  --color-stop: #c62828;
+  --color-on-stop: #ffffff;
+
+  /* Camera and video frames stay dark in both themes. */
+  --color-media-bg: #0b0e12;
+  --color-media-text: #f2f4f7;
+  --color-media-scrim: rgba(11, 14, 18, 0.72);
+
+  /* Chart series, fixed order (blue, orange, aqua, yellow, violet). They are
+     not status colours. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #6250d6;
+  --chart-surface: #ffffff;
+  --chart-grid: #e3e6ea;
+
+  /* Overlays (menus, drawer, dialogs) are the only elements with a shadow. */
+  --shadow-overlay: 0 8px 24px rgba(16, 19, 24, 0.18);
+  --color-scrim: rgba(16, 19, 24, 0.45);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #101318;
+  --color-surface: #181d24;
+  --color-fill: #212833;
+  --color-border: #2b333e;
+  --color-border-strong: #5f6b7b;
+  --color-text: #e7eaee;
+  --color-text-secondary: #a2acb8;
+  --color-text-disabled: #6b7480;
+  --color-accent: #6ea8ff;
+  --color-accent-soft: #1b2b45;
+  --color-on-accent: #0c1322;
+  --color-ok: #4cc38a;
+  --color-warning: #f0b354;
+  --color-on-warning: #1c1408;
+  --color-danger: #ff6b6b;
+  --color-on-danger: #1c0c0c;
+  --color-stop: #d32f2f;
+  --color-on-stop: #ffffff;
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #9085e9;
+  --chart-surface: #181d24;
+  --chart-grid: #2b333e;
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --color-scrim: rgba(0, 0, 0, 0.55);
+}
+
+/* Fingers and the drawer layout (below 1024px) get 44px controls. */
+@media (pointer: coarse), (max-width: 1023px) {
+  :root {
+    --control-height: 44px;
+  }
+}

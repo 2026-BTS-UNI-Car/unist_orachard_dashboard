@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>UBTS UI kit</title>
+<script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("ubts-theme") || "light";
+      } catch (_) {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
+<link href="/static/css/tokens.css" rel="stylesheet"/>
+<link href="/static/css/base.css" rel="stylesheet"/>
+<link href="/static/css/components.css" rel="stylesheet"/>
+<link href="/static/css/frame.css" rel="stylesheet"/>
+<style>
+      /* Layout of this check page only. */
+      .kit { display: grid; gap: var(--space-4); max-width: 1120px; margin: 0 auto; padding: var(--space-4); }
+      .kit-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+      .kit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4); }
+      .kit-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+      .kit-row + .kit-row { margin-top: var(--space-3); }
+      .kit-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: var(--space-2); }
+      .kit-swatch { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: var(--space-2); font-size: var(--text-xs); line-height: var(--leading-xs); }
+      .kit-swatch i { width: 24px; height: 24px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+      .kit-type > * + * { margin-top: var(--space-2); }
+      .kit-space { display: flex; align-items: flex-end; gap: var(--space-3); }
+      .kit-space i { display: block; width: 24px; background: var(--color-accent); }
+      .kit-pad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); max-width: 280px; }
+      .kit-statusbar { position: static; }
+    </style>
+</head>
+<body>
+<main class="kit">
+<header class="kit-head">
+<div>
+<h1>UI kit</h1>
+<p class="page-note">대시보드 화면이 쓰는 규칙표(tokens.css)와 기본 부품(components.css, frame.css)을 한 쪽에 모은 점검용 화면입니다. 메뉴에는 없습니다.</p>
+</div>
+<button aria-pressed="false" class="toggle" id="kitThemeToggle" type="button"><span class="toggle-track"></span><span id="kitThemeLabel">다크 테마</span></button>
+</header>
+
+<section class="panel">
+<div class="panel-head"><h2>색</h2><small class="panel-sub">무채색 6단계 · 강조색 1 · 상태색 3 · STOP</small></div>
+<div class="kit-swatches">
+<div class="kit-swatch"><i style="background: var(--color-bg)"></i>bg</div>
+<div class="kit-swatch"><i style="background: var(--color-surface)"></i>surface</div>
+<div class="kit-swatch"><i style="background: var(--color-fill)"></i>fill</div>
+<div class="kit-swatch"><i style="background: var(--color-border)"></i>border</div>
+<div class="kit-swatch"><i style="background: var(--color-border-strong)"></i>border-strong</div>
+<div class="kit-swatch"><i style="background: var(--color-text)"></i>text</div>
+<div class="kit-swatch"><i style="background: var(--color-text-secondary)"></i>text-secondary</div>
+<div class="kit-swatch"><i style="background: var(--color-text-disabled)"></i>text-disabled</div>
+<div class="kit-swatch"><i style="background: var(--color-accent)"></i>accent</div>
+<div class="kit-swatch"><i style="background: var(--color-accent-soft)"></i>accent-soft</div>
+<div class="kit-swatch"><i style="background: var(--color-ok)"></i>ok</div>
+<div class="kit-swatch"><i style="background: var(--color-warning)"></i>warning</div>
+<div class="kit-swatch"><i style="background: var(--color-danger)"></i>danger</div>
+<div class="kit-swatch"><i style="background: var(--color-stop)"></i>stop</div>
+<div class="kit-swatch"><i style="background: var(--chart-1)"></i>chart-1</div>
+<div class="kit-swatch"><i style="background: var(--chart-2)"></i>chart-2</div>
+<div class="kit-swatch"><i style="background: var(--chart-3)"></i>chart-3</div>
+<div class="kit-swatch"><i style="background: var(--chart-4)"></i>chart-4</div>
+<div class="kit-swatch"><i style="background: var(--chart-5)"></i>chart-5</div>
+</div>
+</section>
+
+<div class="kit-grid">
+<section class="panel kit-type">
+<div class="panel-head"><h2>글자</h2><small class="panel-sub">12 · 14 · 16 · 20 · 28px, 굵기 400 · 600</small></div>
+<p style="font-size: var(--text-xl); line-height: var(--leading-xl); font-weight: var(--weight-strong)">28 주요 수치 12.5 m/s</p>
+<h1>20 화면 제목</h1>
+<h2>16 패널 제목</h2>
+<p>14 본문. 조종 활성화를 켠 뒤 방향 버튼을 누릅니다. LiDAR, IMU, GPS, PWM 0123456789</p>
+<p><small>12 이름표와 보조 글 · /dev/serial/by-id/usb-0001 · 0123456789</small></p>
+<p><code>12 고정폭 ros2 topic echo /scan</code></p>
+</section>
+
+<section class="panel">
+<div class="panel-head"><h2>간격과 모서리</h2><small class="panel-sub">4 · 8 · 12 · 16 · 24 · 32px</small></div>
+<div class="kit-space">
+<i style="height: var(--space-1)"></i><i style="height: var(--space-2)"></i><i style="height: var(--space-3)"></i><i style="height: var(--space-4)"></i><i style="height: var(--space-5)"></i><i style="height: var(--space-6)"></i>
+</div>
+<div class="kit-row">
+<span class="btn">조작 요소 4px</span>
+<span class="status-chip ok">상태 점은 원</span>
+</div>
+<p class="page-note">패널 모서리는 8px입니다. 그림자는 서랍 메뉴와 대화 상자에만 씁니다.</p>
+</section>
+</div>
+
+<div class="kit-grid">
+<section class="panel">
+<div class="panel-head"><h2>버튼</h2><small class="panel-sub">.btn · 36px, 손가락 기기 44px</small></div>
+<div class="kit-row">
+<button class="btn btn-primary" type="button">주 버튼</button>
+<button class="btn" type="button">보조 버튼</button>
+<button class="btn btn-danger" type="button">위험</button>
+<button class="btn btn-quiet" type="button">글자형</button>
+</div>
+<div class="kit-row">
+<button aria-pressed="true" class="btn" type="button">켜진 상태</button>
+<button class="btn btn-primary" disabled="" type="button">꺼짐</button>
+<button class="btn" disabled="" type="button">꺼짐</button>
+<a class="btn" href="#buttons">링크 버튼</a>
+</div>
+<div class="kit-row">
+<button class="stop-button" type="button">STOP</button>
+<small class="panel-sub">.stop-button · STOP에만 쓰는 빨강</small>
+</div>
+</section>
+
+<section class="panel">
+<div class="panel-head"><h2>누르고 있는 버튼</h2><small class="panel-sub">.btn-hold · 56px</small></div>
+<div class="kit-pad">
+<span></span><button class="btn btn-hold" type="button">W</button><span></span>
+<button class="btn btn-hold" type="button">A</button><button class="btn btn-hold active" type="button">S</button><button class="btn btn-hold" type="button">D</button>
+</div>
+<p class="page-note">누르는 동안만 동작합니다. 스크롤, 글자 선택, 길게 누름 메뉴가 끼어들지 않습니다.</p>
+</section>
+</div>
+
+<div class="kit-grid">
+<section class="panel">
+<div class="panel-head"><h2>토글 · 체크 상자 · 슬라이더</h2></div>
+<div class="kit-row">
+<label class="toggle"><input checked="" type="checkbox"/><span class="toggle-track"></span>자동 제어</label>
+<label class="toggle"><input type="checkbox"/><span class="toggle-track"></span>꺼짐</label>
+<label class="toggle"><input disabled="" type="checkbox"/><span class="toggle-track"></span><span>쓸 수 없음</span></label>
+</div>
+<div class="kit-row">
+<label class="check"><input checked="" type="checkbox"/><span>IMU 함께 기록</span></label>
+<label class="check"><input type="checkbox"/><span>GPS 함께 기록</span></label>
+</div>
+<div class="kit-row">
+<label class="field" style="flex: 1 1 220px">속도 상한 <input class="slider" max="100" min="0" type="range" value="25"/></label>
+</div>
+</section>
+
+<section class="panel">
+<div class="panel-head"><h2>입력 칸 · 선택 상자</h2></div>
+<div class="kit-row">
+<label class="field">이름 <input class="input" placeholder="rover-01" type="text"/></label>
+<label class="field">PWM <input class="input" max="255" min="0" type="number" value="128"/></label>
+<label class="field">전송 품질 <select class="select"><option>자동 조절</option><option>64 kbps</option><option>고화질</option></select></label>
+</div>
+<div class="kit-row">
+<label class="field-inline">옆에 붙는 이름표 <select class="select"><option>1280x720</option><option>1920x1080</option></select></label>
+<input class="input" disabled="" type="text" value="쓸 수 없음"/>
+</div>
+</section>
+</div>
+
+<div class="kit-grid">
+<section class="panel">
+<div class="panel-head"><h2>탭 · 고르기 버튼</h2></div>
+<div class="tabs" role="tablist">
+<button aria-selected="true" class="tab" role="tab" type="button">수동</button>
+<button aria-selected="false" class="tab" role="tab" type="button">자율</button>
+<button aria-selected="false" class="tab" role="tab" type="button">기록</button>
+</div>
+<div class="kit-row">
+<div class="segmented"><button aria-pressed="true" type="button">통합</button><button type="button">코어별</button></div>
+<div class="segmented"><button type="button">JSON</button><button aria-pressed="true" type="button">CSV</button><button type="button">PNG</button></div>
+</div>
+</section>
+
+<section class="panel">
+<div class="panel-head"><h2>상태 표시</h2><small class="panel-sub">.status-chip · 점과 낱말</small></div>
+<div class="kit-row">
+<span class="status-chip ok">연결됨</span>
+<span class="status-chip warn">조종 활성</span>
+<span class="status-chip bad">연결 끊김</span>
+<span class="status-chip">대기</span>
+<span class="status-chip recording">기록 중</span>
+</div>
+<div class="kit-row">
+<span class="tag">00:12 / 03:40</span>
+<span class="tag ok">running</span>
+<span class="tag warn">확인 중</span>
+</div>
+</section>
+</div>
+
+<section class="panel">
+<div class="panel-head"><h2>상태 막대</h2><small class="panel-sub">.statusbar · 모든 화면 위에 고정</small></div>
+<div class="statusbar kit-statusbar">
+<strong class="statusbar-brand">UBTS</strong>
+<div class="statusbar-items">
+<span class="status-chip ok">연결됨</span>
+<span class="status-chip">조종 비활성</span>
+<span class="status-chip">기록 대기</span>
+<span class="statusbar-clock">14:02:11</span>
+</div>
+<button class="stop-button" type="button">STOP</button>
+</div>
+</section>
+
+<section class="panel">
+<div class="panel-head"><h2>화면 머리와 상태 줄</h2><small class="panel-sub">.page-head · .status-strip</small></div>
+<header class="page-head">
+<h1>주행</h1>
+<span class="status-chip">실차</span>
+<div class="page-head-actions"><label class="field-inline">전송 품질 <select class="select"><option>자동 조절</option></select></label></div>
+</header>
+<div class="status-strip" style="margin-top: var(--space-3)">
+<div class="status-strip-item"><span>ESP8266</span><strong>open</strong><small title="/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0">/dev/serial/by-…-if00-port0</small></div>
+<div class="status-strip-item"><span>모드</span><strong>esp_manual</strong><small>단일 사용자 수동 조종</small></div>
+<div class="status-strip-item"><span>ROS 2</span><strong>ready</strong><small>모터 상태 관측</small></div>
+<div class="status-strip-item"><span>기록</span><strong>ready</strong><small>12 archives</small></div>
+</div>
+</section>
+
+<div class="kit-grid">
+<section class="panel">
+<div class="panel-head">
+<div class="panel-title"><h2>패널</h2><small class="panel-sub">/scan</small></div>
+<div class="panel-actions"><button class="btn" type="button">새로고침</button></div>
+</div>
+<p>제목 줄(제목, 보조 글, 오른쪽 조작)과 본문으로 이루어집니다. 패널 안에 테두리 상자를 다시 넣지 않습니다.</p>
+<div class="panel-section">
+<h3>패널 안 소제목</h3>
+<p class="page-note">구분선과 제목으로 나눕니다.</p>
+</div>
+</section>
+
+<section class="panel">
+<div class="panel-head"><h2>이름-값 목록</h2><small class="panel-sub">.kv-list</small></div>
+<dl class="kv-list">
+<div><dt>호스트 이름</dt><dd>jetson-orin-01</dd></div>
+<div><dt>가동 시간</dt><dd>3일 4시간</dd></div>
+<div><dt>온도</dt><dd>48.5 °C</dd></div>
+<div><dt>장치 경로</dt><dd>/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0</dd></div>
+</dl>
+</section>
+</div>
+
+<section class="panel">
+<div class="panel-head"><h2>표</h2><small class="panel-sub">.table</small></div>
+<div class="table-wrap">
+<table class="table">
+<thead><tr><th scope="col">NodeMCU 핀</th><th scope="col">ESP GPIO</th><th scope="col">역할</th><th scope="col">요청 PWM</th><th scope="col">MCU 보고 PWM</th></tr></thead>
+<tbody>
+<tr><td>D8</td><td>15</td><td>왼쪽 정방향</td><td>128</td><td>126</td></tr>
+<tr><td>D5</td><td>14</td><td>왼쪽 역방향</td><td>0</td><td>0</td></tr>
+<tr><td>D3</td><td>0</td><td>오른쪽 정방향</td><td>128</td><td>127</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<div class="kit-grid">
+<section class="panel">
+<div class="panel-head"><h2>띠 알림</h2><small class="panel-sub">.notice</small></div>
+<div class="kit-type">
+<div class="notice">명령 대기 중</div>
+<div class="notice ok">정지 요청 접수 · 다시 조종하려면 활성화하세요.</div>
+<div class="notice warn">기록 상태 확인 중 · 연결을 확인하세요.</div>
+<div class="notice bad">응답 없음 · 입력 만료 정지 대기</div>
+<div class="notice info">정지 요청 중 · 조종 해제</div>
+</div>
+</section>
+
+<section class="panel">
+<div class="panel-head"><h2>빈 상태 · 진행 막대 · 대화 상자</h2></div>
+<div class="empty-state">표시할 컨테이너가 없습니다.</div>
+<div class="progress"><i style="transform: scaleX(0.62)"></i></div>
+<div class="kit-row">
+<button class="btn" id="kitDialogOpen" type="button">대화 상자 열기</button>
+</div>
+<dialog class="dialog" id="kitDialog">
+<div class="dialog-head"><h2>새 지도를 만들까요?</h2></div>
+<div class="dialog-body">지금 보이는 지도는 지워지고 원본 기록은 그대로 남습니다.</div>
+<form class="dialog-actions" method="dialog">
+<button class="btn" type="submit">취소</button>
+<button class="btn btn-primary" type="submit">새 지도</button>
+</form>
+</dialog>
+</section>
+</div>
+</main>
+<script>
+      (() => {
+        const root = document.documentElement;
+        const toggle = document.getElementById("kitThemeToggle");
+        const label = document.getElementById("kitThemeLabel");
+        const show = () => {
+          const dark = root.dataset.theme === "dark";
+          toggle.setAttribute("aria-pressed", String(dark));
+          label.textContent = dark ? "다크 테마 켜짐" : "다크 테마";
+        };
+        toggle.addEventListener("click", () => {
+          root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+          show();
+        });
+        show();
+        const dialog = document.getElementById("kitDialog");
+        document.getElementById("kitDialogOpen").addEventListener("click", () => dialog.showModal());
+      })();
+    </script>
+</body>
+</html>
