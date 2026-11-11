@@ -6,20 +6,17 @@
     "accepted_native_chain_enabled": true,
     "batched_rays_enabled": true,
     "keyframe_bridge_gates_enabled": true,
-    "paired_visibility_bridge_enabled": false,
     "scan_to_map_bridge_enabled": false
   },
   "files_sha256": {
     "batched_map_owner.py": "1009242fe6a235b7f6205d7afbfb088c0199d9979849536fd8cac7595b6f7302",
     "batched_rays.py": "c92818d13224a6730624e82baf5173f4231d6a78552d4c04a2ef61feb53a0b37",
-    "committed_native_map.py": "26b2a5a1deef81e9e761b0ede9a234a95ca79c6e27418e1bdd62c387aba32856",
+    "committed_native_map.py": "c039e43b4484059ccdb6c669764aad97ed9c9d74c4f5133dc42265a07facdccc",
     "keyframe_registration.py": "a11970e9a3cbe9c3cf0da915d9a01b5733c285e7215ef620ad214cae70413704",
     "native_map_owner.py": "4b0e2e77094b3de49a5ca56408f2e172fb059a01c7035ad80db906786717af7b",
-    "native_map_transport.py": "b5879583125005dd6c3b280c1c1f82caa9667eec12a6de1be73fab5bd53e11a1",
+    "native_map_transport.py": "40db011e22c8aee9ec8fc5e07b8289ff5553ceab7da5834768f9c629ee518ef7",
     "native_pose_ledger.py": "87d2fec7b8f461543c494087995f71b7b6467b742b83b4ac6d874a531587c8cc",
-    "pair_visibility.py": "71b509967b9da092825741ee28cb4a138f877ab539c9b1ebb32f3bf622b657b0",
-    "paired_keyframe_registration.py": "1efc8add6fe1a605044d3d4c9414da7cc3a10d4076a95837ee8088a2eafc4bfc",
-    "stream_rows_map.py": "0f2950904d9514eec7f0f9c885f505502e7d750f9dd6b8ebf6bb2a5a34d9f89d"
+    "stream_rows_map.py": "ff049319c3f00b58922ce27b86a2870ab9a3f59339a6310eec596daa3719e896"
   },
   "motor_command_sent": false,
   "owned_wait_health_guard": {
@@ -31,19 +28,6 @@
     "previous_manifest_sha256": "91f3f2c4b556c1765fa64b4286b9c38b62598b7b042d2b876daacc3ce4d4d101",
     "private_handoff_sha256": "0b2f7ffa6f9bbd9f87f2a1e2ebf7904f7d53cca0039679ff1c315ba439071892",
     "source_parent_commit": "00dfc665fc74a3363cd8ade0d388b923796b480d"
-  },
-  "paired_visibility_proposal": {
-    "default_OFF": true,
-    "global_alias_uniqueness_verified": false,
-    "installed": false,
-    "last_gap_fixed": false,
-    "original_kernel_support_information_gates_unchanged": true,
-    "physical_accuracy_verified": false,
-    "private_handoff_sha256": "592df25119eb4dce8789131f3bfbd420f1581101ea03eb4030b764471dd14dad",
-    "production_CLI_available": false,
-    "runtime_qualified": false,
-    "supplemental_overlap_denominator_changed": true,
-    "whole_trajectory_drift_fixed": false
   },
   "parent_map_handoff_sha256": "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9",
   "parent_map_source_sha256": "556c90c0186c71dfd73110d000984214a31e4b6fdc0e8953f5873d76d5e03a69",

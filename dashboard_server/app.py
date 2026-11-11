@@ -1265,9 +1265,19 @@ def create_server(host: str, port: int, config: str | None = None, *, autonomy_b
     DashboardHandler.autonomy_supervisor=NativeAutonomyApplication(
         DashboardHandler.native_observation_client,session_valid=native_session_valid,bindings=autonomy_bindings)
     DashboardHandler.autonomy_observe_lock=threading.RLock()
+    from dashboard_server.field10_shadow import make_field10_shadow_planner
+    # Enabled only by a release that pins BOTH roles to the scalar protocol.
+    # An old/unsupported server returns None; it is never a full-getter fallback.
+    comparison_protocol=os.environ.get('UBTS_NATIVE_CONTROL_COMPARISON_V1','0')
+    if comparison_protocol not in ('0','1'):
+        raise ValueError('explicit_native_comparison_protocol_required')
+    if comparison_protocol=='1' and DashboardHandler.native_observation_client is None:
+        raise ValueError('native_comparison_protocol_requires_native_source')
     DashboardHandler.autonomy_observation=AutonomyObservation(
-        planner=RecordBasedAutonomy(),input_provider=DashboardHandler.native_observation_client.input
-            if DashboardHandler.native_observation_client is not None else DashboardHandler.live_mapping.observation_input)
+        planner=make_field10_shadow_planner(),input_provider=DashboardHandler.native_observation_client.input
+            if DashboardHandler.native_observation_client is not None else DashboardHandler.live_mapping.observation_input,
+        comparison_provider=DashboardHandler.native_observation_client.control_comparison
+            if comparison_protocol=='1' else None)
     dashboard_log("server.create", host=host, port=port, session_ttl_s=SESSION_TTL_S)
     server=DashboardServer((host, port), DashboardHandler,
         autonomy_supervisor=DashboardHandler.autonomy_supervisor,

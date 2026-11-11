@@ -761,13 +761,12 @@ def load_native_map_sources(path, expected_sha):
             "native_map_source_manifest_SHA_required")
     manifest = strict_json(read_regular(root / "NATIVE_MAP_SOURCE.json", 16384))
     names = {"native_map_owner.py", "committed_native_map.py", "stream_rows_map.py", "native_map_transport.py",
-             "keyframe_registration.py", "batched_map_owner.py", "batched_rays.py", "native_pose_ledger.py", "paired_keyframe_registration.py", "pair_visibility.py"}
+             "keyframe_registration.py", "batched_map_owner.py", "batched_rays.py", "native_pose_ledger.py"}
     require(manifest.get("schema") == "ubts.private.native_map_source.v2" and
             manifest.get("parent_map_source_sha256") == "556c90c0186c71dfd73110d000984214a31e4b6fdc0e8953f5873d76d5e03a69" and
             set(manifest.get("files_sha256", {})) == names and
             manifest.get("parent_package_sha256") == "87859742812894e69dede8f537906e8bd743560ae01eed556d778445efd960fa" and
             manifest.get("parent_map_handoff_sha256") == "6fd3a2843456d1698d2a83116fea14f9c64f407338ee230bc1c85caaa29ca2d9" and
-            manifest.get("explicit_private_session_features", {}).get("paired_visibility_bridge_enabled") is False and
             manifest.get("runtime_qualified") is False and manifest.get("motor_command_sent") is False and
             manifest.get("execution_eligible") is False, "exact_unqualified_native_map_sources_required")
     for name, sha in manifest["files_sha256"].items():

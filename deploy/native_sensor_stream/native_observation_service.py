@@ -82,6 +82,148 @@ def bind_observation_socket(target):
         raise
 
 
+def read_control_comparison(runner):
+    """One current-owner scalar read; no lifecycle mutation or nested locks."""
+    before=runner.lifecycle.status()
+    with runner.lock:
+        resource=runner.resource
+        adapter=None if resource is None else resource.adapter
+    def eligible(owner):
+        return (resource is not None and adapter is not None and owner.owned and
+            not owner.cancelled and owner.first_failure_reason is None and
+            resource.context.session==owner.session and resource.context.generation==owner.generation)
+    if not eligible(before):
+        return None
+    getter=getattr(adapter,'proposal_comparison',None)
+    if not callable(getter):
+        return None
+    value=getter()
+    after=runner.lifecycle.status()
+    with runner.lock:
+        same=runner.resource is resource and resource.adapter is adapter
+    if not same or not eligible(after) or (after.session,after.generation)!=(before.session,before.generation):
+        return None
+    return value
+
+
+def read_control_comparison_committed(runner):
+    """One current-owner scalar read; no lifecycle mutation or nested locks."""
+    before=runner.lifecycle.status()
+    with runner.lock:
+        resource=runner.resource
+        adapter=None if resource is None else resource.adapter
+    def eligible(owner):
+        return (resource is not None and adapter is not None and owner.owned and
+            not owner.cancelled and owner.first_failure_reason is None and
+            resource.context.session==owner.session and resource.context.generation==owner.generation)
+    if not eligible(before):
+        return None
+    getter=getattr(adapter,'proposal_comparison_committed',None)
+    if not callable(getter):
+        return None
+    value=getter()
+    after=runner.lifecycle.status()
+    with runner.lock:
+        same=runner.resource is resource and resource.adapter is adapter
+    if not same or not eligible(after) or (after.session,after.generation)!=(before.session,before.generation):
+        return None
+    return value
+
+def read_full_input_committed(runner):
+    """One current-owner scalar read; no lifecycle mutation or nested locks."""
+    before=runner.lifecycle.status()
+    with runner.lock:
+        resource=runner.resource
+        adapter=None if resource is None else resource.adapter
+    def eligible(owner):
+        return (resource is not None and adapter is not None and owner.owned and
+            not owner.cancelled and owner.first_failure_reason is None and
+            resource.context.session==owner.session and resource.context.generation==owner.generation)
+    if not eligible(before):
+        return None
+    getter=getattr(adapter,'proposal_input_committed',None)
+    if not callable(getter):
+        return None
+    value=getter()
+    after=runner.lifecycle.status()
+    with runner.lock:
+        same=runner.resource is resource and resource.adapter is adapter
+    if not same or not eligible(after) or (after.session,after.generation)!=(before.session,before.generation):
+        return None
+    return value
+
+def read_full_input_sealed(runner):
+    """One current-owner scalar read; no lifecycle mutation or nested locks."""
+    before=runner.lifecycle.status()
+    with runner.lock:
+        resource=runner.resource
+        adapter=None if resource is None else resource.adapter
+    def eligible(owner):
+        return (resource is not None and adapter is not None and owner.owned and
+            not owner.cancelled and owner.first_failure_reason is None and
+            resource.context.session==owner.session and resource.context.generation==owner.generation)
+    if not eligible(before):
+        return None
+    getter=getattr(adapter,'proposal_input_committed_wire',None)
+    if not callable(getter):
+        return None
+    value=getter()
+    after=runner.lifecycle.status()
+    with runner.lock:
+        same=runner.resource is resource and resource.adapter is adapter
+    if not same or not eligible(after) or (after.session,after.generation)!=(before.session,before.generation):
+        return None
+    return value
+
+
+def sealed_input_wire_enabled():
+    value=os.environ.get('UBTS_NATIVE_SEALED_INPUT_WIRE','0')
+    if value not in('0','1'):raise ValueError('explicit_sealed_input_wire_boolean_required')
+    return value=='1'
+
+
+def encode_sealed_reply(result):
+    from stream_rows import encode_input_reply
+    return encode_input_reply(result)
+
+
+def comparison_committed_enabled():
+    value=os.environ.get('UBTS_NATIVE_COMPARISON_COMMITTED_SNAPSHOT','0')
+    if value not in('0','1'):raise ValueError('explicit_committed_comparison_boolean_required')
+    return value=='1'
+
+def read_control_comparison_timed(runner,*,committed_snapshot=False):
+    """Instrument the original helper, never change its authority/return path."""
+    def now():
+        try:return time.monotonic_ns()
+        except Exception:return None
+    if type(committed_snapshot)is not bool:raise ValueError('exact_committed_comparison_boolean_required')
+    start=now()
+    with runner.lock:
+        resource=runner.resource
+        adapter=None if resource is None else resource.adapter
+    try:
+        return read_control_comparison_committed(runner)if committed_snapshot else read_control_comparison(runner)
+    finally:
+        # No adapter ownership lock is held while calling lifecycle or runner.
+        try:
+            end=now()
+            with runner.lock:
+                same=runner.resource is resource and resource is not None and resource.adapter is adapter
+            recorder=None if adapter is None else getattr(adapter,'_record_comparison_timing',None)
+            if same and callable(recorder):
+                elapsed=end-start if type(start) is int and type(end) is int and 0<=end-start<=60_000_000_000 else None
+                recorder('service_dispatch',elapsed)
+        except Exception:
+            pass
+
+
+def full_and_comparison_committed_enabled():
+    value=os.environ.get('UBTS_NATIVE_FULL_AND_COMPARISON_COMMITTED','0')
+    if value not in('0','1'):raise ValueError('exact_full_and_comparison_committed_ENV_required')
+    return value=='1'
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument('--serve',action='store_true')
@@ -99,6 +241,10 @@ def main(argv=None):
             runtime_authority=False,motor_command_sent=False,autonomy_output_enabled=False)))
         return 0
     import stream_runner
+    full_snapshot_enabled=full_and_comparison_committed_enabled()
+    sealed_wire_enabled=sealed_input_wire_enabled()
+    if sealed_wire_enabled and not full_snapshot_enabled:raise ValueError('sealed_wire_requires_explicit_full_snapshot_protocol')
+    committed_snapshot_enabled=comparison_committed_enabled() or full_snapshot_enabled
     root=Path(__file__).resolve().parent
     stream_runner.require(os.geteuid()==0 and os.environ.get('ROS_DISTRO')=='iron' and
         os.environ.get('ROS_DOMAIN_ID')=='0','actual_native_environment_required')
@@ -127,7 +273,7 @@ def main(argv=None):
         bound.gps_data_gid,bound.gps_fix_gid=args.gps_data_gid,args.gps_fix_gid
         bound.native_gnss_manifest_sha256=GNSS_SOURCE_SHA
         stream_runner.load_native_gnss_sources(root,GNSS_SOURCE_SHA)
-    bound.native_map_manifest_sha256 = 'fb575f0383049cca5c83463b0caa85e7765654c0a99c17981b3914744ceec463'
+    bound.native_map_manifest_sha256 = 'cc167f805f0f345c0710db6f2736019e0d1e6a1989e264467f2d7c38c3210b60'
     if args.enable_native_map:
         stream_runner.load_native_map_sources(root, bound.native_map_manifest_sha256)
         from committed_native_map import CommittedNativeMapAdapter
@@ -238,7 +384,7 @@ def main(argv=None):
                     map_request = type(value) is dict and value.get('op') in ('map_status','map_tiles','map_release')
                     map_new = type(value) is dict and value.get('op') == 'map_new'
                     stream_runner.require(map_request or map_new or (type(value) is dict and set(value)=={'op'} and
-                        value['op'] in ('start','stop','status','input','control_input')), 'sensor_owner_operation_required')
+                        value['op'] in ('start','stop','status','input','control_input','control_comparison')), 'sensor_owner_operation_required')
                     if map_new:
                         stream_runner.require(args.enable_native_map and set(value) == {'op','map_epoch'} and
                             not runner.lifecycle.status().owned, 'native_new_map_requires_closed_owner')
@@ -268,7 +414,9 @@ def main(argv=None):
                     result=dict(ok=okay,schema='ubts.native_observation.local_reply.v1',
                         state=runner.lifecycle.status().state,runtime_authority=False,
                         motor_command_sent=False,autonomy_output_enabled=False)
-                    if value['op'] in ('input','control_input'):
+                    if value['op'] == 'control_comparison':
+                        result['comparison'] = read_control_comparison_timed(runner,committed_snapshot=committed_snapshot_enabled)
+                    elif value['op'] in ('input','control_input'):
                         with runner.lock:
                             resource=runner.resource
                             adapter=None if resource is None else resource.adapter
@@ -281,11 +429,14 @@ def main(argv=None):
                                     runtime_authority=False,motor_command_sent=False,
                                     operational_frame_available=False))
                         else:
-                            result['input'] = adapter.proposal_input() if available else None
+                            result['input'] = (read_full_input_sealed(runner) if sealed_wire_enabled else
+                                read_full_input_committed(runner) if full_snapshot_enabled else
+                                (adapter.proposal_input() if available else None))
                     else:
                         result['status']=runner.status()
-                    raw=(json.dumps(result,allow_nan=False,separators=(',',':'))+'\n').encode()
-                    stream_runner.require(len(raw)<=262144,'bounded_sensor_owner_reply')
+                    raw=(encode_sealed_reply(result) if value['op']=='input' and sealed_wire_enabled else
+                         (json.dumps(result,allow_nan=False,separators=(',',':'))+'\n').encode())
+                    stream_runner.require(len(raw)<=(4096 if value['op']=='control_comparison' else 262144),'bounded_sensor_owner_reply')
                     conn.sendall(raw)
                 except (OSError,ValueError,TypeError) as error:
                     try:
