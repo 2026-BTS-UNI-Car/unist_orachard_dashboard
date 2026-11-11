@@ -113,19 +113,54 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   const base = read('css/base.css');
   assert.match(base, /:focus-visible \{\n  outline: 2px solid var\(--color-accent\);/);
   assert.match(base, /@media \(prefers-reduced-motion: reduce\)/);
-  // The bundled font file exists; no font is fetched from elsewhere.
-  assert.match(tokens, /src: url\("\/static\/vendor\/korean-font\/korean\.woff2"\) format\("woff2"\);/);
-  assert.ok(fs.existsSync(path.join(staticDir, 'vendor/korean-font/korean.woff2')));
 }
 
-// Pages load nothing from outside the dashboard (it must work from the vehicle's own access point).
+// First-load weight (the dashboard is used over a slow link): the interface
+// loads no font file and no image; text uses the fonts of the device.
+{
+  for (const name of systemSheets) {
+    const css = read(name);
+    assert.doesNotMatch(css, /@font-face/i, `${name}: @font-face (the interface must not load a font file)`);
+    assert.doesNotMatch(css, /\.(woff2?|ttf|otf|eot)\b/i, `${name}: reference to a font file`);
+    assert.doesNotMatch(stripComments(css), /url\(/i, `${name}: url() (no font, image or icon file; draw icons with CSS or inline SVG)`);
+  }
+  // The font tokens are stacks of installed fonts that end in a generic family.
+  const families = value => value.split(',').map(item => item.trim());
+  const sans = families(light['--font-sans']), mono = families(light['--font-mono']);
+  assert.deepEqual([sans[0], sans.at(-1)], ['system-ui', 'sans-serif']);
+  assert.equal(mono.at(-1), 'monospace');
+  for (const korean of ['"Apple SD Gothic Neo"', '"Malgun Gothic"', '"Noto Sans KR"']) assert.ok(sans.includes(korean), `${korean} in --font-sans`);
+  for (const name of [...systemSheets, ...pageSheets]) {
+    for (const match of stripComments(read(name)).matchAll(/font-family\s*:\s*([^;}]+)/g)) {
+      const value = match[1].trim();
+      assert.ok(/^(inherit|var\(--font-(sans|mono)\))$/.test(value) || !systemSheets.includes(name), `${name}: font-family ${value} (use the font tokens)`);
+    }
+  }
+  assert.match(read('css/base.css'), /font-variant-numeric: tabular-nums;/, 'read-outs keep their width while digits change');
+}
+
+// Pages load nothing from outside the dashboard (it must work from the vehicle's own access point),
+// and the dashboard page requests exactly these files when it opens: adding a request needs a reason.
 {
   for (const name of ['index.html', 'ui-kit.html']) {
     const html = read(name);
     for (const match of html.matchAll(/\b(?:href|src)="([^"]*)"/g)) {
       assert.doesNotMatch(match[1], /^(?:[a-z][a-z0-9+.-]*:)?\/\//i, `${name}: external resource ${match[1]}`);
     }
+    assert.doesNotMatch(html, /rel="preload"|rel="prefetch"|@font-face/, `${name}: preload or font`);
   }
+  const html = read('index.html');
+  const loaded = [...html.matchAll(/<(?:link|script)\b[^>]*\b(?:href|src)="([^"]+)"/g)].map(match => match[1]);
+  assert.deepEqual(loaded, [
+    '/static/favicon.ico', '/static/assets/favicon.png', '/static/assets/apple-touch-icon.png',
+    '/static/css/tokens.css', '/static/css/base.css', '/static/css/components.css', '/static/css/frame.css',
+    '/static/styles.css', '/static/vendor/maplibre-gl/maplibre-gl.css', '/static/gps-map.css', '/static/live-map.css',
+    '/static/vendor/hls/hls.min.js', '/static/archive-video.js', '/static/app.js',
+    '/static/field-preparation.css', '/static/field-preparation.js', '/static/vendor/pmtiles/pmtiles.js',
+    '/static/gps-map.js', '/static/live-map.js', '/static/media-jobs.css', '/static/media-jobs.js',
+  ], 'files that index.html loads');
+  // The markup itself brings no picture: an <img> gets its source from a live stream or a recording.
+  for (const match of html.matchAll(/<img\b[^>]*>/g)) assert.doesNotMatch(match[0], /\bsrc=/, `image loaded with the page: ${match[0]}`);
 }
 
 // The check page shows every component and is not part of the navigation.

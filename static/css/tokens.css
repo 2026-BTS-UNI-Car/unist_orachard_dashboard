@@ -4,15 +4,9 @@
    Rules for the rest of the CSS: sizes, colours and radii come from here;
    no gradients, no blur, no glow; a shadow only on overlays. */
 
-/* The one font file that ships with the dashboard (Noto Sans KR, weight 400,
-   Latin + Hangul). There is no heavier file: weight 600 is drawn from it. */
-@font-face {
-  font-family: "UBTS Sans";
-  src: url("/static/vendor/korean-font/korean.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
+/* No font file is loaded for the interface: the first load has to stay light
+   on a slow link. Text is drawn with the fonts of the device, so layouts must
+   not depend on the widths of one particular font. */
 
 :root {
   color-scheme: light;
@@ -26,7 +20,7 @@
   --space-6: 32px;
 
   /* Type: 12, 14, 16, 20, 28 with a fixed line height each; weights 400 and 600. */
-  --font-sans: "UBTS Sans", system-ui, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
   --text-xs: 12px;
   --text-sm: 14px;
