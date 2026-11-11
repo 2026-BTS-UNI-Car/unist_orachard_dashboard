@@ -195,6 +195,7 @@ const state = {
 	    seekTimer: null,
 	    lastPlaybackRenderAt: 0,
 	    lastLidarRenderKey: "",
+	    lidarPainted: false,
 	    lastCameraRenderKey: "",
 	    nativeVideoUrl: "",
 	    nativeVideoReady: false,
@@ -2775,6 +2776,7 @@ function createCoreChart() {
       <small>Y 0-100%<br /><span data-role="window">${chartWindowLabel()}</span></small>
     </div>
   `;
+  observeCanvasResize(article.querySelector("canvas"));
   return article;
 }
 
@@ -5070,9 +5072,11 @@ function renderArchiveFrame(options={}) {
   const lidarResult = lidarFrame?.result || state.archivePlayback.fallbackPreview;
   const lidarRenderKey = `${lidarFrame?.cacheIndex}:${state.archivePlayback.range}`;
   if (lidarRenderKey !== state.archivePlayback.lastLidarRenderKey) {
-    drawLidarMapOnCanvas($("roverArchiveLidarCanvas"), lidarResult, lidarResult?.analysis, {
+    const painted = drawLidarMapOnCanvas($("roverArchiveLidarCanvas"), lidarResult, lidarResult?.analysis, {
       range: state.archivePlayback.range,
     });
+    // Remembered for the resize path: a canvas that was never painted stays blank.
+    if (painted) state.archivePlayback.lidarPainted = true;
     state.archivePlayback.lastLidarRenderKey = lidarRenderKey;
   }
 
@@ -5423,6 +5427,66 @@ function prepareCanvas(canvas) {
   return { ctx, w: rect.width, h: rect.height };
 }
 
+// A chart, LiDAR or IMU canvas is redrawn when its own box changes size (panel
+// reflow, view switch, rotation), not only on a window "resize". The buffer is
+// still sized where it is drawn (prepareCanvas, drawImuAttitude): box in CSS
+// pixels times the capped device pixel ratio.
+const canvasResize = { observer: null, frame: null, pending: new Set() };
+
+function observeCanvasResize(canvas) {
+  if (canvas && canvasResize.observer) canvasResize.observer.observe(canvas);
+}
+
+function initCanvasResize() {
+  // Without ResizeObserver the window "resize" listener in initMobileNav() and
+  // the redraws on new data remain, as before.
+  if (typeof ResizeObserver !== "function") return;
+  canvasResize.observer = new ResizeObserver(handleCanvasResize);
+  document.querySelectorAll("canvas.resource-chart, canvas.lidar-map, canvas.imu-attitude-canvas").forEach(observeCanvasResize);
+}
+
+function handleCanvasResize(entries) {
+  let charts = false;
+  let lidar = false;
+  for (const entry of entries) {
+    // A hidden page or a closed panel reports an empty box: nothing to draw.
+    if (!(entry.contentRect.width > 0 && entry.contentRect.height > 0)) continue;
+    const canvas = entry.target;
+    if (canvas.id === "roverArchiveLidarCanvas") canvasResize.pending.add("archiveLidar");
+    else if (canvas.id === "roverArchiveImuCanvas") canvasResize.pending.add("archiveImu");
+    else if (canvas.id === "roverImuCanvas") canvasResize.pending.add("imu");
+    else if (canvas.classList.contains("lidar-map")) lidar = true;
+    else charts = true;
+  }
+  if (charts || lidar) requestChartAnimation({ redrawLidar: lidar });
+  if (canvasResize.pending.size && !canvasResize.frame) canvasResize.frame = requestAnimationFrame(flushCanvasResize);
+}
+
+function flushCanvasResize() {
+  canvasResize.frame = null;
+  const pending = canvasResize.pending;
+  canvasResize.pending = new Set();
+  if (pending.has("imu")) redrawImuLiveCanvas();
+  const archive = state.archivePlayback;
+  const repaintLidar = pending.has("archiveLidar") && archive.lidarPainted;
+  if (pending.has("archiveLidar") && !archive.lidarPainted) {
+    // Not painted yet (recordings listed, none drawn): the canvas stays blank
+    // and only its buffer is matched to the box.
+    const canvas = $("roverArchiveLidarCanvas");
+    if (canvas) prepareCanvas(canvas);
+  }
+  if (repaintLidar || (pending.has("archiveImu") && state.recordings.timeline)) {
+    // Same path as an archive range change: repaint the frame of the current playback time.
+    if (repaintLidar) archive.lastLidarRenderKey = "";
+    renderArchiveFrame();
+  }
+}
+
+function redrawImuLiveCanvas() {
+  const euler = imuDisplaySample().euler_deg || {};
+  drawImuAttitude($("roverImuCanvas"), Number(euler.roll), Number(euler.pitch), Number(euler.yaw));
+}
+
 function drawGrid(ctx, w, h) {
   ctx.save();
   ctx.strokeStyle = cssVar("--chart-grid", "rgba(255,255,255,0.1)");
@@ -5493,10 +5557,11 @@ function drawLidarMap(result) {
   drawLidarMapOnCanvas($("roverLidarCanvas"), result, null, {});
 }
 
+// Returns true when the canvas was painted (false: no canvas, or its box is empty).
 function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
-  if (!canvas) return;
+  if (!canvas) return false;
   const prepared = prepareCanvas(canvas);
-  if (!prepared) return;
+  if (!prepared) return false;
   const { ctx, w, h } = prepared;
   const colors = chartColors();
   const points = result?.ok ? result.points || [] : [];
@@ -5518,7 +5583,7 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
 
   if (!points.length) {
     drawLidarEmpty(ctx, w, h, result?.message || "스캔 대기");
-    return;
+    return true;
   }
 
   if (showPoints && points.length) {
@@ -5544,6 +5609,7 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
   ctx.textAlign = "right";
   ctx.fillText(`Grid: ${fmtNumber(gridStep, 0)}m · Range: ${fmtNumber(range, 1)}m`, w - 14, h - 16);
   ctx.restore();
+  return true;
 }
 
 function lidarCanvasPoint(point, viewport) {
@@ -5683,6 +5749,7 @@ initFanControls();
 initDockerControls();
 initNetworkControls();
 initRoverControl();
+initCanvasResize();
 renderRoute();
 loadPlan().catch(console.error);
 loadDocs().catch(console.error);
@@ -5701,7 +5768,7 @@ if (overviewToggle) {
   const applyOverview = () => {
     document.querySelector('.archive-preview')?.classList.toggle('sensor-overview', overviewToggle.checked);
     try { localStorage.setItem('ubts-archive-overview-v1', overviewToggle.checked ? '1' : '0'); } catch (_) { /* storage blocked */ }
-    window.dispatchEvent(new Event('resize'));
+    // No synthetic window "resize": the canvases watch their own boxes.
     window.LiveMap?.routeChanged();
     window.RoverGps?.routeChanged();
   };
