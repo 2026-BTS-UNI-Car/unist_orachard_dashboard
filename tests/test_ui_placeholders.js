@@ -86,5 +86,24 @@ const between = (begin, end) => { const a = source.indexOf(begin), b = source.in
     assert.match(nativeMap, /actions\.className='field-observation-actions';actions\.append\(start,stop,fresh\);/);
     assert.match(read('field-preparation.css'), /\.field-observation-actions\s*\{[^}]*gap:/);
   }
-  console.log('PASS: placeholders until the server answers, defined CSS variables, existing element ids, styled observation buttons');
+  // S33: the container log box is refreshed every 2.5 s; unchanged text is not rewritten
+  // (a rewrite replaces the text node and drops the reader's selection).
+  {
+    let writes = 0, content = '로그 대기 중';
+    const logs = {get textContent() { return content; }, set textContent(value) { content = String(value); writes += 1; }};
+    const context = {$: id => id === 'containerLogs' ? logs : id === 'containerDetail' ? {} : null, text() {},
+      renderContainerActions() {}, containerDetailCell: () => '', containerStateLabel: () => '', formatShortDate: () => '',
+      fmtPercent: () => '', fmtBytes: () => '', restartPolicyLabel: () => '', renderContainerDetailError() { throw new Error('unexpected'); }};
+    vm.createContext(context);
+    vm.runInContext(between('function renderContainerDetail(', 'function renderContainerActions('), context);
+    const detail = {ok: true, name: 'c', stats: {}, state: {}};
+    context.renderContainerDetail(detail, {ok: true, lines: ['a', 'b']});
+    context.renderContainerDetail(detail, {ok: true, lines: ['a', 'b']});
+    assert.equal(content, 'a\nb'); assert.equal(writes, 1, 'same log text is written once');
+    context.renderContainerDetail(detail, {ok: true, lines: ['a', 'b', 'c']});
+    assert.equal(content, 'a\nb\nc'); assert.equal(writes, 2);
+    context.renderContainerDetail(detail, {ok: false, error: 'gone'});
+    assert.match(content, /로그 읽기 실패: gone/);
+  }
+  console.log('PASS: placeholders until the server answers, defined CSS variables, existing element ids, styled observation buttons, log box rewrite');
 })().catch(error => { console.error(error); process.exitCode = 1; });

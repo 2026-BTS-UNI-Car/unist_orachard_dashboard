@@ -3026,7 +3026,10 @@ function renderContainerDetail(detailPayload, logsPayload) {
     if (!logsPayload?.ok) {
       logs.textContent = `로그 읽기 실패: ${logsPayload?.error || "unknown"}`;
     } else if ((logsPayload.lines || []).length) {
-      logs.textContent = logsPayload.lines.join("\n");
+      // S33: this runs every 2.5 s. Rewrite only when the text changed, so an
+      // unchanged log keeps the reader's text selection.
+      const next = logsPayload.lines.join("\n");
+      if (logs.textContent !== next) logs.textContent = next;
     } else {
       logs.textContent = "로그가 없습니다.";
     }
