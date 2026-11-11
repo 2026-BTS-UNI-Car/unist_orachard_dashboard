@@ -24,7 +24,17 @@ maplibregl.addProtocol('pmtiles', protocol.tile);
 const qualityName = {autonomous:'일반 GNSS', dgps:'DGNSS', rtk_float:'RTK FLOAT', rtk_fixed:'RTK FIX', dead_reckoning:'추정 위치', no_fix:'위치 미확정'};
 let bundlePromise;
 function bundle() {
-  if (!bundlePromise) bundlePromise = fetch('/api/maps/status').then(r => r.json());
+  if (!bundlePromise) bundlePromise = fetch('/api/maps/status').then(r => {
+    if (!r.ok) throw new Error(`지도 상태 HTTP ${r.status}`);
+    return r.json();
+  }).then(info => {
+    if (!info?.ok) throw new Error(info?.error || '오프라인 지도 파일 확인 필요');
+    return info;
+  }).catch(error => {
+    // Share in-flight/successful metadata, but never cache a transient failure.
+    bundlePromise = null;
+    throw error;
+  });
   return bundlePromise;
 }
 
@@ -43,6 +53,7 @@ class GpsMapView {
     this.model = new FollowModel(); this.map = null; this.marker = null;
     this.sample = {}; this.frames = []; this.until = Infinity; this.lastTrackData = null;
     this.initializing = null; this.lastCentered = '';
+    this.retryInitAt = 0;
     this.markerMounted = false; this.lastPositionKey = null; this.lastAppearanceKey = null;
     this.lastAccuracyKey = null;
     this.paintTask = null; this.paintGeneration = 0;
@@ -69,8 +80,10 @@ class GpsMapView {
   async init() {
     if (this.map) return; // ResizeObserver handles layout changes, not each GPS frame.
     if (this.initializing) return this.initializing;
+    if (performance.now() < this.retryInitAt) return;
     this.initializing = this.create().catch(error => {
       text(`${this.prefix}MapStatus`, `지도를 불러오지 못했습니다 · ${error.message}`);
+      this.retryInitAt = performance.now() + 2000;
       this.initializing = null;
     });
     return this.initializing;
@@ -220,9 +233,12 @@ function paintLive() {
 }
 function connect() {
   if (!active() || socket) return;
-  let profile = 'tiny';
-  try { profile = localStorage.getItem('ubts-live-network-profile') || 'tiny'; } catch (_) {}
-  if (profile === 'auto') profile = 'tiny';
+  let profile = 'auto';
+  try { profile = localStorage.getItem('ubts-live-network-profile') || 'auto'; } catch (_) {}
+  if (!['detail', 'balanced', 'slow', 'tiny'].includes(profile)) {
+    const measured = window.RoverLink?.cameraEffectiveProfile?.() || '';
+    profile = measured === 'balanced' || measured === 'detail' ? 'balanced' : 'slow';
+  }
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/gps?profile=${encodeURIComponent(profile)}`);
   socket = ws;
   ws.onmessage = event => {

@@ -65,7 +65,7 @@ class RecoveryTests(unittest.TestCase):
  def test_missing_original_light_api_uses_prepared_window_without_raw_archive_decode(self):
   build(self.archive,self.cache)
   provider=TelemetryProvider.__new__(TelemetryProvider);provider.recording_playback_cache_dir=self.cache
-  with patch.object(provider,'_playback_cache_path',return_value=None),patch.object(provider,'_load_recording_timeline',return_value={}),patch('dashboard_server.telemetry_cache.raw_telemetry',side_effect=AssertionError('HTTP must not decode raw archive')):
+  with patch.object(provider,'_playback_cache_path',return_value=None),patch.object(provider,'_load_recording_light_timeline',return_value={}),patch('dashboard_server.telemetry_cache.raw_telemetry',side_effect=AssertionError('HTTP must not decode raw archive')):
    result=provider._recording_light_telemetry(self.archive,self.archive/'timeline.json',9,1)
   self.assertTrue(result['ok']);self.assertEqual(result['timeline']['lidar']['frames'],[])
   self.assertGreater(len(result['timeline']['imu']['frames']),8)

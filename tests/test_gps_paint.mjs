@@ -34,14 +34,14 @@ function harness(){
   setLngLat(point){this.points.push([...point]);return this;}
   addTo(){this.adds++;return this;} remove(){this.removes++;return this;}
  }
- const context={...model,console,Number,Math,Infinity,Map,Set,Promise,
+ const context={...model,console,Number,Math,Infinity,Map,Set,Promise,performance:{now:()=>0},
   document:{hidden:false,visibilityState:'visible',documentElement:{dataset:{theme:'light'}},
    fonts:{add(){}},getElementById:node,createElement:()=>node('created-'+nextId++),addEventListener(){}},
   location:{pathname:'/private-test',protocol:'https:',origin:'https://private.test',host:'private.test'},
   maplibregl:{addProtocol(){},Map:FakeMap,Marker:FakeMarker,NavigationControl:class{},ScaleControl:class{}},
   MutationObserver:class{observe(){}},ResizeObserver:class{observe(){}},
   FontFace:class{async load(){return this;}},
-  fetch:async path=>({json:async()=>path==='/api/maps/status'?{ok:true,bytes:0}:{sources:{basemap:{}}}}),
+  fetch:async path=>({ok:true,json:async()=>path==='/api/maps/status'?{ok:true,bytes:0}:{sources:{basemap:{}}}}),
   requestAnimationFrame:callback=>{const id=++nextId;raf.set(id,callback);return id;},
   cancelAnimationFrame:id=>raf.delete(id),
   setTimeout:(callback,delay)=>{const id=++nextId;timers.set(id,{callback,delay});return id;},

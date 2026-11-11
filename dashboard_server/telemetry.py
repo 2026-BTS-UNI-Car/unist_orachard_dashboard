@@ -21,8 +21,10 @@ from pathlib import Path
 from typing import Any
 import urllib.request
 from collections import OrderedDict
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dashboard_server.motor_pwm import with_recorded_motor
 from dashboard_server.playback_profile import POLAR_PROFILE, point_fields
+from dashboard_server.telemetry_cache import light_timeline, TimelineLoadUnavailable
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "dashboard.json"
@@ -304,6 +306,12 @@ class TelemetryProvider:
         self._timeline_cache_limit = max(
             1, int(os.environ.get("ARCHIVE_TIMELINE_CACHE_COUNT", "2"))
         )
+        # Owners run in existing HTTP requests. No executor/background thread is
+        # created; even distinct recordings cannot accumulate unbounded parses.
+        self._timeline_loads: dict[tuple[str, int, int], Future] = {}
+        self._timeline_load_slots = threading.BoundedSemaphore(self._timeline_cache_limit)
+        self._timeline_wait_slots = threading.BoundedSemaphore(4 * self._timeline_cache_limit)
+        self._light_timeline_cache: OrderedDict[str, tuple[int, int, dict[str, Any]]] = OrderedDict()
         self._playback_cache_lock = threading.RLock()
         self._rover_status_cache: dict[str, Any] | None = None
         self._rover_status_next_refresh = 0.0
@@ -1328,7 +1336,10 @@ class TelemetryProvider:
             )
             if cached_segment:
                 return response(cached_segment)
-        timeline = self._load_recording_timeline(timeline_path)
+        try:
+            timeline = self._load_recording_timeline(timeline_path)
+        except TimelineLoadUnavailable as error:
+            return {"ok": False, "error": str(error), "id": recording_id}
         if not timeline:
             # Missing previews are prepared explicitly offline. Never scan a
             # complete raw recording in this HTTP handler or steal live CPU.
@@ -1361,28 +1372,29 @@ class TelemetryProvider:
             start=max(0.0,start);duration=min(24.0,max(.5,duration))
         except (ValueError,TypeError):return dict(ok=False,error='invalid_telemetry_window')
         cache_dir=self._playback_cache_path(path,timeline_path)
-        if cache_dir is None or self._valid_playback_manifest(cache_dir,timeline_path) is None:
-            timeline=self._load_recording_timeline(timeline_path)
+        manifest=self._valid_playback_manifest(cache_dir,timeline_path) if cache_dir is not None else None
+        first=max(0,int(start//PLAYBACK_SEGMENT_SECONDS)-1)
+        last=int((start+duration)//PLAYBACK_SEGMENT_SECONDS)
+        parts=[]
+        if manifest and isinstance(manifest.get('segment_count'),int):
+            # Existing small files remain compatible. Never manufacture them by
+            # reparsing LiDAR-rich segment JSON on the light request path.
+            indices=range(first,min(last+1,manifest['segment_count']))
+            parts=[light_segment(cache_dir,index,cached_only=True) for index in indices]
+        if not parts or any(part is None for part in parts):
+            try:timeline=self._load_recording_light_timeline(timeline_path)
+            except TimelineLoadUnavailable as error:return dict(ok=False,error=str(error))
             if not timeline:
                 from .lidar_preview_recovery import window
                 try: prepared=window(path,self.recording_playback_cache_dir,start,duration)
                 except (OSError,ValueError,TypeError,KeyError): prepared=None
                 if prepared is None:return dict(ok=False,error='preview_recovery_required')
-                timeline=prepared['telemetry']
-                result=self._recording_timeline_segment(timeline,start,duration)
-                result=self._with_recorded_gps(path,result,start,duration)
-                result=with_recorded_motor(path,result,start,duration)
-                result=self._playback_response_profile(result,POLAR_PROFILE)
-                result['playback']['profile']='dashboard-telemetry-v1'
-                return dict(ok=True,timeline=result)
-            self._build_playback_cache(path,timeline_path,timeline,(0.0,0))
-            self._drop_timeline_cache(timeline_path)
-        first=max(0,int(start//PLAYBACK_SEGMENT_SECONDS)-1)
-        last=int((start+duration)//PLAYBACK_SEGMENT_SECONDS)
+                timeline=light_timeline(prepared['telemetry'])
+            # Reuse the existing dedup/window response contract, but only over
+            # the requested small sensor slice, never the LiDAR-rich timeline.
+            parts=[self._recording_timeline_segment(timeline,start,duration)]
         combined={};frames={key:{} for key in ('imu','gps','motor')}
-        for index in range(first,last+1):
-            part=light_segment(cache_dir,index)
-            if not part:continue
+        for part in parts:
             combined.update({k:v for k,v in part.items() if k not in frames})
             for kind in frames:
                 section=part.get(kind) or {}
@@ -1703,13 +1715,18 @@ class TelemetryProvider:
             key = str(timeline_path)
         with self._timeline_cache_lock:
             self._timeline_cache.pop(key, None)
+            # The bounded light projection retains no LiDAR/camera references.
+            # Dropping the expensive full view must not force another cold parse.
 
     def _prewarm_playback_cache(self, recording_id: str) -> None:
         archive = self.recording_archive_path(recording_id)
         if archive is None or not archive.is_dir():
             return
         timeline_path = archive / "timeline.json"
-        timeline = self._load_recording_timeline(timeline_path)
+        try:
+            timeline = self._load_recording_timeline(timeline_path)
+        except TimelineLoadUnavailable:
+            return
         if not timeline:
             return
         try:
@@ -1720,26 +1737,118 @@ class TelemetryProvider:
             self._drop_timeline_cache(timeline_path)
 
     def _load_recording_timeline(self, timeline_path: Path) -> dict[str, Any]:
-        try:
-            stat = timeline_path.stat()
-        except OSError:
+        deadline = time.monotonic() + 30.0
+        signature = self._playback_source_signature(timeline_path)
+        if signature is None:
             return {}
         key = str(timeline_path.resolve())
-        signature = (stat.st_mtime_ns, stat.st_size)
+        flight_key = (key, *signature)
         with self._timeline_cache_lock:
             cached = self._timeline_cache.get(key)
             if cached and cached[:2] == signature:
                 self._timeline_cache.move_to_end(key)
                 return cached[2]
-        timeline = _load_json(timeline_path)
-        if not timeline:
+            future = self._timeline_loads.get(flight_key)
+        if future is not None:
+            return self._wait_for_timeline_load(future, timeline_path, signature, deadline)
+        owns_slot = self._timeline_load_slots.acquire(blocking=False)
+        if not owns_slot:
+            if not self._timeline_wait_slots.acquire(blocking=False):
+                raise TimelineLoadUnavailable('timeline_load_busy')
+            try:
+                owns_slot = self._timeline_load_slots.acquire(timeout=max(0.0, deadline - time.monotonic()))
+            finally:
+                self._timeline_wait_slots.release()
+            if not owns_slot:
+                raise TimelineLoadUnavailable('timeline_load_timeout')
+        future = None
+        owner = False
+        try:
+            # Admission wait is outside the shared lock. Never publish a parse
+            # against the signature seen before a source replacement.
+            if self._playback_source_signature(timeline_path) != signature:
+                raise TimelineLoadUnavailable('timeline_source_changed')
+            with self._timeline_cache_lock:
+                cached = self._timeline_cache.get(key)
+                if cached and cached[:2] == signature:
+                    self._timeline_cache.move_to_end(key)
+                    return cached[2]
+                future = self._timeline_loads.get(flight_key)
+                if future is None:
+                    future = Future()
+                    self._timeline_loads[flight_key] = future
+                    owner = True
+            if not owner:
+                self._timeline_load_slots.release()
+                owns_slot = False
+                return self._wait_for_timeline_load(future, timeline_path, signature, deadline)
+            timeline = _load_json(timeline_path)
+            # Loading/parsing occurs in this request, outside all cache locks.
+            with self._timeline_cache_lock:
+                # The metadata check belongs at publication, after acquiring
+                # this short lock; an older owner cannot overwrite a newer
+                # generation that finished while it waited for the lock.
+                if self._playback_source_signature(timeline_path) != signature:
+                    raise TimelineLoadUnavailable('timeline_source_changed')
+                if timeline:
+                    self._timeline_cache[key] = (*signature, timeline)
+                    self._timeline_cache.move_to_end(key)
+                    self._light_timeline_cache[key] = (*signature, light_timeline(timeline))
+                    self._light_timeline_cache.move_to_end(key)
+                    while len(self._timeline_cache) > self._timeline_cache_limit:
+                        self._timeline_cache.popitem(last=False)
+                    while len(self._light_timeline_cache) > self._timeline_cache_limit:
+                        self._light_timeline_cache.popitem(last=False)
+                future.set_result(timeline)
+            if self._playback_source_signature(timeline_path) != signature:
+                raise TimelineLoadUnavailable('timeline_source_changed')
+            return timeline
+        except BaseException as error:
+            if owner and future is not None and not future.done():
+                future.set_exception(error)
+            raise
+        finally:
+            if owner:
+                with self._timeline_cache_lock:
+                    if self._timeline_loads.get(flight_key) is future:
+                        self._timeline_loads.pop(flight_key)
+            if owns_slot:
+                self._timeline_load_slots.release()
+
+    def _wait_for_timeline_load(self, future, timeline_path, signature, deadline=None):
+        if deadline is None:
+            deadline = time.monotonic() + 30.0
+        if not self._timeline_wait_slots.acquire(blocking=False):
+            raise TimelineLoadUnavailable('timeline_load_busy')
+        try:
+            try:
+                timeline = future.result(timeout=max(0.0, deadline - time.monotonic()))
+            except FutureTimeoutError:
+                if not future.done():
+                    raise TimelineLoadUnavailable('timeline_load_timeout')
+                # An owner's TimeoutError is an owner failure, not our wait
+                # deadline. Re-read a completed Future to preserve its outcome.
+                timeline = future.result()
+            if self._playback_source_signature(timeline_path) != signature:
+                raise TimelineLoadUnavailable('timeline_source_changed')
+            return timeline
+        finally:
+            self._timeline_wait_slots.release()
+
+    def _load_recording_light_timeline(self, timeline_path: Path) -> dict[str, Any]:
+        signature = self._playback_source_signature(timeline_path)
+        if signature is None:
             return {}
+        key = str(timeline_path.resolve())
         with self._timeline_cache_lock:
-            self._timeline_cache[key] = (signature[0], signature[1], timeline)
-            self._timeline_cache.move_to_end(key)
-            while len(self._timeline_cache) > self._timeline_cache_limit:
-                self._timeline_cache.popitem(last=False)
-        return timeline
+            cached = self._light_timeline_cache.get(key)
+            if cached and cached[:2] == signature:
+                self._light_timeline_cache.move_to_end(key)
+                return cached[2]
+        timeline = self._load_recording_timeline(timeline_path)
+        if self._playback_source_signature(timeline_path) != signature:
+            raise TimelineLoadUnavailable('timeline_source_changed')
+        return light_timeline(timeline)
 
     def _recording_timeline_segment(
         self, timeline: dict[str, Any], start_s: Any = None, duration_s: Any = None
