@@ -27,7 +27,7 @@
 | `rules.json` | 고정 규칙과 기준선 비교 설정 |
 | `tests/` | 단위 시험과, 흠을 일부러 넣은 화면(`tests/fixtures/`) |
 | `baseline/ui_check.json` | UI 개편 **전**의 기록(기준선 브랜치 37181f1에서 잰 값). 개편 앞뒤 비교표의 '앞'이며 바꾸지 않는다. 캡처는 레포에 넣지 않는다 |
-| `accepted/ui_check.json` | **가장 최근에 받아들인 상태**의 기록. 앞으로 화면을 고칠 때 견주는 대상이다(지금은 1차 버그 수정 뒤, 05a62df) |
+| `accepted/ui_check.json` | **가장 최근에 받아들인 상태**의 기록. 앞으로 화면을 고칠 때 견주는 대상이다(지금은 디자인 1차 뒤: 규칙표·부품·앱 틀·늘 보이는 STOP) |
 
 ## 돌리는 법
 
@@ -41,6 +41,10 @@ python run_checks.py --static <static> --out <out>
 # 2) 판정: 고정 규칙 + 받아들인 상태와 비교. 끝내는 값 0 = 통과, 1 = 실패, 2 = 파일·인자 오류
 python compare.py --run <out>/ui_check.json --baseline accepted/ui_check.json
 #    개편 전과 견준 표가 필요하면 --baseline baseline/ui_check.json (아래 '두 기록' 참고)
+
+#    다크 테마로 재기(기본은 화면이 주는 그대로, 곧 라이트): --theme dark
+python run_checks.py --static <static> --out <out 다크> --theme dark
+python compare.py --run <out 다크>/ui_check.json --baseline accepted/ui_check.json
 
 # 3) 표로 보기
 python summarize.py <out>/ui_check.json
@@ -65,6 +69,7 @@ python mock_server.py --static <static> --dataset stress
 | `--route rover-control` | 점검할 경로(여러 번 가능). 기본은 9개 전부. `/` 대신 `overview`라고 적는다 |
 | `--viewport 390x844` | 화면 크기(여러 번 가능). 기본 390x844, 844x390, 820x1180, 1180x820, 1440x900 |
 | `--stop-selector "#id"` | STOP 조작 요소를 찾는 선택자(여러 번 가능, 앞의 것이 우선) |
+| `--theme page\|light\|dark` | 테마. `page`(기본)는 화면이 주는 그대로, `light`·`dark`는 화면이 테마를 읽기 전에 저장 값(`ubts-theme`)을 넣어 그 테마로 잰다 |
 | `--no-screenshots` | 캡처 없이 수치만 |
 | `--no-resize-probe` | 화면을 돌린 뒤 캔버스가 따라오는지 보는 검사 생략 |
 | `--concurrency 3` | 동시에 여는 쪽 수 |
@@ -102,7 +107,7 @@ Git Bash에서는 `/rover-control`처럼 `/`로 시작하는 인자가 윈도 �
 | `failed_requests`, `http_errors` | 실패한 요청, 4xx·5xx 응답 | 같은 이름 |
 | `blocked_external_requests` | 127.0.0.1 밖으로 나가려다 막힌 요청 | `blocked_external` |
 | `broken_images` | 보이는데 그림이 없는 `img`(naturalWidth 0, 주소 없는 것 포함) | `broken_images` |
-| `style_*` | 그라디언트·흐림 요소 수, 그림자·글자 크기 종류 수, 굵은 글 비율(참고용) | `style` |
+| `style_*` | 그라디언트·흐림 요소 수, 그림자·글자 크기·글자 굵기·글자색 종류 수, 굵기 800 이상인 글의 비율. 글자색 종류만 참고용이고 나머지는 규칙이다 | `style` |
 
 세부 규칙:
 
@@ -110,9 +115,11 @@ Git Bash에서는 `/rover-control`처럼 `/`로 시작하는 인자가 윈도 �
   닫힌 서랍 메뉴처럼 화면 왼쪽 밖에 있는 것도 뺀다.
 - 체크 상자와 라디오는 감싼 `label` 전체를 누름 영역으로 본다. 문장 속 링크는 `small_inline_links`로 따로 센다.
 - 누를 수 없게 해 둔 요소(`pointer-events: none`)는 조작 요소에서 뺀다. 꺼진(disabled) 버튼은 센다.
-- STOP은 `#roverStopButton`, `[data-ui-check~='stop']`, `[data-rover-drive='stop']` 순서로 찾고,
+- STOP은 `[data-ui-check~='stop']`(앱 틀 상태 막대의 STOP), `#roverStopButton`(주행 패널의 STOP), `[data-rover-drive='stop']` 순서로 찾고,
   없으면 글자가 `STOP`·`정지`·`비상 정지`인 버튼을 찾는다. 보이는 첫 후보를 잰다.
-  새 화면에서 STOP의 id가 바뀌면 `--stop-selector`로 알려 주거나 요소에 `data-ui-check="stop"`을 단다.
+  상태 막대의 STOP은 모든 경로에 있으므로 STOP 수치는 모든 경로에서 나온다. 개편 전 화면처럼 표시가 없으면 주행 패널의 STOP을 잰다.
+- 터치 기기로 흉내 낸 쪽은 브라우저가 굵은 포인터(`pointer: coarse`)로 답하는지 확인한다(쪽 기록의 `pointer_coarse`).
+  화면이 손가락 기기에서 조작 요소를 44px로 키우기 때문이다. 드물게 흉내가 늦게 걸려 가는 포인터로 답하면 그 쪽을 다시 연다.
 - 캔버스 돌려 보기: 정지 상태 측정과 캡처가 끝난 뒤, API 응답을 붙잡아 두고 1.3초 기다렸다가 화면의 너비와 높이를
   맞바꾸고 0.6초 뒤에 다시 잰다. 자료가 올 때마다 다시 그리는 캔버스는 언젠가 따라오므로, 자료를 멈춘 상태에서
   곧바로 따라오는지(틀 크기를 감시하는지)를 보기 위해서다.
@@ -161,23 +168,36 @@ LiDAR 스캔을 일부러 보내지 않는다. 스캔이 계속 오면 캔버스
 - `fixed_rules`: 수치가 지켜야 할 조건. `routes`·`viewports`·`datasets`로 대상을 좁힌다(`*` 쓸 수 있음, 없으면 전부).
   `mode`가 `fail`이면 어길 때 실패, `report`면 알리기만 한다.
 - `regression.metrics`: 기준선과 같은 쪽끼리 견준다. `better`가 `lower`면 값이 커질 때(허용 `tolerance`, `tolerance_ratio`),
-  `true`면 참이던 값이 거짓이 될 때 나빠진 것으로 본다.
+  `true`면 참이던 값이 거짓이 될 때 나빠진 것으로 본다. 여기에도 `routes`·`viewports`·`datasets`를 적어 대상을 좁힐 수 있고,
+  `"metric": "수치 이름"`을 적으면 같은 수치를 조건이 다른 두 항목으로 볼 수 있다
+  (`small_targets`는 터치 화면 네 가지에서 실패, `small_targets_mouse`는 1440x900에서 알리기만).
 - 기준선에 있던 쪽이 없어지면 실패(`missing_page_mode`), 새 쪽은 알리기만 한다(`new_page_mode`).
 
 `fail`인 규칙(어기면 `compare.py`가 실패한다):
 
 - 처음부터 지키던 것: 조작 요소 겹침 0, 콘솔·스크립트 오류 0, 요청 실패 0, 4xx·5xx 응답 0, 바깥 요청 0, 측정 코드 정상.
 - 1차 버그 수정(2026-11-12)으로 고쳐서 `fail`로 올린 것: 가로 넘침 0, 상자 밖으로 넘친 글 0, 잘린 글 0, 깨진 그림 0,
-  캔버스 버퍼와 표시 크기 일치, 화면을 돌린 뒤 캔버스 따라오기. 개편 전 기록(`baseline/`)을 이 규칙으로 판정하면 실패한다.
+  캔버스 버퍼와 표시 크기 일치, 화면을 돌린 뒤 캔버스 따라오기.
+- 디자인 1차(2026-11-12, 규칙표·부품·앱 틀)로 고쳐서 `fail`로 올린 것:
+  - STOP이 **모든 경로**에서 첫 화면 안, 어느 스크롤 위치에서도 화면 안(`stop-in-first-viewport`, `stop-always-in-viewport`).
+  - 터치 화면 네 가지(390x844, 844x390, 820x1180, 1180x820)에서 44px 미만 누름 영역 0(`touch-target-44`. 문서 쪽 말고 여덟 경로).
+  - 문서 쪽 휴대폰 가로의 잘린 글 0(`no-clipped-text-docs-844x390`).
+  - 꾸밈: 그라디언트 요소 0(`style-no-gradient`. CSS 배경만 세고 캔버스 안에 그린 것은 세지 않는다), 흐림 요소 0(`style-no-blur`),
+    그림자 종류 1 이하(`style-shadow-kinds`. 열린 서랍 메뉴와 대화 상자만 그림자를 쓴다), 글자 크기 종류 6 이하(`style-font-size-kinds`. 규칙표는 5가지),
+    글자 굵기 종류 3 이하(`style-font-weight-kinds`. 규칙표는 400·600), 굵기 800 이상인 글 0(`style-no-heavy-text`).
 
-아직 어겨서 `report`로 둔 것: 누름 영역 44px, STOP 첫 화면, STOP 늘 화면 안, 그리고 문서 쪽(`/docs`)의 휴대폰 가로(844x390) 잘린 글 한 건
-(`no-clipped-text-docs-844x390`. 높이를 화면에 고정한 두 칸 배치가 390px 높이에 들어가지 않는다. 문서 화면을 새로 짤 때 고친다).
+개편 전 기록(`baseline/`)을 이 규칙으로 판정하면 위 항목이 모두 실패한다(`python -B -m unittest`가 그 목록을 확인한다).
+
+`report`로 둔 것(알리기만 한다):
+
+- `touch-target-44-docs`: 문서 쪽의 터치 화면. 문서 본문은 Markdown 파일에서 오고, 본문에서 혼자 한 줄을 차지한 링크가 44px보다 작게 세어진다(모의 자료에 1개).
+- `touch-target-44-mouse`: 1440x900. 마우스 화면의 조작 요소는 규칙표대로 36px이라 44px 기준으로는 모두 '작다'.
+- `style-text-colors`: 글자색 종류 7 이하. 라이트는 최대 6, 다크는 버튼 위 글자색이 테마마다 달라 8까지 나온다.
 
 잘린 글 규칙은 규칙 파일에 '빼기' 조건이 없어서 셋으로 나뉘어 있다: 화면 크기 네 가지 전체(`no-clipped-text`),
-휴대폰 가로의 문서 쪽 말고 나머지 경로(`no-clipped-text-844x390`), 휴대폰 가로의 문서 쪽(위의 `report` 규칙).
-**경로를 새로 만들면 `no-clipped-text-844x390`의 `routes`에 더한다.**
+휴대폰 가로의 문서 쪽 말고 나머지 경로(`no-clipped-text-844x390`), 휴대폰 가로의 문서 쪽(`no-clipped-text-docs-844x390`). 지금은 셋 다 `fail`이다.
+**경로를 새로 만들면 `no-clipped-text-844x390`과 `touch-target-44`의 `routes`에 더한다.**
 
-새 배치가 들어온 화면부터 남은 규칙을 `fail`로 바꾼다. 예: STOP 규칙의 `routes`에 새 경로를 적고 `mode`를 `fail`로.
 한 화면에 들어가야 하는 화면은 `{"id": "drive-one-screen", "metric": "screens", "op": "<=", "value": 1, "routes": ["/drive"], "viewports": ["1440x900", "1180x820", "844x390"], "mode": "fail"}`처럼 더한다.
 `python compare.py … --strict`는 `report`도 실패로 세어, 목표까지 남은 것을 한 번에 보여 준다.
 
@@ -199,9 +219,18 @@ LiDAR 스캔을 일부러 보내지 않는다. 스캔이 계속 오면 캔버스
    옛 기록은 git 기록에 남는다. 고친 것이 있으면 `rules.json`의 해당 규칙을 `fail`로 올린다.
    `python -B -m unittest`는 `accepted/`가 `fail` 규칙을 모두 지키는지도 본다.
 
-지금의 `accepted/`(1차 버그 수정 뒤)를 개편 전 `baseline/`과 견주면 `small_targets`가 두 쪽에서 늘었다고 나온다
-(자료 묶음 stress의 `/docs` 820x1180: 2 → 4, 1180x820: 2 → 3). 잘려서 안 보이던 문서 속 링크와 문서 경로 링크가
-이제 보이게 되어 44px보다 작은 누름 영역으로 세어진 것이고, 줄어든 조작 요소는 없다.
+지금의 `accepted/`는 디자인 1차 뒤의 기록이다(라이트 테마, 곧 화면의 기본값으로 쟀다). 바로 앞의 기록(1차 버그 수정 뒤, becfc6d)과 견주면
+`fail`인 비교 항목은 나빠진 것이 없고, `report`인 항목에서 달라진 것은 다음과 같다. 모두 의도한 변화다.
+
+- STOP: 앞의 기록은 주행 패널의 STOP을 `/rover-control`에서만 쟀다. 지금은 상태 막대의 STOP을 모든 경로에서 잰다(위치 5.5px, 늘 화면 안).
+- 44px 미만 누름 영역(자료 묶음 stress, 경로 아홉 개 합계): 터치 화면 네 가지에서 94~97개 → 1개(문서 본문 속 링크). 1440x900은 170 → 174개
+  (마우스 화면이라 36px. 상태 막대의 STOP과 접힘 제목 줄처럼 조작 요소가 늘었고, 두 줄로 접혀 44px를 넘던 이름표가 한 줄이 되었다).
+- 쪽 높이: 90쪽 가운데 86쪽에서 줄고 3쪽은 같다(예: `/rover-control` 390x844 화면 15.3장 → 12.4장). 한 쪽만 늘었다: stress의 문서 쪽 844x390은
+  두 칸을 화면 높이에 고정하던 것을 높이 600px 이상에서만 하게 바꿔, 쪽 전체가 스크롤된다(452px → 3,827px. 대신 잘린 글이 없어졌다).
+- 글자색 종류: 몇 쪽에서 1~2개 늘었다(최대 6). 그라디언트·흐림·그림자·굵은 글은 모든 쪽에서 0이 되었다.
+
+개편 전 `baseline/`과 견준 표가 필요하면 `python compare.py --run accepted/ui_check.json --baseline baseline/ui_check.json`으로 본다
+(기준선이 지키지 못한 규칙은 이번 결과만 판정하므로 통과가 나온다).
 
 ## 한계
 
@@ -215,5 +244,8 @@ LiDAR 스캔을 일부러 보내지 않는다. 스캔이 계속 오면 캔버스
 - 휴대폰 크기에서 가로 넘침이 있으면 Chrome이 화면을 줄여 보여 준다. 수치는 줄이기 전의 CSS px 기준이다.
 - 개편 전(main, `baseline/`)에서는 캔버스가 화면 회전을 따라오는지가 사건 순서(자료 도착과 창 크기 사건)에 달려 있어,
   같은 코드를 다시 재도 `canvas_stale_after_resize`가 몇 쪽에서 달라졌다. 캔버스가 자기 틀 크기를 감시하게 고친 뒤(`accepted/`)로는 0으로 고정된다.
-- 다크 테마만 잰다.
+- 기본 실행은 화면이 주는 테마(라이트)만 잰다. 다크는 `--theme dark`로 따로 잰다. `accepted/`는 라이트 기록이고,
+  다크 실행을 `accepted/`와 견주면 배치 수치가 같아야 한다(글자색 종류만 다르다).
+- 글꼴은 이 PC에 깔린 것으로 그린다(화면은 글꼴 파일을 내려받지 않는다). 휴대폰은 제 한글 글꼴로 그리므로 글자 폭이 다르다.
+  폭이 다른 글꼴에서도 넘침·잘림이 없는지는 static 사본의 글꼴만 바꿔 같은 점검을 돌려 본다(디자인 1차에서 넓은 글꼴, 좁은 글꼴, 굴림으로 확인했다).
 - Chrome 한 종류로만 잰다. Safari·Firefox의 차이는 보지 않는다.

@@ -186,7 +186,11 @@ class RulesFileTest(unittest.TestCase):
         rules_engine.validate_rules(rules)
         self.assertTrue(any(rule["metric"] == "horizontal_overflow_px" for rule in rules["fixed_rules"]))
         self.assertTrue(any(rule["metric"] == "overlaps" for rule in rules["fixed_rules"]))
-        self.assertTrue(any(rule["metric"] == "stop_in_first_viewport" and rule.get("routes") for rule in rules["fixed_rules"]))
+        # STOP 규칙은 경로를 가리지 않는다(앱 틀의 STOP은 모든 경로에 있다).
+        stop_rules = [rule for rule in rules["fixed_rules"] if rule["metric"] in ("stop_in_first_viewport", "stop_always_in_viewport")]
+        self.assertEqual(len(stop_rules), 2)
+        for rule in stop_rules:
+            self.assertEqual((rule["mode"], rule.get("routes"), rule.get("viewports"), rule.get("datasets")), ("fail", None, None, None), rule["id"])
 
     def test_fixed_layout_rules_are_enforced(self):
         """1차 버그 수정으로 고친 것은 fail이어야 한다(되돌아가면 compare.py가 실패한다)."""
@@ -195,6 +199,22 @@ class RulesFileTest(unittest.TestCase):
         for rule_id in ("no-horizontal-overflow", "no-content-overflow", "no-clipped-text", "no-clipped-text-844x390",
                         "no-broken-image", "canvas-matches-box", "canvas-follows-resize", "no-overlap", "no-console-error"):
             self.assertEqual(modes.get(rule_id), "fail", rule_id)
+
+    def test_design_round_rules_are_enforced(self):
+        """디자인 1차(앱 틀과 규칙표)로 고친 것도 fail이어야 한다."""
+        rules = json.loads((TOOL_DIR / "rules.json").read_text(encoding="utf-8"))
+        by_id = {rule["id"]: rule for rule in rules["fixed_rules"]}
+        for rule_id in ("stop-in-first-viewport", "stop-always-in-viewport", "no-clipped-text-docs-844x390", "touch-target-44",
+                        "style-no-gradient", "style-no-blur", "style-shadow-kinds", "style-font-size-kinds",
+                        "style-font-weight-kinds", "style-no-heavy-text"):
+            self.assertEqual(by_id[rule_id]["mode"], "fail", rule_id)
+        self.assertEqual([by_id[name]["value"] for name in ("style-no-gradient", "style-no-blur", "style-shadow-kinds", "style-font-size-kinds", "style-font-weight-kinds")],
+                         [0, 0, 1, 6, 3])
+        # 누름 영역 규칙: 터치 화면 네 가지에서 화면의 조작 요소는 모두 44px 이상. 문서 본문과 마우스 화면은 알리기만 한다.
+        touch = by_id["touch-target-44"]
+        self.assertEqual((touch["value"], touch["viewports"]), (0, ["390x844", "844x390", "820x1180", "1180x820"]))
+        self.assertEqual(sorted(touch["routes"]), ["/", "/connection", "/docker", "/fan", "/network", "/research", "/rover-control", "/system"])
+        self.assertEqual((by_id["touch-target-44-docs"]["mode"], by_id["touch-target-44-mouse"]["mode"]), ("report", "report"))
 
     def test_accepted_record_passes_and_the_record_before_the_overhaul_does_not(self):
         rules = json.loads((TOOL_DIR / "rules.json").read_text(encoding="utf-8"))
@@ -207,9 +227,12 @@ class RulesFileTest(unittest.TestCase):
             return sorted({row.get("rule_id", row["kind"]) for row in rows if row["mode"] == "fail"})
 
         self.assertEqual(failing_rule_ids("accepted"), [])
+        # 개편 전 기록은 1차 버그 수정의 규칙과 디자인 1차의 규칙(STOP 위치, 누름 영역, 꾸밈 수치)을 모두 어긴다.
         self.assertEqual(failing_rule_ids("baseline"), [
             "canvas-follows-resize", "canvas-matches-box", "no-broken-image", "no-clipped-text",
-            "no-clipped-text-844x390", "no-content-overflow", "no-horizontal-overflow"])
+            "no-clipped-text-844x390", "no-clipped-text-docs-844x390", "no-content-overflow", "no-horizontal-overflow",
+            "stop-always-in-viewport", "stop-in-first-viewport", "style-font-size-kinds", "style-font-weight-kinds",
+            "style-no-blur", "style-no-gradient", "style-no-heavy-text", "style-shadow-kinds", "touch-target-44"])
 
     def test_validation_rejects_bad_rules(self):
         for broken in (
