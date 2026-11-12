@@ -28,3 +28,44 @@ data/
 .cloudflared/
 *.pem
 *.json.credentials
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+
+# Node
+node_modules/
+
+# More Python caches and virtual environments
+.hypothesis/
+.tox/
+.nox/
+venv*/
+.venv*/
+*-venv/
+*.prof
+
+# Work output. Measurement results, screen captures, logs and scratch scripts belong in a run folder outside
+# the repository (tools/ui_check and tools/slow_link write only to the --out folder you name). These rules
+# catch an output folder or scratch file left in the work tree by mistake.
+/results/
+/captures/
+/screenshots/
+/logs/
+/tmp/
+/scratch/
+/out/
+tools/*/runs/
+tools/*/out/
+test-results/
+playwright-report/
+*.tmp
+*.bak
+*.orig
+*.rej
+*.junit.xml
+junit*.xml
