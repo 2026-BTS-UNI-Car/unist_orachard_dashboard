@@ -12,7 +12,7 @@ function setup() {
   const context = {state: {roverControl: c}, document: {hidden: false, querySelector: () => null}, currentRoute: () => '/rover-control',
     $: id => id === 'roverSpeedSlider' ? slider : null, text() {}, localStorage: {setItem() {}}, ROVER_SPEED_KEY: 'speed',
     setInterval: () => 1, clearInterval: () => {}, renderRoverButtons() {}, renderRoverMotionReadout() {}, setRoverCommandStatus() {}, resumeLiveCameraAfterArchive() {},
-    postJson: async (path, payload) => { calls.push({path, payload}); return {ok: true, ticket: 'next', seq: (payload?.seq || 0), lease: 'lease'}; }};
+    controlRequest: async (path, payload) => { calls.push({path, payload}); return {ok: true, ticket: 'next', seq: (payload?.seq || 0), lease: 'lease'}; }};
   vm.createContext(context); vm.runInContext(code, context);
   return {context, c, calls, slider};
 }
@@ -62,8 +62,8 @@ const wheels = call => [call.payload.left, call.payload.right];
   {
     const {context, calls, c} = setup();
     let resolveDrive;
-    const normal = context.postJson;
-    context.postJson = (path, payload) => {
+    const normal = context.controlRequest;
+    context.controlRequest = (path, payload) => {
       if (!resolveDrive) { calls.push({path, payload}); return new Promise(resolve => { resolveDrive = resolve; }); }
       return normal(path, payload);
     };
@@ -100,8 +100,8 @@ const wheels = call => [call.payload.left, call.payload.right];
   {
     const {context, c, calls} = setup();
     let resolveDrive;
-    const normal = context.postJson;
-    context.postJson = (path, payload) => path.endsWith('/command') ? new Promise(resolve => {resolveDrive = resolve;}) : normal(path, payload);
+    const normal = context.controlRequest;
+    context.controlRequest = (path, payload) => path.endsWith('/command') ? new Promise(resolve => {resolveDrive = resolve;}) : normal(path, payload);
     c.activeKeys.add('w'); const pending = context.stepRoverMotion();
     await context.stopRoverNow('test');
     resolveDrive({ok: true, lease: 'late', ticket: 'late', seq: 1}); await pending;
@@ -111,8 +111,8 @@ const wheels = call => [call.payload.left, call.payload.right];
     const {context, c, calls} = setup();
     c.lease = null;
     let resolveArm;
-    const normal = context.postJson;
-    context.postJson = (path, payload) => path.endsWith('/arm') ? new Promise(resolve => {resolveArm = resolve;}) : normal(path, payload);
+    const normal = context.controlRequest;
+    context.controlRequest = (path, payload) => path.endsWith('/arm') ? new Promise(resolve => {resolveArm = resolve;}) : normal(path, payload);
     const arm = context.armEspRover(); await context.stopRoverNow('test');
     resolveArm({ok: true, lease: 'late', ticket: 'late', seq: 0}); await arm;
     assert.equal(c.lease, null); assert.equal(calls.length, 2); assert.equal(calls[1].payload.reason, 'cancelled_arm');

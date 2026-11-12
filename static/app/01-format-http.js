@@ -130,3 +130,116 @@ async function postJson(path, payload = {}) {
   if (!res.ok) throw new Error(`${path}: ${res.status}`);
   return res.json();
 }
+
+// ---- Request transport (NET-05) --------------------------------------------
+// Control and STOP go through controlRequest(): high priority, never queued
+// behind other requests, with a time limit. This is the one transport function
+// for driving requests; other control screens use it too.
+//
+// Every other GET to /api/ passes a small limiter so that status polls cannot
+// take all of the browser's connections to the dashboard (HTTP/1.1 allows six
+// per host): at most 4 at a time, 2 while the control lease is held or the link
+// is slow. Bulk requests (recording list, archive data, container details, media
+// jobs, documents) go one at a time and only when no status request waits while
+// the lease is held. User actions (POST) are not queued. The server keeps
+// connections open (keep-alive), so a request does not pay a new connection.
+const CONTROL_TIMEOUT_MS = { stop: 8000, other: 5000 };
+const REQUEST_LIMIT = { normal: 4, constrained: 2 };
+const BULK_REQUEST = /^\/api\/(?:recordings(?:$|\/(?!status$))|live\/recordings\/|live\/mapping-jobs|docker\/container\/|docs|plan$|site-map$|maps\/status$)/;
+const requestQueue = { active: 0, bulkActive: 0, waiting: [] };
+const pageFetch = window.fetch.bind(window);
+
+async function controlRequest(path, payload = {}, options = {}) {
+  const op = String(path).split("/").pop();
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs)
+    : op === "stop" ? CONTROL_TIMEOUT_MS.stop : CONTROL_TIMEOUT_MS.other;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await pageFetch(path, {
+      method: "POST",
+      cache: "no-store",
+      priority: "high",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`${path}: ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    if (err?.name === "AbortError") throw new Error(`${path}: 응답 없음 ${Math.round(timeoutMs / 1000)}초`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function requestPathOf(input) {
+  try {
+    const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, location.href);
+    return url.origin === location.origin ? url.pathname : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function requestClass(input, init) {
+  const method = String(init?.method || (typeof input === "object" && input?.method) || "GET").toUpperCase();
+  const path = requestPathOf(input);
+  if (!path.startsWith("/api/") || path.startsWith("/api/rover/") || (method !== "GET" && method !== "HEAD")) return "direct";
+  return BULK_REQUEST.test(path) ? "bulk" : "status";
+}
+
+function requestLimitConstrained() {
+  if (state.roverControl?.lease) return true;
+  return typeof window.LinkGrade?.constrained === "function" && window.LinkGrade.constrained();
+}
+
+function startQueuedRequests() {
+  const limit = requestLimitConstrained() ? REQUEST_LIMIT.constrained : REQUEST_LIMIT.normal;
+  const driving = Boolean(state.roverControl?.lease);
+  while (requestQueue.active < limit && requestQueue.waiting.length) {
+    let index = requestQueue.waiting.findIndex((item) => item.kind === "status");
+    if (index < 0) {
+      if (requestQueue.bulkActive > 0 && driving) return;
+      index = 0;
+    }
+    const [item] = requestQueue.waiting.splice(index, 1);
+    item.start();
+  }
+}
+
+function limitedFetch(input, init) {
+  const kind = requestClass(input, init);
+  if (kind === "direct") return pageFetch(input, init);
+  return new Promise((resolve, reject) => {
+    const signal = init?.signal;
+    const item = { kind, start: null };
+    const abort = () => {
+      const index = requestQueue.waiting.indexOf(item);
+      if (index >= 0) requestQueue.waiting.splice(index, 1);
+      reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+    };
+    item.start = () => {
+      signal?.removeEventListener?.("abort", abort);
+      requestQueue.active += 1;
+      if (kind === "bulk") requestQueue.bulkActive += 1;
+      let request;
+      try {
+        request = pageFetch(input, { priority: "low", ...(init || {}) });
+      } catch (err) {
+        request = Promise.reject(err);
+      }
+      request.then(resolve, reject).finally(() => {
+        requestQueue.active -= 1;
+        if (kind === "bulk") requestQueue.bulkActive -= 1;
+        startQueuedRequests();
+      });
+    };
+    if (signal?.aborted) { abort(); return; }
+    signal?.addEventListener?.("abort", abort, { once: true });
+    requestQueue.waiting.push(item);
+    startQueuedRequests();
+  });
+}
+window.fetch = limitedFetch;

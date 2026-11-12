@@ -508,10 +508,47 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if os.environ.get("DASHBOARD_ACCESS_LOG", "0") == "1":
             super().log_message(fmt, *args)
 
+    # Persistent connections (NET-05). JSON and static answers keep the TCP
+    # connection open, so a control command on a slow link no longer pays one
+    # extra round trip for a new connection. Only the wait for the next request
+    # line has a time limit; once a request has started the socket is blocking
+    # as before (WebSocket relays and large bodies are unchanged).
+    KEEP_ALIVE_IDLE_S = 30.0
+
+    def handle_one_request(self):
+        try:
+            self.connection.settimeout(self.KEEP_ALIVE_IDLE_S)
+        except OSError:
+            pass
+        self._body_consumed = False
+        super().handle_one_request()
+
     def parse_request(self):
         # Start of the server-side time reported in Server-Timing (E0).
         self._request_started = time.perf_counter()
+        try:
+            self.connection.settimeout(None)
+        except OSError:
+            pass
         return super().parse_request()
+
+    def _keep_alive(self) -> bool:
+        """True when this answer may leave the connection open for the next request.
+
+        A request body that was not read would be taken for the next request line,
+        so such a connection is closed (as every answer did before)."""
+        if self.close_connection:
+            return False
+        if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
+            return False
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            return False
+        return length <= 0 or bool(getattr(self, "_body_consumed", False))
+
+    def _send_connection_header(self):
+        self.send_header("Connection", "keep-alive" if self._keep_alive() else "close")
 
     def _server_timing_header(self):
         started = getattr(self, "_request_started", None)
@@ -535,7 +572,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._server_timing_header()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Connection", "close")
+        self._send_connection_header()
         self.send_header("Vary", "Accept-Encoding")
         if encoded is not body:
             self.send_header("Content-Encoding", "gzip")
@@ -550,7 +587,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError, OSError):
                 self.close_connection = True
                 return
-        self.close_connection = True
         self._log_served_json()
 
     def _send_bytes(self, body: bytes, content_type: str, filename: str | None = None):
@@ -572,8 +608,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0") or 0)
         if length <= 0:
             return {}
+        raw = self.rfile.read(length)
+        self._body_consumed = len(raw) == length
         try:
-            return json.loads(self.rfile.read(length).decode("utf-8"))
+            return json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             return {}
 
@@ -642,7 +680,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Vary", "Accept-Encoding")
         if served.gzip:
             self.send_header("Content-Encoding", "gzip")
-        self.send_header("Connection", "close")
+        self._send_connection_header()
         self._send_session_cookie(session_token)
         self.send_header("Content-Length", str(len(served.body)))
         self.end_headers()
@@ -650,8 +688,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             try:
                 self.wfile.write(served.body)
             except (BrokenPipeError, ConnectionResetError, OSError):
-                pass
-        self.close_connection = True
+                self.close_connection = True
 
     def _send_file(self, path: Path, allowed_root: Path = STATIC_ROOT):
         session_token = self._ensure_session(create=True)
