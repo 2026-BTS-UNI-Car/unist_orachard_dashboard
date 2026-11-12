@@ -44,6 +44,10 @@ export function primaryAction(reply, nowMs = Date.now()) {
   if (stale(reply, nowMs)) return { text: '실행기 응답 끊김', action: null, enabled: false };
   const s = reply.status;
   const ready = s.go_ready === undefined || s.go_ready === null ? true : s.go_ready === true;
+  // contract rev. 2: an executor set to hold_to_run refuses go and heartbeat (409 start_mode_hold_to_run)
+  if (s.start_mode === 'hold_to_run' && (s.run_state === 'armed' || s.run_state === 'paused' || s.run_state === 'running')) {
+    return { text: '누르는 동안만 방식: 이 화면에서 출발 못 함', action: null, enabled: false };
+  }
   switch (s.run_state) {
     case 'idle': case 'ended': case undefined: case null:
       return { text: s.mode === 'MOTOR' ? '준비 (run 만들기 · Arm)' : '준비 (run 만들기)', action: 'prepare', enabled: true };
@@ -62,7 +66,8 @@ export function stale(reply, nowMs = Date.now()) {
 }
 
 export function heartbeatWanted(reply, nowMs = Date.now()) {
-  return Boolean(reply && reply.ok && reply.status && !stale(reply, nowMs) && HEARTBEAT_STATES.has(reply.status.run_state));
+  return Boolean(reply && reply.ok && reply.status && !stale(reply, nowMs) && HEARTBEAT_STATES.has(reply.status.run_state)
+    && reply.status.start_mode !== 'hold_to_run');
 }
 
 export function runActive(reply) {

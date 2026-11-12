@@ -41,6 +41,10 @@ for (const state of ['idle', 'ready', 'ended', 'latched']) assert.ok(!heartbeatW
 assert.ok(!heartbeatWanted(reply({ run_state: 'running' }), now + STALE_MS + 1), 'stale status: no heartbeat');
 assert.ok(!heartbeatWanted({ ok: false, configured: false }, now));
 assert.ok(runActive(reply({ run_state: 'latched' })) && !runActive(reply({ run_state: 'idle' })));
+// An executor set to hold_to_run (contract rev. 2): no go and no heartbeat from this screen.
+assert.equal(primaryAction(reply({ run_state: 'armed', start_mode: 'hold_to_run', go_ready: true }), now).enabled, false);
+assert.ok(!heartbeatWanted(reply({ run_state: 'running', start_mode: 'hold_to_run' }), now));
+assert.equal(primaryAction(reply({ run_state: 'idle', start_mode: 'hold_to_run' }), now).action, 'prepare');
 
 // The view: stop reasons, blockers and links in Korean; unknown codes are shown, not hidden.
 let view = autoView(reply({ run_state: 'paused', stop_reason: 'OPERATOR_LINK_LOST', stop_detail: 'operator_link_lost',
