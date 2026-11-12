@@ -161,4 +161,28 @@ for (const [rtt, grade, profile] of [[45, 'normal', 'balanced'], [160, 'slow', '
   f.context.renderLinkBadge();
   assert.equal(f.badge.textContent, '연결 끊김');
 }
-console.log('Link grade: follows within 5 s, no swinging, offline after two lost pings, one badge: PASS');
+(async () => {
+// A 10 s stall: offline, then the late answer of a ping sent during the stall (1 s) does not make the
+// link "very slow"; the grade before the outage comes back, no stream reopens, and a camera that
+// stopped itself on the 8 s answer limit is opened again.
+  {
+  const f = fixture();
+  let cameraStarts = 0;
+  f.context.startCameraLive = () => { cameraStarts += 1; };
+  f.context.routeSupportsCameraLive = () => true;
+  for (let k = 0; k < 6; k++) f.sample(45);
+  assert.equal(f.grade(), 'normal');
+  const reopened = f.reopened.length;
+  for (let k = 0; k < 3; k++) f.sample(null, false);
+  assert.equal(f.grade(), 'offline');
+  f.context.state.cameraLive.ackExhausted = true;
+  f.sample(1000);
+  assert.equal(f.grade(), 'normal', 'the late answer from the stall does not count');
+  f.sample(46); f.sample(44);
+  assert.equal(f.grade(), 'normal');
+  assert.equal(f.reopened.length, reopened, 'no stream reopened for the outage');
+  await new Promise(resolve => setTimeout(resolve, 700));
+  assert.equal(cameraStarts, 1, 'the stopped camera is opened again');
+  }
+  console.log('Link grade: follows within 5 s, no swinging, offline after two lost pings, outage recovery, one badge: PASS');
+})().catch(error => { console.error(error); process.exit(1); });

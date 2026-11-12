@@ -69,8 +69,16 @@ function linkGradeOf(rttMs, margin = 1) {
 // `now` is a millisecond clock. Returns the new grade (may be unchanged).
 function nextLinkGrade(model, now) {
   if (model.failures >= LINK_GRADE.offlineAfterFailures) return "offline";
-  const inWindow = model.samples.filter((sample) => now - sample[0] <= LINK_GRADE.windowMs).map((sample) => sample[1]);
-  const recent = inWindow.length ? inWindow : model.samples.slice(-1).map((sample) => sample[1]);
+  // After an outage only answers to requests sent after the link came back count:
+  // a ping sent during a 10 s stall answers late (say 1 s) and is not the link's
+  // round trip. Until such an answer is there the grade before the outage stays.
+  const since = model.recoveredAt || 0;
+  const fresh = model.samples.filter((sample) => sample[2] >= since);
+  if (model.grade === "offline") {
+    if (!fresh.length) return model.beforeOffline || "offline";
+  }
+  const inWindow = fresh.filter((sample) => now - sample[0] <= LINK_GRADE.windowMs).map((sample) => sample[1]);
+  const recent = inWindow.length ? inWindow : fresh.slice(-1).map((sample) => sample[1]);
   if (!recent.length) return model.grade === "offline" ? "offline" : model.grade;
   // The first answer often comes while the page is still starting (seen: 300-500 ms
   // on localhost); wait for a second one, and take the first seconds without the
@@ -80,9 +88,15 @@ function nextLinkGrade(model, now) {
   const base = Math.min(...recent);
   const current = model.grade;
   const rank = (grade) => LINK_GRADE.order.indexOf(grade);
-  if (warmingUp || current === "unknown" || current === "offline") {
+  if (warmingUp || current === "unknown") {
     model.betterGrade = null;
     return linkGradeOf(base);
+  }
+  if (current === "offline") {
+    // Back from an outage: the grade before it, then the usual rules from there.
+    model.betterGrade = null;
+    const before = model.beforeOffline && model.beforeOffline !== "unknown" ? model.beforeOffline : linkGradeOf(base);
+    return rank(linkGradeOf(base, LINK_GRADE.degradeMargin)) > rank(before) ? linkGradeOf(base, LINK_GRADE.degradeMargin) : before;
   }
   const worse = linkGradeOf(base, LINK_GRADE.degradeMargin);
   if (rank(worse) > rank(current)) {
@@ -102,10 +116,14 @@ function nextLinkGrade(model, now) {
 function noteLinkSample(rttMs, ok = true, kind = "ping") {
   const now = performance.now();
   if (ok && Number.isFinite(rttMs) && rttMs >= 0) {
-    linkGrade.samples.push([now, rttMs]);
+    // [answered at, round trip, sent at]
+    linkGrade.samples.push([now, rttMs, now - rttMs]);
     linkGrade.count = (linkGrade.count || 0) + 1;
     if (linkGrade.samples.length > 64) linkGrade.samples.splice(0, linkGrade.samples.length - 64);
-    if (kind === "ping") linkGrade.failures = 0;
+    if (kind === "ping") {
+      if (linkGrade.failures >= LINK_GRADE.offlineAfterFailures) linkGrade.recoveredAt = now;
+      linkGrade.failures = 0;
+    }
   } else if (kind === "ping") {
     linkGrade.failures += 1;
   }
@@ -146,7 +164,16 @@ async function pingLink() {
 
 function setLinkGrade(grade, now = performance.now()) {
   const previousProfile = linkGrade.profile;
+  const previousGrade = linkGrade.grade;
+  if (grade === "offline") linkGrade.beforeOffline = previousGrade;
   linkGrade.grade = grade;
+  // The camera stops itself when no picture is answered for 8 s ("preview
+  // acknowledgement timeout"); after an outage it is opened again (NET-11).
+  if (previousGrade === "offline" && grade !== "offline" && state.cameraLive?.ackExhausted &&
+      !document.hidden && typeof routeSupportsCameraLive === "function" && routeSupportsCameraLive()) {
+    state.cameraLive.reconnectAttempt = 0;
+    setTimeout(startCameraLive, 600);
+  }
   linkGrade.changes.push(now);
   if (linkGrade.changes.length > 32) linkGrade.changes.shift();
   // Offline keeps the last plan: nothing is reopened until the link answers again.
@@ -230,6 +257,7 @@ window.LinkGrade = {
   profile: () => linkGrade.profile,
   constrained: () => linkGrade.profile === "slow" || linkGrade.profile === "tiny",
   samples: () => linkGrade.samples.map((sample) => sample[1]),
+  beforeOffline: () => linkGrade.beforeOffline || null,
   note: noteLinkSample,
   changesPerMinute: () => linkGrade.changes.filter((t) => performance.now() - t < 60000).length,
 };
