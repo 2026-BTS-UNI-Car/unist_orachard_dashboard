@@ -258,7 +258,7 @@ function drawLine(ctx, values, color, max, w, h) {
   });
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.5;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   ctx.beginPath();
@@ -342,7 +342,7 @@ function drawLidarMapOnCanvas(canvas, result, overlays = {}, options = {}) {
 
   ctx.save();
   ctx.fillStyle = cssVar("--color-text", "#1b2027");
-  ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
+  ctx.font = '600 12px "UBTS Sans", system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
   ctx.fillText(`${showPoints ? points.length : 0} points`, 14, 22);
   ctx.fillText(`${fmtNumber(result?.metrics?.coverage_deg ?? angleCoverage(points), 0)}° coverage`, 14, 40);
   ctx.textAlign = "right";
@@ -384,7 +384,7 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.fillStyle = cssVar("--color-text-secondary", "#586270");
-    ctx.font = '400 12px system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
+    ctx.font = '400 12px "UBTS Sans", system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
     ctx.fillText(`${fmtNumber(meters, 0)}m`, cx + 7, cy - r + 13);
   }
   ctx.beginPath();
@@ -394,7 +394,7 @@ function drawLidarGrid(ctx, cx, cy, radius, range, gridStep) {
   ctx.lineTo(cx, cy + radius);
   ctx.stroke();
   ctx.fillStyle = cssVar("--color-text-secondary", "#586270");
-  ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
+  ctx.font = '600 12px "UBTS Sans", system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const labelOffset = 20;
@@ -415,7 +415,7 @@ function drawLidarEmpty(ctx, w, h, message) {
   // top centre holds the "180°" label: the text must reach none of them.
   ctx.save();
   ctx.fillStyle = cssVar("--color-text-secondary", "#586270");
-  ctx.font = '600 14px system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
+  ctx.font = '600 14px "UBTS Sans", system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif';
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   const left = 14;
