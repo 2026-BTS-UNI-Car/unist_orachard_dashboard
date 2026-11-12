@@ -33,29 +33,27 @@
 | --- | --- | --- |
 | [esp_rover_control.md](esp_rover_control.md) | ESP8266 연결, 조종권, 정지, 저속 통신 설정 | 현재(차동). 조향 V3 는 아직 없음 |
 | [rover_control_dashboard.md](rover_control_dashboard.md) | 화면의 조종 사용법 요약 | 현재(차동) |
-| [rover_control_todo.md](rover_control_todo.md) | 남은 실물 확인 항목 | 낡음 |
+
+## 조향 차량 (V3)
+
+| 문서 | 내용 | 상태 |
+| --- | --- | --- |
+| [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) | 조향 차량의 서버 사양: 구동·조향 조종 API, 조향 상태, 자율주행 시작·정지·heartbeat 중계, 조정 값, 정지 규칙, 차동과의 공존 | 현재(실차 펌웨어 V3 전) |
+| [STEERING_HOST_PORT_KO.md](STEERING_HOST_PORT_KO.md) | 시뮬레이션 레포에서 옮긴 조향 V3 호스트 브리지의 출처와 시험 | 현재 |
+
+## 설치
+
+| 문서 | 내용 | 상태 |
+| --- | --- | --- |
+| [../deploy/jetson_dashboard/README_KO.md](../deploy/jetson_dashboard/README_KO.md) | Jetson 대시보드 설치 묶음: 점검, 설치, 확인, 되돌리기 | 현재 |
 
 ## 접속과 운영
 
 | 문서 | 내용 | 상태 |
 | --- | --- | --- |
-| [jetson_offline_access_20260827.md](jetson_offline_access_20260827.md) | 무선랜 Wi-Fi/AP 자동 전환, AP 주소 `http://10.77.0.1`, 로컬 DNS | 현재. 이름의 날짜는 대시보드 Docs 화면의 주소에 묶여 있어 그대로 둠 |
+| [jetson_offline_access.md](jetson_offline_access.md) | 무선랜 Wi-Fi/AP 자동 전환, AP 주소 `http://10.77.0.1`, 로컬 DNS | 현재 |
 | [cloudflared.md](cloudflared.md) | Cloudflare Tunnel 설정 | 일부 낡음(`docker compose up --build` 안내는 쓰지 않는다. 아래 주의 참고) |
 | [fan_control.md](fan_control.md) | Jetson 팬 자동/수동 PWM | 확인하지 않음(2026-06 작성) |
-
-## 낡은 문서 (대시보드 Docs 화면 목록에 묶여 있어 남겨 둠)
-
-대시보드 서버의 문서 목록(`dashboard_server/app.py`의 `DOCS_CATALOG`)과 `tests/test_api.py`가 이 문서들의 주소를 확인한다. 목록을 고칠 때 같이 내리거나 새로 쓴다.
-
-| 문서 | 무엇이 낡았나 |
-| --- | --- |
-| [architecture.md](architecture.md) | 2026-07 "초기 프로토타입" 설명 |
-| [jetson_deployment.md](jetson_deployment.md) | `docker compose up -d --build` 로 띄우는 안내. 지금 차의 대시보드는 compose 로 다시 만들면 옛 이미지로 돌아간다 |
-| [jetson_runtime_architecture.md](jetson_runtime_architecture.md) | 2026-07 서비스 구성 |
-| [telemetry_schema.md](telemetry_schema.md) | 2026-07 텔레메트리 파일 형식. 지금 `/api/telemetry` 응답과 대조하지 않았다 |
-| [simulation_run.md](simulation_run.md) | 다른 저장소의 옛 RViz 시뮬레이션. 지금 시뮬레이션은 별도 레포 |
-| [lidar_drive_test_recording.md](lidar_drive_test_recording.md) | 2026-07 rosbag 기록 절차(지금은 대시보드 녹화기) |
-| [research_metrics.md](research_metrics.md) | 짧은 점검 항목 목록 |
 
 ## 차동 시절 관찰 묶음 (조향 실행기로 바뀔 때까지 둠)
 

@@ -22,7 +22,7 @@ systemd unit만 설치합니다. NetworkManager를 재시작/리로드하지 않
 2026-10-04부터 대시보드는 `http://10.77.0.1`로도 접속한다. 다른 인터넷의
 DNS나 공개 도메인의 HSTS와 무관하게 AP IP로 직접 요청하는 권장 경로다.
 현재 보드의 단일 무선랜 자동 전환 구성은
-[`jetson_offline_access_20260827.md`](../../docs/jetson_offline_access_20260827.md)를 따른다.
+[`jetson_offline_access.md`](../../docs/jetson_offline_access.md)를 따른다.
 
 ```text
 phone --WPA2--> USB Wi-Fi AP (10.77.0.1/24)

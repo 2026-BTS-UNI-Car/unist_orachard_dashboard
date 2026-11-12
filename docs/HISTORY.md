@@ -37,6 +37,7 @@ GitHub에서는 `https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/bl
 | 7월 그림 `docs/assets/` | 23 | 약 17.5 MB | 영상 인식 시절의 그림. 남은 문서가 쓰지 않는다(정리 전 레포 30.6 MB 의 약 57 %) |
 | 맨 위 `todo.md`, `RAW_DEPLOYMENT.md` | 2 | 약 59 KB | 2026-07 영상 인식 시절 체크리스트, 2026-10-02 배포 기록 모음 |
 | 참조 없는 코드와 그림 | 7 | 약 0.33 MB | `dashboard_server/lidar_odometry.py`, `scripts/render_lidar_odometry_audit.py`, `scripts/import_video_archive.py`, `scripts/validate_dashboard_ui.py`, `scripts/validate_video_archive_ui.py`, `scripts/validate_docs_ui.py`, `static/assets/ubts-logo.png` |
+| 대시보드 Docs 목록에서 뺀 2026-06~07 문서 | 8 | 약 22 KB | architecture, jetson_deployment(compose 재생성 안내), jetson_runtime_architecture, telemetry_schema, simulation_run(다른 저장소의 옛 시뮬레이션), lidar_drive_test_recording, research_metrics, rover_control_todo. `jetson_offline_access_20260827.md` 는 `jetson_offline_access.md` 로 이름만 바꿨다 |
 
 ### 보고 문서 목록 (주제별)
 

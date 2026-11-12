@@ -76,7 +76,6 @@ export TELEMETRY_FILE=/home/unist/workspace/unist_orachard_dashboard/runtime/tel
 python3 -m dashboard_server --host 0.0.0.0 --port 8080
 ```
 
-스키마는 [docs/telemetry_schema.md](docs/telemetry_schema.md)에 정리했습니다.
 
 ## 검증
 
@@ -87,14 +86,10 @@ python3 -m unittest discover -s tests
 
 ## 배포 문서
 
-- [docs/architecture.md](docs/architecture.md): 서버와 데이터 흐름
-- [docs/jetson_deployment.md](docs/jetson_deployment.md): Jetson 배포 절차
 - [docs/cloudflared.md](docs/cloudflared.md): Cloudflare Tunnel 설정
 - [docs/lidar_connection.md](docs/lidar_connection.md): LiDAR 인식과 테스트 정책
 - [docs/usb_camera_connection.md](docs/usb_camera_connection.md): USB 카메라 ROS2 연결
 - [docs/imu_ros2_recording.md](docs/imu_ros2_recording.md): BNO085 ROS2 연결, 원본 표시·기록과 호환 relay
-- [docs/jetson_offline_access_20260827.md](docs/jetson_offline_access_20260827.md): 별도 USB Wi-Fi AP, 로컬 DNS, 실제 보드 안전 판정과 GPS 확인
-- [docs/research_metrics.md](docs/research_metrics.md): 연구 성과 지표
-- [docs/telemetry_schema.md](docs/telemetry_schema.md): JSON 텔레메트리 스키마
+- [docs/jetson_offline_access.md](docs/jetson_offline_access.md): 별도 USB Wi-Fi AP, 로컬 DNS, 실제 보드 안전 판정과 GPS 확인
 
 ESP8266 control and slow-network deployment: [docs/esp_rover_control.md](docs/esp_rover_control.md).
