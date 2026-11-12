@@ -155,12 +155,34 @@ class FakeDocker:
         body = c['files'].get(path)
         return None if body is None else body[:max_bytes]
 
+    @staticmethod
+    def merge(user, container):
+        """Like the Engine's commit: empty fields of the given config come from the container."""
+        user = copy.deepcopy(user)
+        container = copy.deepcopy(container)
+        for key in ('User', 'WorkingDir', 'Healthcheck', 'StopSignal'):
+            if not user.get(key):
+                user[key] = container.get(key)
+        if not user.get('Env'):
+            user['Env'] = container.get('Env')
+        labels = dict(user.get('Labels') or {})
+        for key, value in (container.get('Labels') or {}).items():
+            labels.setdefault(key, value)
+        user['Labels'] = labels
+        if not user.get('Entrypoint'):
+            if not user.get('Cmd'):
+                user['Cmd'] = container.get('Cmd')
+            if user.get('Entrypoint') is None:
+                user['Entrypoint'] = container.get('Entrypoint')
+        return user
+
     def commit(self, cid, repo, tag, pause, config=None, comment='', timeout=120.0):
         self._hook('commit', cid, repo, tag, pause)
         c = self._find(cid)
         base = self.images[c['Image']]
         iid = 'sha256:' + self._id()
-        self.images[iid] = dict(Id=iid, Config=copy.deepcopy(config if config is not None else c['Config']),
+        merged = c['Config'] if config is None else self.merge(config, c['Config'])
+        self.images[iid] = dict(Id=iid, Config=copy.deepcopy(merged),
                                 RootFS=dict(Layers=base['RootFS']['Layers'] + ['sha256:' + self._id()]),
                                 files=dict(c['files']))
         self.tags[repo + ':' + tag] = iid
@@ -448,6 +470,8 @@ class Apply(KitCase):
         self.assertEqual(new['HostConfig']['RestartPolicy'], dict(Name='unless-stopped', MaximumRetryCount=0))
         self.assertEqual(new['Config']['Env'], self.docker.inspect(self.old)['Config']['Env'])
         self.assertEqual(new['Config']['Labels']['ubts.dashboard_kit.replaces'], self.old)
+        self.assertFalse(new['Config'].get('Entrypoint'))  # the stage remover must not become the entrypoint
+        self.assertEqual(self.docker.image(new['Image'])['Config']['Cmd'], ['python', '-m', 'dashboard_server'])
         new_layers = self.docker.image(new['Image'])['RootFS']['Layers']
         snap = self.receipt()['images']['snapshot']
         self.assertEqual(new_layers[:-1], self.docker.image(snap)['RootFS']['Layers'])
@@ -710,6 +734,19 @@ class SourcePolicy(unittest.TestCase):
             archive.addfile(info, io.BytesIO(b'h'))
         dot.seek(0)
         self.assertIn('static/.hidden', kit.tar_digest(dot, '/app'))
+
+    def test_commit_body_keeps_the_stage_entrypoint_out_of_the_image(self):
+        snapshot = dict(Cmd=['python', '-m', 'dashboard_server'], Entrypoint=None, WorkingDir='/app',
+                        Labels={'a': '1'}, Env=['A=1'])
+        stage = dict(snapshot, Entrypoint=['python3', '-c', kit.REMOVE_CODE], Cmd=['/app/static/app.js'])
+        leaked = FakeDocker.merge(copy.deepcopy(snapshot), stage)
+        self.assertEqual(leaked['Entrypoint'][:2], ['python3', '-c'])  # what a plain body would do
+        fixed = FakeDocker.merge(kit.commit_config(snapshot), stage)
+        self.assertEqual(fixed['Entrypoint'], [])
+        self.assertEqual(fixed['Cmd'], ['python', '-m', 'dashboard_server'])
+        self.assertEqual(kit.image_config_diff(snapshot, fixed), [])
+        self.assertEqual(kit.image_config_diff(snapshot, leaked), ['Entrypoint'])
+        self.assertEqual(kit.spec_diff(dict(Config=dict(Entrypoint=None)), dict(Config=dict(Entrypoint=[]))), [])
 
     def test_strip_versions(self):
         self.assertEqual(kit.strip_versions(b'import a from "./a.mjs?v=0123456789";'), b'import a from "./a.mjs";')

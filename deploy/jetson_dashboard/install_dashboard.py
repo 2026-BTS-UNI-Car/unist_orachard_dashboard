@@ -566,10 +566,17 @@ def mounts_key(inspect):
     return sorted(tuple(str(m.get(k)) for k in keys) for m in inspect.get('Mounts') or [])
 
 
+def _norm(value):
+    """Docker shows an unset list or map as null or as empty depending on how it was made."""
+    return None if value in (None, [], {}, '') else value
+
+
 def spec_diff(old, new):
     """Spec fields that differ (values are not reported, Env stays private)."""
-    diff = [k for k in SPEC_HOST_KEYS if (old.get('HostConfig') or {}).get(k) != (new.get('HostConfig') or {}).get(k)]
-    diff += [k for k in SPEC_CONFIG_KEYS if (old.get('Config') or {}).get(k) != (new.get('Config') or {}).get(k)]
+    oh, nh = old.get('HostConfig') or {}, new.get('HostConfig') or {}
+    oc, nc = old.get('Config') or {}, new.get('Config') or {}
+    diff = [k for k in SPEC_HOST_KEYS if _norm(oh.get(k)) != _norm(nh.get(k))]
+    diff += [k for k in SPEC_CONFIG_KEYS if _norm(oc.get(k)) != _norm(nc.get(k))]
     if mounts_key(old) != mounts_key(new):
         diff.append('Mounts(effective)')
     old_nets = sorted(((old.get('NetworkSettings') or {}).get('Networks') or {}).keys())
@@ -577,6 +584,27 @@ def spec_diff(old, new):
     if old_nets != new_nets:
         diff.append('Networks')
     return diff
+
+
+IMAGE_CONFIG_KEYS = ('Cmd', 'Entrypoint', 'User', 'WorkingDir', 'Env', 'Labels', 'Healthcheck', 'ExposedPorts',
+                     'Volumes', 'StopSignal', 'OnBuild', 'Shell')
+
+
+def commit_config(snapshot_config):
+    """Body for committing the stage container.
+
+    The commit API fills every empty field of the given config from the container that is
+    committed. The stage container runs the remover as its entrypoint, so an unset entrypoint
+    must be sent as an explicit empty list, or the new image would start the remover."""
+    config = json.loads(json.dumps(snapshot_config or {}))
+    if not config.get('Entrypoint'):
+        config['Entrypoint'] = []
+    return config
+
+
+def image_config_diff(snapshot_config, new_config):
+    return [k for k in IMAGE_CONFIG_KEYS
+            if _norm((snapshot_config or {}).get(k)) != _norm((new_config or {}).get(k))]
 
 
 def new_container_spec(old, image_id, labels):
@@ -1021,9 +1049,9 @@ class Installer:
             self.phase('STAGE')
             deadline.need(opt.ready_timeout + 90, 'stage')
             stage_name = '%s-kit-stage-%s' % (name, stamp)
+            # No User/Labels/WorkingDir here: the commit below would copy them into the new image.
             stage_spec = dict(Image=snapshot, Entrypoint=['python3', '-c', REMOVE_CODE],
-                              Cmd=[APP_ROOT + '/' + p for p in plan['remove']], User='0:0', WorkingDir=APP_ROOT,
-                              NetworkDisabled=True, Labels={'ubts.dashboard_kit.role': 'stage'},
+                              Cmd=[APP_ROOT + '/' + p for p in plan['remove']], NetworkDisabled=True,
                               HostConfig=dict(NetworkMode='none', AutoRemove=False))
             stage = self.docker.create(stage_name, stage_spec)
             r.setdefault('containers', {})['stage'] = dict(id=stage, name=stage_name)
@@ -1038,8 +1066,8 @@ class Installer:
             self.docker.put_archive(stage, APP_ROOT, overlay_tar(b, paths, plan['new_dirs'], mtime),
                                     timeout=deadline.timeout(60.0))
             release_tag = '%s-%s' % (b.bundle_id[:12], stamp.lower())
-            image_config = json.loads(json.dumps(snap_image.get('Config') or {}))
-            new_image = self.docker.commit(stage, repo + '/release', release_tag, False, config=image_config,
+            new_image = self.docker.commit(stage, repo + '/release', release_tag, False,
+                                           config=commit_config(snap_image.get('Config')),
                                            comment='ubts dashboard kit %s over %s' % (b.bundle_id[:12], x['Id'][:12]),
                                            timeout=deadline.timeout(COMMIT_TIMEOUT_S))
             r['images']['new'] = new_image
@@ -1049,6 +1077,8 @@ class Installer:
             new_layers = (new_info.get('RootFS') or {}).get('Layers') or []
             need(new_layers[:len(snap_layers)] == snap_layers and len(new_layers) == len(snap_layers) + 1,
                  'new_image_layers_not_snapshot_plus_one')
+            config_diff = image_config_diff(snap_image.get('Config'), new_info.get('Config'))
+            need(not config_diff, 'new_image_config_differs', ','.join(config_diff))
             self.save()
 
             self.phase('PREFLIGHT')
