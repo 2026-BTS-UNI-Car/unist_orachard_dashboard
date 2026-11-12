@@ -20,12 +20,15 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
+from dashboard_server.static_assets import StaticAssets
 from dashboard_server.telemetry import ROOT, TelemetryProvider
 from dashboard_server.ws_relay import relay_sensor_stream
 
 
 STATIC_ROOT = ROOT / "static"
 DOCS_ROOT = ROOT / "docs"
+# Content-hash addresses, long caching and kept gzip results for /static/ and the page (NET-04).
+STATIC_ASSETS = StaticAssets(STATIC_ROOT)
 APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/docs"}
 SESSION_COOKIE_NAME = "ubts_session"
 SESSION_TTL_S = int(os.environ.get("DASHBOARD_SESSION_TTL_S", "3600"))
@@ -207,7 +210,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 gps = {}
             self._send_json(fresh_snapshot(gps, gps.get("received_at"), driver=gps.get("driver")))
         elif path in APP_ROUTES or path.startswith("/docs/"):
-            self._send_file(STATIC_ROOT / "index.html")
+            self._send_static("index.html")
         elif path == "/api/health":
             self._send_json(self.provider.health())
         elif path == "/api/telemetry":
@@ -255,7 +258,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path.startswith("/rover-proxy/") or path == "/rover-proxy":
             self._proxy_rover_request(parsed)
         elif path.startswith("/static/"):
-            self._send_file(STATIC_ROOT / path.removeprefix("/static/"))
+            self._send_static(path.removeprefix("/static/"), parse_qs(parsed.query).get("v", [None])[0])
         else:
             self.send_error(404, "Not found")
 
@@ -603,6 +606,52 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "updated_at": mtime,
             "url": f"/docs/{item['slug']}",
         }
+
+    def _send_static(self, rel: str, requested_version: str | None = None):
+        """A file below static/ (or the page) with a content-hash ETag. A request naming the current version
+        (?v=...) is cached for a year; anything else is checked again next time (see static_assets.py)."""
+        session_token = self._ensure_session(create=True)
+        accept_gzip = "gzip" in self.headers.get("Accept-Encoding", "").lower()
+        try:
+            served = STATIC_ASSETS.serve(rel, requested_version, accept_gzip)
+        except OSError:
+            served = None
+        if served is None:
+            self.send_error(404, "Not found")
+            return
+        if self.headers.get("If-None-Match") == served.etag:
+            self.send_response(304)
+            self.send_header("ETag", served.etag)
+            self.send_header("Cache-Control", served.cache_control)
+            self.send_header("Vary", "Accept-Encoding")
+            self._send_session_cookie(session_token)
+            self.end_headers()
+            return
+        content_type = mimetypes.guess_type(str(served.path))[0] or "application/octet-stream"
+        suffix = served.path.suffix.lower()
+        if suffix in (".js", ".mjs"):
+            content_type = "application/javascript; charset=utf-8"
+        elif suffix == ".css":
+            content_type = "text/css; charset=utf-8"
+        elif suffix == ".html":
+            content_type = "text/html; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", served.cache_control)
+        self.send_header("ETag", served.etag)
+        self.send_header("Vary", "Accept-Encoding")
+        if served.gzip:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Connection", "close")
+        self._send_session_cookie(session_token)
+        self.send_header("Content-Length", str(len(served.body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            try:
+                self.wfile.write(served.body)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+        self.close_connection = True
 
     def _send_file(self, path: Path, allowed_root: Path = STATIC_ROOT):
         session_token = self._ensure_session(create=True)
