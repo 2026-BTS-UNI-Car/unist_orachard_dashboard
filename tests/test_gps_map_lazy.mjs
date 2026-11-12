@@ -9,21 +9,36 @@ assert.match(source, /const MAP_LIBRARY_URL = "\/static\/vendor\/maplibre-gl\/ma
 assert.match(source, /const MAP_WORKER_URL = "\/static\/vendor\/maplibre-gl\/maplibre-gl-worker\.mjs";/);
 assert.match(source, /if \(active\(\)\) \{ live\.initWhenVisible\(\); connect\(\); \}/, 'the live map waits until it is visible');
 
-// mapLibrary(): one import, worker address and pmtiles protocol set once, a failed import can be retried.
+// mapLibrary(): one import, the style sheet and pmtiles reader added once, worker address and pmtiles protocol set
+// once, and a failed load can be retried.
 {
+  const html = readFileSync(new URL('../static/index.html', import.meta.url), 'utf8');
+  for (const file of ['maplibre-gl.css', 'pmtiles.js', 'maplibre-gl.mjs']) assert.ok(!html.includes(file), `index.html does not load ${file}`);
   const code = source.slice(source.indexOf('const MAP_LIBRARY_URL'), source.indexOf('const byId'))
     .replace('import(MAP_LIBRARY_URL)', '__import(MAP_LIBRARY_URL)') + '\nglobalThis.mapLibrary = mapLibrary;';
-  const imports = [], workers = [], protocols = [];
+  const imports = [], workers = [], protocols = [], added = [];
   let fail = true;
   const library = {setWorkerUrl: url => workers.push(url), addProtocol: (name, handler) => protocols.push([name, typeof handler])};
-  const context = {window: {pmtiles: {Protocol: class { tile() {} }}},
+  const window = {};
+  const head = {children: [], append(element) {
+    this.children.push(element); added.push(element.tagName + ' ' + (element.href || element.src));
+    // The script defines window.pmtiles when it runs; both load a moment later.
+    setTimeout(() => { if (element.tagName === 'SCRIPT') window.pmtiles = {Protocol: class { tile() {} }}; element.onload(); }, 0);
+  }};
+  const document = {head,
+    createElement: tag => ({tagName: tag.toUpperCase(), dataset: {}, remove() { head.children.splice(head.children.indexOf(this), 1); }}),
+    querySelector: selector => selector === 'link[data-map-style]' ? head.children.find(e => e.tagName === 'LINK' && 'mapStyle' in e.dataset) ?? null : null};
+  const context = {window, document, setTimeout,
     __import: url => { imports.push(url); if (fail) { fail = false; return Promise.reject(new Error('offline')); } return Promise.resolve(library); }};
   vm.createContext(context); vm.runInContext(code, context);
   await assert.rejects(context.mapLibrary(), /offline/);
+  await new Promise(r => setTimeout(r, 5));
   const [a, b] = await Promise.all([context.mapLibrary(), context.mapLibrary()]);
   assert.equal(a, library); assert.equal(b, library);
   await context.mapLibrary();
   assert.deepEqual(imports, ['/static/vendor/maplibre-gl/maplibre-gl.mjs', '/static/vendor/maplibre-gl/maplibre-gl.mjs'], 'imported again only after the failure');
+  assert.deepEqual(added, ['SCRIPT /static/vendor/pmtiles/pmtiles.js', 'LINK /static/vendor/maplibre-gl/maplibre-gl.css'],
+    'the reader and the style sheet are added once, even though the first import failed');
   assert.deepEqual(workers, ['/static/vendor/maplibre-gl/maplibre-gl-worker.mjs']);
   assert.deepEqual(protocols, [['pmtiles', 'function']]);
 }

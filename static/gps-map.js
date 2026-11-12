@@ -1,14 +1,36 @@
 import {FollowModel, validFix, coordinates, frameAt, pathFeatures, accuracyCircle, usedSatellitesText, receptionText} from './gps-map-model.mjs';
 
-// The map library (about 300 kB compressed) and the Korean label font (about 630 kB) are needed only while a map is
-// on screen, so they are loaded then and not with the page (NET-03). The server gives these addresses their
-// content-hash versions (NET-04); the library would otherwise find its worker file from its own address without one.
+// The map library (about 300 kB compressed, with its style sheet and the pmtiles reader) and the Korean label font
+// (about 630 kB) are needed only while a map is on screen, so they are loaded then and not with the page (NET-03).
+// The server gives these addresses their content-hash versions (NET-04); the library would otherwise find its worker
+// file from its own address without one.
 const MAP_LIBRARY_URL = "/static/vendor/maplibre-gl/maplibre-gl.mjs";
 const MAP_WORKER_URL = "/static/vendor/maplibre-gl/maplibre-gl-worker.mjs";
+const MAP_STYLE_URL = "/static/vendor/maplibre-gl/maplibre-gl.css";
+const PMTILES_URL = "/static/vendor/pmtiles/pmtiles.js";
 let mapLibraryPromise = null;
+function addToHead(element, address) {
+  return new Promise((resolve, reject) => {
+    element.onload = () => resolve(element);
+    element.onerror = () => { element.remove(); reject(new Error(`지도 파일을 받지 못했습니다 · ${address}`)); };
+    document.head.append(element);
+  });
+}
+function mapStyleSheet() {
+  if (document.querySelector('link[data-map-style]')) return null;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet'; link.href = MAP_STYLE_URL; link.dataset.mapStyle = '';
+  return addToHead(link, MAP_STYLE_URL);
+}
+function pmtilesReader() {
+  if (window.pmtiles) return null;
+  const script = document.createElement('script');
+  script.src = PMTILES_URL; script.async = true;
+  return addToHead(script, PMTILES_URL);
+}
 function mapLibrary() {
   if (!mapLibraryPromise) {
-    mapLibraryPromise = import(MAP_LIBRARY_URL).then(library => {
+    mapLibraryPromise = Promise.all([import(MAP_LIBRARY_URL), pmtilesReader(), mapStyleSheet()]).then(([library]) => {
       library.setWorkerUrl?.(MAP_WORKER_URL);
       library.addProtocol('pmtiles', new window.pmtiles.Protocol().tile);
       return library;
