@@ -445,6 +445,28 @@ def _steer_rover_status(dataset: str, now: float) -> dict:
     }
 
 
+def _executor_status(dataset: str, now: float) -> dict:
+    """GET /api/executor/status of the dashboard's executor relay (docs/STEERING_SERVER_KO.md 6).
+    empty: no executor configured; stress: a paused run with every go blocker and long values."""
+    if dataset == "empty":
+        return {"ok": False, "configured": False, "reachable": False, "error": "executor_not_configured", "received_at": now}
+    return {"ok": True, "configured": True, "reachable": True, "received_at": now, "status": {
+        "run_state": "paused", "start_mode": "one_press", "mode": "MOTOR", "state": "PAUSED",
+        "stop_reason": "OPERATOR_LINK_LOST", "stop_detail": "operator_link_lost_mock_reason_with_a_long_identifier_and_no_spaces",
+        "go_ready": False, "go_blockers": ["session_conflict", "operator_link_not_fresh", "no_run", "already_running", "latched",
+                                           "arm_first", "inputs_not_fresh", "steering_feedback", "vehicle_moving",
+                                           "corridor_not_acquired", "mock_new_blocker_with_a_long_identifier"],
+        "operator_link": {"fresh": False, "age_s": 12345.678, "timeout_s": 0.5},
+        "speed": {"target_mps": 0.4, "limit_mps": 0.123, "limit_reason": "mock_limit_reason_with_a_long_identifier"},
+        "tuning": {"preset": "mock_preset_with_a_long_name", "revision": 12345, "editable": False},
+        "single_row": {"phase": "WAIT", "lateral_error_m": -0.1234, "heading_error_deg": 12.345, "distance_m": 98765.4,
+                       "speed_m_s": 0.0, "target_speed_m_s": 0.4, "stop_category": "OPERATOR_OR_BACKSTOP",
+                       "confidence": {"level": "LOW"}},
+        "gnss": {"state": "no_fix", "fix": False, "age_s": 3.2, "h_acc_m": 123.4, "used": False},
+        "bridge_detail": {"state": "LATCHED", "latch_reason": "mock_latch_reason_with_a_long_identifier"},
+    }}
+
+
 def http_payloads(dataset: str, now: float | None = None) -> dict:
     """정확히 일치하는 GET 경로 -> JSON 응답."""
     if dataset not in DATASETS:
@@ -473,6 +495,7 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
             },
             "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
             "/api/rover/status": _steer_rover_status(dataset, now),
+            "/api/executor/status": _executor_status(dataset, now),
         }
     checks = [{"id": key, "passed": index % 3 == 0} for index, key in enumerate(PREPARATION_CHECK_IDS)]
     return {
@@ -549,6 +572,7 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
         },
         "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
         "/api/rover/status": _steer_rover_status(dataset, now),
+        "/api/executor/status": _executor_status(dataset, now),
     }
 
 

@@ -5,7 +5,7 @@
 - 근거: 시뮬레이션 레포 `unist_orchard_simulation` main `506eff3`의 `docs/steering/HOST_BRIDGE_V3_KO.md`(호스트 브리지 V3),
   `ESP_PROTOCOL_V3_DRAFT_KO.md`(V3 규격), `DESIGN_v1_KO.md` 4.4·4.5(대시보드·기록), `EXECUTOR_STEER_KO.md`(실행기),
   `tools/row_executor/operator_http.py`(실행기 운영자 HTTP), 조정 쪽 규약 `AUTONOMY_API_CONTRACT_20261113.txt` v0(시작·정지),
-  todo 결정 가1·나10·나16·다9.
+  todo 결정 가1·나10·나16·다9. 규약은 개정 1·2(2026-11-13, S1)까지 반영했다.
 - 값 표기: `[자리값: 출처]`는 아직 재지 않았거나 사용자가 정하지 않은 값이다. 차량 사양(조향 모터, 가변저항, 벨트)이 오면 바뀐다.
   모든 SIM 수치는 자리값 기반 SIM 결과이고 현장 성능이 아니다.
 
@@ -138,11 +138,11 @@ flowchart LR
 | `POST /api/executor/params` | 기본 묶음 칸만 | `POST /api/params` | 7절 |
 | `GET /api/executor/tuning/log` | — | (대시보드 기록) | 7절 |
 
-- `session`: 화면이 출발마다 새로 만드는 무작위 16진수 16 ~ 64자. 다른 글자는 대시보드가 400으로 거절한다.
+- `session`: 화면이 열릴 때 만드는 무작위 16진수 24자(규약 개정 2: 4 ~ 64자, 대시보드는 영숫자·`_`·`-`만 받고 나머지는 400).
 - 대시보드 → 실행기: `Host`는 실행기 주소 그대로, `Origin: http://<실행기 주소>`, `X-Row-Token: <토큰 파일 내용>`, JSON 본문. 토큰 파일은 바뀌면 다시 읽는다(실행기는 시작할 때마다 새 토큰을 만든다). 제한 시간: heartbeat 0.8 s, stop 2.5 s, 그 밖 2.0 s [자리값].
 - 대시보드 응답: 실행기 응답 본문과 상태 코드를 그대로 돌려준다. 실행기에 닿지 못하면 502 `{"ok": false, "error": "executor_unreachable"}`, 설정이 없으면 503 `{"ok": false, "error": "executor_not_configured"}`. 실행기 403(토큰)은 502 `executor_token_rejected`.
 - `GET /api/executor/status`는 언제나 200이다: `{ok, configured, reachable, error?, received_at, status: {...}}`. `status`에 넘기는 칸(그 밖은 버린다. GNSS 좌표는 넘기지 않는다):
-  `run_state`, `start_mode`, `operator_link {fresh, age_s, timeout_s}`, `stop_reason`, `speed {target_mps, limit_mps, limit_reason}`, `tuning {preset, revision, editable}`,
+  `run_state`, `start_mode`, `operator_link {fresh, age_s, timeout_s}`, `stop_reason`, `stop_detail`, `go_ready`, `go_blockers`, `speed {target_mps, limit_mps, limit_reason}`, `tuning {preset, revision, editable, values, editable_names, limits}`,
   `mode`(SHADOW/MOTOR), `state`, `reason`, `end_reason`, `controller_mode`, `profile`, `vehicle_control`, `lidar_age`, `imu_age`,
   `single_row {phase, lateral_error_m, heading_error_deg, distance_m, speed_m_s, target_speed_m_s, stop_reason, stop_category, confidence.level}`,
   `gnss {state, fix, age_s, h_acc_m, used}`, `bridge_detail {state, latch_reason}`.
@@ -171,11 +171,11 @@ stateDiagram-v2
 
 | 항목 | 값 |
 | --- | --- |
-| 주 버튼 | idle·ended "준비"(start, MOTOR면 이어서 arm) → ready "Arm" → armed "출발"(go) → running "주행 중"(꺼짐) → paused "다시 출발"(새 go) → latched "래치 확인"(ack) |
-| heartbeat | go가 받아들여진 뒤부터 `run_state`가 running(또는 go 직후 armed)인 동안, 주행 화면이 보이고 탭이 보일 때만 200 ms마다 [자리값: 규약 ≤ 250 ms]. 탭을 숨기거나 화면을 떠나면 멈춘다 → 실행기가 operator_timeout_s 뒤 선다(규약 v0: 1.0 s, 범위 0.5 ~ 3.0, 화면에서 못 바꿈) |
-| heartbeat 409 | 다른 세션이 출발함. heartbeat를 멈추고 "다른 화면이 출발시킴"을 보인다 |
+| 주 버튼 | idle·ended "준비"(start, MOTOR면 이어서 arm) → ready "Arm" → armed "자율 주행 시작"(go) → running "주행 중"(꺼짐) → paused "다시 출발"(새 go) → latched "래치 확인"(ack). go 버튼은 `go_ready`일 때만 켜고, 아니면 `go_blockers`를 한국어로 보인다(규약 개정 2) |
+| heartbeat | `run_state`가 armed·running·paused이고 상태가 새것인 동안, 주행 화면이 보이고 탭이 보일 때만 100 ms마다(규약 개정 1, 늦어도 250 ms). go 전 armed부터 보내므로 go 때 운영자 연결이 이미 새것이다(`operator_link_not_fresh` 막음 없음). 탭을 숨기거나 화면을 떠나면 멈춘다 → 실행기가 `operator_link.timeout_s` 뒤 선다(규약 개정 1: 기본 0.5 s, 범위 0.5 ~ 3.0, 화면에서 못 바꿈. 화면은 상태의 값을 보인다) |
+| heartbeat 409 | `session_conflict`: 다른 화면이 출발 권한을 가짐. 화면은 오류 줄에 보인다(자동으로 빼앗지 않는다) |
 | 상태 읽기 | 주행 화면이 보일 때 500 ms, 숨김이면 멈춤 [자리값] |
-| STOP | 자율 패널 STOP = 실행기 stop + 브리지 stop(대시보드 STOP과 같은 함수) 둘 다. 상태 막대 STOP은 기존 브리지 stop이고, run이 있으면 실행기 stop도 보낸다 |
+| STOP | 주행 패널 STOP, 상태 막대 STOP, Esc(주행 화면): 기존 브리지 stop(한 번) 그대로에 더해, run이 있거나 실행기 상태를 모르면 실행기 stop도 보낸다. 자율 칸에 따로 STOP 버튼을 두지 않는다(같은 패널 위에 STOP이 있다) |
 | 실행기 없음 | 설정 없음 → "실행기 설정 없음", 응답 없음 → "실행기 연결 안 됨". 버튼 꺼짐, STOP은 브리지 stop으로 계속 동작 |
 
 정지 이유 이름표(`stop_reason`, `single_row.stop_category`): `ROW_END` 정상 열 끝, `OBSTACLE` 열 안 장애물, `END_STRUCTURE` 열 끝 구조물, `PERCEPTION_OR_LOCALISATION` 센서·위치 추정 부족,
@@ -219,7 +219,7 @@ stateDiagram-v2
 | `steer_rate_limit_deg_s` | 조향 속도 제한 | °/s | 4 ~ 30 | 24 | 자리값: config.py(0.8 × B5) |
 
 고급 묶음(보기만, 실행기가 받는다고 알릴 때 바꿈): `steer_rate_limit_standstill_deg_s`(°/s, 4 ~ 20, 12), `min_speed_m_s`(m/s, 0.10 ~ 0.40, 0.20), `approach_speed_m_s`(m/s, 0.10 ~ 0.40, 0.20), `corridor_lost_s`(s, 0.5 ~ 5.0).
-안전 한계(잠금): `operator_timeout_s`(s, 1.0, 규약 v0 범위 0.5 ~ 3.0), `max_speed_m_s`(m/s, 0.5), `steer_limit_left_mrad`·`steer_limit_right_mrad`(409), `steer_status_max_age_s`(0.3).
+안전 한계(잠금): `operator_timeout_s`(s, 0.5, 규약 개정 1 범위 0.5 ~ 3.0), `max_speed_m_s`(m/s, 0.5), `steer_limit_left_mrad`·`steer_limit_right_mrad`(409), `steer_status_max_age_s`(0.3).
 
 적용:
 
@@ -236,8 +236,8 @@ stateDiagram-v2
 | 수동 입력 끊김 0.75 s | 브리지 | 구동 정지 |
 | 화면 숨김·초점 잃음 | 화면 | 입력 놓음(숨김은 STOP) |
 | 상태 1 s 오래됨(Arm 중) | 화면 | STOP |
-| 자율 패널 STOP | 대시보드 → 실행기 `stop` + 브리지 `stop` | run LATCHED, 구동 정지 |
-| heartbeat 끊김 > operator_timeout_s | 실행기 | 구동 0, 조향 유지, run paused(`OPERATOR_LINK_LOST`). 자동 재출발 없음 |
+| 화면 STOP 중 run이 있을 때 | 대시보드 → 실행기 `stop` + 브리지 `stop` | run LATCHED, 구동 정지 |
+| heartbeat 끊김 > operator_link.timeout_s(기본 0.5 s) | 실행기 | 구동 0, 조향 유지, run paused(`OPERATOR_LINK_LOST`). 자동 재출발 없음 |
 | 센서 오래됨, 장애물, 열 끝 | 실행기 | 실행기 규칙대로 |
 | 실행기에 닿지 못함 | 화면 | 버튼 꺼짐. STOP은 브리지 stop으로 계속 |
 | 브리지 오류 응답(조종권 잃음) | 화면 | lease를 버리고 STOP을 한 번 보낸다. 자동 재무장 없음 |
@@ -261,8 +261,8 @@ stateDiagram-v2
 | 조향 목표 변화율 | 주행 20°/s, 정지 12°/s | B5 측정 |
 | 화면 속도 상한 | 0 ~ 60 % | 현장 확인 |
 | 상태 오래됨 판정 | 300 ms, age 150 ms, STOP 1 s | 느린 통신 측정(NET-05) |
-| heartbeat 주기 | 200 ms | 규약 v0(≤ 250 ms), 느린 통신 측정 |
-| operator_timeout_s | 1.0 s(0.5 ~ 3.0) | 규약 v0, 현장 |
+| heartbeat 주기 | 100 ms | 규약 개정 1(≤ 250 ms), 느린 통신 측정 |
+| operator_timeout_s | 0.5 s(0.5 ~ 3.0) | 규약 개정 1(A17 개정 31), 현장 |
 | 조정 값 이름·범위·기본 | 7절 표 | 실행기 S1(PW-07, PC-13, PC-10) |
 | 조종 WebSocket 채택 | 미정 | NET-05(S4a) |
 
@@ -273,4 +273,5 @@ stateDiagram-v2
 1. `GET /api/status`의 `tuning`에 `values {이름: 값}`(지금 적용된 값)과, 바꿀 수 있는 이름 목록 `editable_names`.
 2. 묶음별 범위를 실행기가 알리면(`tuning.limits {이름: [min, max]}`) 대시보드는 그 값을 우선한다.
 3. GNSS 약한 층(S1b)의 상태를 `gnss {state, fix, age_s, h_acc_m, used}`로. 좌표는 내보내지 않아도 된다.
-4. `speed.limit_reason` 값의 목록(화면 이름표용).
+4. `speed.limit_reason` 값의 목록(화면 이름표용). 화면은 모르는 값을 "기타(값)"로 보인다.
+5. heartbeat를 go 전 armed부터 받아 주기(go 때 `operator_link_not_fresh`가 없게). 다른 세션의 heartbeat가 오면 409 `session_conflict`.

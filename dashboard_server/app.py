@@ -131,6 +131,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # D-12 extension points (dashboard_server/extensions.py). create_server() sets them from the environment.
     dashboard_settings = DashboardSettings()
     extension_routes = RouteTable()
+    # Relay of the row executor's operator API (dashboard_server/executor_proxy.py); None = not configured.
+    executor_client = None
     _last_telemetry_log_at = 0.0
 
     def do_HEAD(self):
@@ -143,6 +145,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._live_request(parsed, action=True)
         elif path.startswith("/api/rover/"):
             self._rover_action(path)
+        elif path.startswith("/api/executor/"):
+            self._executor_request(parsed, action=True)
         elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
         elif path == "/api/lidar/test":
@@ -264,7 +268,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path.startswith("/static/"):
             self._send_static(path.removeprefix("/static/"), parse_qs(parsed.query).get("v", [None])[0])
         elif path == "/api/dashboard/config":
-            self._send_json({"ok": True, **self.dashboard_settings.public()})
+            self._send_json({"ok": True, **self.dashboard_settings.public(), "executor_configured": self.executor_client is not None})
+        elif path.startswith("/api/executor/"):
+            self._executor_request(parsed)
         elif path.startswith("/ext-static/") and self.dashboard_settings.extra_static is not None:
             folder = self.dashboard_settings.extra_static
             self._send_file(folder / unquote(path.removeprefix("/ext-static/")), allowed_root=folder)
@@ -277,6 +283,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._proxy_occupancy_request(parsed)
         elif not self._extension_request(parsed):
             self.send_error(404, "Not found")
+
+    def _executor_request(self, parsed, action=False):
+        """/api/executor/*: the row executor's operator API on behalf of the page (docs/STEERING_SERVER_KO.md 6)."""
+        from dashboard_server import executor_proxy as proxy
+        client = self.executor_client
+        name = parsed.path.removeprefix("/api/executor/")
+        if not action:
+            if name == "status":
+                self._send_json(client.status() if client is not None else proxy.not_configured_status())
+            else:
+                self.send_error(404, "Not found")
+            return
+        if name not in proxy.ACTIONS:
+            self.send_error(404, "Not found")
+            return
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host"):
+            self.send_error(403, "Origin mismatch")
+            return
+        if not self._ensure_session(create=False):
+            self.send_error(403, "Dashboard session required")
+            return
+        try:
+            body = proxy.read_body(self)
+            if client is None:
+                raise proxy.ExecutorError(503, "executor_not_configured")
+            status, reply = client.action(name, body)
+        except proxy.ExecutorError as exc:
+            if name == "stop":
+                dashboard_log("executor.stop_failed", error=exc.error)
+            self._send_json(exc.payload(), exc.status)
+            return
+        self._send_json(reply, status)
 
     def _extension_request(self, parsed) -> bool:
         """An extra route of a simulation extension (D-12). Only paths the dashboard itself does not serve."""
@@ -759,7 +798,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 active_camera_ws=camera_websocket_stats()["active"],
             )
             return
-        if path not in {"/api/health"}:
+        # High-rate polls of the steering screens are not logged one by one.
+        if path not in {"/api/health", "/api/rover/status", "/api/executor/status", "/api/executor/heartbeat"}:
             dashboard_log(
                 "api.request",
                 path=path,
@@ -1349,6 +1389,8 @@ def create_server(host: str, port: int, config: str | None = None, *, autonomy_b
     DashboardHandler.extension_routes = extensions.routes_of(extension)
     STATIC_ASSETS.set_page_filter(extensions.page_filter(settings, extension))
     DashboardHandler.provider = extensions.load_provider(settings, config) or TelemetryProvider(config)
+    from dashboard_server.executor_proxy import ExecutorClient
+    DashboardHandler.executor_client = ExecutorClient.from_env()
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
     from dashboard_server.autonomy_settings import AutonomySettings

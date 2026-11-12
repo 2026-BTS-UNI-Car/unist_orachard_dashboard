@@ -737,6 +737,11 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   background: var(--color-text);
 }
 
+/* Autonomy status (UI-08): values older than 1.5 s are dimmed. */
+.detail-list.stale dd {
+  color: var(--color-text-disabled);
+}
+
 /* ---- IMU --------------------------------------------------------------- */
 .imu-attitude-stage {
   position: relative;
