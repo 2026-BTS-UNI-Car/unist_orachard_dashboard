@@ -171,8 +171,9 @@ class RealStaticFolderTest(unittest.TestCase):
 
     def test_font_in_the_style_sheet_is_versioned(self):
         css = self.assets.serve("css/tokens.css", None, False).body.decode("utf-8")
-        version = self.assets.version("vendor/ubts-sans/ubts-sans-var.woff2")
-        self.assertIn(f"/static/vendor/ubts-sans/ubts-sans-var.woff2?v={version}", css)
+        for name in ("ubts-sans-ui.woff2", "ubts-sans-ko.woff2"):
+            version = self.assets.version(f"vendor/ubts-sans/{name}")
+            self.assertIn(f"/static/vendor/ubts-sans/{name}?v={version}", css)
 
 
 try:

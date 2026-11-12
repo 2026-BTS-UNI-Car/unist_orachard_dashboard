@@ -132,10 +132,13 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
     assert.doesNotMatch(css, /url\(/i, `${name}: url() (pictures are tokens: var(--icon-...))`);
   }
   for (const name of [...systemSheets, ...pageSheets]) assert.doesNotMatch(stripComments(read(name)), /@import/, `${name}: @import`);
-  // All our CSS together stays small: it is on the first load of every route.
+  // All our CSS together stays small: it is on the first load of every route. The unicode-range list of the
+  // interface font is generated data (it saves about 220 kB of font on a first visit) and has its own limit.
   {
     const total = [...systemSheets, ...pageSheets].reduce((sum, name) => sum + fs.statSync(path.join(staticDir, name)).size, 0);
-    assert.ok(total <= 100 * 1024, `style sheets are ${total} bytes together (limit 100 kB)`);
+    const ranges = [...read('css/tokens.css').matchAll(/unicode-range:\s*([^;]*);/g)].reduce((sum, match) => sum + match[1].length, 0);
+    assert.ok(ranges <= 6 * 1024, `font unicode-range lists are ${ranges} bytes (limit 6 kB)`);
+    assert.ok(total - ranges <= 100 * 1024, `style sheets are ${total - ranges} bytes together without the font ranges (limit 100 kB)`);
   }
   // Solid red is STOP only: the status bar STOP, the drive panel STOP and the pad STOP. A danger button is tinted.
   {
@@ -153,18 +156,26 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   assert.match(base, /@media \(prefers-reduced-motion: reduce\)/);
 }
 
-// Interface font: exactly one font file, declared in tokens.css, never blocking the text. The first load
-// has to stay usable on a slow link, so the text shows in a device font until the file has arrived.
+// Interface font: one family in two files, declared in tokens.css, never blocking the text. The first load
+// has to stay usable on a slow link, so the text shows in a device font until the file has arrived, and a
+// first visit downloads only the small file (the characters the screens use, tools/fonts/split_ui_font.py).
+// The second file holds the other Hangul syllables and is fetched only when such a syllable is shown.
 {
-  const fontFile = 'vendor/ubts-sans/ubts-sans-var.woff2';
-  const record = JSON.parse(read('vendor/ubts-sans/ubts-sans-var.json'));
-  const bytes = fs.readFileSync(path.join(staticDir, fontFile));
-  assert.equal(bytes.length, record.bytes, 'font file size equals its record');
-  assert.equal(require('node:crypto').createHash('sha256').update(bytes).digest('hex'), record.sha256, 'font file hash equals its record');
-  assert.ok(bytes.length <= 400 * 1024, `interface font is ${bytes.length} bytes (limit 400 kB)`);
-  assert.equal(bytes.subarray(0, 4).toString('latin1'), 'wOF2', 'font file is WOFF2');
+  const crypto = require('node:crypto');
+  const source = JSON.parse(read('vendor/ubts-sans/ubts-sans-var.json'));
+  const split = JSON.parse(read('vendor/ubts-sans/ubts-sans-split.json'));
+  assert.equal(source.hangul_syllables, 2350);
+  assert.equal(split.source_sha256, source.sha256, 'the split was made from the recorded source font');
+  assert.equal(split.ui.hangul_syllables + split.ko.hangul_syllables, 2350, 'every syllable is in exactly one file');
+  for (const part of [split.ui, split.ko]) {
+    const bytes = fs.readFileSync(path.join(staticDir, 'vendor/ubts-sans', part.file));
+    assert.equal(bytes.length, part.bytes, `${part.file} size equals its record`);
+    assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), part.sha256, `${part.file} hash equals its record`);
+    assert.equal(bytes.subarray(0, 4).toString('latin1'), 'wOF2', `${part.file} is WOFF2`);
+  }
+  assert.ok(split.ui.bytes <= 100 * 1024, `first font file is ${split.ui.bytes} bytes (limit 100 kB)`);
   assert.ok(fs.existsSync(path.join(staticDir, 'vendor/ubts-sans/PRETENDARD-OFL.txt')), 'licence text is shipped with the font');
-  assert.equal(record.hangul_syllables, 2350);
+  const fontFiles = [`/static/vendor/ubts-sans/${split.ko.file}`, `/static/vendor/ubts-sans/${split.ui.file}`];
   for (const name of systemSheets) {
     const css = stripComments(read(name));
     const faces = [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map(match => match[1]);
@@ -173,15 +184,20 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
       assert.doesNotMatch(css, /url\(/i, `${name}: url() (no font, image or icon file; draw icons with CSS or inline SVG)`);
       continue;
     }
-    assert.equal(faces.length, 1, 'one @font-face');
-    assert.match(faces[0], /font-family:\s*"UBTS Sans"/);
-    assert.match(faces[0], /font-display:\s*swap/, 'text is shown before the font arrives');
-    assert.match(faces[0], /font-weight:\s*400 700/);
-    // The only file is the interface font. The other url() values are small inline SVG pictures (a notice
+    assert.equal(faces.length, 2, 'two @font-face rules, one family');
+    for (const face of faces) {
+      assert.match(face, /font-family:\s*"UBTS Sans"/);
+      assert.match(face, /font-display:\s*swap/, 'text is shown before the font arrives');
+      assert.match(face, /font-weight:\s*400 700/);
+    }
+    // Where ranges overlap the face written last is tried first: the small file must come last.
+    assert.match(faces[0], new RegExp(`url\\("${fontFiles[0]}"\\)`)); assert.match(faces[0], /unicode-range:\s*U\+AC00-D7A3;/);
+    assert.match(faces[1], new RegExp(`url\\("${fontFiles[1]}"\\)`)); assert.match(faces[1], /unicode-range:\s*U\+20-7E, /);
+    // The only files are the interface font. The other url() values are small inline SVG pictures (a notice
     // icon, the select arrow, the slider fill): data, not requests, each a named token of at most 1 kB.
     const urls = [...css.matchAll(/url\("([^"]*)"\)/g)].map(match => match[1]);
     assert.equal(urls.length, (css.match(/url\(/g) || []).length, 'every url() is double-quoted');
-    assert.deepEqual(urls.filter(url => !url.startsWith('data:')), [`/static/${fontFile}`], 'the only file url() is the interface font');
+    assert.deepEqual(urls.filter(url => !url.startsWith('data:')), fontFiles, 'the only file url() values are the interface font');
     const pictures = urls.filter(url => url.startsWith('data:'));
     assert.ok(pictures.length >= 8, 'inline pictures');
     for (const url of pictures) {
@@ -308,4 +324,4 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   }
 }
 
-console.log('PASS: token scales, both themes with text contrast, defined custom properties, no raw values or decoration in any sheet, one font file and a fixed request list, icons, check page');
+console.log('PASS: token scales, both themes with text contrast, defined custom properties, no raw values or decoration in any sheet, the interface font in two files and a fixed request list, icons, check page');
