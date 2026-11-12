@@ -1,0 +1,518 @@
+{
+ "schema": "ubts.slow_link.targets",
+ "version": 1,
+ "note_ko": "느린 통신 목표표. docs/slow_link.md의 목표표는 이 파일에서 만든다(compare.py --targets-table). today는 목표를 정한 날의 받아들인 값이다(accepted/baseline.json의 같은 칸, 같은 수치). kind: keep = 이미 만족, 깨지면 실패 / reach = 뒤 과제가 닿을 값.",
+ "decided": "2026-11-12",
+ "baseline": {
+  "commit": "d9620130a9003e2c9f7ad68f3df215bf3a3aed49",
+  "short": "d962013",
+  "accepted_file": "accepted/baseline.json"
+ },
+ "groups": {
+  "가": "조종과 STOP",
+  "나": "처음 열기",
+  "다": "다시 열기",
+  "라": "계속 쓰는 양",
+  "마": "화면 자료의 나이와 갱신",
+  "바": "멈춤 뒤 회복"
+ },
+ "targets": [
+  {
+   "id": "가-1",
+   "what_ko": "조종 명령 왕복 p95",
+   "scenario": "drive",
+   "profile": "good",
+   "metric": "command_rt_p95",
+   "op": "<=",
+   "target": 150,
+   "today": 265.3,
+   "kind": "reach",
+   "tasks": [
+    "NET-05",
+    "NET-08"
+   ],
+   "note_ko": "새로 넣음. 초안에 좋음 프로필이 없었다. 연결 바닥 55 ms(왕복 지연 10 ms 두 번 + 처리 35 ms)에 1080p 한 장이 지나가는 90 ms를 더한 값"
+  },
+  {
+   "id": "가-2",
+   "what_ko": "조종 명령 왕복 p95",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "command_rt_p95",
+   "op": "<=",
+   "target": 250,
+   "today": 397.4,
+   "kind": "reach",
+   "tasks": [
+    "NET-05",
+    "NET-08"
+   ],
+   "note_ko": "초안 그대로. 바닥이 115 ms라 카메라 한 장이 약 34 kB 이하여야 닿는다(지금 1080p 한 장 112 kB는 이 연결에서 450 ms)"
+  },
+  {
+   "id": "가-3",
+   "what_ko": "조종 명령 왕복 p50",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "command_rt_p50",
+   "op": "<=",
+   "target": 450,
+   "today": 643.2,
+   "kind": "reach",
+   "tasks": [
+    "NET-05",
+    "NET-08"
+   ],
+   "note_ko": "고침(초안: p95 700 ms). 이 프로필은 20초마다 1초 멈춰서 p95가 멈춤에 걸린 명령 수로 정해진다. p50로 재고, 바닥 335 ms에 카메라 한 장(약 7 kB) 115 ms를 더했다"
+  },
+  {
+   "id": "가-4",
+   "what_ko": "조종 요청이 브라우저를 떠나기 전 기다린 시간, 최대",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "control_presend_max",
+   "op": "<",
+   "target": 20,
+   "today": 14,
+   "kind": "reach",
+   "tasks": [
+    "NET-05"
+   ],
+   "note_ko": "고침(초안: p95 20 ms 미만). p95는 3 ms로 이미 만족하지만 드문 긴 대기가 안 보인다. 받아들인 실행은 14 ms, 같은 조건 3회 중 1회에서 명령 1790 ms·STOP 603 ms"
+  },
+  {
+   "id": "가-5",
+   "what_ko": "조종 요청이 브라우저를 떠나기 전 기다린 시간, 최대",
+   "scenario": "drive_map",
+   "profile": "bad",
+   "metric": "control_presend_max",
+   "op": "<",
+   "target": 20,
+   "today": 258.6,
+   "kind": "reach",
+   "tasks": [
+    "NET-05"
+   ],
+   "note_ko": "고침(위와 같음). 지도를 그리는 10분 동안 STOP 하나가 브라우저 안에서 0.26초 기다렸다(설치판 1.02초)"
+  },
+  {
+   "id": "가-6",
+   "what_ko": "STOP 버튼→제어 끝점 p50",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "stop_endpoint_p50",
+   "op": "<=",
+   "target": 90,
+   "today": 79.8,
+   "kind": "keep",
+   "tasks": [
+    "NET-05"
+   ],
+   "note_ko": "고침(초안: STOP 왕복 p95 250 ms). 차가 서는 데 필요한 것은 이 시간이고 이미 연결 바닥(왕복 지연 1.5번 + 처리)이다. 지금 값에 여유 약 10 %"
+  },
+  {
+   "id": "가-7",
+   "what_ko": "STOP 버튼→제어 끝점 p50",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "stop_endpoint_p50",
+   "op": "<=",
+   "target": 280,
+   "today": 252.5,
+   "kind": "keep",
+   "tasks": [
+    "NET-05"
+   ],
+   "note_ko": "고침(위와 같음). 멈춤에 걸린 STOP은 멈춤 길이만큼 더 늦는다(지금 최대 1253 ms). 이것은 연결의 한계다"
+  },
+  {
+   "id": "가-8",
+   "what_ko": "STOP 답(화면의 접수 표시) p95",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "stop_answer_p95",
+   "op": "<=",
+   "target": 250,
+   "today": 376.7,
+   "kind": "reach",
+   "tasks": [
+    "NET-05",
+    "NET-08"
+   ],
+   "note_ko": "초안 그대로(STOP 왕복). 답은 명령의 답과 같은 길로 온다"
+  },
+  {
+   "id": "가-9",
+   "what_ko": "명령이 제어 끝점에 닿는 간격 p95",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "command_period_p95",
+   "op": "<=",
+   "target": 375,
+   "today": 432.6,
+   "kind": "reach",
+   "tasks": [
+    "NET-05"
+   ],
+   "note_ko": "새로 넣음. 입력 만료 0.75초의 절반(명령 하나가 늦어도 만료되지 않게). 화면은 140 ms마다 보내려 하지만 앞 답을 기다린다"
+  },
+  {
+   "id": "가-10",
+   "what_ko": "명령이 제어 끝점에 닿는 간격 p50",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "command_period_p50",
+   "op": "<=",
+   "target": 375,
+   "today": 698.4,
+   "kind": "reach",
+   "tasks": [
+    "NET-05"
+   ],
+   "note_ko": "새로 넣음. 위와 같은 값, 멈춤이 있는 프로필이라 p50. 지금은 간격의 p95(839 ms)가 만료 시간 750 ms를 넘는다"
+  },
+  {
+   "id": "나-1",
+   "what_ko": "처음 열기에 받는 양(연결 바이트)",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "cold_kB",
+   "op": "<=",
+   "target": 250,
+   "today": 1501.3,
+   "kind": "reach",
+   "tasks": [
+    "NET-03"
+   ],
+   "note_ko": "초안 그대로. 지금 목록에서 지도·영상·현장 준비·매체 작업 파일과 큰 그림 둘을 빼면 약 142 kB(계산)"
+  },
+  {
+   "id": "나-2",
+   "what_ko": "처음 열기의 페이지 파일 요청 수",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "cold_page_files",
+   "op": "<=",
+   "target": 30,
+   "today": 52,
+   "kind": "reach",
+   "tasks": [
+    "NET-03"
+   ],
+   "note_ko": "고침(초안: 요청 12개). 15개로 나눈 app 스크립트만으로 12개를 넘는다. 자료 요청(지금 9개)은 따로 두고 페이지 파일만 센다. 지금 52개에서 주행에 필요 없는 23개를 빼면 29개"
+  },
+  {
+   "id": "나-3",
+   "what_ko": "처음 열기에서 100 kB를 넘는 파일 수",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "cold_over_100kB",
+   "op": "<=",
+   "target": 0,
+   "today": 5,
+   "kind": "reach",
+   "tasks": [
+    "NET-03"
+   ],
+   "note_ko": "초안 그대로"
+  },
+  {
+   "id": "나-4",
+   "what_ko": "처음 열기에서 쓸 수 있기까지",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "cold_usable_s",
+   "op": "<=",
+   "target": 5,
+   "today": 6.39,
+   "kind": "reach",
+   "tasks": [
+    "NET-03",
+    "NET-08"
+   ],
+   "note_ko": "새로 넣음. 250 kB ÷ 62.5 kB/s = 4초에 연결을 맺는 시간을 더한 값"
+  },
+  {
+   "id": "다-1",
+   "what_ko": "다시 열기에서 연결에 나간 페이지 파일 요청 수",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "warm_page_files_on_network",
+   "op": "<=",
+   "target": 2,
+   "today": 49,
+   "kind": "reach",
+   "tasks": [
+    "NET-04"
+   ],
+   "note_ko": "고침(초안: 요청 2개). 화면이 열릴 때 보내는 자료 요청(9개)은 캐시할 수 없어 뺀다. 페이지 파일만 센다"
+  },
+  {
+   "id": "다-2",
+   "what_ko": "다시 열기에서 다시 받은 페이지 파일 본문",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "warm_page_file_body_B",
+   "op": "<=",
+   "target": 0,
+   "today": 629,
+   "kind": "reach",
+   "tasks": [
+    "NET-04",
+    "NET-03"
+   ],
+   "note_ko": "초안 그대로. 지금 남은 629 B는 지도 파일 조각 하나"
+  },
+  {
+   "id": "라-1",
+   "what_ko": "주행 화면이 내려받는 양 ÷ 연결 속도",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "link_share_pct",
+   "op": "<=",
+   "target": 60,
+   "today": 88.3,
+   "kind": "reach",
+   "tasks": [
+    "NET-06",
+    "NET-07",
+    "NET-08"
+   ],
+   "note_ko": "고침(초안: 150 kbit/s). 뒤 과제의 수치(LiDAR 8 kB/s, 상태 2 kB/s)에 지금의 IMU·GPS·지도를 더하면 카메라 없이 약 148 kbit/s다. 대기열이 비도록 속도의 60 %(300 kbit/s)로 정함"
+  },
+  {
+   "id": "라-2",
+   "what_ko": "주행 화면이 내려받는 양 ÷ 연결 속도",
+   "scenario": "drive",
+   "profile": "very_bad",
+   "metric": "link_share_pct",
+   "op": "<=",
+   "target": 60,
+   "today": 89.8,
+   "kind": "reach",
+   "tasks": [
+    "NET-06",
+    "NET-07",
+    "NET-08",
+    "NET-10"
+   ],
+   "note_ko": "고침(초안: 40 kbit/s). 카메라를 뺀 통로만으로 지금 약 82 kbit/s다. 속도의 60 %(90 kbit/s)로 정함"
+  },
+  {
+   "id": "라-3",
+   "what_ko": "지도 응답 크기: 10분째 ÷ 첫 1분",
+   "scenario": "drive_map",
+   "profile": "bad",
+   "metric": "map_growth_ratio",
+   "op": "<=",
+   "target": 1.2,
+   "today": 8.65,
+   "kind": "reach",
+   "tasks": [
+    "NET-09"
+   ],
+   "note_ko": "초안의 '시간이 지나도 늘지 않음'을 숫자로 정함(흔들림 20 % 허용)"
+  },
+  {
+   "id": "라-4",
+   "what_ko": "지도 요청이 쓰는 양(10분 평균)",
+   "scenario": "drive_map",
+   "profile": "bad",
+   "metric": "map_kB_s",
+   "op": "<=",
+   "target": 10,
+   "today": 22.755,
+   "kind": "reach",
+   "tasks": [
+    "NET-09"
+   ],
+   "note_ko": "새로 넣음. NET-09의 완료 기준에 있는 값"
+  },
+  {
+   "id": "라-5",
+   "what_ko": "숨긴 탭이 받는 스트림 양",
+   "scenario": "hidden",
+   "profile": "normal",
+   "metric": "hidden_stream_kB_s",
+   "op": "<=",
+   "target": 1,
+   "today": 250.22,
+   "kind": "reach",
+   "tasks": [
+    "NET-08",
+    "NET-09"
+   ],
+   "note_ko": "새로 넣음(L4가 남아 있다). 연결을 유지하는 신호만 남긴다"
+  },
+  {
+   "id": "마-1",
+   "what_ko": "LiDAR 그림 지연 p95",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "lidar_delay_p95",
+   "op": "<=",
+   "target": 1000,
+   "today": 418.1,
+   "kind": "keep",
+   "tasks": [
+    "NET-07"
+   ],
+   "note_ko": "초안 그대로. 이미 만족"
+  },
+  {
+   "id": "마-2",
+   "what_ko": "LiDAR를 다시 그리는 수",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "lidar_hz",
+   "op": ">=",
+   "target": 9,
+   "today": 2.13,
+   "kind": "reach",
+   "tasks": [
+    "NET-07",
+    "NET-08"
+   ],
+   "note_ko": "새로 넣음. 지연만 보면 초당 2번으로도 통과한다. NET-07의 10 Hz에 여유 10 %를 둔 값(재생 원본이 10.01 Hz라 10 Hz에 딱 맞추면 흔들림에 걸린다)"
+  },
+  {
+   "id": "마-3",
+   "what_ko": "LiDAR를 다시 그리는 수",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "lidar_hz",
+   "op": ">=",
+   "target": 4,
+   "today": 0.98,
+   "kind": "reach",
+   "tasks": [
+    "NET-07",
+    "NET-08"
+   ],
+   "note_ko": "새로 넣음. NET-07의 완료 기준에 있는 값"
+  },
+  {
+   "id": "마-4",
+   "what_ko": "카메라 지연 p95",
+   "scenario": "drive",
+   "profile": "normal",
+   "metric": "camera_delay_p95",
+   "op": "<=",
+   "target": 600,
+   "today": 1305.4,
+   "kind": "reach",
+   "tasks": [
+    "NET-08"
+   ],
+   "note_ko": "새로 넣음. 초안에 카메라가 없었는데 보통에서 1초를 넘는 통로는 카메라뿐이다. NET-08이 나쁨에 정한 값을 보통에도 쓴다"
+  },
+  {
+   "id": "마-5",
+   "what_ko": "카메라 지연 p95",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "camera_delay_p95",
+   "op": "<=",
+   "target": 600,
+   "today": 8295.4,
+   "kind": "reach",
+   "tasks": [
+    "NET-08"
+   ],
+   "note_ko": "새로 넣음. NET-08의 완료 기준에 있는 값"
+  },
+  {
+   "id": "마-6",
+   "what_ko": "카메라 fps",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "camera_fps",
+   "op": ">=",
+   "target": 4,
+   "today": 0.32,
+   "kind": "reach",
+   "tasks": [
+    "NET-08"
+   ],
+   "note_ko": "새로 넣음. NET-08의 완료 기준에 있는 값"
+  },
+  {
+   "id": "바-1",
+   "what_ko": "멈춤 뒤 새 자료가 닿기까지: LiDAR·IMU·GPS 중 가장 늦은 것",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "stall_sensor_fresh_max_ms",
+   "op": "<=",
+   "target": 3000,
+   "today": 1496.0,
+   "kind": "keep",
+   "tasks": [
+    "NET-11"
+   ],
+   "note_ko": "초안 그대로(3초). '최신 자료'를 멈춤이 끝난 뒤에 만들어진 메시지로 정했다. 이미 만족"
+  },
+  {
+   "id": "바-2",
+   "what_ko": "멈춤 뒤 새 카메라 그림이 닿기까지",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "stall_camera_fresh_max_ms",
+   "op": "<=",
+   "target": 3000,
+   "today": 10205.0,
+   "kind": "reach",
+   "tasks": [
+    "NET-08",
+    "NET-11"
+   ],
+   "note_ko": "초안 그대로. 카메라는 평소 지연이 7초라 멈춤과 상관없이 넘는다"
+  },
+  {
+   "id": "바-3",
+   "what_ko": "멈춤 뒤 새 자료가 닿기까지: LiDAR·IMU·GPS 중 가장 늦은 것",
+   "scenario": "drive",
+   "profile": "very_bad",
+   "metric": "stall_sensor_fresh_max_ms",
+   "op": "<=",
+   "target": 3000,
+   "today": 5292.0,
+   "kind": "reach",
+   "tasks": [
+    "NET-11",
+    "NET-08"
+   ],
+   "note_ko": "초안 그대로. 지금은 2초 멈춤 뒤에 LiDAR·GPS 연결이 닫혔다 다시 열리고(3.5절) 밀린 IMU가 먼저 지나간다"
+  },
+  {
+   "id": "바-4",
+   "what_ko": "멈춤 뒤에 닿은 밀린 메시지 수(통로 중 최대)",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "stall_backlog_max",
+   "op": "<=",
+   "target": 2,
+   "today": 11,
+   "kind": "reach",
+   "tasks": [
+    "NET-11"
+   ],
+   "note_ko": "초안의 '밀린 자료를 재생하지 않는다'를 숫자로 정함. 이미 보낸 한 장은 되돌릴 수 없어 0은 아니다. 지금 LiDAR·GPS 1, 카메라 2, IMU 10~11"
+  },
+  {
+   "id": "바-5",
+   "what_ko": "실시간 2분 동안 닫힌 스트림 연결 수",
+   "scenario": "drive",
+   "profile": "bad",
+   "metric": "stream_closes",
+   "op": "<=",
+   "target": 0,
+   "today": 6,
+   "kind": "reach",
+   "tasks": [
+    "NET-08",
+    "NET-11"
+   ],
+   "note_ko": "새로 넣음. 지금은 카메라 연결이 2분에 6번 닫혔다 다시 열린다(코드 1006, 10분에 40번). 카메라 지연(p95 8.3초)이 응답 기한 8초에 걸리는 것으로 보인다(확정 아님)"
+  }
+ ]
+}
