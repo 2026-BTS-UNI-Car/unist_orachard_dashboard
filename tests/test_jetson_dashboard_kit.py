@@ -706,7 +706,8 @@ class SourcePolicy(unittest.TestCase):
         # An empty ProxyHandler keeps build_opener from adding the default one that reads http_proxy.
         self.assertFalse([h for h in kit._OPENER.handlers if getattr(h, 'proxies', None)])
         source = (KIT / 'install_dashboard.py').read_text(encoding='utf-8')
-        self.assertIn('build_opener(urllib.request.ProxyHandler({}))', source)
+        self.assertIn('build_opener(urllib.request.ProxyHandler({})', source)
+        self.assertTrue([h for h in kit._OPENER.handlers if type(h).__name__ == 'HTTPCookieProcessor'])
 
     def test_python_310_compatible_syntax(self):
         for name in self.SOURCES + ('make_bundle.py',):

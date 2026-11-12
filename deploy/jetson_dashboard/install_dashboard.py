@@ -28,6 +28,7 @@ import argparse
 import datetime
 import hashlib
 import http.client
+import http.cookiejar
 import io
 import json
 import os
@@ -340,9 +341,11 @@ class DockerAPI:
 
 
 # --------------------------------------------------------------------------------------------------
-# HTTP to the dashboard (proxies from the environment are not used)
+# HTTP to the dashboard. Proxies from the environment are not used. A cookie jar keeps one dashboard
+# session for all checks (each request without a cookie would open a new viewer session).
 # --------------------------------------------------------------------------------------------------
-_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                      urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
 
 def http_get(url, timeout=HTTP_TIMEOUT_S, max_bytes=MAX_STATIC_BYTES):
