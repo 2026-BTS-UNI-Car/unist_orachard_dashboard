@@ -18,7 +18,7 @@
 Jetson ARM에서도 21개 검사를 모두 통과한 뒤 GPS driver 한 서비스에 직접 SSH로 적용했습니다.
 배포 후 10개 검사를 통과했고, API 6표본에서 정상 패킷609→769·거절0·연결 유지·위치 미확정을 확인했습니다.
 다른15개 컨테이너와 기존32개 기록의 메타데이터·설정은 유지했습니다.
-[배포 검증](jetson_gps_reconnect_deployment.json)에 첫 ARM 검사 실패와 해결도 함께 남겼습니다.
+[배포 검증](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/jetson_gps_reconnect_deployment.json)에 첫 ARM 검사 실패와 해결도 함께 남겼습니다.
 
 이 수정은 드라이버의 분리 처리와 같은 장치 경로의 복구를 다룹니다. Docker의 정적
 `devices` 매핑은 그대로이므로 장치가 없는 상태에서 컨테이너 최초 시작,

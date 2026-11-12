@@ -17,7 +17,7 @@ DNS를 조회하지 않으므로 다른 인터넷 연결의 DNS/브라우저 Sec
 
 설정 배포와 실제 백엔드를 통한 프록시 검증은 별도 기록에 남긴다.
 AP 클라이언트에서 새 IP 경로를 직접 확인한 결과는
-`docs/ap_ip_access_20261004.json`의 검증 범위를 따른다.
+[`docs/ap_ip_access_20261004.json`](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/ap_ip_access_20261004.json)(보존 태그)의 검증 범위를 따른다.
 
 ## 운영 결론
 

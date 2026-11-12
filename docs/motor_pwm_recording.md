@@ -6,7 +6,7 @@
 
 2026-09-29 KST에 `8fe7cd6ef37aa1d5fef8bc4b4f582d7e21b80c33`을 적용했습니다. 대시보드와 녹화기 두 서비스만 교체했으며, 나머지 14개 컨테이너·기존 32개 녹화·설정·기존 Compose 파일은 유지했습니다. 배포 검사 36개가 통과했고, 녹화하지 않은 상태에서도 모터 상태 수신·1.5초 이내 갱신·오류 없음·기록 표본 0개를 확인했습니다.
 
-Jetson ARM Iron 후보 이미지의 격리 검사 24개(9.243초), 로컬 Iron 전체 검사 144개(36.028초, 건너뜀 없음), 녹화 재생 JavaScript 검사와 [GitHub CI](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/actions/runs/36564999759)가 통과했습니다. 실제 새 녹화나 차량 구동은 수행하지 않았습니다. 현재 브라우저 접속은 `ERR_PROXY_CONNECTION_FAILED`로 실패했으므로, 이 버전의 실제 화면 확인까지 통과한 상태는 아닙니다. [배포 검증 자료](jetson_motor_recording_validation.json)와 [복구 체크포인트](../RAW_DEPLOYMENT.md)를 참고하세요.
+Jetson ARM Iron 후보 이미지의 격리 검사 24개(9.243초), 로컬 Iron 전체 검사 144개(36.028초, 건너뜀 없음), 녹화 재생 JavaScript 검사와 [GitHub CI](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/actions/runs/36564999759)가 통과했습니다. 실제 새 녹화나 차량 구동은 수행하지 않았습니다. 현재 브라우저 접속은 `ERR_PROXY_CONNECTION_FAILED`로 실패했으므로, 이 버전의 실제 화면 확인까지 통과한 상태는 아닙니다. [배포 검증 자료](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/jetson_motor_recording_validation.json)와 [복구 체크포인트](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/RAW_DEPLOYMENT.md)를 참고하세요.
 
 ## 저장과 재생
 
