@@ -146,7 +146,8 @@ input:disabled {
 }
 
 /* Label above or beside a control. */
-.field {
+.field,
+.field-inline {
   display: grid;
   gap: var(--space-1);
   min-width: 0;
@@ -160,11 +161,6 @@ input:disabled {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  font-weight: var(--weight-medium);
 }
 
 /* ---- Slider ------------------------------------------------------------ */
@@ -795,7 +791,8 @@ input[type="range"]:disabled::-moz-range-thumb {
 }
 
 /* The icon is a mask in the colour of the text: a script replaces the text
-   of a notice, so the icon cannot be an element. */
+   of a notice, so the icon cannot be an element. Masks are written with the
+   -webkit- prefix only: every engine reads it, older Chromium nothing else. */
 .notice::before,
 .test-result::before {
   flex: 0 0 auto;
@@ -804,7 +801,6 @@ input[type="range"]:disabled::-moz-range-thumb {
   margin-top: 1px;
   background: currentColor;
   -webkit-mask: var(--icon-info) center / contain no-repeat;
-  mask: var(--icon-info) center / contain no-repeat;
   content: "";
 }
 
@@ -817,7 +813,6 @@ input[type="range"]:disabled::-moz-range-thumb {
 .notice.ok::before,
 .test-result.ok::before {
   -webkit-mask-image: var(--icon-ok);
-  mask-image: var(--icon-ok);
 }
 
 .notice.warn,
@@ -829,7 +824,6 @@ input[type="range"]:disabled::-moz-range-thumb {
 .notice.warn::before,
 .test-result.warn::before {
   -webkit-mask-image: var(--icon-warn);
-  mask-image: var(--icon-warn);
 }
 
 .notice.bad,
@@ -841,7 +835,6 @@ input[type="range"]:disabled::-moz-range-thumb {
 .notice.bad::before,
 .test-result.bad::before {
   -webkit-mask-image: var(--icon-bad);
-  mask-image: var(--icon-bad);
 }
 
 .notice.info,
@@ -867,7 +860,6 @@ input[type="range"]:disabled::-moz-range-thumb {
   height: 28px;
   background: var(--color-text-disabled);
   -webkit-mask: var(--icon-empty) center / contain no-repeat;
-  mask: var(--icon-empty) center / contain no-repeat;
   content: "";
 }
 
@@ -963,20 +955,17 @@ input[type="range"]:disabled::-moz-range-thumb {
   margin-top: 2px;
   background: var(--color-accent-text);
   -webkit-mask: var(--icon-info) center / contain no-repeat;
-  mask: var(--icon-info) center / contain no-repeat;
   content: "";
 }
 
 .toast.ok::before {
   background: var(--color-ok-text);
   -webkit-mask-image: var(--icon-ok);
-  mask-image: var(--icon-ok);
 }
 
 .toast.bad::before {
   background: var(--color-danger-text);
   -webkit-mask-image: var(--icon-bad);
-  mask-image: var(--icon-bad);
 }
 
 /* ---- Hover and press --------------------------------------------------- */

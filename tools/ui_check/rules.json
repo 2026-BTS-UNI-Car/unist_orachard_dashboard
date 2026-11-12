@@ -29,7 +29,7 @@
   {"id": "style-font-size-kinds", "title_ko": "글자 크기 종류 6개 이하", "metric": "style_font_size_kinds", "op": "<=", "value": 6, "mode": "fail", "note_ko": "규칙표의 크기는 13·14·16·20·24px 다섯 가지다."},
   {"id": "style-font-weight-kinds", "title_ko": "글자 굵기 종류 4개 이하", "metric": "style_font_weight_kinds", "op": "<=", "value": 4, "mode": "fail", "note_ko": "규칙표의 굵기는 400(글), 500(이름표·버튼), 600(제목·값), 700(화면 제목·STOP) 네 가지다(디자인 2차, 가변 글꼴의 범위). 그 밖의 굵기는 없다."},
   {"id": "style-no-heavy-text", "title_ko": "굵기 800 이상인 글 없음", "metric": "style_heavy_text_percent", "op": "<=", "value": 0, "mode": "fail"},
-  {"id": "style-text-colors", "title_ko": "글자색 종류 7개 이하", "metric": "style_text_colors", "op": "<=", "value": 7, "mode": "report"}
+  {"id": "style-text-colors", "title_ko": "글자색 종류 10개 이하", "metric": "style_text_colors", "op": "<=", "value": 10, "mode": "report", "note_ko": "규칙표의 글자색은 글, 보조 글, 꺼진 글, 강조색 글, 상태 글 세 가지(정상·주의·위험), 강조색·STOP 위의 흰 글, 영상 위 글까지 10가지다(디자인 2차: 상태를 옅은 바탕과 글자색으로 보인다). 가장 많은 쪽은 9가지다."}
  ],
  "regression": {
   "note_ko": "기준선과 같은 쪽(자료 묶음 · 경로 · 화면 크기)끼리 견준다. better가 lower면 값이 커질 때, true면 참이던 값이 거짓이 될 때 나빠진 것으로 본다.",

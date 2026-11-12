@@ -96,6 +96,12 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
     }
   }
   assert.deepEqual([...new Set(missing)], [], 'custom property that tokens.css does not define');
+  // And the other way round: a colour or a picture in the token file is used somewhere
+  // (a sheet, a page, or a script that reads it for a canvas).
+  const users = [...sources, ...fs.readdirSync(path.join(staticDir, 'app')).map(name => `app/${name}`)].map(read).join('\n') + scripts;
+  const uses = users.replace(/^\s*--[a-z0-9-]+\s*:/gm, '');
+  const unused = Object.keys(light).filter(name => /^--(color|chart|icon|range|shadow)-/.test(name) && !new RegExp(`${name}(?![a-z0-9-])`).test(uses));
+  assert.deepEqual(unused, [], 'token that nothing uses');
   // Custom properties are declared in the token file only (a sheet may still set one for its own subtree from script).
   for (const name of [...systemSheets.filter(sheet => sheet !== 'css/tokens.css'), ...pageSheets]) {
     const declared = [...stripComments(read(name)).matchAll(/(?:^|[;{\s])(--[a-z0-9-]+)\s*:/g)].map(match => match[1])
