@@ -180,13 +180,87 @@ def _build(archive, signature, progress):
 
 
 class IndexedTileHistory:
+    # C1: windows of a complete (immutable) history are cached. Key: history
+    # file identity (mtime_ns, size), start rounded down to 0.5 s, span, codec.
+    WINDOW_CACHE_ENTRIES=32
+    WINDOW_CACHE_BYTES=64*1024*1024
+
     def __init__(self):
         self.lock=threading.Lock();self.cache={}
+        from collections import OrderedDict
+        self.window_cache=OrderedDict();self.window_cache_bytes=0
+        self.window_inflight={};self.window_lock=threading.Lock()
+        self.window_stats=dict(hits=0,misses=0,shared=0,stored=0,evicted=0)
+
+    def _window_key(self,archive,start,span,codec):
+        file=Path(archive)/'integrated_map_history.json'
+        try:stat=file.stat()
+        except OSError:return None
+        with self.lock:
+            cached=self.cache.get(str(file))
+        if not cached or cached[0]!=stat.st_mtime_ns or not cached[1].get('complete'):return None
+        return (str(file),stat.st_mtime_ns,stat.st_size,start,span,codec)
+
+    def cached_window(self,archive,start_s,span_s=12,codec=None):
+        """Return a cached window or None, without computing (autonomy priority)."""
+        try:start=float(start_s);span=float(span_s)
+        except (TypeError,ValueError):return None
+        if not np.isfinite(start) or not np.isfinite(span):return None
+        start=max(0.,np.floor(start*2)/2)
+        try:self._load_history(archive)
+        except (OSError,ValueError):return None
+        key=self._window_key(archive,start,span,codec)
+        with self.window_lock:
+            value=self.window_cache.get(key) if key else None
+            if value is not None:
+                self.window_cache.move_to_end(key);self.window_stats['hits']+=1
+                return value[0]
+        return None
 
     def window(self,archive,start_s,span_s=12,codec=None):
         start=float(start_s);span=float(span_s)
         if not np.isfinite(start) or not np.isfinite(span) or not 0<=start<=86400 or not 1<=span<=24:
             raise ValueError('invalid_map_window')
+        self._load_history(archive)  # refresh the parsed history (and its completeness) cheaply
+        rounded=max(0.,float(np.floor(start*2)/2))
+        key=self._window_key(archive,rounded,span,codec)
+        if key is None:return self._window(archive,start,span,codec)
+        with self.window_lock:
+            cached=self.window_cache.get(key)
+            if cached is not None:
+                self.window_cache.move_to_end(key);self.window_stats['hits']+=1
+                return cached[0]
+            pending=self.window_inflight.get(key)
+            owner=pending is None
+            if owner:
+                pending=self.window_inflight[key]=dict(event=threading.Event(),value=None,error=None)
+                self.window_stats['misses']+=1
+            else:self.window_stats['shared']+=1
+        if not owner:
+            pending['event'].wait(60)
+            if pending['error'] is not None:raise pending['error']
+            if pending['value'] is None:raise ValueError('map_window_timeout')
+            return pending['value']
+        try:
+            value=self._window(archive,rounded,span,codec)
+            pending['value']=value
+            size=len(json.dumps(value,separators=(',',':')))
+            with self.window_lock:
+                if size<=self.WINDOW_CACHE_BYTES//4:
+                    self.window_cache[key]=(value,size);self.window_cache_bytes+=size;self.window_stats['stored']+=1
+                    while self.window_cache and (len(self.window_cache)>self.WINDOW_CACHE_ENTRIES or
+                                                 self.window_cache_bytes>self.WINDOW_CACHE_BYTES):
+                        _,(old,old_size)=self.window_cache.popitem(last=False)
+                        self.window_cache_bytes-=old_size;self.window_stats['evicted']+=1
+            return value
+        except BaseException as error:
+            pending['error']=error
+            raise
+        finally:
+            with self.window_lock:self.window_inflight.pop(key,None)
+            pending['event'].set()
+
+    def _window(self,archive,start,span,codec=None):
         seed=self.status(archive,start)
         if seed is None:return dict(ok=True,available=False)
         history=self.cache[str(Path(archive)/'integrated_map_history.json')][1]
@@ -205,7 +279,7 @@ class IndexedTileHistory:
             result=compact_window(result,codec)
         return result
 
-    def status(self,archive,t_s,since=None,tile_epoch=None):
+    def _load_history(self,archive):
         file=Path(archive)/'integrated_map_history.json'
         if not file.is_file():return None
         if file.is_symlink() or file.stat().st_size>64*1024*1024:raise ValueError('invalid_integrated_history')
@@ -216,6 +290,11 @@ class IndexedTileHistory:
             else:
                 history=read_json(file);self.cache[str(file)]=(stamp,history)
                 if len(self.cache)>16:self.cache.pop(next(iter(self.cache)))
+        return history
+
+    def status(self,archive,t_s,since=None,tile_epoch=None):
+        history=self._load_history(archive)
+        if history is None:return None
         if history.get('schema')!='ubts.integrated_archive.v1':return None
         outdated=(history.get('localization_fingerprint')!=localization_fingerprint()
                   or history.get('raster_fingerprint')!=raster_fingerprint())

@@ -77,7 +77,10 @@ async function request(path,body,signal,timeoutMs){
     const code=value.error||value.message||`HTTP ${response.status}`;
     const messages={another_device_controls_this_recording:'다른 기기가 이 기록의 매핑을 제어하고 있습니다.',another_recording_mapping_active_stop_it_first:'다른 기록을 매핑 중입니다. 작업 관리에서 중단한 뒤 재생하세요.',mapping_stopped_press_play_to_resume:'매핑이 중단되었습니다. 재생을 눌러 이어가세요.',mapping_epoch_changed_refresh_before_action:'다른 기기에서 지도가 변경되었습니다. 지도를 확인한 뒤 다시 시도하세요.',mapping_worker_stopping_retry:'이전 매핑 작업을 정리 중입니다. 잠시 후 다시 시도하세요.',mapping_read_capacity_busy:'지도 조회가 많습니다. 잠시 후 다시 시도하세요.'};
     messages.mapping_control_revoked_refresh='매핑 제어권이 변경되었습니다. 지도를 확인한 뒤 재생을 다시 누르세요.';
-    const error=new Error(messages[code]||code);error.code=code;throw error;
+    const error=new Error(messages[code]||code);error.code=code;error.status=response.status;
+    error.deferred=value.deferred===true||code==='mapping_read_capacity_busy';
+    error.retryAfterMs=Math.max(500,Math.min(15000,1000*(Number(value.retry_after_s)||Number(response.headers?.get?.('Retry-After'))||1)));
+    throw error;
   }
   return value;
   }catch(error){
@@ -97,6 +100,10 @@ function updateArchiveWaitReason(value){
   archiveWaitReason=value?.waiting_autonomy_priority||stage==='waiting_autonomy_priority'?
     '자율주행 우선 · 기록 지도 계산 대기':value?.waiting_live_priority||stage==='waiting_live_priority'?
     '실시간 지도 우선 · 기록 지도 계산 대기':'';
+}
+// S14/E2: deferred reads are shown as a wait with its reason, not as an error.
+function deferredArchiveText(error){
+  return error.code==='autonomy_priority'?'자율주행 우선 · 기록 지도 계산 대기 · 마지막 지도 유지':'지도 조회 대기 중 · 마지막 지도 유지';
 }
 function paint(value){
   liveMapEpoch=value.map_epoch;
@@ -128,7 +135,10 @@ async function selectArchive(id){
   triedCausalMap=false;inlinePlaybackMap=false;immutableCursorMap=false;bufferedCursorMap=false;availableCursorPrefix=0;
   playbackPending?.controller.abort();playbackPending=null;segments.reset();archive.set({});$('liveArchiveRegenerate').disabled=!id;
   if(!id){text('liveArchiveStatus','기록을 선택하세요.');return;}
-  try{await pollArchive(id,epoch);}catch(error){if(epoch===archiveEpoch&&error.name!=='AbortError'){text('liveArchiveStatus',error.message);scheduleArchive(500);}}
+  try{await pollArchive(id,epoch);}catch(error){if(epoch===archiveEpoch&&error.name!=='AbortError'){
+    if(error.deferred){text('liveArchiveStatus',deferredArchiveText(error));scheduleArchive(error.retryAfterMs||1000);}
+    else{text('liveArchiveStatus',error.message);scheduleArchive(500);}
+  }}
 }
 async function pollArchive(id,epoch){
   if(epoch!==archiveEpoch||archivePending?.epoch===epoch)return;
@@ -231,6 +241,12 @@ function scheduleArchive(delay=75){
   const id=selected,epoch=archiveEpoch;
   archiveTimer=setTimeout(()=>{archiveTimer=null;pollArchive(id,epoch).catch(error=>{
     if(epoch===archiveEpoch&&error.name!=='AbortError'){
+      if(error.deferred){
+        // S14/E2: a busy read slot or autonomy priority is a wait, not a failure.
+        text('liveArchiveStatus',deferredArchiveText(error));
+        archiveRetryMs=Math.min(15000,Math.max(error.retryAfterMs||500,archiveRetryMs*2));scheduleArchive(archiveRetryMs);
+        return;
+      }
       text('liveArchiveStatus',`${error.message} · 마지막 지도 유지 · 재시도 중`);
       archiveRetryMs=Math.min(2000,Math.max(500,archiveRetryMs*2));scheduleArchive(archiveRetryMs);
     }
