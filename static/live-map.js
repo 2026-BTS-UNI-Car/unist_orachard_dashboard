@@ -101,10 +101,6 @@ function updateArchiveWaitReason(value){
     '자율주행 우선 · 기록 지도 계산 대기':value?.waiting_live_priority||stage==='waiting_live_priority'?
     '실시간 지도 우선 · 기록 지도 계산 대기':'';
 }
-// S14/E2: deferred reads are shown as a wait with its reason, not as an error.
-function deferredArchiveText(error){
-  return error.code==='autonomy_priority'?'자율주행 우선 · 기록 지도 계산 대기 · 마지막 지도 유지':'지도 조회 대기 중 · 마지막 지도 유지';
-}
 function paint(value){
   liveMapEpoch=value.map_epoch;
   const waiting=value.state==='waiting_for_sensors';
