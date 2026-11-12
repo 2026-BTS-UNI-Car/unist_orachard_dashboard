@@ -389,7 +389,8 @@ def stall_recovery(client, stalls, t_from, t_to):
                 continue
             waits.append(after[0][0] - end_ms)
             ages.append(after[0][0] - after[0][1])
-            worst_after.append(max(r[0] - r[1] for r in after if r[0] < end_ms + 3000))
+            within = [r for r in after if r[0] < end_ms + 3000] or after[:1]  # the first message may come later than 3 s
+            worst_after.append(max(r[0] - r[1] for r in within))
         if waits:
             out[stream] = dict(stalls=len(waits), first_message_after_ms=dist(waits), age_of_first_message_ms=dist(ages),
                                worst_age_within_3s_ms=dist(worst_after))

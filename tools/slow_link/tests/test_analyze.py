@@ -172,6 +172,14 @@ class LinkAndProcessTest(unittest.TestCase):
         self.assertEqual(lidar["age_of_first_message_ms"]["p50"], 1080)   # it was published before the stall ended
         self.assertEqual(lidar["worst_age_within_3s_ms"]["max"], 1080)
 
+    def test_recovery_when_the_first_message_comes_late(self):
+        stall_end = T0 + 5000
+        arrivals = [[stall_end + 4200, stall_end - 2000, 100]]  # 4.2 s after the stall: later than the 3 s window
+        client = dict(samples=[dict(arrivals={"/ws/camera": arrivals})])
+        camera = analyze.stall_recovery(client, [[T0 / 1000 + 3.0, T0 / 1000 + 5.0]], T0, T0 + 10_000)["/ws/camera"]
+        self.assertEqual(camera["first_message_after_ms"]["p50"], 4200)
+        self.assertEqual(camera["worst_age_within_3s_ms"]["max"], 6200)
+
     def test_cpu_summary(self):
         rows = [dict(t=T0 / 1000 + i, host_cpu_pct=10.0 + i, ncpu=8, procs=dict(dashboard=dict(cpu_pct=50.0, rss_mb=100.0 + i, threads=9)),
                      chrome=dict(renderer=dict(cpu_pct=30.0, rss_mb=200.0, n=1))) for i in range(5)]
