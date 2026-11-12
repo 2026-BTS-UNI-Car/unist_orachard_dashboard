@@ -510,6 +510,7 @@ class _ObservationWorker:
     def run(self):
         try:
             while not self.context.cancelled:
+                poll_started = time.monotonic()
                 if self.parent.input_provider is not None:
                     supplied = self.read_input("poll_input")
                     if supplied is not None:
@@ -532,13 +533,16 @@ class _ObservationWorker:
                             self.age = current_age
                         if self.expired(current_age):
                             self.wait_input(self.latest_input, source, current_age)
-                    self.wake.wait(self.parent.poll_interval_s)
+                    self.wake.wait(self.parent.poll_interval_s
+                        if self.parent.input_provider is None else max(0.,
+                            self.parent.poll_interval_s-(time.monotonic()-poll_started)))
                     self.wake.clear()
                     continue
                 self.process(row)
                 if self.parent.input_provider is not None:
                     self.wake.clear()
-                    self.context.wait_cancel(self.parent.poll_interval_s)
+                    self.context.wait_cancel(max(0., self.parent.poll_interval_s-
+                        (time.monotonic()-poll_started)))
         except BaseException as error:
             self.fail((type(error).__name__ + ": " + str(error))[:128])
         finally:
