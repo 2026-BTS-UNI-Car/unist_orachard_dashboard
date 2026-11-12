@@ -209,7 +209,18 @@
 
   // ---- occupancy map hooks through the module instance the page already loaded. Hooked after the load event,
   // so the instrumentation does not fetch the module ahead of the page (first-load order and weight stay the page's own).
-  const hookMaps = () => import('/static/metric-map.mjs').then(m => {
+  // The server may name the module with a content-hash version (?v=...); a module is one instance per address, so
+  // the hook imports exactly the address the page used (taken from the resource timing list).
+  const metricMapAddress = () => {
+    for (const entry of performance.getEntriesByType('resource')) {
+      try {
+        const url = new URL(entry.name);
+        if (/^\/static\/metric-map\.mjs$/.test(url.pathname) && /^(\?v=[0-9a-f]+)?$/.test(url.search)) return url.pathname + url.search;
+      } catch {}
+    }
+    return '/static/metric-map.mjs';
+  };
+  const hookMaps = () => import(metricMapAddress()).then(m => {
     const P = m.MetricMap.prototype;
     const draw = P.draw, commit = P.commit;
     P.draw = function (...args) {
