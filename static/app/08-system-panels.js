@@ -832,20 +832,44 @@ function renderReadout(targetId, rows) {
   const target = $(targetId);
   if (!target) return;
   const renderKey = JSON.stringify(rows.map((row) => [row.label, row.value, row.sub, row.color]));
-  if (target.dataset.renderKey === renderKey) return;
-  target.dataset.renderKey = renderKey;
-  target.innerHTML = "";
-  for (const row of rows) {
-    const div = document.createElement("div");
-    div.className = "readout-row";
-    div.innerHTML = `
-      <i class="swatch"></i>
-      <span>${escapeHtml(row.label)}</span>
-      <b>${escapeHtml(row.value)}</b>
-      <small>${escapeHtml(row.sub || "")}</small>
-    `;
-    div.querySelector(".swatch").style.background = row.color;
-    div.querySelector(".swatch").style.color = row.color;
-    target.append(div);
+  const cache = renderReadout._ubtsRows ||= new WeakMap();
+  let slots = cache.get(target);
+  const intact = slots && target.childNodes.length === slots.length && slots.every((slot, index) => {
+    const parts = [slot.swatch, slot.label, slot.value, slot.sub];
+    const texts = [[slot.label, slot.labelText], [slot.value, slot.valueText], [slot.sub, slot.subText]];
+    return target.childNodes[index] === slot.root && slot.root.parentNode === target &&
+      slot.root.className === "readout-row" && slot.swatch.className === "swatch" &&
+      slot.root.childNodes.length === 4 && parts.every((part, i) => slot.root.childNodes[i] === part) &&
+      texts.every(([element, text]) => element.childNodes.length === 1 && element.firstChild === text && text.nodeType === 3);
+  });
+  if (!intact) {
+    target.innerHTML = "";
+    slots = [];
+    cache.set(target, slots);
   }
+  while (slots.length > rows.length) slots.pop().root.remove();
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    let slot = slots[index];
+    if (!slot) {
+      const root = document.createElement("div"), swatch = document.createElement("i");
+      const label = document.createElement("span"), value = document.createElement("b"), sub = document.createElement("small");
+      const labelText = document.createTextNode(""), valueText = document.createTextNode(""), subText = document.createTextNode("");
+      root.className = "readout-row"; swatch.className = "swatch";
+      label.append(labelText); value.append(valueText); sub.append(subText);
+      root.append(swatch, label, value, sub); target.append(root);
+      slot = {root, swatch, label, value, sub, labelText, valueText, subText, inputColor: {}, appliedStyle: null};
+      slots.push(slot);
+    }
+    // Text node data has the same literal display as escapeHtml + innerHTML,
+    // without parsing markup or allocating new rows/text on every sensor tick.
+    const values = [String(row.label ?? ""), String(row.value ?? ""), String(row.sub || "")];
+    [slot.labelText, slot.valueText, slot.subText].forEach((node, i) => { if (node.data !== values[i]) node.data = values[i]; });
+    if (slot.inputColor !== row.color || slot.swatch.style.cssText !== slot.appliedStyle) {
+      slot.swatch.style.cssText = "";
+      slot.swatch.style.background = row.color; slot.swatch.style.color = row.color;
+      slot.inputColor = row.color; slot.appliedStyle = slot.swatch.style.cssText;
+    }
+  }
+  target.dataset.renderKey = renderKey;
 }
