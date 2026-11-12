@@ -246,7 +246,21 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                 newest = json.loads(await client.recv())
                 self.assertEqual(newest['latitude'], 35.6)
                 self.assertEqual(newest['stream_seq'], 2)
-                with self.assertRaises(websockets.ConnectionClosed): await asyncio.wait_for(client.recv(), 3)
+                # NET-11: a missing answer is no longer a dead client after 2 s (a 2 s stall of the
+                # link closed the stream); the bridge waits ACK_TIMEOUT_S (30 s) for it.
+                with self.assertRaises(asyncio.TimeoutError): await asyncio.wait_for(client.recv(), 2.5)
+                self.assertEqual(client.state.name, 'OPEN')
+
+    async def test_a_missing_answer_still_ends_the_stream_after_the_deadline(self):
+        import websockets
+        import scripts.gps_ws_bridge as bridge
+        state = GpsBridgeState(); state.update(SimpleNamespace(data=json.dumps(sample())))
+        with patch.object(bridge, 'ACK_TIMEOUT_S', 0.5):
+            async with websockets.serve(lambda ws: stream(ws, state), '127.0.0.1', 0, close_timeout=.1) as server:
+                port = server.sockets[0].getsockname()[1]
+                async with websockets.connect(f'ws://127.0.0.1:{port}/ws/gps?profile=detail') as client:
+                    await client.recv()
+                    with self.assertRaises(websockets.ConnectionClosed): await asyncio.wait_for(client.recv(), 3)
 
 
 class OfflineApiTests(unittest.TestCase):
