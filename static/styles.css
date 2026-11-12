@@ -586,9 +586,18 @@
   min-width: 0;
 }
 
-/* The arm button is the first step of driving: as tall as a touch control everywhere. */
+/* The arm button is the first step of driving: as tall as a touch control
+   everywhere. While driving is armed it has the tint of the armed badge in
+   the status bar. */
 .rover-arm-controls .action-button {
   min-height: 44px;
+}
+
+.rover-arm-controls .action-button[aria-pressed="true"],
+.rover-arm-controls .action-button[aria-pressed="true"]:not(:disabled):hover {
+  border-color: var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
 }
 
 .rover-speed-control {

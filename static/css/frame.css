@@ -523,6 +523,10 @@ html:has(.simulation-banner:not([hidden])) {
     gap: 0;
   }
 
+  .statusbar-items > .status-chip {
+    line-height: 17px;
+  }
+
   .statusbar-clock {
     display: none;
   }
