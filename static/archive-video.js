@@ -24,6 +24,23 @@ function archiveVideoLevelCap(levels, maxHeight = 360) {
   (levels || []).forEach((level, index) => { if (Number(level?.height) <= maxHeight) cap = index; });
   return cap >= 0 ? cap : 0;
 }
+// The HLS library (about 190 kB compressed) is needed only for recorded video, so the page does not load it;
+// the first player that needs it adds the script once (NET-03). The server adds the version to this address.
+const HLS_LIBRARY_URL = "/static/vendor/hls/hls.min.js";
+let hlsLibraryLoading = null;
+function loadHlsLibrary(doc = document) {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (!hlsLibraryLoading) {
+    hlsLibraryLoading = new Promise((resolve, reject) => {
+      const script = doc.createElement("script");
+      script.src = HLS_LIBRARY_URL; script.async = true;
+      script.onload = () => (window.Hls ? resolve(window.Hls) : reject(new Error("hls_library_missing")));
+      script.onerror = () => reject(new Error("hls_library_unavailable"));
+      doc.head.append(script);
+    }).catch(error => { hlsLibraryLoading = null; throw error; });
+  }
+  return hlsLibraryLoading;
+}
 class ArchiveVideoPlayer {
   constructor(video, select, adaptive, fallback, notify = () => {}, options = {}) {
     this.video = video; this.select = select; this.adaptive = adaptive;
@@ -36,6 +53,17 @@ class ArchiveVideoPlayer {
     this.onQuality = () => this.choose(select.value);
     select?.addEventListener("change", this.onQuality);
     if (select) { select.hidden = !adaptive; select.replaceChildren(); }
+    const loader = options.loadHls ?? (typeof document !== "undefined" ? loadHlsLibrary : null);
+    if (adaptive && !window.Hls && loader) {
+      // Load the library first; if it cannot be loaded, start as if it were missing (native HLS or the mp4).
+      this.mode = "loading";
+      this.notify({ mode: this.mode, loading: true });
+      const begin = () => { if (!this.dead) this.begin(video, adaptive, fallback); };
+      loader().then(begin, begin);
+    } else this.begin(video, adaptive, fallback);
+  }
+  begin(video, adaptive, fallback) {
+    this.mode = "mp4";
     if (adaptive && window.Hls?.isSupported()) {
       this.mode = "adaptive";
       this.hls = new window.Hls(archiveVideoHlsConfig(this.slowLink));

@@ -60,4 +60,43 @@ hls.events.level(null,{level:1});assert.equal(updates.at(-1).mode,'mp4');
   p.choose('3');assert.equal(h.nextLevel,3,'manual choice still allowed');
   p.destroy();assert.equal(h.dead,true);
 }
+// NET-03: the page does not load hls.js; the first player that needs it loads it once.
+{
+  const source=fs.readFileSync(new URL('../static/archive-video.js',import.meta.url),'utf8');
+  const html=fs.readFileSync(new URL('../static/index.html',import.meta.url),'utf8');
+  assert.ok(!html.includes('hls.min.js'),'index.html does not load the HLS library');
+  assert.ok(source.includes('"/static/vendor/hls/hls.min.js"'),'the player names the library by its static address');
+  const fresh=()=>{const w={};const c=vm.createContext({window:w,document:{createElement:()=>new Element()},setTimeout,clearTimeout});
+    vm.runInContext(source,c);return {w,Player:w.ArchiveVideoPlayer};};
+  // Library loads: the player starts in "loading" and then becomes adaptive.
+  {
+    const {w,Player}=fresh();let calls=0;const updates=[];const v=new Element();
+    const p=new Player(v,new Element(),{manifest_url:'/m.m3u8'},'/n.mp4',u=>updates.push(u),{loadHls:()=>{calls++;w.Hls=Hls;return Promise.resolve(Hls);}});
+    assert.equal(p.mode,'loading');assert.equal(updates.at(-1).loading,true);assert.equal(v.src,undefined);
+    await Promise.resolve();await Promise.resolve();
+    assert.equal(calls,1);assert.equal(p.mode,'adaptive');assert.equal(p.hls.source,'/m.m3u8');
+    const q=new Player(new Element(),new Element(),{manifest_url:'/m2.m3u8'},'/n.mp4',()=>{},{loadHls:()=>{calls++;return Promise.resolve(Hls);}});
+    assert.equal(q.mode,'adaptive','once loaded, the next player starts at once');assert.equal(calls,1);
+  }
+  // Library cannot be loaded: start as before without it (here the mp4).
+  {
+    const {Player}=fresh();const v=new Element();
+    const p=new Player(v,new Element(),{manifest_url:'/m.m3u8',variants:[]},'/n.mp4',()=>{},{loadHls:()=>Promise.reject(new Error('offline'))});
+    await new Promise(r=>setTimeout(r,0));
+    assert.equal(p.mode,'mp4');assert.equal(v.src,'/n.mp4');
+  }
+  // Destroyed while loading: nothing starts.
+  {
+    const {w,Player}=fresh();const v=new Element();let release;
+    const p=new Player(v,new Element(),{manifest_url:'/m.m3u8'},'/n.mp4',()=>{},{loadHls:()=>new Promise(r=>{release=r;})});
+    p.destroy();w.Hls=Hls;release(Hls);await new Promise(r=>setTimeout(r,0));
+    assert.equal(p.hls,null);assert.equal(v.src,undefined);
+  }
+  // No adaptive video: no library load.
+  {
+    const {Player}=fresh();let calls=0;const v=new Element();
+    const p=new Player(v,new Element(),null,'/n.mp4',()=>{},{loadHls:()=>{calls++;return Promise.resolve();}});
+    assert.equal(calls,0);assert.equal(p.mode,'mp4');assert.equal(v.src,'/n.mp4');
+  }
+}
 console.log('adaptive VOD quality, recovery, fallback and lifecycle passed');
