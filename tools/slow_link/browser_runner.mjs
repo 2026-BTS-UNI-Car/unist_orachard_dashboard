@@ -50,22 +50,37 @@ const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}
   '--disable-sync', '--disable-default-apps', '--no-pings', '--metrics-recording-only',
   // Nothing but 127.0.0.1 can be resolved: the page under test and the browser itself stay local.
   '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
-  '--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required', `--window-size=${W0},${H0}`, 'about:blank'], {stdio: 'ignore'});
+  '--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required', `--window-size=${W0},${H0}`, ...(cfg.chrome_args ?? []), 'about:blank'],
+  {stdio: 'ignore'});
 let version = null;
 for (let i = 0; i < 150 && !version; i++) { try { version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); } catch { await sleep(100); } }
 if (!version) { chrome.kill(); throw Error('Chrome did not open its debugging port'); }
 const ws = new WebSocket(version.webSocketDebuggerUrl);
 await new Promise((ok, bad) => { ws.onopen = ok; ws.onerror = bad; });
-let nextId = 1; const pending = new Map(); const listeners = [];
+// Every command has an answer deadline. A tab whose renderer crashed or that was closed fails its waiting and
+// later commands at once (with the reason), so a lost tab ends the run with an error instead of hanging it.
+let nextId = 1; const pending = new Map(); const listeners = []; const lostSessions = new Map();
+const COMMAND_TIMEOUT_MS = (cfg.command_timeout_s ?? 60) * 1000;
+function loseSession(sessionId, reason) {
+  if (!sessionId || lostSessions.has(sessionId)) return;
+  lostSessions.set(sessionId, {reason, t: Date.now()});
+  for (const [id, entry] of pending) if (entry.sessionId === sessionId) { pending.delete(id); clearTimeout(entry.timer); entry.bad(Error(`tab lost: ${reason}`)); }
+}
 ws.onmessage = e => {
   // WebSocket frame events carry the whole frame (camera pictures); they are not needed and not parsed.
   if (e.data.length > 2048 && e.data.startsWith('{"method":"Network.webSocketFrame')) return;
   const m = JSON.parse(e.data);
-  if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return; }
+  if (m.id && pending.has(m.id)) { const entry = pending.get(m.id); pending.delete(m.id); clearTimeout(entry.timer); entry.done(m); return; }
+  if (m.method === 'Inspector.targetCrashed') loseSession(m.sessionId, 'renderer crashed');
+  if (m.method === 'Inspector.detached') loseSession(m.sessionId, `inspector detached (${m.params?.reason ?? '?'})`);
+  if (m.method === 'Target.detachedFromTarget') loseSession(m.params?.sessionId, 'tab closed or detached');
   for (const l of listeners) l(m);
 };
-const send = (method, params = {}, sessionId) => new Promise((ok, bad) => {
-  const id = nextId++; pending.set(id, m => m.error ? bad(Error(method + ': ' + m.error.message)) : ok(m.result));
+const send = (method, params = {}, sessionId, timeoutMs = COMMAND_TIMEOUT_MS) => new Promise((ok, bad) => {
+  if (sessionId && lostSessions.has(sessionId)) { bad(Error(`tab lost: ${lostSessions.get(sessionId).reason}`)); return; }
+  const id = nextId++;
+  const timer = setTimeout(() => { if (pending.delete(id)) bad(Error(`${method}: no answer within ${timeoutMs} ms`)); }, timeoutMs);
+  pending.set(id, {sessionId, timer, bad, done: m => m.error ? bad(Error(method + ': ' + m.error.message)) : ok(m.result)});
   ws.send(JSON.stringify(sessionId ? {id, method, params, sessionId} : {id, method, params}));
 });
 
@@ -91,12 +106,14 @@ class Client {
         this.console.push([Date.now(), 'log:' + m.params.entry.level, `${m.params.entry.text} ${m.params.entry.url || ''}`.slice(0, 300)]);
     });
     await this.cmd('Page.enable'); await this.cmd('Runtime.enable'); await this.cmd('Performance.enable'); await this.cmd('Log.enable');
+    await this.cmd('Inspector.enable');
     await this.cmd('Page.addScriptToEvaluateOnNewDocument', {source: INSTRUMENT});
     await this.cmd('Emulation.setDeviceMetricsOverride', {width: s.width ?? 1366, height: s.height ?? 900, deviceScaleFactor: s.mobile ? 2 : 1, mobile: s.mobile ?? false});
     if (s.mobile) await this.cmd('Emulation.setTouchEmulationEnabled', {enabled: true, maxTouchPoints: 5});
     if (s.network_profile) await this.cmd('Page.addScriptToEvaluateOnNewDocument', {source: `try{localStorage.setItem('ubts-live-network-profile',${JSON.stringify(s.network_profile)})}catch(e){}`});
   }
   cmd(method, params = {}) { return send(method, params, this.session); }
+  checkAlive() { const lost = lostSessions.get(this.session); if (lost) throw Error(`tab ${this.index} lost: ${lost.reason}`); }
   async ev(expr) {
     const r = await this.cmd('Runtime.evaluate', {expression: expr, returnByValue: true, awaitPromise: true});
     if (r.exceptionDetails) throw Error('eval: ' + (r.exceptionDetails.exception?.description ?? r.exceptionDetails.text).slice(0, 300));
@@ -170,6 +187,7 @@ class Client {
     let state = null, doneAt = null, readyAt = null, calmSince = null, stillOpen = null;
     while (Date.now() - navAt < limit) {
       await sleep(100);
+      this.checkAlive();
       try {
         state = await this.ev(`(()=>{const u=window.__slowlink;return u&&location.pathname===${JSON.stringify(ROUTE)}?{ready:document.readyState,m:u.milestones}:null})()`);
       } catch { state = null; }
@@ -268,6 +286,7 @@ async function runLive(clients) {
     for (const c of clients) if (c.hideAt && Date.now() >= c.hideAt && !c.hidden) { c.hidden = await c.hide(); mark(`client${c.index}_hidden:${c.hidden}`); }
     await sleep(Math.max(0, Math.min(next, t0 + dur) - Date.now()));
     for (const c of clients) await c.drain().catch(e => report.notes.push(`drain c${c.index}: ${e.message}`));
+    for (const c of clients) c.checkAlive();
     next += every;
   }
   mark('measure_end');
@@ -298,6 +317,7 @@ try {
   report.clock_end = await clockOffset();
 } catch (e) { report.error = String(e.stack ?? e.message).slice(0, 1200); }
 finally {
+  report.lost_tabs = clients.filter(c => lostSessions.has(c.session)).map(c => ({index: c.index, ...lostSessions.get(c.session)}));
   for (const c of clients)
     report.clients.push({index: c.index, spec: c.spec, hidden: c.hidden ?? null, final: c.final ?? null, loads: c.loads, samples: c.samples, metrics: c.metrics, console: c.console});
   try { ws.close(); } catch {}

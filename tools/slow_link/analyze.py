@@ -409,7 +409,8 @@ def summarize_cpu(rows, t_from, t_to):
             out["procs"][name] = dict(cpu_pct_mean=round(statistics.mean(cpu), 1), cpu_pct_p95=pct(cpu, 95), rss_mb=[rss[0], rss[-1]])
     for role in {k for r in rows for k in r["chrome"]}:
         cpu = [r["chrome"][role]["cpu_pct"] for r in rows if role in r["chrome"]]
-        out["chrome"][role] = dict(cpu_pct_mean=round(statistics.mean(cpu), 1), cpu_pct_p95=pct(cpu, 95))
+        rss = [r["chrome"][role]["rss_mb"] for r in rows if role in r["chrome"]]
+        out["chrome"][role] = dict(cpu_pct_mean=round(statistics.mean(cpu), 1), cpu_pct_p95=pct(cpu, 95), rss_mb_first_max_last=[rss[0], max(rss), rss[-1]])
     return out
 
 
@@ -434,7 +435,7 @@ def analyze(folder):
     route = raw["config"].get("route", "/rover-control")
     clients = raw.get("clients", [])
     summary = dict(schema="ubts.slow_link.summary", version=1, run=run, chrome=raw.get("chrome"), clock_check=raw.get("clock"),
-                   error=raw.get("error"), notes=raw.get("notes"))
+                   error=raw.get("error"), notes=raw.get("notes"), lost_tabs=raw.get("lost_tabs") or [])
     link_stats = read_json(folder / "link.json")
     link = (link_stats or {}).get("links", [None])[0]
     summary["load"] = {name: summarize_load(load, route) for name, load in (clients[0]["loads"].items() if clients else [])}

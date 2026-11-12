@@ -134,7 +134,7 @@ def run_once(args, scenario_name, profile_name, source, inputs, out_root, work):
                scenario=scenario_name, scenario_settings=scenario, profile=profile_name, profile_settings=profile, source=source,
                tool=tool_version(), label=args.label, clients=args.clients,
                host=dict(platform=platform.platform(), machine=platform.machine(), cpus=os.cpu_count(), python=platform.python_version()),
-               inputs={key: str(value) for key, value in inputs.items()}, result_folder=str(out),
+               inputs={key: str(value) for key, value in inputs.items()}, result_folder=str(out), chrome_args=list(args.chrome_arg),
                limits="x86 PC, TCP-level link emulation, replayed sensor data; see README_KO.md")
     write_json(out / "run.json", run)
     started = time.time()
@@ -165,7 +165,7 @@ def run_once(args, scenario_name, profile_name, source, inputs, out_root, work):
             for client in clients:
                 client["network_profile"] = args.network_profile
         cfg = dict(label=out.name, out=str(out), route="/rover-control", clock_url=f"http://127.0.0.1:{ports['recorder']}/clock",
-                   screenshot=True, clients=clients, phases=phases)
+                   screenshot=True, clients=clients, phases=phases, chrome_args=list(args.chrome_arg))
         write_json(out / "cfg.json", cfg)
         write_json(out / "run.json", run)
         budget = 120 + scenario.get("live_s", 0) + (scenario.get("load_timeout_s", 600) + 10) * (bool(scenario.get("cold_load")) + bool(scenario.get("warm_load")))
@@ -220,6 +220,7 @@ def main(argv=None):
     parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--mobile", action="store_true")
     parser.add_argument("--port-offset", type=int, default=0)
+    parser.add_argument("--chrome-arg", action="append", default=[], help="extra Chrome command-line flag (repeatable), recorded in run.json")
     parser.add_argument("--keep-scratch", action="store_true")
     args = parser.parse_args(argv)
     profiles = load_profiles()
