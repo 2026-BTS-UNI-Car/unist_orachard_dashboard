@@ -1,6 +1,10 @@
 import * as maplibregl from './vendor/maplibre-gl/maplibre-gl.mjs';
 import {FollowModel, validFix, coordinates, frameAt, pathFeatures, accuracyCircle, usedSatellitesText, receptionText} from './gps-map-model.mjs';
 
+// The map library otherwise finds its worker file from its own address, without the content-hash version, so a
+// browser would ask for the worker again on every visit. Naming it here lets the server add the version (NET-04).
+maplibregl.setWorkerUrl?.("/static/vendor/maplibre-gl/maplibre-gl-worker.mjs");
+
 const byId = id => document.getElementById(id);
 const text = (id, value) => { const element = byId(id); if (element) element.textContent = value; };
 const number = (value, digits=2) => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—';
