@@ -24,5 +24,18 @@
       "rate_kbps": 150, "rtt_ms": 300, "queue_bytes": 8192,
       "stall_every_s": 20, "stall_ms": 2000, "stall_first_s": 10
     }
+  },
+  "extra_note": "Only by name (not in --profile all): the normal link with longer stalls, for the NET-11 recovery checks.",
+  "extra_profiles": {
+    "stall3": {
+      "label": "normal link, 3 s stalls",
+      "rate_kbps": 2000, "rtt_ms": 40, "queue_bytes": 65536,
+      "stall_every_s": 30, "stall_ms": 3000, "stall_first_s": 15
+    },
+    "stall10": {
+      "label": "normal link, 10 s stalls",
+      "rate_kbps": 2000, "rtt_ms": 40, "queue_bytes": 65536,
+      "stall_every_s": 45, "stall_ms": 10000, "stall_first_s": 20
+    }
   }
 }

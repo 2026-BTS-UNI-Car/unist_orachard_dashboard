@@ -105,7 +105,7 @@ function setup(route = '/rover-control') {
     $: id => nodes[id] || null, setInterval: () => 1, clearInterval: () => {},
     renderRoverButtons() { context.renderFrameDriveState(); }, renderRoverMotionReadout() {},
     setRoverCommandStatus: (kind, message) => status.push([kind, message]),
-    postJson: async (p, payload) => { calls.push({p, payload}); return {ok: true}; },
+    controlRequest: async (p, payload) => { calls.push({p, payload}); return {ok: true}; },
   };
   vm.createContext(context); vm.runInContext(stopCode + frameCode, context);
   vm.runInContext(panelLine, context); context.initFrameStop();
@@ -158,7 +158,7 @@ function setup(route = '/rover-control') {
     assert.deepEqual(shown(), ['status-chip warn', '조종 활성']);
     // STOP: the indicator leaves "armed" in the same turn as the click.
     let answer;
-    context.postJson = () => new Promise(resolve => { answer = resolve; });
+    context.controlRequest = () => new Promise(resolve => { answer = resolve; });
     nodes.frameStopButton.handlers.click();
     assert.deepEqual(shown(), ['status-chip', '정지 요청 중']);
     answer({ok: true}); await flush();

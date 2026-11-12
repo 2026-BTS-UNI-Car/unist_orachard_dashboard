@@ -171,26 +171,34 @@ async def serve(state: ImuBridgeState, args: argparse.Namespace, stop: threading
             return
         profile = (parse_qs(urlparse(actual_path).query).get("profile") or ["auto"])[0]
         flow=(parse_qs(urlparse(actual_path).query).get('flow') or [''])[0]
-        latest=flow=='latest'
+        # "display-ack" (NET-07): the compact display message of "latest", but one
+        # answer at a time, so a stalled link leaves at most one message behind
+        # (with "latest" every message sent meanwhile arrived late, in a burst).
+        # Its answer has no short deadline: a slow link slows the messages and a
+        # dead connection ends through the WebSocket keepalive.
+        display_ack=flow=='display-ack'
+        latest=flow=='latest' or display_ack
         hz = ({"tiny": 2, "auto": 8, "slow": 5, "balanced": 10, "detail": 20} if latest else
               {"tiny": 1, "auto": 2, "slow": 2, "balanced": 5, "detail": 10, "mapping": 20}).get(profile, 2)
         interval = 1.0 / max(1.0, min(hz, float(args.max_hz)))
-        ack = flow == "ack"
+        ack = flow == "ack" or display_ack
         sequence = 0
         await websocket.send(json.dumps({"type": "socket", "ok": True, "schema": BRIDGE_SCHEMA}, separators=(",", ":")))
         try:
             while True:
                 started = time.monotonic()
                 transport=getattr(websocket,'transport',None)
-                if latest and transport is not None and transport.get_write_buffer_size()>4096:
+                if latest and not display_ack and transport is not None and transport.get_write_buffer_size()>4096:
                     await pace_stream(interval,started);continue
                 sequence += 1
                 snapshot=state.snapshot()
                 if latest:snapshot=display_snapshot(snapshot)
+                if display_ack:snapshot['ack_required']=True
                 await asyncio.wait_for(websocket.send(json.dumps({"type": "imu", **snapshot, "sequence": sequence}, separators=(",", ":"))), timeout=2)
                 if ack:
                     await wait_for_ack(websocket, lambda reply:
-                                       reply.get("type") == "imu_ack" and reply.get("sequence") == sequence)
+                                       reply.get("type") == "imu_ack" and reply.get("sequence") == sequence,
+                                       timeout=30.0 if display_ack else 2.0)
                 # Send/ACK time already consumes this interval. Adding another
                 # full interval made a 200 ms link needlessly 200 ms slower.
                 await pace_stream(interval, started)

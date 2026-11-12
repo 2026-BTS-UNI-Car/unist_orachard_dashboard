@@ -7,7 +7,8 @@ const STEER_VEHICLE = document.documentElement.dataset.vehicleKind === "front_st
 const steerScreens = { drive: null, auto: null, tuning: null };
 
 function steerPageApi() {
-  return { getJson, postJson, currentRoute, renderReadout, chartColors };
+  // controlRequest: the one transport for driving requests (NET-05): high priority, never queued, with a time limit.
+  return { getJson, postJson, controlRequest, currentRoute, renderReadout, chartColors };
 }
 
 function loadSteerScreen(name, url, init) {

@@ -51,11 +51,15 @@ const between = (begin, end) => { const a = source.indexOf(begin), b = source.in
   }
   // S35: chart window label follows the telemetry interval.
   {
-    const context = {MAX_POINTS: 90, Math, profile: 'auto'};
+    const context = {MAX_POINTS: 90, Math, profile: 'auto', graded: 'slow'};
     context.liveNetworkProfile = () => context.profile;
+    // NET-10: automatic mode follows the link grade's plan.
+    context.effectiveLinkProfile = () => context.graded;
     vm.createContext(context);
     vm.runInContext(between('function telemetryIntervalMs(', 'function pushHistory('), context);
     assert.equal(context.chartWindowLabel(), 'X 최근 270초');
+    context.graded = 'detail'; assert.equal(context.chartWindowLabel(), 'X 최근 90초');
+    context.graded = 'tiny'; assert.equal(context.chartWindowLabel(), 'X 최근 900초');
     context.profile = 'tiny'; assert.equal(context.chartWindowLabel(), 'X 최근 900초');
     context.profile = 'detail'; assert.equal(context.chartWindowLabel(), 'X 최근 90초');
     assert.ok(!source.includes('X 최근 90초</small>'), 'fixed label removed');
@@ -102,17 +106,19 @@ const between = (begin, end) => { const a = source.indexOf(begin), b = source.in
     await context.loadRecordings();
     assert.deepEqual(selects, ['rec', 'rec'], 'never-loaded detail is loaded');
   }
-  // B6: GPS auto profile is 2 Hz (slow), 5 Hz (balanced) when the camera link measures fast.
+  // B6 + NET-10: the GPS auto rate follows the link grade's plan:
+  // good 5/s (balanced), normal 2/s (slow), slow and very slow 1/s (tiny).
   {
     const gps = fs.readFileSync(path.join(__dirname, '../static/gps-map.js'), 'utf8').replace(/\r\n/g, '\n');
     const block = gps.slice(gps.indexOf("  let profile = 'auto';"), gps.indexOf('  const ws = new WebSocket('));
-    const pick = (stored, measured) => {
-      const context = {localStorage: {getItem: () => stored}, window: {RoverLink: {cameraEffectiveProfile: () => measured}}};
+    const pick = (stored, graded) => {
+      const context = {localStorage: {getItem: () => stored}, window: {RoverLink: {profile: () => graded}}};
       vm.createContext(context); vm.runInContext(block + '\nthis.result = profile;', context); return context.result;
     };
     assert.equal(pick(null, ''), 'slow');
-    assert.equal(pick('auto', 'tiny'), 'slow');
-    assert.equal(pick('auto', 'balanced'), 'balanced');
+    assert.equal(pick('auto', 'tiny'), 'tiny');
+    assert.equal(pick('auto', 'slow'), 'tiny');
+    assert.equal(pick('auto', 'balanced'), 'slow');
     assert.equal(pick('auto', 'detail'), 'balanced');
     assert.equal(pick('tiny', 'detail'), 'tiny', 'an explicit choice is kept');
   }

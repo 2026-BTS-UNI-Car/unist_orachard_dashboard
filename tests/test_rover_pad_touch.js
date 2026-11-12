@@ -26,7 +26,7 @@ function setup({lease = 'lease', captureThrows = false} = {}) {
     document: {hidden: false, querySelectorAll: selector => { assert.equal(selector, '[data-rover-drive]'); return buttons; }},
     setInterval: () => 1, clearInterval: () => {},
     renderRoverButtons() {}, renderRoverMotionReadout() {}, setRoverCommandStatus: (kind, message) => status.push([kind, message]),
-    postJson: async (p, payload) => { calls.push({op: p.split('/').pop(), payload}); return {ok: true, ticket: 'next', seq: payload?.seq || 0}; },
+    controlRequest: async (p, payload) => { calls.push({op: p.split('/').pop(), payload}); return {ok: true, ticket: 'next', seq: payload?.seq || 0}; },
   };
   vm.createContext(context); vm.runInContext(code, context);
   context.initRoverPad();

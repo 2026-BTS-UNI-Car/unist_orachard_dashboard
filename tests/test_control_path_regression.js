@@ -26,7 +26,7 @@ function setup() {
     state: {roverControl: c}, document: {hidden: false}, currentRoute: () => '/rover-control', SIMULATION: false,
     setInterval: (fn, ms) => { intervals.push({fn, ms}); return intervals.length; }, clearInterval: () => {},
     renderRoverButtons() {}, renderRoverMotionReadout() {}, setRoverCommandStatus() {},
-    postJson: async (p, payload) => { calls.push({p, payload, at: process.hrtime.bigint()}); return {ok: true, ticket: 'next', seq: (payload?.seq || 0)}; },
+    controlRequest: async (p, payload) => { calls.push({p, payload, at: process.hrtime.bigint()}); return {ok: true, ticket: 'next', seq: (payload?.seq || 0)}; },
   };
   vm.createContext(context); vm.runInContext(code, context);
   return {context, c, calls, intervals};
@@ -51,8 +51,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   {
     const {context, c, calls} = setup();
     let release;
-    const normal = context.postJson;
-    context.postJson = (p, payload) => p.endsWith('/command') ? (calls.push({p, payload}), new Promise(r => { release = r; })) : normal(p, payload);
+    const normal = context.controlRequest;
+    context.controlRequest = (p, payload) => p.endsWith('/command') ? (calls.push({p, payload}), new Promise(r => { release = r; })) : normal(p, payload);
     c.activeKeys.add('w'); const pending = context.stepRoverMotion();
     assert.equal(c.inFlight, true);
     const stop = context.stopRoverNow('operator_stop');
@@ -66,7 +66,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   // A failed drive request stops the rover (deadman on the bridge remains the actual guarantee).
   {
     const {context, c, calls} = setup();
-    context.postJson = async (p, payload) => { calls.push({p, payload}); if (p.endsWith('/command')) throw new Error('timeout'); return {ok: true}; };
+    context.controlRequest = async (p, payload) => { calls.push({p, payload}); if (p.endsWith('/command')) throw new Error('timeout'); return {ok: true}; };
     c.activeKeys.add('w'); await context.stepRoverMotion(); await flush();
     assert.deepEqual(calls.map(x => x.p), ['/api/rover/command', '/api/rover/stop']);
     assert.equal(calls[1].payload.reason, 'command_failed');

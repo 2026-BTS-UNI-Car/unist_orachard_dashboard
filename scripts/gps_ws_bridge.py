@@ -51,6 +51,11 @@ class GpsBridgeState:
                                   reception=self.reception)
 
 
+# How long the bridge waits for the page's answer to one message (NET-11). Longer than any
+# stall of the link; a dead connection ends earlier through the WebSocket keepalive.
+ACK_TIMEOUT_S = 30.0
+
+
 async def stream(websocket, state):
     from scripts.stream_policy import wait_for_ack
     actual_path = (getattr(getattr(websocket, 'request', None), 'path', None)
@@ -67,7 +72,10 @@ async def stream(websocket, state):
             payload = state.snapshot()
             payload['stream_seq'] = sequence
             await asyncio.wait_for(websocket.send(json.dumps(payload, allow_nan=False, separators=(',', ':'))), 2)
-            await wait_for_ack(websocket, lambda message: message.get('ack') == sequence)
+            # NET-11: the answer may take as long as a stall of the link; a dead
+            # connection ends through the WebSocket keepalive. With the old 2 s
+            # limit a 2 s stall closed the stream and the page had to reconnect.
+            await wait_for_ack(websocket, lambda message: message.get('ack') == sequence, timeout=ACK_TIMEOUT_S)
             await asyncio.sleep(max(0, 1/rate-(time.monotonic()-start)))
     except Exception:
         await websocket.close()

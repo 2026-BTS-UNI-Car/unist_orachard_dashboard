@@ -26,7 +26,7 @@ export function initAutoPanel(page) {
     if (beating || !active() || !heartbeatWanted(reply)) return;
     beating = true;
     try {
-      await page.postJson('/api/executor/heartbeat', { session });
+      await (page.controlRequest || page.postJson)('/api/executor/heartbeat', { session });
       if (lastError.startsWith('연결 신호')) lastError = '';
     } catch (err) {
       lastError = `연결 신호 거절: ${httpText(err)}`;
@@ -47,7 +47,8 @@ export function initAutoPanel(page) {
   }
 
   async function send(action, body = {}) {
-    try { await page.postJson(`/api/executor/${action}`, body); return true; }
+    // Start, STOP and the other actions use the page's control transport (NET-05) where there is one.
+    try { await (page.controlRequest || page.postJson)(`/api/executor/${action}`, body); return true; }
     catch (err) { lastError = `${action}: ${httpText(err)}`; return false; }
   }
   async function primary() {

@@ -215,6 +215,8 @@ def read_body(handler):
     if length is None or not length.isdigit() or int(length) > MAX_BODY:
         raise ExecutorError(413, "body_size")
     raw = handler.rfile.read(int(length)) if int(length) else b"{}"
+    # The whole body was read: the connection may stay open for the next request (NET-05 keep-alive).
+    handler._body_consumed = int(length) == 0 or len(raw) == int(length)
 
     def refuse(_value):
         raise ValueError("non-finite number")

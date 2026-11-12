@@ -379,7 +379,8 @@ class RoutesBase:
         body, drive with left/right. With the two tests above this is A14 (old screen): it cannot arm or move the
         steering car."""
         app_js = (STATIC / OLD_PANEL_JS).read_text(encoding='utf-8')
-        self.assertIn('postJson("/api/rover/arm")', app_js)
+        # NET-05: the panel sends its driving requests through controlRequest (same body, high priority).
+        self.assertRegex(app_js, r'(?:postJson|controlRequest)\("/api/rover/arm"\)')
         self.assertNotIn('vehicle_profile', app_js)
         self.assertRegex(app_js, r'left: motion\.left, right: motion\.right')
 

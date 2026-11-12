@@ -81,9 +81,10 @@ async function run() {
   theme.context.applyTheme('light'); theme.frame(1);
   assert.equal(theme.draws.length, 1);
 
-  // The real incoming scan handler still paints all3200 accepted measurements
-  // before sending exactlyone ACK. No scan decimation/cadence change is hidden
-  // inside the scheduling optimization.
+  // The real incoming scan handler paints all 3200 accepted measurements and
+  // sends exactly one ACK. Since NET-07 the ACK goes first, so the bridge can send
+  // the next scan while this one is drawn. No scan decimation/cadence change is
+  // hidden inside the scheduling optimization.
   const scan = fixture();
   vm.runInContext(between('function handleLidarLiveMessage(', 'function maybeAutoSetLidarRange('), scan.context);
   vm.runInContext(between('function normalizeLidarExportPoint(', 'function normalizeLidarResult('), scan.context);
@@ -93,7 +94,7 @@ async function run() {
   scan.context.handleLidarLiveMessage(JSON.stringify({type: 'scan', sequence: 7,
     point_encoding: 'polar-v1', points, source_point_count: 3200, requested_max_points: 3200}));
   assert.equal(scan.draws.length, 1); assert.equal(scan.draws[0].result.points.length, 3200);
-  assert.deepEqual(scan.events, ['draw', 'ack']);
+  assert.deepEqual(scan.events, ['ack', 'draw']);
   assert.deepEqual(scan.acknowledgements, [{type: 'scan_ack', sequence: 7}]);
   scan.context.requestChartAnimation({redrawLidar: false}); scan.frame(1);
   assert.equal(scan.draws.length, 1, 'same scan is not repainted by unrelated history');
