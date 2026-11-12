@@ -51,3 +51,7 @@
 | 기반 이미지 `ubts-steer-sim:wf4c` Python 3.12.3(`--network none`, 읽기 전용 마운트) | 127개 통과 |
 
 모든 결과는 자리값 기반 SIM 결과이고 현장 검증이 아니다.
+
+## 뒤 이식 1 (2026-11-13)
+
+시뮬레이션 레포 main `09cc932`(커밋 `7d32154`)에서 고친 `steering_not_following` 판정을 그대로 옮겼다. 호스트 브리지가 요청각이 아니라 MCU 램프가 목표에 닿은 상태 줄만 세어 판정한다(`_ramp_goal`, `_track_monitor`). 정지 중 전폭 쓸기에서 생기던 오래치가 없어진다. 바뀐 파일: `scripts/steer_bridge_core.py`, 시험 `tests/test_steer_bridge_core.py`, `tests/test_steer_support.py`(새 시험 2개는 옛 코드에서 실패한다).
