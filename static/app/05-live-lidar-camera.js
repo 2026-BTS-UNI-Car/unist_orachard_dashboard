@@ -16,6 +16,77 @@ async function runLidarTest() {
   }
 }
 
+// Sensor WebSocket reconnect policy (S12): exponential backoff with jitter
+// from 1.5 s up to 30 s, reset when a message arrives. A camera viewer limit
+// waits 30 s; an autonomy-priority close (4001) reconnects once after 0.5 s so
+// the proxy can apply its new preview cap.
+const SENSOR_RECONNECT_BASE_MS = 1500;
+const SENSOR_RECONNECT_MAX_MS = 30000;
+function sensorReconnectDelay(attempt, closeEvent = {}, random = Math.random) {
+  const reason = String(closeEvent?.reason || "");
+  if (closeEvent?.code === 4001 && reason === "autonomy_priority") return 500;
+  if (closeEvent?.code === 1013 && reason.includes("viewer limit")) return SENSOR_RECONNECT_MAX_MS;
+  const step = Math.max(0, Math.min(10, Number(attempt) || 0));
+  const base = Math.min(SENSOR_RECONNECT_MAX_MS, SENSOR_RECONNECT_BASE_MS * 2 ** step);
+  return Math.round(Math.min(SENSOR_RECONNECT_MAX_MS, base * (0.8 + 0.4 * random())));
+}
+function nextSensorReconnectDelay(live, closeEvent = {}) {
+  const delay = sensorReconnectDelay(live.reconnectAttempt || 0, closeEvent);
+  if (!(closeEvent?.code === 4001 && closeEvent?.reason === "autonomy_priority")) {
+    live.reconnectAttempt = (live.reconnectAttempt || 0) + 1;
+  }
+  return delay;
+}
+
+// Hidden page (S04/S11): after 1 s hidden, close the camera, LiDAR and IMU
+// sockets (not a user stop) and reopen exactly those when the page is visible
+// again. A camera paused by acknowledgement timeouts is restarted as well.
+// The rover stop on visibilitychange (initRoverControl) is separate and unchanged.
+const HIDDEN_STREAM_CLOSE_MS = 1000;
+const hiddenStreams = { timer: null, closed: null };
+function suspendSensorStreamsForHiddenPage() {
+  hiddenStreams.timer = null;
+  if (!document.hidden) return;
+  const closed = {
+    lidar: Boolean(state.lidarLive.socket || state.lidarLive.enabled) && !state.lidarLive.userStopped,
+    camera: Boolean(state.cameraLive.socket || state.cameraLive.enabled) && !state.cameraLive.userStopped,
+    imu: Boolean(state.imuLive.socket || state.imuLive.enabled) && !state.imuLive.userStopped,
+  };
+  const previous = hiddenStreams.closed || {};
+  hiddenStreams.closed = {
+    lidar: Boolean(previous.lidar || closed.lidar),
+    camera: Boolean(previous.camera || closed.camera),
+    imu: Boolean(previous.imu || closed.imu),
+  };
+  if (closed.lidar) closeLidarLive("탭이 숨겨져 LiDAR 수신을 쉽니다.", { userStopped: false });
+  if (closed.camera) closeCameraLive("탭이 숨겨져 카메라 수신을 쉽니다.", { userStopped: false });
+  if (closed.imu) closeImuLive("탭이 숨겨져 IMU 수신을 쉽니다.", { userStopped: false });
+}
+function resumeSensorStreamsForVisiblePage() {
+  if (hiddenStreams.timer) { window.clearTimeout(hiddenStreams.timer); hiddenStreams.timer = null; }
+  const closed = hiddenStreams.closed || {};
+  hiddenStreams.closed = null;
+  if (closed.lidar && routeSupportsLidarLive() && !state.lidarLive.socket && !state.lidarLive.userStopped) {
+    state.lidarLive.reconnectAttempt = 0; startLidarLive();
+  }
+  const cameraPausedByAck = state.cameraLive.ackExhausted === true;
+  if ((closed.camera || cameraPausedByAck) && routeSupportsCameraLive() && !state.cameraLive.socket &&
+      (cameraPausedByAck || !state.cameraLive.userStopped)) {
+    state.cameraLive.reconnectAttempt = 0; startCameraLive();
+  }
+  if (closed.imu && routeSupportsImuLive() && !state.imuLive.socket && !state.imuLive.userStopped) {
+    state.imuLive.reconnectAttempt = 0; startImuLive();
+  }
+}
+function handleSensorStreamVisibility() {
+  if (document.hidden) {
+    if (!hiddenStreams.timer) hiddenStreams.timer = window.setTimeout(suspendSensorStreamsForHiddenPage, HIDDEN_STREAM_CLOSE_MS);
+    return;
+  }
+  resumeSensorStreamsForVisiblePage();
+  tick();
+}
+
 function toggleLidarLive() {
   if (state.lidarLive.connected || state.lidarLive.socket) {
     stopLidarLive("사용자가 실시간 연결을 중지했습니다.");
@@ -58,6 +129,7 @@ function startLidarLive() {
     });
     socket.addEventListener("message", (event) => {
       if (socket !== state.lidarLive.socket || !routeSupportsLidarLive()) return;
+      state.lidarLive.reconnectAttempt = 0;
       handleLidarLiveMessage(event.data);
     });
     socket.addEventListener("error", (event) => {
@@ -81,7 +153,7 @@ function startLidarLive() {
         state.lidarLive.reconnectTimer = window.setTimeout(() => {
           state.lidarLive.reconnectTimer = null;
           if (routeSupportsLidarLive() && !state.lidarLive.socket && !state.lidarLive.userStopped) startLidarLive();
-        }, 1500);
+        }, nextSensorReconnectDelay(state.lidarLive, event));
       }
     });
   } catch (err) {
@@ -247,6 +319,7 @@ function startCameraLive() {
   const url = cameraWebSocketUrl();
   state.cameraLive.enabled = true;
   state.cameraLive.userStopped = false;
+  state.cameraLive.ackExhausted = false;
   state.cameraLive.connected = false;
   state.cameraLive.frameTopicAlive = false;
   state.cameraLive.error = "";
@@ -270,6 +343,7 @@ function startCameraLive() {
     });
     socket.addEventListener("message", (event) => {
       if (socket !== state.cameraLive.socket || !routeSupportsCameraLive()) return;
+      state.cameraLive.reconnectAttempt = 0;
       if (typeof event.data === "string") {
         handleCameraLiveMessage(event.data);
       } else {
@@ -292,8 +366,11 @@ function startCameraLive() {
       if (exhausted) {
         state.cameraLive.enabled = false;
         state.cameraLive.userStopped = true;
+        state.cameraLive.ackExhausted = true;
         state.cameraLive.deliveryState = "bandwidth_limited";
         state.cameraLive.error = "영상 응답 지연으로 일시 정지했습니다. 회선 상태나 전송 품질을 확인한 뒤 다시 시작하세요.";
+      } else if (event.code === 1013 && String(event.reason || "").includes("viewer limit")) {
+        state.cameraLive.error = "카메라 시청자 수 제한 · 30초 뒤 다시 연결합니다.";
       }
       const shouldReconnect = state.cameraLive.enabled && !state.cameraLive.userStopped && routeSupportsCameraLive();
       resetCameraWindowDecode(socket);
@@ -309,7 +386,7 @@ function startCameraLive() {
         state.cameraLive.reconnectTimer = window.setTimeout(() => {
           state.cameraLive.reconnectTimer = null;
           if (routeSupportsCameraLive() && !state.cameraLive.socket && !state.cameraLive.userStopped) startCameraLive();
-        }, 1500);
+        }, nextSensorReconnectDelay(state.cameraLive, event));
       }
     });
   } catch (err) {

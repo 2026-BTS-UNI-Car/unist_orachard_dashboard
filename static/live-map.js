@@ -3,6 +3,7 @@ import {ArchiveMapBuffer} from './archive-map-buffer.mjs';
 import {ArchiveSegmentGallery} from './archive-segments.mjs';
 import {decodeArchiveWindow} from './archive-window-codec.mjs';
 import {renderJobs} from './mapping-jobs.mjs';
+import {LIVE_MAP_TIMEOUT_MS,livePollDelay,livePathQuery,acceptLiveResponse} from './live-map-delta.mjs';
 const $=id=>document.getElementById(id),text=(id,value)=>{if($(id))$(id).textContent=value;};
 // Correct the real-rover front marker as requested, without modifying any
 // retained scan coordinates, localization yaw or simulation body-frame heading.
@@ -16,6 +17,9 @@ let cursorMapping=false,playbackPending=null,lastPlaybackPush=-Infinity;
 let triedCausalMap=false,nextExplicitResume=false,lastJobsPoll=0,liveActionBusy=false,archiveMappingGeneration=null;
 let liveMapEpoch=null,archiveMapEpoch=null,liveActionError='';
 let archiveWaitReason='';
+// S17: a poll that departed before (or during) a New map/Start/Stop action
+// must not bring back the previous map or epoch.
+let liveActionSeq=0,liveRttMs=0,autonomyPending=false;
 let inlinePlaybackMap=false,immutableCursorMap=false,bufferedCursorMap=false,availableCursorPrefix=0;
 const playbackClient=globalThis.crypto?.randomUUID?.()||`map-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;let playbackSequence=0;
 const segments=new ArchiveSegmentGallery(archive,time=>window.setArchiveTime?.(time,{pause:true}));
@@ -103,10 +107,10 @@ function paint(value){
   text('liveMapStatus',restored?'저장된 지도 유지 · 새 지도를 눌러 그리기를 시작하세요.':`${waiting?'GPS·IMU·LiDAR 동기화 대기 · 마지막 지도 유지':value.active?'지도 누적 중':value.state==='needs_reset'?'새 지도 필요':'마지막 지도 유지'}${value.reason?` · ${value.reason}`:''}${value.persistence?.saved===false?' · 원본 셀 저장 실패 · 표시 지도 유지':''}`);
 }
 for(const operation of ['start','stop','reset'])$('liveMap'+operation[0].toUpperCase()+operation.slice(1)).addEventListener('click',async()=>{
-  if(liveActionBusy)return;liveActionBusy=true;
+  if(liveActionBusy)return;liveActionBusy=true;liveActionSeq++;
   try{const value=await request('/api/live/map/'+operation,{expected_epoch:liveMapEpoch});liveActionError='';paint(value);}
   catch(error){liveActionError=error.message;text('liveMapStatus',error.message);}
-  finally{liveActionBusy=false;}
+  finally{liveActionBusy=false;liveActionSeq++;}
 });
 for(const button of document.querySelectorAll('[data-live-zoom]'))button.addEventListener('click',()=>live.zoom(button.dataset.liveZoom));
 for(const button of document.querySelectorAll('[data-archive-zoom]'))button.addEventListener('click',()=>archive.zoom(button.dataset.archiveZoom));
@@ -365,25 +369,50 @@ $('hardwareAutonomySpeed').addEventListener('change',async()=>{
   catch(error){text('hardwareAutonomyStatus',error.message);}
   finally{speedBusy=false;$('hardwareAutonomySpeed').disabled=false;}
 });
+async function refreshAutonomyStatus(){
+  // Independent of the map poll: a slow /api/autonomy never delays the map.
+  if(autonomyPending||Date.now()-lastAutonomyPoll<=3000)return;
+  autonomyPending=true;lastAutonomyPoll=Date.now();
+  try{
+    const value=await request('/api/autonomy');
+    if(value&&!speedBusy&&document.activeElement!==$('hardwareAutonomySpeed')){
+      $('hardwareAutonomySpeed').value=value.speed_percent;text('hardwareAutonomySpeedValue',`${value.speed_percent}%`);
+      text('hardwareAutonomyStatus',`${value.message} · 현재 순항속도 설정 ${value.speed_percent}%`);
+    }
+    if(value)window.FieldPreparation?.render($('fieldPreparationPanel'),value.preparation);
+  }catch(_){}
+  finally{autonomyPending=false;}
+}
 async function poll(){
   const started=performance.now();
   clearTimeout(timer);if(polling||!active())return;polling=true;
-  const query=new URLSearchParams({transport:'tiles'});
-  if(live.tileEpoch){query.set('tile_epoch',live.tileEpoch);query.set('tile_since',live.snapshot.tile_version || 0);}
-  const refreshAutonomy=Date.now()-lastAutonomyPoll>3000;
-  if(refreshAutonomy)lastAutonomyPoll=Date.now();
-  const results=await Promise.allSettled([request('/api/live/map?'+query),refreshAutonomy?request('/api/autonomy'):Promise.resolve(null)]);
-  if($('mappingJobsPanel')?.open&&Date.now()-lastJobsPoll>1500){lastJobsPoll=Date.now();pollJobs().catch(()=>{});}
-  if(results[0].status==='fulfilled'){
-    paint(results[0].value);
-    if(liveActionError)text('liveMapStatus',liveActionError+' · 마지막 지도 유지');
-  }else text('liveMapStatus',`지도 연결 대기 · 마지막 지도 유지 · ${results[0].reason.message}`);
-  if(results[1].status==='fulfilled'&&results[1].value&&!speedBusy&&document.activeElement!==$('hardwareAutonomySpeed')){
-    $('hardwareAutonomySpeed').value=results[1].value.speed_percent;text('hardwareAutonomySpeedValue',`${results[1].value.speed_percent}%`);
-    text('hardwareAutonomyStatus',`${results[1].value.message} · 현재 순항속도 설정 ${results[1].value.speed_percent}%`);
+  const actionSeq=liveActionSeq;
+  try{
+    const query=new URLSearchParams({transport:'tiles'});
+    if(live.tileEpoch){query.set('tile_epoch',live.tileEpoch);query.set('tile_since',live.snapshot.tile_version || 0);}
+    // S02: name the newest path point we hold; the server then sends only later points.
+    if(live.tileEpoch)for(const [key,value] of Object.entries(livePathQuery(live.snapshot,live.pathNeedsFull)))query.set(key,value);
+    refreshAutonomyStatus();
+    if($('mappingJobsPanel')?.open&&Date.now()-lastJobsPoll>1500){lastJobsPoll=Date.now();pollJobs().catch(()=>{});}
+    try{
+      const value=await request('/api/live/map?'+query,undefined,undefined,LIVE_MAP_TIMEOUT_MS);
+      liveRttMs=performance.now()-started;
+      if(acceptLiveResponse({requestActionSeq:actionSeq,currentActionSeq:liveActionSeq,actionBusy:liveActionBusy,value,shown:live.snapshot})){
+        paint(value);
+        if(liveActionError)text('liveMapStatus',liveActionError+' · 마지막 지도 유지');
+      }
+    }catch(error){
+      liveRttMs=Math.max(liveRttMs,performance.now()-started);
+      text('liveMapStatus',`지도 연결 대기 · 마지막 지도 유지 · ${error.message}`);
+    }
+  }finally{
+    polling=false;
+    if(active()){
+      const elapsed=performance.now()-started;
+      timer=setTimeout(poll,livePollDelay({profile:window.RoverLink?.profile?.()||'balanced',drawing:Boolean(live.snapshot.active),
+        rttMs:liveRttMs,elapsedMs:elapsed,autonomyActive:window.RoverLink?.autonomyPriority?.()==='active'}));
+    }
   }
-  if(results[1].status==='fulfilled'&&results[1].value)window.FieldPreparation?.render($('fieldPreparationPanel'),results[1].value.preparation);
-  polling=false;if(active())timer=setTimeout(poll,Math.max(0,(live.snapshot.active?100:1000)-(performance.now()-started)));
 }
 async function pollJobs(){
   const value=await request('/api/live/mapping-jobs');
@@ -398,7 +427,10 @@ async function pollJobs(){
       const stopped=await request('/api/live/mapping-jobs/stop',{job_id:job.id,expected_epoch:job.epoch});
       if(job.kind==='archive'&&job.recording_id===selected)archiveMappingGeneration=stopped.mapping_generation;
       await pollJobs();
-      if(job.kind==='live')paint(await request('/api/live/map?transport=tiles'));
+      if(job.kind==='live'){
+        liveActionSeq++;
+        try{paint(await request('/api/live/map?transport=tiles'));}finally{liveActionSeq++;}
+      }
     }catch(error){text('mappingJobsResources',error.message);}
   });
 }

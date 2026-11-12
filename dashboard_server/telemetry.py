@@ -297,6 +297,20 @@ class TelemetryProvider:
         self._external_ip_value: str | None = None
         self._external_ip_error: str | None = None
         self._external_ip_next_refresh = 0.0
+        self._external_ip_thread: threading.Thread | None = None
+        # Slow collectors are refreshed in the background (S03/S23); requests
+        # read the last value. Docker stats take about 1 s per container.
+        self._docker_lock = threading.Lock()
+        self._docker_value: dict[str, Any] | None = None
+        self._docker_at = 0.0
+        self._docker_thread: threading.Thread | None = None
+        self._docker_refresh_s = max(1.0, float(os.environ.get("TELEMETRY_DOCKER_REFRESH_S", "10")))
+        self._docker_yield_refresh_s = max(1.0, float(os.environ.get("TELEMETRY_DOCKER_YIELD_REFRESH_S", "60")))
+        self.docker_yield: Any = None  # callable -> True while background work must yield
+        self._disks_cache: tuple[float, list[dict[str, Any]]] | None = None
+        self._disks_ttl_s = max(0.0, float(os.environ.get("TELEMETRY_DISKS_TTL_S", "30")))
+        self._holders_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+        self._holders_ttl_s = max(0.0, float(os.environ.get("TELEMETRY_DEVICE_HOLDERS_TTL_S", "5")))
         self._last_lidar_test: dict[str, Any] | None = None
         self._last_lidar_scan: dict[str, Any] | None = None
         self._timeline_cache: OrderedDict[str, tuple[int, int, dict[str, Any]]] = (
@@ -342,19 +356,22 @@ class TelemetryProvider:
             "host": self._hostname(),
         }
 
-    def telemetry(self) -> dict[str, Any]:
+    def telemetry(self, include_rover: bool = True) -> dict[str, Any]:
+        # include_rover=False is used by the shared snapshot, which reads the
+        # rover state again for every request (telemetry_snapshot.py).
         external = (
             _load_json(self.telemetry_file) if self.telemetry_file.exists() else {}
         )
-        connection = self.connection(external)
+        connection = self.connection(external, include_rover=include_rover)
         payload = {
             "meta": self._meta(),
             "system": self.system(),
             "network": self.network(),
-            "docker": self.docker(),
+            "docker": self.docker_cached(),
             "fan": self.fan_status(),
             "connection": connection,
-            "rover": external.get("rover", self.rover_status()),
+            "rover": external["rover"] if "rover" in external else (self.rover_status() if include_rover else None),
+            "rover_source": "external" if "rover" in external else "rover_bridge",
             "sensors": connection["sensors"],
             "experiment": external.get("experiment", self._not_connected("experiment")),
             "mission": external.get("mission", self._mission_status()),
@@ -363,7 +380,7 @@ class TelemetryProvider:
         }
         return payload
 
-    def connection(self, external: dict[str, Any] | None = None) -> dict[str, Any]:
+    def connection(self, external: dict[str, Any] | None = None, include_rover: bool = True) -> dict[str, Any]:
         external = external or (
             _load_json(self.telemetry_file) if self.telemetry_file.exists() else {}
         )
@@ -378,17 +395,56 @@ class TelemetryProvider:
             "camera_bridge": camera_bridge,
             "imu_bridge": imu_bridge,
             "rover_bridge": rover_bridge,
-            "rover": self.rover_status(),
+            "rover": self.rover_status() if include_rover else None,
             "services": self._services(
                 external, lidar_bridge, camera_bridge, imu_bridge, rover_bridge
             ),
             "sensors": self._sensors(external, lidar_bridge, camera_bridge, imu_bridge),
         }
 
+    def _disks_cached(self) -> list[dict[str, Any]]:
+        now = time.monotonic()
+        cached = self._disks_cache
+        if cached is not None and now - cached[0] < self._disks_ttl_s:
+            return cached[1]
+        disks = self._disks()
+        self._disks_cache = (now, disks)
+        return disks
+
+    def docker_cached(self) -> dict[str, Any]:
+        """Last Docker summary, refreshed by one background thread.
+
+        Refresh period: 10 s, or 60 s while autonomy has resource priority."""
+        now = time.monotonic()
+        try:
+            yielding = bool(self.docker_yield()) if callable(self.docker_yield) else False
+        except Exception:
+            yielding = False
+        period = self._docker_yield_refresh_s if yielding else self._docker_refresh_s
+        with self._docker_lock:
+            value, at = self._docker_value, self._docker_at
+            running = self._docker_thread is not None and self._docker_thread.is_alive()
+            if (value is None or now - at >= period) and not running:
+                self._docker_thread = threading.Thread(target=self._refresh_docker, daemon=True,
+                                                       name="telemetry-docker")
+                self._docker_thread.start()
+        if value is None:
+            return {"available": False, "pending": True, "error": "Docker 상태 수집 중", "containers": []}
+        return {**value, "age_s": round(max(0.0, now - at), 1)}
+
+    def _refresh_docker(self) -> None:
+        try:
+            value = self.docker()
+        except Exception as exc:  # never let the background thread die silently with a stale lock
+            value = {"available": False, "error": str(exc), "containers": []}
+        with self._docker_lock:
+            self._docker_value = value
+            self._docker_at = time.monotonic()
+
     def system(self) -> dict[str, Any]:
         memory = self._memory()
         swap = self._swap()
-        disks = self._disks()
+        disks = self._disks_cached()
         cpu = self._cpu_percent()
         return {
             "hostname": self._hostname(),
@@ -2650,8 +2706,19 @@ class TelemetryProvider:
             return str(path)
 
     def _device_holders(self, device_path: str | None) -> list[dict[str, Any]]:
+        # Scanning every /proc/<pid>/fd is the most expensive part of a
+        # telemetry build; holders change rarely, so reuse the result briefly.
         if not device_path:
             return []
+        now = time.monotonic()
+        cached = self._holders_cache.get(device_path)
+        if cached is not None and now - cached[0] < self._holders_ttl_s:
+            return cached[1]
+        holders = self._device_holders_uncached(device_path)
+        self._holders_cache[device_path] = (now, holders)
+        return holders
+
+    def _device_holders_uncached(self, device_path: str) -> list[dict[str, Any]]:
         try:
             device_name = Path(device_path).resolve().name
         except OSError:
@@ -3942,9 +4009,23 @@ class TelemetryProvider:
         return counters
 
     def _cached_external_ip(self) -> str | None:
+        # Never block a telemetry request on DNS/HTTP (S23): the lookup runs in
+        # one background thread and the next refresh time is set before it starts.
         now = time.time()
         if now < self._external_ip_next_refresh:
             return self._external_ip_value
+        if not os.environ.get("EXTERNAL_IP_URL", "https://api64.ipify.org"):
+            return self._external_ip_value
+        if self._external_ip_thread is not None and self._external_ip_thread.is_alive():
+            return self._external_ip_value
+        self._external_ip_next_refresh = now + int(os.environ.get("EXTERNAL_IP_RETRY_S", "60"))
+        self._external_ip_thread = threading.Thread(target=self._lookup_external_ip, daemon=True,
+                                                    name="telemetry-external-ip")
+        self._external_ip_thread.start()
+        return self._external_ip_value
+
+    def _lookup_external_ip(self) -> None:
+        now = time.time()
         url = os.environ.get("EXTERNAL_IP_URL", "https://api64.ipify.org")
         timeout = float(os.environ.get("EXTERNAL_IP_TIMEOUT_S", "0.8"))
         try:
@@ -3961,7 +4042,6 @@ class TelemetryProvider:
             self._external_ip_next_refresh = now + int(
                 os.environ.get("EXTERNAL_IP_RETRY_S", "60")
             )
-        return self._external_ip_value
 
     def _primary_ipv4(self, interfaces: list[dict[str, Any]]) -> str | None:
         target = os.environ.get("PRIMARY_IP_ROUTE_TARGET", "1.1.1.1")

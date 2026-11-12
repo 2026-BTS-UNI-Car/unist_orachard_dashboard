@@ -35,6 +35,7 @@ function startImuLive() {
     });
     socket.addEventListener("message", (event) => {
       if (socket !== state.imuLive.socket || !routeSupportsImuLive()) return;
+      state.imuLive.reconnectAttempt = 0;
       handleImuLiveMessage(event.data);
     });
     socket.addEventListener("error", () => {
@@ -42,7 +43,7 @@ function startImuLive() {
       state.imuLive.error = "IMU WebSocket 연결 오류";
       renderImuLiveState();
     });
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       if (socket !== state.imuLive.socket) return;
       const reconnect = state.imuLive.enabled && !state.imuLive.userStopped && routeSupportsImuLive();
       state.imuLive.socket = null;
@@ -53,7 +54,7 @@ function startImuLive() {
         state.imuLive.reconnectTimer = window.setTimeout(() => {
           state.imuLive.reconnectTimer = null;
           startImuLive();
-        }, 1500);
+        }, nextSensorReconnectDelay(state.imuLive, event));
       }
     });
   } catch (err) {

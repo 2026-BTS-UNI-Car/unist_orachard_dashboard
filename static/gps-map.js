@@ -213,6 +213,12 @@ class GpsMapView {
 const live = new GpsMapView('roverGps');
 const archive = new GpsMapView('roverArchiveGps', true);
 let socket = null, reconnect = null, latest = null, receivedAt = 0, frames = [], frameKey = '', archiveId = null;
+// S12: exponential reconnect backoff with jitter (1.5 s to 30 s), reset by a message.
+let reconnectAttempt = 0;
+function gpsReconnectDelay(attempt, random = Math.random) {
+  const base = Math.min(30000, 1500 * 2 ** Math.max(0, Math.min(10, Number(attempt) || 0)));
+  return Math.round(Math.min(30000, base * (0.8 + 0.4 * random())));
+}
 const active = () => location.pathname.replace(/\/$/, '') === '/rover-control' && !document.hidden;
 function closeSocket() {
   clearTimeout(reconnect); reconnect = null;
@@ -246,7 +252,7 @@ function connect() {
     try {
       const payload = JSON.parse(event.data);
       if (payload.type !== 'gps') return;
-      latest = payload; receivedAt = Date.now();
+      latest = payload; receivedAt = Date.now(); reconnectAttempt = 0;
       const key = `${payload.received_at}:${payload.sequence}`;
       if (key !== frameKey && payload.received_at) {
         frames.push({t_s:payload.received_at, sample:payload});
@@ -257,7 +263,7 @@ function connect() {
       if (payload.stream_seq !== undefined && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ack:payload.stream_seq}));
     } catch (_) { text('roverGpsConnection', 'GPS 메시지 확인 실패'); }
   };
-  ws.onclose = () => { if (socket === ws) { socket = null; if (active()) reconnect = setTimeout(connect, 1500); } };
+  ws.onclose = () => { if (socket === ws) { socket = null; if (active()) reconnect = setTimeout(connect, gpsReconnectDelay(reconnectAttempt++)); } };
   ws.onerror = () => text('roverGpsConnection', 'GPS 브리지 연결 대기');
 }
 function routeChanged() {

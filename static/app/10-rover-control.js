@@ -73,6 +73,7 @@ function initRoverControl() {
   $("roverArmButton")?.addEventListener("click", armEspRover);
   window.addEventListener("blur", () => { if (state.roverControl.lease || state.roverControl.inFlight) stopRoverNow("focus_lost"); });
   document.addEventListener("visibilitychange", () => { if (document.hidden && (state.roverControl.lease || state.roverControl.inFlight)) stopRoverNow("page_hidden"); });
+  document.addEventListener("visibilitychange", handleSensorStreamVisibility);
   document.addEventListener("focusin", (event) => { if (hasActiveRoverInput() && roverKeyTargetBlocked(event)) stopRoverNow("input_focus"); });
   setInterval(() => { if (state.roverControl.lease) { ensureRoverCommandTimer(); } }, 200);
 
