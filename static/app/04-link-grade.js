@@ -3,13 +3,13 @@
 // quality, chooses the plan of every channel (camera, LiDAR, IMU, GPS, status
 // polls, request limiter) through effectiveLinkProfile().
 //
-// Measure: a tiny GET /api/ping (204, no body) every second, and while driving
+// Measure: a tiny GET /api/ping (204, no body) twice a second, and while driving
 // also the round trip of every control request. The server time (Server-Timing)
 // is taken off, so a sample is the network round trip including queueing.
 // Judge: the smallest sample of the last 4 s (queueing only adds time, so the
 // smallest is close to the bare round trip):
 //   good < 25 ms, normal < 90 ms, slow < 220 ms, otherwise very slow.
-// A worse grade is taken when the smallest of 4 s is 15 % past the boundary; a
+// A worse grade is taken when the smallest of 4 s is 25 % past the boundary; a
 // better one only after it has held for 10 s with 15 % margin, so a link that
 // swings does not swing the plan. Two pings in a row without an answer (3 s
 // each) is "offline". Seen on the bench (097519b), and why the window is time:
@@ -18,18 +18,22 @@
 //   the smaller plan made the link fast again, and the plan changed 13 times in
 //   2 minutes on the normal link;
 // - a 30 % upgrade margin left a 150 ms link that once looked slower stuck in
-//   the very-slow plan (160 ms is never under 0.7 x 220 ms).
+//   the very-slow plan (160 ms is never under 0.7 x 220 ms);
+// - without driving there are only the pings: with one a second and 15 %, all
+//   four pings of 4 s sometimes waited behind a camera picture (640x360, 76 ms
+//   on the normal link) and the plan changed 4 times in a minute (c84bfa8,
+//   hidden/normal). Two pings a second and 25 % keep a normal link normal.
 // The thresholds are assumptions; the field link log (below) is meant to replace them.
 //
 // Field log (optional, NET-10 (5)): with ?link_log=1 or localStorage
 // "ubts-link-log" = "1" the page sends its samples every 10 s to the dashboard,
 // which keeps them in runtime/link_log/ (one JSONL file a day).
 const LINK_GRADE = {
-  pingIntervalMs: 1000,
+  pingIntervalMs: 500,
   pingTimeoutMs: 3000,
   windowMs: 4000,
   warmupSamples: 4,
-  degradeMargin: 1.15,
+  degradeMargin: 1.25,
   thresholdsMs: { good: 25, normal: 90, slow: 220 },
   upgradeHoldMs: 10000,
   upgradeMargin: 0.85,

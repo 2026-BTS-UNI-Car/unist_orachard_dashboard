@@ -101,6 +101,21 @@ for (const [rtt, grade, profile] of [[45, 'normal', 'balanced'], [160, 'slow', '
   assert.equal(f.grade(), 'normal', 'queued control answers do not change the plan');
   assert.equal(f.context.window.LinkGrade.changesPerMinute(), 0);
 }
+// Without driving only the pings count: two a second on a normal link (40 ms) where a camera
+// picture of 76 ms keeps the link busy half the time. Some pings wait behind a picture; the plan stays.
+{
+  const f = fixture();
+  let seed = 7;
+  const random = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  for (let k = 0; k < 4; k++) f.sample(41);
+  assert.equal(f.grade(), 'normal');
+  for (let k = 0; k < 600; k++) {   // five minutes of pings every 0.5 s
+    f.advance(-500);
+    f.sample(42 + (random() < 0.46 ? random() * 80 : random() * 3));
+  }
+  assert.equal(f.grade(), 'normal');
+  assert.equal(f.context.window.LinkGrade.changesPerMinute(), 0, 'no change of plan');
+}
 // A link that swings between good and slow every 6 s changes the grade at most 4 times a minute.
 {
   const f = fixture();
