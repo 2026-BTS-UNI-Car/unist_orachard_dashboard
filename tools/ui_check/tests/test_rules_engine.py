@@ -214,7 +214,7 @@ class RulesFileTest(unittest.TestCase):
         # 누름 영역 규칙: 터치 화면 네 가지에서 화면의 조작 요소는 모두 44px 이상. 문서 본문과 마우스 화면은 알리기만 한다.
         touch = by_id["touch-target-44"]
         self.assertEqual((touch["value"], touch["viewports"]), (0, ["390x844", "844x390", "820x1180", "1180x820"]))
-        self.assertEqual(sorted(touch["routes"]), ["/", "/connection", "/docker", "/fan", "/network", "/research", "/rover-control", "/system"])
+        self.assertEqual(sorted(touch["routes"]), ["/", "/connection", "/docker", "/fan", "/network", "/research", "/rover-control", "/system", "/tuning"])
         self.assertEqual((by_id["touch-target-44-docs"]["mode"], by_id["touch-target-44-mouse"]["mode"]), ("report", "report"))
 
     def test_accepted_record_passes_and_the_record_before_the_overhaul_does_not(self):

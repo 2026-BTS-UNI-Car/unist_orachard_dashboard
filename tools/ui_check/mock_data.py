@@ -420,6 +420,91 @@ STRESS_MARKDOWN = "\n".join(
 )
 
 
+def _steer_rover_status(dataset: str, now: float) -> dict:
+    """GET /api/rover/status of a front-steer bridge (V3 snapshot with the steering block, docs/STEERING_SERVER_KO.md 4).
+    empty: no bridge (the dashboard's reply when the control socket is missing)."""
+    if dataset == "empty":
+        return {"ok": False, "connected": False, "state": "unavailable", "error": "motor_bridge_unavailable"}
+    return {
+        "ok": True, "state": "fault", "connected": True, "armed": False, "moving": False, "reason": "mock_steering_not_following",
+        "input_ttl_s": 0.75, "automatic_input_enabled": False, "last_error": "mock: 점검용으로 지어낸 아주 긴 오류 문장",
+        "updated_at": now, "vehicle_profile": "front_steer", "steer_limit_mrad": {"left": 409, "right": 380},
+        "requested": {"throttle": 0, "steer_mrad": 0, "left": 0, "right": 0},
+        "outputs": {"D8": 0, "D5": 0, "D3": 0, "D0": 0, "D1": 0, "D2": 0, "D6": 0, "D7": 0},
+        "firmware": "UBTS_STEER_V3", "protocol": 3, "boot_id": "89025CC1", "device_id": "5A1B2C", "reset_reason": "power_on",
+        "hw_profile": "front_steer_v0", "simulated": True, "profile": "front_steer", "cal_id": 1,
+        "steering": {"measured_mrad": -152, "measured_permille": -347, "raw": 401, "target_permille": -320, "cmd_permille": -320,
+                     "pwm": 0, "mcu_ms": 123456, "seq": 789, "applied_q": 12, "age_ms": 20, "ttl_remaining_ms": 0,
+                     "drive_en": False, "steer_en": False, "hold_remaining_ms": None, "stop_mode": "brake",
+                     "faults": ["SOFTLIMIT", "POT_NOISE", "steering_not_following", "mock_unknown_fault_with_a_long_name"],
+                     "servo_state": "off", "saturated": True, "calibrated": True},
+        "steering_host": {"arm_state": "none", "stop_state": "confirmed", "mcu_state": "DISARMED", "fl": "0110", "stale": False,
+                          "target_mrad": None, "latches": {}},
+        "transport": "simulation", "serial_port": "mock", "serial_open": True, "mode": "manual",
+        "control_page": "/rover-control",
+    }
+
+
+def _executor_status(dataset: str, now: float) -> dict:
+    """GET /api/executor/status of the dashboard's executor relay (docs/STEERING_SERVER_KO.md 6).
+    empty: no executor configured; stress: a paused run with every go blocker and long values."""
+    if dataset == "empty":
+        return {"ok": False, "configured": False, "reachable": False, "error": "executor_not_configured", "received_at": now}
+    return {"ok": True, "configured": True, "reachable": True, "received_at": now, "status": {
+        "run_state": "paused", "start_mode": "one_press", "mode": "MOTOR", "state": "PAUSED",
+        "stop_reason": "OPERATOR_LINK_LOST", "stop_detail": "operator_link_lost_mock_reason_with_a_long_identifier_and_no_spaces",
+        "go_ready": False, "go_blockers": ["session_conflict", "operator_link_not_fresh", "no_run", "already_running", "latched",
+                                           "arm_first", "inputs_not_fresh", "steering_feedback", "vehicle_moving",
+                                           "corridor_not_acquired", "mock_new_blocker_with_a_long_identifier"],
+        "operator_link": {"fresh": False, "age_s": 12345.678, "timeout_s": 0.5},
+        "speed": {"target_mps": 0.4, "limit_mps": 0.123, "limit_reason": "mock_limit_reason_with_a_long_identifier"},
+        "tuning": {"preset": "mock_preset_with_a_long_name", "revision": 12345, "editable": False},
+        "single_row": {"phase": "WAIT", "lateral_error_m": -0.1234, "heading_error_deg": 12.345, "distance_m": 98765.4,
+                       "speed_m_s": 0.0, "target_speed_m_s": 0.4, "stop_category": "OPERATOR_OR_BACKSTOP",
+                       "confidence": {"level": "LOW"}},
+        "gnss": {"state": "no_fix", "fix": False, "age_s": 3.2, "h_acc_m": 123.4, "used": False},
+        "bridge_detail": {"state": "LATCHED", "latch_reason": "mock_latch_reason_with_a_long_identifier"},
+    }}
+
+
+def _tuning_view(dataset: str) -> dict:
+    """GET /api/executor/tuning (docs/STEERING_SERVER_KO.md 7). empty: no executor; stress: every group, long values."""
+    rows = [("speed_table_scale", "basic", "속도 표 배율", "배", 0.8, 1.2, 0.01, 1.0),
+            ("target_speed_m_s", "basic", "목표 속도", "m/s", 0.2, 0.5, 0.05, 0.4),
+            ("lookahead_m", "basic", "주시거리", "m", 1.0, 4.0, 0.1, 2.0),
+            ("lateral_gain", "basic", "횡 이득", "rad/m", 0.1, 1.5, 0.05, 0.4),
+            ("heading_gain", "basic", "방향 이득", "rad/rad", 0.1, 3.0, 0.05, 0.9),
+            ("steer_rate_limit_deg_s", "basic", "조향 속도 제한", "°/s", 4.0, 30.0, 1.0, 24.0),
+            ("min_speed_m_s", "advanced", "최저 목표 속도", "m/s", 0.1, 0.4, 0.05, 0.2),
+            ("corridor_lost_s", "advanced", "통로 잃음 판정", "s", 0.5, 5.0, 0.1, None),
+            ("operator_timeout_s", "safety", "화면 연결 끊김 정지", "s", 0.5, 3.0, 0.1, 0.5),
+            ("steer_limit_left_mrad", "safety", "왼쪽 조향 한계", "mrad", 0, 409, 1, 409)]
+    stress = dataset == "stress"
+    source = "자리값: 점검용으로 지어낸 아주 긴 출처 설명 · 문서 이름과 절 번호가 이어진다" if stress else "자리값"
+    params = [{"name": name, "group": group, "label": label, "unit": unit, "min": low, "max": high, "step": step,
+               "default": default, "value": (default if default is not None else 1.234) if stress else None, "source": source,
+               "editable": stress and group != "safety", "editable_when_stopped": group == "basic" or (stress and group == "advanced")}
+              for name, group, label, unit, low, high, step, default in rows]
+    if not stress:
+        return {"ok": True, "schema": "ubts.executor_tuning.v0", "configured": False, "reachable": False,
+                "error": "executor_not_configured", "run_state": None, "applicable": False, "tuning": {}, "params": params}
+    return {"ok": True, "schema": "ubts.executor_tuning.v0", "configured": True, "reachable": True, "error": None,
+            "run_state": "idle", "applicable": True,
+            "tuning": {"preset": "mock_preset_with_a_long_name_for_layout_check", "revision": 12345, "editable": True},
+            "params": params}
+
+
+def _tuning_log(dataset: str, now: float) -> dict:
+    if dataset == "empty":
+        return {"ok": True, "entries": []}
+    return {"ok": True, "entries": [
+        {"at": now - index * 60, "by": "abcdefgh", "ok": index % 3 != 0,
+         "error": None if index % 3 else "out_of_range_mock_reason_with_a_long_identifier",
+         "changes": {"target_speed_m_s": [0.4, 0.35], "lookahead_m": [2.0, 2.5], "mock_unknown_parameter_with_a_long_name": [1, 2]},
+         "revision_before": 12345 - index, "revision_after": 12346 - index}
+        for index in range(50)]}
+
+
 def http_payloads(dataset: str, now: float | None = None) -> dict:
     """정확히 일치하는 GET 경로 -> JSON 응답."""
     if dataset not in DATASETS:
@@ -447,6 +532,10 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
                 "current_decision": {},
             },
             "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
+            "/api/rover/status": _steer_rover_status(dataset, now),
+            "/api/executor/status": _executor_status(dataset, now),
+            "/api/executor/tuning": _tuning_view(dataset),
+            "/api/executor/tuning/log": _tuning_log(dataset, now),
         }
     checks = [{"id": key, "passed": index % 3 == 0} for index, key in enumerate(PREPARATION_CHECK_IDS)]
     return {
@@ -522,6 +611,10 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
             "current_decision": {"decision": "HOLD", "proposed_left_percent": 0, "proposed_right_percent": 0},
         },
         "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
+        "/api/rover/status": _steer_rover_status(dataset, now),
+        "/api/executor/status": _executor_status(dataset, now),
+        "/api/executor/tuning": _tuning_view(dataset),
+        "/api/executor/tuning/log": _tuning_log(dataset, now),
     }
 
 

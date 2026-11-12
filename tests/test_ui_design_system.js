@@ -244,7 +244,10 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
     '/static/app/03-sensor-settings.js', '/static/app/04-link-grade.js', '/static/app/04-telemetry.js', '/static/app/05-live-lidar-camera.js',
     '/static/app/06-live-imu.js', '/static/app/07-lidar-data.js', '/static/app/08-system-panels.js',
     '/static/app/09-docs.js', '/static/app/10-rover-control.js', '/static/app/11-recording.js',
-    '/static/app/12-archive.js', '/static/app/13-charts-canvas.js', '/static/app/99-main.js',
+    '/static/app/12-archive.js', '/static/app/13-charts-canvas.js',
+    // 14-steer.js: the small loader of the front-steer screens (UI-07/08/12); their modules (static/steer/) are
+    // fetched only on a front-steer dashboard or on the tuning page, so the differential first load stays as it was.
+    '/static/app/14-steer.js', '/static/app/99-main.js',
     '/static/field-preparation.js',
     '/static/gps-map.js', '/static/live-map.js', '/static/media-jobs.js',
   ], 'files that index.html loads');

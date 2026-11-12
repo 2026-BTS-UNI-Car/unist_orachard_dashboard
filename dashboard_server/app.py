@@ -20,6 +20,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
+from dashboard_server.extensions import DashboardSettings, RouteTable
 from dashboard_server.static_assets import StaticAssets
 from dashboard_server.telemetry import ROOT, TelemetryProvider
 from dashboard_server.ws_relay import relay_sensor_stream
@@ -29,7 +30,7 @@ STATIC_ROOT = ROOT / "static"
 DOCS_ROOT = ROOT / "docs"
 # Content-hash addresses, long caching and kept gzip results for /static/ and the page (NET-04).
 STATIC_ASSETS = StaticAssets(STATIC_ROOT)
-APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/docs"}
+APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/tuning", "/docs"}
 SESSION_COOKIE_NAME = "ubts_session"
 SESSION_TTL_S = int(os.environ.get("DASHBOARD_SESSION_TTL_S", "3600"))
 _SESSION_LOCK = threading.Lock()
@@ -127,6 +128,14 @@ DOCS_CATALOG = [{'slug': 'gps-offline-map', 'title': 'GPS · 대한민국 오프
 class DashboardHandler(BaseHTTPRequestHandler):
     provider: TelemetryProvider
     protocol_version = "HTTP/1.1"
+    # D-12 extension points (dashboard_server/extensions.py). create_server() sets them from the environment.
+    dashboard_settings = DashboardSettings()
+    extension_routes = RouteTable()
+    page_filter = None          # changes the page text (simulation mode, vehicle kind); None = the page as it is
+    # Relay of the row executor's operator API (dashboard_server/executor_proxy.py); None = not configured.
+    executor_client = None
+    # Change log of the tuning screen (dashboard_server/steer_tuning.py); create_server() sets it.
+    tuning_log = None
     _last_telemetry_log_at = 0.0
 
     def do_HEAD(self):
@@ -139,6 +148,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._live_request(parsed, action=True)
         elif path.startswith("/api/rover/"):
             self._rover_action(path)
+        elif path.startswith("/api/executor/"):
+            self._executor_request(parsed, action=True)
         elif path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
         elif path == "/api/lidar/test":
@@ -179,7 +190,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.set_fan_preset(str(payload.get("preset", ""))))
         elif path.startswith("/api/docker/container/"):
             self._post_docker_container_action(path)
-        else:
+        elif not self._extension_request(parsed):
             self.send_error(404, "Not found")
 
     def do_GET(self):
@@ -271,15 +282,75 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._proxy_rover_request(parsed)
         elif path.startswith("/static/"):
             self._send_static(path.removeprefix("/static/"), parse_qs(parsed.query).get("v", [None])[0])
-        else:
+        elif path == "/api/dashboard/config":
+            self._send_json({"ok": True, **self.dashboard_settings.public(), "executor_configured": self.executor_client is not None})
+        elif path.startswith("/api/executor/"):
+            self._executor_request(parsed)
+        elif path.startswith("/ext-static/") and self.dashboard_settings.extra_static is not None:
+            folder = self.dashboard_settings.extra_static
+            self._send_file(folder / unquote(path.removeprefix("/ext-static/")), allowed_root=folder)
+        elif not self._extension_request(parsed):
             self.send_error(404, "Not found")
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
         if parsed.path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
-        else:
+        elif not self._extension_request(parsed):
             self.send_error(404, "Not found")
+
+    def _executor_request(self, parsed, action=False):
+        """/api/executor/*: the row executor's operator API on behalf of the page (docs/STEERING_SERVER_KO.md 6)."""
+        from dashboard_server import executor_proxy as proxy
+        from dashboard_server import steer_tuning
+        client = self.executor_client
+        name = parsed.path.removeprefix("/api/executor/")
+        if not action:
+            if name == "status":
+                self._send_json(client.status() if client is not None else proxy.not_configured_status())
+            elif name == "tuning":
+                self._send_json(steer_tuning.view(client.status() if client is not None else proxy.not_configured_status()))
+            elif name == "tuning/log":
+                log = self.tuning_log
+                self._send_json({"ok": True, "entries": log.recent() if log is not None else []})
+            else:
+                self.send_error(404, "Not found")
+            return
+        if name not in proxy.ACTIONS and name != "params":
+            self.send_error(404, "Not found")
+            return
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host"):
+            self.send_error(403, "Origin mismatch")
+            return
+        session = self._ensure_session(create=False)
+        if not session:
+            self.send_error(403, "Dashboard session required")
+            return
+        try:
+            body = proxy.read_body(self)
+            if client is None:
+                raise proxy.ExecutorError(503, "executor_not_configured")
+            if name == "params":
+                if self.tuning_log is None:
+                    raise proxy.ExecutorError(503, "tuning_log_not_configured")
+                status, reply = steer_tuning.apply(client, body, self.tuning_log, session[:8])
+            else:
+                status, reply = client.action(name, body)
+        except proxy.ExecutorError as exc:
+            if name == "stop":
+                dashboard_log("executor.stop_failed", error=exc.error)
+            self._send_json(exc.payload(), exc.status)
+            return
+        self._send_json(reply, status)
+
+    def _extension_request(self, parsed) -> bool:
+        """An extra route of a simulation extension (D-12). Only paths the dashboard itself does not serve."""
+        handler = self.extension_routes.find(self.command, parsed.path)
+        if handler is None:
+            return False
+        handler(self, parsed)
+        return True
 
     def _live_request(self, parsed, action=False):
         if action:
@@ -758,6 +829,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         (?v=...) is cached for a year; anything else is checked again next time (see static_assets.py)."""
         session_token = self._ensure_session(create=True)
         accept_gzip = "gzip" in self.headers.get("Accept-Encoding", "").lower()
+        # D-12: read through the class (a function stored on the class would bind to the instance); no work when it is
+        # the filter already in use.
+        STATIC_ASSETS.set_page_filter(type(self).page_filter)
         try:
             served = STATIC_ASSETS.serve(rel, requested_version, accept_gzip)
         except OSError:
@@ -898,7 +972,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 active_camera_ws=camera_websocket_stats()["active"],
             )
             return
-        if path not in {"/api/health"}:
+        # High-rate polls of the steering screens are not logged one by one.
+        if path not in {"/api/health", "/api/rover/status", "/api/executor/status", "/api/executor/heartbeat"}:
             dashboard_log(
                 "api.request",
                 path=path,
@@ -1485,7 +1560,19 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 def create_server(host: str, port: int, config: str | None = None, *, autonomy_bindings=None) -> ThreadingHTTPServer:
-    DashboardHandler.provider = TelemetryProvider(config)
+    from dashboard_server import extensions
+    from dashboard_server.executor_proxy import ExecutorClient
+    from dashboard_server.steer_tuning import TuningLog
+    settings = extensions.DashboardSettings.from_env(os.environ)
+    if settings.ignored:
+        dashboard_log("settings.ignored_in_live_mode", names=list(settings.ignored))
+    extension = extensions.load_extension(settings)
+    DashboardHandler.dashboard_settings = settings
+    DashboardHandler.extension_routes = extensions.routes_of(extension)
+    DashboardHandler.page_filter = extensions.page_filter(settings, extension)
+    DashboardHandler.provider = extensions.load_provider(settings, config) or TelemetryProvider(config)
+    DashboardHandler.executor_client = ExecutorClient.from_env(os.environ)
+    DashboardHandler.tuning_log = TuningLog(os.environ.get("UBTS_EXECUTOR_TUNING_LOG") or ROOT / "runtime/executor_tuning_log.jsonl")
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
     from dashboard_server.autonomy_settings import AutonomySettings

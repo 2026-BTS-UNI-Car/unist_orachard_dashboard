@@ -37,6 +37,7 @@
 <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13.5 6.5 19 12l-5.5 5.5"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 0-14.6-4L4 9.3M4 4.5v4.8h4.8M4 12.5a8 8 0 0 0 14.6 4l1.4-1.8M20 19.5v-4.8h-4.8"/></symbol>
 <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></symbol>
+<symbol id="i-tune" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
 <symbol id="i-rover" viewBox="0 0 24 24"><rect height="7" rx="2" width="17" x="3.5" y="9"/><circle cx="8" cy="18" r="2"/><circle cx="16" cy="18" r="2"/><path d="M12 9V5.5M9.5 5.5h5"/></symbol>
 </svg>
 <div hidden="" class="simulation-banner" role="status">SIMULATION · Gazebo 센서 · 실제 Jetson에 연결되지 않음</div>
@@ -59,6 +60,7 @@
 <div class="sidebar-brand"><span class="sidebar-mark"><svg aria-hidden="true" class="icon"><use href="#i-rover"/></svg></span><span class="sidebar-name"><strong>UBTS</strong><small>로버 대시보드</small></span></div>
 <nav class="nav-list">
 <a data-route="/rover-control" href="/rover-control"><svg aria-hidden="true" class="icon"><use href="#i-drive"/></svg><span>주행</span></a>
+<a data-route="/tuning" href="/tuning"><svg aria-hidden="true" class="icon"><use href="#i-tune"/></svg><span>조정</span></a>
 <a data-route="/connection" href="/connection"><svg aria-hidden="true" class="icon"><use href="#i-link"/></svg><span>연결</span></a>
 <a data-route="/" href="/"><svg aria-hidden="true" class="icon"><use href="#i-overview"/></svg><span>개요</span></a>
 <a data-route="/system" href="/system"><svg aria-hidden="true" class="icon"><use href="#i-system"/></svg><span>시스템</span></a>
@@ -638,7 +640,7 @@
 <button class="action-button danger" id="roverStopButton" type="button">STOP</button>
 </div>
 </div>
-<div class="sim-autonomy-controls" id="hardwareAutonomyPanel">
+<div class="sim-autonomy-controls" data-vehicle="differential" id="hardwareAutonomyPanel">
 <label for="hardwareAutonomySpeed">자율주행 순항속도 <strong id="hardwareAutonomySpeedValue">--</strong></label>
 <input id="hardwareAutonomySpeed" type="range" min="0" max="100" step="5" value="100"/>
 <button class="action-button secondary" disabled="" type="button">자율주행 시작 (검증 대기)</button>
@@ -649,27 +651,55 @@
 <ul data-preparation-checks=""></ul>
 </details>
 </div>
-<div class="rover-arm-controls">
+<div class="rover-arm-controls" data-vehicle="differential">
 <button aria-pressed="false" class="action-button primary" id="roverArmButton" type="button">조종 활성화 OFF</button>
 </div>
-<div class="rover-speed-control">
+<div class="rover-speed-control" data-vehicle="differential">
 <label for="roverSpeedSlider">
 <span>속도 (Q −5, E +5)</span>
 <strong id="roverSpeedValue">25%</strong>
 </label>
 <input id="roverSpeedSlider" max="100" min="0" step="1" type="range" value="25"/>
 </div>
-<div class="chart-readout compact" id="roverMotionReadout"></div>
-<div aria-label="방향 버튼" class="rover-pad">
+<div class="chart-readout compact" data-vehicle="differential" id="roverMotionReadout"></div>
+<div aria-label="방향 버튼" class="rover-pad" data-vehicle="differential">
 <button data-rover-drive="forward" type="button">W</button>
 <button data-rover-drive="left" type="button">A</button>
 <button data-rover-drive="stop" type="button">STOP</button>
 <button data-rover-drive="right" type="button">D</button>
 <button data-rover-drive="backward" type="button">S</button>
 </div>
-<p class="help-text">조종 활성화를 켠 뒤 WASD 키나 방향 버튼으로 주행합니다. 키를 놓으면 감속합니다.</p>
-<p class="help-text">STOP, Esc, 창 이탈은 즉시 정지와 조종 해제입니다. 대각선 키는 주행 중 회전이며 속도 100%에서는 회전이 제한됩니다.</p>
-<div class="test-result" id="roverCommandStatus">명령 대기 중</div>
+<p class="help-text" data-vehicle="differential">조종 활성화를 켠 뒤 WASD 키나 방향 버튼으로 주행합니다. 키를 놓으면 감속합니다.</p>
+<p class="help-text" data-vehicle="differential">STOP, Esc, 창 이탈은 즉시 정지와 조종 해제입니다. 대각선 키는 주행 중 회전이며 속도 100%에서는 회전이 제한됩니다.</p>
+<div class="test-result" data-vehicle="differential" id="roverCommandStatus">명령 대기 중</div>
+<div class="steer-drive" data-vehicle="front_steer" id="steerDrive">
+<span class="status-chip" id="steerDevice" role="status">조향 장치 확인 중</span>
+<div class="rover-arm-controls"><button aria-pressed="false" class="action-button primary" disabled="" id="steerArmButton" type="button">조종 활성화 OFF</button></div>
+<div aria-hidden="true" class="steer-gauge"><i></i><i class="measured" hidden="" id="steerGaugeMeasured"></i><i class="target" hidden="" id="steerGaugeTarget"></i></div>
+<div class="gps-map-footer"><small id="steerGaugeLeft">왼쪽</small><small>목표(파랑) · 측정(검정)</small><small id="steerGaugeRight">오른쪽</small></div>
+<div class="chart-readout compact" id="steerReadout"></div>
+<div class="rover-speed-control">
+<label for="steerSpeedSlider"><span>속도 상한 (Q −5, E +5)</span><strong id="steerSpeedValue">20%</strong></label>
+<input id="steerSpeedSlider" max="60" min="0" step="5" type="range" value="20"/>
+</div>
+<div aria-label="조향 각" class="segmented-control"><button data-steer-angle="5" type="button">5°</button><button data-steer-angle="10" type="button">10°</button><button data-steer-angle="15" type="button">15°</button><button data-steer-angle="20" type="button">20°</button></div>
+<div aria-label="조향 키를 놓았을 때" class="segmented-control"><button class="active" data-steer-mode="centre" type="button">가운데로</button><button data-steer-mode="hold" type="button">각 유지</button></div>
+<div aria-label="조향 조종" class="steer-pad">
+<div><button class="btn-hold" data-steer-key="a" type="button">◀ A</button><button class="btn-hold" data-steer-key="c" type="button">가운데</button><button class="btn-hold" data-steer-key="d" type="button">D ▶</button></div>
+<div><button class="btn-hold" data-steer-key="w" type="button">전진 W</button><button class="btn-hold" data-steer-key="s" type="button">후진 S</button></div>
+</div>
+<p class="help-text">조종 활성화 뒤 W/S는 누르는 동안 구동, A/D는 고른 각까지 조향, C는 누르는 동안 가운데로. A/D를 놓으면 가운데로 돌아온다(정지 중에는 한 번 5°까지, ‘각 유지’를 고르면 그대로). STOP·Esc는 언제나.</p>
+<div class="sim-map-actions" hidden="" id="steerFaults"></div>
+<div class="test-result" id="steerCommandStatus">조향 장치 확인 중</div>
+</div>
+<section class="panel-section steer-drive" data-vehicle="front_steer" id="autoPanel">
+<div class="panel-head mini"><h3>자율주행 · 열 따라가기</h3><span class="status-chip" id="autoState">확인 중</span></div>
+<label class="field" for="autoRowLen">열 길이 m (비워도 됨)<input class="input" id="autoRowLen" inputmode="decimal" max="300" min="1" step="0.1" type="number"/></label>
+<div class="sim-map-actions"><button class="action-button primary" disabled="" id="autoPrimary" type="button">확인 중</button><button class="action-button secondary" disabled="" id="autoEnd" type="button">run 끝내기</button></div>
+<div class="test-result" hidden="" id="autoNotice"></div>
+<dl class="detail-list" id="autoDetails"></dl>
+<p class="help-text">한 번 누르면 열 끝까지 간다. 출발 뒤에는 이 화면을 열어 두어야 하고, 탭을 숨기거나 다른 화면으로 가면 곧 차가 선다. STOP(위, 상태 막대, Esc)은 자율 run도 멈춘다.</p>
+</section>
 </article>
 <article class="panel rover-record-panel">
 <div class="panel-head">
@@ -792,6 +822,32 @@
 </article>
 </section>
 </section>
+<section class="page" data-page="/tuning">
+<header class="page-head">
+<h1>조정</h1>
+<span class="status-chip" id="tuneState">확인 중</span>
+<p class="page-note">자율주행 실행기의 값 · 차가 정지했을 때만 적용 · 안전 한계는 잠금</p>
+</header>
+<form class="dashboard-grid" id="tuneForm" novalidate="">
+<article class="panel">
+<div class="panel-head"><h2>기본 묶음</h2><small id="tuneRevision">판 --</small></div>
+<div class="test-result" hidden="" id="tuneNotice"></div>
+<div class="tune-fields" id="tuneBasic"></div>
+<div class="sim-map-actions"><button class="action-button primary" disabled="" id="tuneApply" type="submit">적용</button><button class="action-button secondary" id="tuneClear" type="button">입력 지우기</button></div>
+<p class="help-text">빈 칸은 지금 값을 그대로 둔다. 범위 밖이나 주행 중에는 적용하지 않는다. 실행기가 마지막으로 판정한다.</p>
+</article>
+<article class="panel tune-stack">
+<div class="panel-head"><h2>고급 묶음</h2><small>실행기가 받는다고 알릴 때만 바꾼다</small></div>
+<div id="tuneAdvanced"></div>
+<div class="panel-head mini"><h3>안전 한계</h3><span class="status-chip">잠금</span></div>
+<div id="tuneSafety"></div>
+</article>
+<article class="panel wide">
+<div class="panel-head"><h2>변경 기록</h2><small>새 것부터</small><button class="action-button secondary" hidden="" id="tuneLogMore" type="button">전체 보기</button></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>시각</th><th>바뀐 값</th><th>결과</th><th>판</th><th>화면</th></tr></thead><tbody id="tuneLogBody"></tbody></table></div>
+</article>
+</form>
+</section>
 <section class="page" data-page="/docs">
 <header class="page-head">
 <h1>문서</h1>
@@ -841,6 +897,7 @@
 <script src="/static/app/11-recording.js"></script>
 <script src="/static/app/12-archive.js"></script>
 <script src="/static/app/13-charts-canvas.js"></script>
+<script src="/static/app/14-steer.js"></script>
 <script src="/static/app/99-main.js"></script>
 <script src="/static/field-preparation.js"></script>
 <script src="/static/gps-map.js" type="module"></script>

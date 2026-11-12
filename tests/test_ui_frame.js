@@ -16,8 +16,8 @@ const STOP_REQUEST = '/api/rover/stop {"reason":"operator_stop"}';
 // A menu item: route, href, icon name, label.
 const NAV_ITEM = /<a data-route="([^"]+)" href="([^"]+)"><svg aria-hidden="true" class="icon"><use href="#i-([a-z]+)"\/><\/svg><span>([^<]+)<\/span><\/a>/g;
 
-// ---- Markup: one status bar, outside every page, so it is on all nine routes ----
-const ROUTES = ['/', '/connection', '/system', '/network', '/docker', '/fan', '/research', '/rover-control', '/docs'];
+// ---- Markup: one status bar, outside every page, so it is on every route ----
+const ROUTES = ['/', '/connection', '/system', '/network', '/docker', '/fan', '/research', '/rover-control', '/tuning', '/docs'];
 {
   const bar = html.match(/<header class="statusbar" id="statusBar">[\s\S]*?<\/header>/);
   assert.ok(bar, 'status bar');
@@ -26,7 +26,7 @@ const ROUTES = ['/', '/connection', '/system', '/network', '/docker', '/fan', '/
   assert.ok(html.indexOf(bar[0]) < firstPage, 'the status bar is not inside a page');
   // Every route is a page section of this one document (the server sends index.html for all of them).
   assert.deepEqual([...html.matchAll(/<section class="page[^"]*" data-page="([^"]+)">/g)].map(match => match[1]).sort(), [...ROUTES].sort());
-  assert.match(source, /^const ROUTES = \["\/", "\/connection", "\/system", "\/network", "\/docker", "\/fan", "\/research", "\/rover-control", "\/docs"\];$/m);
+  assert.match(source, /^const ROUTES = \["\/", "\/connection", "\/system", "\/network", "\/docker", "\/fan", "\/research", "\/rover-control", "\/tuning", "\/docs"\];$/m);
   // The status bar holds the state items and, at the right end, STOP.
   const order = ['id="mobileMenuButton"', 'id="connectionState"', 'id="frameDriveState"', 'id="frameRecordState"', 'id="frameClock"', 'id="frameStopButton"'];
   const positions = order.map(marker => bar[0].indexOf(marker));
@@ -37,11 +37,11 @@ const ROUTES = ['/', '/connection', '/system', '/network', '/docker', '/fan', '/
   // The drive panel STOP and the pad STOP are still there.
   assert.match(html, /<button class="action-button danger" id="roverStopButton" type="button">STOP<\/button>/);
   assert.match(html, /<button data-rover-drive="stop" type="button">STOP<\/button>/);
-  // Navigation: nine routes, drive first, each an icon and a Korean label.
+  // Navigation: ten routes (tuning since UI-12), drive first, each an icon and a Korean label.
   const nav = html.match(/<nav class="nav-list">([\s\S]*?)<\/nav>/)[1];
   const items = [...nav.matchAll(NAV_ITEM)];
   assert.deepEqual(items.map(match => [match[1], match[4]]), [
-    ['/rover-control', '주행'], ['/connection', '연결'], ['/', '개요'], ['/system', '시스템'], ['/network', '네트워크'],
+    ['/rover-control', '주행'], ['/tuning', '조정'], ['/connection', '연결'], ['/', '개요'], ['/system', '시스템'], ['/network', '네트워크'],
     ['/docker', '컨테이너'], ['/fan', '팬'], ['/docs', '문서'], ['/research', '연구']]);
   assert.equal((nav.match(/<a /g) || []).length, items.length, 'every menu item is an icon and a label');
   assert.equal(new Set(items.map(match => match[3])).size, items.length, 'every menu item has its own icon');
@@ -243,9 +243,9 @@ function setup(route = '/rover-control') {
   // ---- Page header: one compact row per page, titled like its menu item; no banner ----
   {
     const labels = Object.fromEntries([...html.matchAll(NAV_ITEM)].map(match => [match[1], match[4]]));
-    assert.equal(Object.keys(labels).length, 9);
+    assert.equal(Object.keys(labels).length, ROUTES.length);
     const pages = html.split(/<section class="page[^"]*" data-page="/).slice(1);
-    assert.equal(pages.length, 9);
+    assert.equal(pages.length, ROUTES.length);
     for (const page of pages) {
       const route = page.slice(0, page.indexOf('"'));
       const heads = [...page.matchAll(/<header class="page-head">([\s\S]*?)<\/header>/g)];

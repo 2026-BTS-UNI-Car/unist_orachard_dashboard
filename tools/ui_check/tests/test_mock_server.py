@@ -130,7 +130,7 @@ class ServerTest(unittest.TestCase):
             status, content_type, body = self.get(route)
             self.assertEqual((status, body), (200, index), route)
             self.assertTrue(content_type.startswith("text/html"), route)
-        self.assertEqual(len(mock_server.APP_ROUTES), 9)
+        self.assertEqual(len(mock_server.APP_ROUTES), 10)
 
     def test_static_files_and_types(self):
         status, content_type, body = self.get("/static/app.js")
@@ -249,6 +249,20 @@ class ServerOptionsTest(unittest.TestCase):
             for arguments in ({"dataset": "real"}, {"websocket": "maybe"}, {"ws_feeds": ("radar",)}):
                 with self.assertRaises(ValueError):
                     mock_server.MockServer(folder, **{"dataset": "stress", **arguments})
+
+    def test_front_steer_page_mark(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "index.html").write_bytes(b'<!doctype html><html lang="ko" data-runtime-mode="live"></html>')
+            with self.assertRaises(ValueError):
+                mock_server.MockServer(folder, "empty", vehicle="tank")
+            for vehicle, mark in (("differential", b'<html lang="ko"'), ("front_steer", b'<html data-vehicle-kind="front_steer" lang="ko"')):
+                server = mock_server.MockServer(folder, "empty", vehicle=vehicle)
+                thread = server.start_in_thread()
+                try:
+                    with urllib.request.urlopen(server.base_url + "/rover-control", timeout=5) as response:
+                        self.assertIn(mark, response.read())
+                finally:
+                    server.stop(thread)
 
 
 if __name__ == "__main__":

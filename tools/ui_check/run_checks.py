@@ -30,7 +30,7 @@ import summarize  # noqa: E402
 import ui_metrics  # noqa: E402
 
 TOOL_VERSION = "1.0.0"
-DEFAULT_ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs", "/rover-control"]
+DEFAULT_ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs", "/rover-control", "/tuning"]
 DEFAULT_VIEWPORTS = ["390x844", "844x390", "820x1180", "1180x820", "1440x900"]
 # 앱 틀의 STOP(data-ui-check="stop")이 있으면 그것을 재고, 없으면(개편 전 화면) 주행 패널의 STOP을 잰다.
 DEFAULT_STOP_SELECTORS = ["[data-ui-check~='stop']", "#roverStopButton", "[data-rover-drive='stop']"]
@@ -394,6 +394,7 @@ def build_run(options, pages: list, browser_info: dict, server_stats: dict, star
         "stop_selectors": options.stop_selector,
         "stop_texts": options.stop_text,
         "theme": options.theme,
+        "vehicle": options.vehicle,
         "settle": {"min_ms": options.settle_ms, "max_ms": options.max_settle_ms, "sample_ms": SETTLE_SAMPLE_MS, "stable_samples": SETTLE_STABLE_SAMPLES},
         "thresholds": {
             "min_touch_px": ui_metrics.MIN_TOUCH_PX,
@@ -448,6 +449,7 @@ def parse_args(argv=None):
     parser.add_argument("--resize-freeze-ms", type=int, default=1300, help="화면을 돌리기 전에 API 응답을 붙잡아 두고 기다리는 시간")
     parser.add_argument("--resize-wait-ms", type=int, default=600, help="화면을 돌린 뒤 캔버스를 다시 재기까지 기다리는 시간")
     parser.add_argument("--websocket", choices=("accept", "refuse"), default="accept", help="모의 서버가 웹소켓을 받을지 거절할지")
+    parser.add_argument("--vehicle", choices=mock_server.VEHICLES, default="differential", help="차량 종류. front_steer면 조향 패널이 보이는 화면으로 잰다")
     parser.add_argument("--browser-channel", default="chrome", help="Playwright 브라우저 채널(기본: 깔려 있는 Chrome)")
     parser.add_argument("--browser-path", help="브라우저 실행 파일 경로(주면 채널 대신 씀)")
     parser.add_argument("--json-name", default="ui_check.json", help="결과 JSON 파일 이름")
@@ -496,7 +498,8 @@ def main(argv=None) -> int:
     pages, browser_info, server_stats = [], {}, {}
     try:
         for dataset in options.datasets:
-            servers[dataset] = mock_server.MockServer(options.static, dataset, 0, options.websocket, tuple(options.route))
+            servers[dataset] = mock_server.MockServer(options.static, dataset, 0, options.websocket, tuple(options.route),
+                                                      vehicle=options.vehicle)
             threads[dataset] = servers[dataset].start_in_thread()
         pages, browser_info = asyncio.run(run_browser(options, servers))
     except Exception as error:

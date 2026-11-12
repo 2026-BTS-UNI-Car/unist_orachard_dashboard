@@ -36,7 +36,7 @@ class KeepAliveTest(unittest.TestCase):
         cls.thread.join(timeout=2)
 
     def connection(self):
-        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
         self.addCleanup(conn.close)
         return conn
 

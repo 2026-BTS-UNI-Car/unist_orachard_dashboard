@@ -693,6 +693,63 @@
   color: var(--color-text-secondary);
 }
 
+/* ---- Front-steer drive panel (UI-07): the vehicle kind picks the panel --- */
+html:not([data-vehicle-kind="front_steer"]) [data-vehicle="front_steer"],
+html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
+  display: none;
+}
+
+.steer-drive,
+.tune-stack,
+.steer-pad > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+/* Steering row over the throttle row; every finger keeps its own button. */
+.steer-pad > div {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  margin-top: var(--space-2);
+}
+
+.steer-gauge {
+  position: relative;
+  height: var(--space-5);
+  border-radius: var(--radius-small);
+  background: var(--color-fill-strong);
+}
+
+.steer-gauge > i {
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 4px;
+  margin-left: -2px;
+  background: var(--color-border-strong);
+}
+
+.steer-gauge > .target {
+  background: var(--color-accent);
+}
+
+.steer-gauge > .measured {
+  top: var(--space-2);
+  background: var(--color-text);
+}
+
+/* Tuning fields (UI-12): as many columns as fit, one on a phone. */
+.tune-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-3);
+}
+
+/* Autonomy status (UI-08): values older than 1.5 s are dimmed. */
+.detail-list.stale dd {
+  color: var(--color-text-disabled);
+}
+
 /* ---- IMU --------------------------------------------------------------- */
 .imu-attitude-stage {
   position: relative;

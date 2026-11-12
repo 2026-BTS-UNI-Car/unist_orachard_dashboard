@@ -66,6 +66,7 @@ function renderRoute() {
   }
   window.RoverGps?.routeChanged();
   requestChartAnimation();
+  window.dispatchEvent(new CustomEvent("ubts:route", { detail: { route } }));
 }
 
 function initMobileNav() {
