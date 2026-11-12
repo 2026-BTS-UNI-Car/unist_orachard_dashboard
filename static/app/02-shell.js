@@ -61,6 +61,7 @@ function renderRoute() {
   if (route !== "/rover-control") renderRecordingStatus();
   window.RoverGps?.routeChanged();
   requestChartAnimation();
+  window.dispatchEvent(new CustomEvent("ubts:route", { detail: { route } }));
 }
 
 function initMobileNav() {

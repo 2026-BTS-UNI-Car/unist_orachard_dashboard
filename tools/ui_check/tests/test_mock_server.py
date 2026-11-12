@@ -250,6 +250,20 @@ class ServerOptionsTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     mock_server.MockServer(folder, **{"dataset": "stress", **arguments})
 
+    def test_front_steer_page_mark(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "index.html").write_bytes(b'<!doctype html><html lang="ko" data-runtime-mode="live"></html>')
+            with self.assertRaises(ValueError):
+                mock_server.MockServer(folder, "empty", vehicle="tank")
+            for vehicle, mark in (("differential", b'<html lang="ko"'), ("front_steer", b'<html data-vehicle-kind="front_steer" lang="ko"')):
+                server = mock_server.MockServer(folder, "empty", vehicle=vehicle)
+                thread = server.start_in_thread()
+                try:
+                    with urllib.request.urlopen(server.base_url + "/rover-control", timeout=5) as response:
+                        self.assertIn(mark, response.read())
+                finally:
+                    server.stop(thread)
+
 
 if __name__ == "__main__":
     unittest.main()

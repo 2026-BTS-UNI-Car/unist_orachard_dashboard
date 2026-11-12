@@ -420,6 +420,31 @@ STRESS_MARKDOWN = "\n".join(
 )
 
 
+def _steer_rover_status(dataset: str, now: float) -> dict:
+    """GET /api/rover/status of a front-steer bridge (V3 snapshot with the steering block, docs/STEERING_SERVER_KO.md 4).
+    empty: no bridge (the dashboard's reply when the control socket is missing)."""
+    if dataset == "empty":
+        return {"ok": False, "connected": False, "state": "unavailable", "error": "motor_bridge_unavailable"}
+    return {
+        "ok": True, "state": "fault", "connected": True, "armed": False, "moving": False, "reason": "mock_steering_not_following",
+        "input_ttl_s": 0.75, "automatic_input_enabled": False, "last_error": "mock: 점검용으로 지어낸 아주 긴 오류 문장",
+        "updated_at": now, "vehicle_profile": "front_steer", "steer_limit_mrad": {"left": 409, "right": 380},
+        "requested": {"throttle": 0, "steer_mrad": 0, "left": 0, "right": 0},
+        "outputs": {"D8": 0, "D5": 0, "D3": 0, "D0": 0, "D1": 0, "D2": 0, "D6": 0, "D7": 0},
+        "firmware": "UBTS_STEER_V3", "protocol": 3, "boot_id": "89025CC1", "device_id": "5A1B2C", "reset_reason": "power_on",
+        "hw_profile": "front_steer_v0", "simulated": True, "profile": "front_steer", "cal_id": 1,
+        "steering": {"measured_mrad": -152, "measured_permille": -347, "raw": 401, "target_permille": -320, "cmd_permille": -320,
+                     "pwm": 0, "mcu_ms": 123456, "seq": 789, "applied_q": 12, "age_ms": 20, "ttl_remaining_ms": 0,
+                     "drive_en": False, "steer_en": False, "hold_remaining_ms": None, "stop_mode": "brake",
+                     "faults": ["SOFTLIMIT", "POT_NOISE", "steering_not_following", "mock_unknown_fault_with_a_long_name"],
+                     "servo_state": "off", "saturated": True, "calibrated": True},
+        "steering_host": {"arm_state": "none", "stop_state": "confirmed", "mcu_state": "DISARMED", "fl": "0110", "stale": False,
+                          "target_mrad": None, "latches": {}},
+        "transport": "simulation", "serial_port": "mock", "serial_open": True, "mode": "manual",
+        "control_page": "/rover-control",
+    }
+
+
 def http_payloads(dataset: str, now: float | None = None) -> dict:
     """정확히 일치하는 GET 경로 -> JSON 응답."""
     if dataset not in DATASETS:
@@ -447,6 +472,7 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
                 "current_decision": {},
             },
             "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
+            "/api/rover/status": _steer_rover_status(dataset, now),
         }
     checks = [{"id": key, "passed": index % 3 == 0} for index, key in enumerate(PREPARATION_CHECK_IDS)]
     return {
@@ -522,6 +548,7 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
             "current_decision": {"decision": "HOLD", "proposed_left_percent": 0, "proposed_right_percent": 0},
         },
         "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
+        "/api/rover/status": _steer_rover_status(dataset, now),
     }
 
 

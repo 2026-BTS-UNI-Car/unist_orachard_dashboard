@@ -31,6 +31,7 @@ import mock_data  # noqa: E402
 
 HOST = "127.0.0.1"
 APP_ROUTES = ("/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs", "/rover-control")
+VEHICLES = ("differential", "front_steer")
 WS_CHANNELS = {"/ws/lidar": "lidar", "/ws/camera": "camera", "/ws/imu": "imu", "/ws/gps": "gps"}
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_POST_BYTES = 1 << 20
@@ -134,7 +135,8 @@ class MockServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
 
-    def __init__(self, static_dir, dataset: str = "stress", port: int = 0, websocket: str = "accept", app_routes=APP_ROUTES, ws_feeds=None):
+    def __init__(self, static_dir, dataset: str = "stress", port: int = 0, websocket: str = "accept", app_routes=APP_ROUTES, ws_feeds=None,
+                 vehicle: str = "differential"):
         if dataset not in mock_data.DATASETS:
             raise ValueError(f"unknown dataset: {dataset}")
         if websocket not in ("accept", "refuse"):
@@ -149,6 +151,10 @@ class MockServer(ThreadingHTTPServer):
             raise FileNotFoundError(f"index.html not found in {self.static_root}")
         self.dataset = dataset
         self.websocket_mode = websocket
+        if vehicle not in VEHICLES:
+            raise ValueError(f"unknown vehicle kind: {vehicle}")
+        # The dashboard server marks the page of a front-steer vehicle (DASHBOARD_VEHICLE, D-12); the mock does the same.
+        self.vehicle = vehicle
         self.app_routes = tuple(dict.fromkeys(tuple(APP_ROUTES) + tuple(app_routes)))
         self.stopping = threading.Event()
         self._lock = threading.Lock()
@@ -217,6 +223,16 @@ class MockHandler(BaseHTTPRequestHandler):
             return
         self._send_bytes(200, content_type, body)
 
+    def _send_page(self, server) -> None:
+        try:
+            body = (server.static_root / "index.html").read_bytes()
+        except OSError:
+            self._send_plain(404, "not found")
+            return
+        if server.vehicle != "differential":
+            body = body.replace(b"<html ", f'<html data-vehicle-kind="{server.vehicle}" '.encode("ascii"), 1)
+        self._send_bytes(200, "text/html; charset=utf-8", body)
+
     # ---- GET ---------------------------------------------------------
     def do_HEAD(self):
         self.do_GET()
@@ -228,7 +244,7 @@ class MockHandler(BaseHTTPRequestHandler):
         if kind == "ws":
             self._websocket(WS_CHANNELS[path])
         elif kind == "app":
-            self._send_file(server.static_root / "index.html")
+            self._send_page(server)
         elif kind == "static":
             target = resolve_static(server.static_root, path.removeprefix("/static/"))
             if target is None:
@@ -360,6 +376,7 @@ def main(argv=None) -> int:
     parser.add_argument("--port", type=int, default=0, help="포트. 0이면 빈 포트를 고른다")
     parser.add_argument("--websocket", choices=("accept", "refuse"), default="accept", help="웹소켓 연결을 받을지 거절할지")
     parser.add_argument("--route", action="append", default=[], help="index.html을 돌려줄 화면 경로 추가(여러 번 가능)")
+    parser.add_argument("--vehicle", choices=VEHICLES, default="differential", help="차량 종류(front_steer면 화면에 조향 표시를 붙인다)")
     parser.add_argument(
         "--ws-feed",
         action="append",
@@ -368,7 +385,7 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        server = MockServer(args.static, args.dataset, args.port, args.websocket, tuple(args.route), args.ws_feed)
+        server = MockServer(args.static, args.dataset, args.port, args.websocket, tuple(args.route), args.ws_feed, args.vehicle)
     except (FileNotFoundError, ValueError, OSError) as error:
         print(f"모의 서버를 띄우지 못했습니다: {error}", file=sys.stderr)
         return 2
