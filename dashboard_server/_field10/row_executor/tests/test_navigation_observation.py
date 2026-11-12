@@ -9,7 +9,11 @@ REPO = TESTS.parents[2]
 if not (REPO / 'tools' / 'row_executor').is_dir():
     # Needs the simulation repository's harness (closed_loop) and plant model next to the executor; the
     # dashboard repository's copy of the executor does not have them, so this test only runs there.
-    raise unittest.SkipTest('runs in the simulation repository layout (tools/row_executor, sim/ubts)')
+    reason = 'runs in the simulation repository layout (tools/row_executor, sim/ubts)'
+    if __name__ == '__main__':  # run as a script: report the skip instead of a traceback
+        print('skipped: ' + reason)
+        sys.exit(0)
+    raise unittest.SkipTest(reason)
 for root in (TESTS, REPO / 'tools', REPO / 'sim/ubts'):
     sys.path.insert(0, str(root))
 sys.dont_write_bytecode = True
