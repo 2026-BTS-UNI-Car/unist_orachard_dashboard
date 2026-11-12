@@ -415,6 +415,11 @@ def summarize_cpu(rows, t_from, t_to):
     return out
 
 
+def host_pauses(rows, limit_s=3.0):
+    """Gaps in the once-per-second CPU samples: the whole PC stopped (sleep, suspend). A run with one is not used."""
+    return [[round(a["t"], 1), round(b["t"] - a["t"], 1)] for a, b in zip(rows, rows[1:]) if b["t"] - a["t"] > limit_s]
+
+
 def summarize_process_stalls(folder, t_from, t_to):
     out = {}
     for path in sorted(Path(folder).glob("stall_*.jsonl")):
@@ -431,12 +436,14 @@ def analyze(folder):
     raw = read_json(folder / "RAW.json")
     run = read_json(folder / "run.json", {})
     if raw is None:
-        return dict(schema="ubts.slow_link.summary", version=1, run=run, error="RAW.json is missing (the browser part did not finish)")
+        return dict(schema="ubts.slow_link.summary", version=1, run=run, error="RAW.json is missing (the browser part did not finish)",
+                    host_pauses=host_pauses(read_jsonl(folder / "cpu.jsonl")))
     marks = {m["mark"].split(":")[0]: m["t"] for m in raw.get("phase_marks", [])}
     route = raw["config"].get("route", "/rover-control")
     clients = raw.get("clients", [])
     summary = dict(schema="ubts.slow_link.summary", version=1, run=run, chrome=raw.get("chrome"), clock_check=raw.get("clock"),
-                   error=raw.get("error"), notes=raw.get("notes"), lost_tabs=raw.get("lost_tabs") or [])
+                   error=raw.get("error"), notes=raw.get("notes"), lost_tabs=raw.get("lost_tabs") or [],
+                   host_pauses=host_pauses(read_jsonl(folder / "cpu.jsonl")))
     link_stats = read_json(folder / "link.json")
     link = (link_stats or {}).get("links", [None])[0]
     summary["load"] = {name: summarize_load(load, route) for name, load in (clients[0]["loads"].items() if clients else [])}

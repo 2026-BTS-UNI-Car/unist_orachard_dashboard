@@ -45,6 +45,7 @@ def row_of(folder):
     row = dict(
         folder=Path(folder).name, source=g(run, "source", "short"), source_rev=g(run, "source", "rev"), profile=run.get("profile"),
         scenario=run.get("scenario"), label=run.get("label"), failed=run.get("failed"), browser_error=summary.get("error"),
+        host_paused=bool(summary.get("host_pauses")),
         live_s=live.get("duration_s"),
         camera_fps=g(render, "camera", "rate_hz"), camera_delay_p50=g(render, "camera", "p50"), camera_delay_p95=g(render, "camera", "p95"),
         camera_kB_s=g(ws, "/ws/camera", "kB_per_s"), camera_frame_B=g(render, "camera", "mean_frame_B"), camera_width=g(render, "camera", "frame_widths"),
@@ -153,7 +154,8 @@ def render_text(rows):
         out.append("  ".join(head.ljust(widths[i]) for i, head in enumerate(heads)))
         out += ["  ".join(cell.ljust(widths[i]) for i, cell in enumerate(line)) for line in body]
         out.append("")
-    problems = [f"{row['folder']}: {row['failed'] or row['browser_error']}" for row in rows if row.get("failed") or row.get("browser_error")]
+    problems = [f"{row['folder']}: {row['failed'] or row['browser_error'] or 'the PC paused during the run (see host_pauses)'}"
+                for row in rows if row.get("failed") or row.get("browser_error") or row.get("host_paused")]
     if problems:
         out += ["Runs with a failure:"] + ["  " + line[:240] for line in problems]
     return "\n".join(out)

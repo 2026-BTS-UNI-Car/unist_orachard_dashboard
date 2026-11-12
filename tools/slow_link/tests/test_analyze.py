@@ -180,6 +180,11 @@ class LinkAndProcessTest(unittest.TestCase):
         self.assertEqual(camera["first_message_after_ms"]["p50"], 4200)
         self.assertEqual(camera["worst_age_within_3s_ms"]["max"], 6200)
 
+    def test_host_pauses_are_gaps_in_the_once_per_second_samples(self):
+        rows = [dict(t=100.0), dict(t=101.0), dict(t=102.1), dict(t=108.6), dict(t=109.6)]
+        self.assertEqual(analyze.host_pauses(rows), [[102.1, 6.5]])
+        self.assertEqual(analyze.host_pauses(rows[:3]), [])
+
     def test_cpu_summary(self):
         rows = [dict(t=T0 / 1000 + i, host_cpu_pct=10.0 + i, ncpu=8, procs=dict(dashboard=dict(cpu_pct=50.0, rss_mb=100.0 + i, threads=9)),
                      chrome=dict(renderer=dict(cpu_pct=30.0, rss_mb=200.0, n=1))) for i in range(5)]
