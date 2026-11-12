@@ -292,8 +292,9 @@ function connect() {
   let profile = 'auto';
   try { profile = localStorage.getItem('ubts-live-network-profile') || 'auto'; } catch (_) {}
   if (!['detail', 'balanced', 'slow', 'tiny'].includes(profile)) {
-    const measured = window.RoverLink?.cameraEffectiveProfile?.() || '';
-    profile = measured === 'balanced' || measured === 'detail' ? 'balanced' : 'slow';
+    // Automatic: the link grade's plan (NET-10). GPS rates: balanced 5/s, slow 2/s, tiny 1/s.
+    const graded = window.RoverLink?.profile?.() || '';
+    profile = {detail: 'balanced', balanced: 'slow', slow: 'tiny', tiny: 'tiny'}[graded] || 'slow';
   }
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/gps?profile=${encodeURIComponent(profile)}`);
   socket = ws;

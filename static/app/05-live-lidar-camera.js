@@ -311,9 +311,13 @@ function liveNetworkProfile() {
   try { return localStorage.getItem("ubts-live-network-profile") || (SIMULATION ? "detail" : "auto"); }
   catch (_) { return SIMULATION ? "detail" : "auto"; }
 }
+// The plan every channel follows. A chosen transfer quality is used as it is; in
+// automatic mode the link grade decides (04-link-grade.js, NET-10).
 function effectiveLinkProfile() {
   const chosen = liveNetworkProfile();
   if (chosen !== "auto") return chosen;
+  const graded = window.LinkGrade?.profile?.();
+  if (["detail", "balanced", "slow", "tiny"].includes(graded)) return graded;
   const measured = state.cameraLive.effectiveProfile;
   return ["detail", "balanced", "slow", "tiny"].includes(measured) ? measured : "balanced";
 }
@@ -330,11 +334,14 @@ function setLiveNetworkProfile(value) {
 }
 
 function cameraWebSocketUrl() {
+  const chosen = liveNetworkProfile();
+  // Automatic mode follows the plan of the link grade; a chosen quality keeps the page's settings.
+  const plan = chosen === "auto" ? cameraStreamPlan() : null;
   const params = new URLSearchParams({
-    resolution: state.cameraLive.resolution,
-    fps: String(state.cameraLive.fps),
-    quality: "70",
-    profile: liveNetworkProfile(),
+    resolution: plan ? plan.resolution : state.cameraLive.resolution,
+    fps: String(plan ? plan.fps : state.cameraLive.fps),
+    quality: String(plan ? plan.quality : 70),
+    profile: plan ? plan.profile : chosen,
     transport: "binary-v1",
     flow: "decode-ack",
   });
@@ -343,8 +350,10 @@ function cameraWebSocketUrl() {
     params.set("quality_mode", "original");
   }
   // V1 remains the default. Only an explicit supported-client opt-in asks
-  // the server to negotiate more than one outstanding preview frame.
-  const explicitWindow = new URLSearchParams(location.search).get("camera_ack_window") ?? window.UBTS_CAMERA_ACK_WINDOW;
+  // the server to negotiate more than one outstanding preview frame; in
+  // automatic mode the plan says how many pictures may be on the way.
+  const explicitWindow = new URLSearchParams(location.search).get("camera_ack_window") ??
+    (plan ? String(plan.window) : window.UBTS_CAMERA_ACK_WINDOW);
   if (["2", "3"].includes(String(explicitWindow))) {
     params.set("flow", "decode-ack-v2");
     params.set("ack_window", String(explicitWindow));
@@ -366,7 +375,26 @@ function cameraPreviewMode(profile = liveNetworkProfile()) {
   const explicit = new URLSearchParams(location.search).get("camera_preview");
   if (explicit === "original" || explicit === "legacy") return explicit;
   if (window.UBTS_CAMERA_ORIGINAL_PREVIEW !== true) return "legacy";
+  if (profile === "auto") return cameraStreamPlan().original ? "original" : "legacy";
   return profile === "detail" ? "original" : "legacy";
+}
+
+// Camera preview per link grade in automatic mode (NET-08 (1)(3), NET-10). The
+// size, rate and quality bound what the camera may take of the link so that
+// control answers do not wait behind it (pictures measured on the bench frames:
+// 640x360 Q55 about 24 kB, 320x180 Q35 about 5.5 kB, 160x90 Q30 about 2 kB):
+//   good      original 1080 preview where allowed, one picture on the way
+//   normal    640x360 Q55, 6 per second, two on the way
+//   slow      320x180 Q35, 5 per second, two on the way
+//   very slow the bridge's "tiny" profile (160x90, 2 per second, 3 kB/s)
+const CAMERA_STREAM_PLAN = {
+  detail: { original: true, profile: "detail", resolution: "1280x720", fps: 30, quality: 70, window: 1 },
+  balanced: { original: false, profile: "balanced", resolution: "640x360", fps: 6, quality: 55, window: 2 },
+  slow: { original: false, profile: "balanced", resolution: "320x180", fps: 5, quality: 35, window: 2 },
+  tiny: { original: false, profile: "tiny", resolution: "320x180", fps: 2, quality: 30, window: 1 },
+};
+function cameraStreamPlan(profile = effectiveLinkProfile()) {
+  return CAMERA_STREAM_PLAN[profile] || CAMERA_STREAM_PLAN.balanced;
 }
 
 function startCameraLive() {

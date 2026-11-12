@@ -72,22 +72,42 @@ function fixture() {
   assert.deepEqual(f.calls, [['close', false]], 'a hidden tab does not reopen the camera (the hidden-tab rule does)');
 }
 
-// Preview mode: automatic mode never asks for the original, "detail" does where allowed.
+// Preview mode: a chosen quality keeps the page's settings ("detail" asks for the original where
+// allowed); automatic mode follows the link grade's plan (NET-08, NET-10).
 const urlCode = source.slice(source.indexOf('function cameraWebSocketUrl('), source.indexOf('function startCameraLive('));
-function urlFor(profile, search = '', allowed = true) {
+function urlFor(profile, search = '', allowed = true, graded = 'balanced') {
   const context = { URLSearchParams, location: { search, protocol: 'http:', host: '127.0.0.1' }, liveNetworkProfile: () => profile,
+    effectiveLinkProfile: () => graded,
     window: { UBTS_CAMERA_ORIGINAL_PREVIEW: allowed, UBTS_CAMERA_ACK_WINDOW: 3 }, state: { cameraLive: { resolution: '1280x720', fps: 60 } } };
   vm.createContext(context); vm.runInContext(urlCode, context);
   return new URL(context.cameraWebSocketUrl()).searchParams;
 }
-for (const profile of ['auto', 'tiny', 'slow', 'balanced']) {
+for (const profile of ['tiny', 'slow', 'balanced']) {
   const params = urlFor(profile);
   assert.equal(params.has('quality_mode'), false, `${profile}: no original preview`);
   assert.equal(params.get('resolution'), '1280x720', `${profile}: the chosen preview size`);
   assert.equal(params.get('profile'), profile);
+  assert.equal(params.get('ack_window'), '3', `${profile}: the page's window`);
 }
 assert.equal(urlFor('detail').get('quality_mode'), 'original', 'detail asks for the original where allowed');
 assert.equal(urlFor('detail', '', false).has('quality_mode'), false, 'not where the dashboard does not allow it');
 assert.equal(urlFor('auto', '?camera_preview=original').get('quality_mode'), 'original', 'an explicit page option still wins');
 assert.equal(urlFor('detail', '?camera_preview=legacy').has('quality_mode'), false, 'and the explicit legacy option too');
+const plans = {
+  detail: { resolution: '1920x1080', fps: '30', original: true, flow: 'decode-ack' },
+  balanced: { resolution: '640x360', fps: '6', quality: '55', profile: 'balanced', flow: 'decode-ack-v2', window: '2' },
+  slow: { resolution: '320x180', fps: '5', quality: '35', profile: 'balanced', flow: 'decode-ack-v2', window: '2' },
+  tiny: { resolution: '320x180', fps: '2', profile: 'tiny', flow: 'decode-ack' },
+};
+for (const [graded, plan] of Object.entries(plans)) {
+  const params = urlFor('auto', '', true, graded);
+  assert.equal(params.get('resolution'), plan.resolution, `auto/${graded}: size`);
+  assert.equal(params.get('fps'), plan.fps, `auto/${graded}: rate`);
+  if (plan.quality) assert.equal(params.get('quality'), plan.quality, `auto/${graded}: quality`);
+  if (plan.profile) assert.equal(params.get('profile'), plan.profile, `auto/${graded}: bridge profile`);
+  assert.equal(params.get('quality_mode') === 'original', Boolean(plan.original), `auto/${graded}: original preview`);
+  assert.equal(params.get('flow'), plan.flow, `auto/${graded}: flow`);
+  if (plan.window) assert.equal(params.get('ack_window'), plan.window, `auto/${graded}: window`);
+}
+assert.equal(urlFor('auto', '', false, 'detail').has('quality_mode'), false, 'good link without permission: no original');
 console.log('Camera panel off screen closes after 1 s and reopens; automatic mode uses no original preview: PASS');

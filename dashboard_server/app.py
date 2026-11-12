@@ -161,6 +161,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(result)
         elif path == "/api/imu/zero":
             self._send_json(self.provider.zero_imu(), status=410)
+        elif path == "/api/link-log":
+            self._link_log()
         elif path == "/api/network/mode":
             payload = self._read_json_body()
             self._send_json(self.provider.set_network_mode(payload))
@@ -183,6 +185,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/api/ping":
+            self._send_ping()
+            return
         if path.startswith('/api/live/') or path.startswith('/api/autonomy/native-map/') or path in ('/api/autonomy','/api/autonomy/preflight','/api/autonomy/observe','/api/autonomy/supervisor'):
             self._live_request(parsed)
         elif path.startswith("/occupancy-api"):
@@ -619,6 +624,78 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 return
         self._log_served_json()
+
+    def _send_ping(self):
+        """Link probe of the page (NET-10): 204 without a body, the smallest answer
+        there is. The page measures the round trip; Server-Timing gives the
+        server's own share so it can be taken off."""
+        self.send_response(204)
+        self._server_timing_header()
+        self.send_header("Cache-Control", "no-store")
+        self._send_connection_header()
+        self.end_headers()
+
+    LINK_LOG_MAX_BODY = 256 * 1024
+    LINK_LOG_MAX_FILE = 20 * 1024 * 1024
+
+    def _link_log(self):
+        """Optional field log of the page's link samples (NET-10 (5)).
+
+        The page sends round trips and grades in batches while the log is turned
+        on; they are kept as one JSONL file a day in runtime/link_log/ (20 MB a
+        day at most). Only numbers and short words are kept."""
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host"):
+            self.send_error(403, "Origin mismatch")
+            return
+        if not self._ensure_session(create=False):
+            self.send_error(403, "Dashboard session required")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            length = -1
+        if length <= 0 or length > self.LINK_LOG_MAX_BODY:
+            self.send_error(413 if length > 0 else 400, "Link log batch size")
+            return
+        payload = self._read_json_body()
+        samples = payload.get("samples") if isinstance(payload, dict) else None
+        if not isinstance(samples, list) or len(samples) > 2000:
+            self._send_json({"ok": False, "error": "samples_required"}, 400)
+            return
+        recording = payload.get("recording_id")
+        recording = recording if isinstance(recording, str) and len(recording) <= 80 else None
+        profile = payload.get("profile") if payload.get("profile") in ("auto", "tiny", "slow", "balanced", "detail") else None
+        words = {"ping", "control", "good", "normal", "slow", "very_slow", "offline", "unknown"}
+        rows = []
+        for sample in samples:
+            if not isinstance(sample, dict):
+                continue
+            t, rtt = sample.get("t"), sample.get("rtt_ms")
+            rows.append({
+                "t": t if isinstance(t, (int, float)) and not isinstance(t, bool) else None,
+                "kind": sample.get("kind") if sample.get("kind") in words else None,
+                "ok": sample.get("ok") is True,
+                "rtt_ms": rtt if isinstance(rtt, (int, float)) and not isinstance(rtt, bool) and 0 <= rtt < 600000 else None,
+                "grade": sample.get("grade") if sample.get("grade") in words else None,
+                "recording_id": recording,
+                "profile": profile,
+            })
+        folder = Path(os.environ.get("DASHBOARD_LINK_LOG_DIR", str(ROOT / "runtime" / "link_log")))
+        written = 0
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            target = folder / time.strftime("%Y%m%d.jsonl", time.gmtime())
+            size = target.stat().st_size if target.exists() else 0
+            data = "".join(json.dumps(row, separators=(",", ":")) + "\n" for row in rows).encode("utf-8")
+            if size + len(data) <= self.LINK_LOG_MAX_FILE:
+                with open(target, "ab") as stream:
+                    stream.write(data)
+                written = len(rows)
+        except OSError as exc:
+            self._send_json({"ok": False, "error": f"link_log_write_failed: {exc.strerror or exc}"}, 500)
+            return
+        self._send_json({"ok": True, "written": written, "dropped": len(rows) - written})
 
     def _send_bytes(self, body: bytes, content_type: str, filename: str | None = None):
         session_token = self._ensure_session(create=True)

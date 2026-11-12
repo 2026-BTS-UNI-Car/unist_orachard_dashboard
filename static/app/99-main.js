@@ -50,6 +50,7 @@ initNetworkControls();
 initRoverControl();
 initCanvasResize();
 initRangeFill();
+initLinkGrade();
 renderRoute();
 loadPlan().catch(console.error);
 loadDocs().catch(console.error);

@@ -251,6 +251,13 @@ class MockHandler(BaseHTTPRequestHandler):
     def _api_get(self, path: str) -> None:
         server: MockServer = self.server  # type: ignore[assignment]
         dataset = server.dataset
+        if path == "/api/ping":
+            # The page's link probe (NET-10): 204 without a body, as the dashboard answers.
+            server.count("api", path)
+            self.send_response(204)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
         payload = mock_data.http_payloads(dataset).get(path)
         if payload is None and path.startswith("/api/docs/"):
             payload = mock_data.doc_payload(dataset, path.removeprefix("/api/docs/"))

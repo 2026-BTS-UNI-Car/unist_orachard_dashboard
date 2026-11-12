@@ -52,7 +52,12 @@ function telemetryPath(route = currentRoute()) {
 }
 
 function telemetryIntervalMs(profile = liveNetworkProfile()) {
-  return profile === "tiny" ? 10000 : ["auto", "slow"].includes(profile) ? 3000 : 1000;
+  // Automatic mode follows the link grade (NET-10): 1 s on a good link, 10 s on a very slow one.
+  if (profile === "auto") {
+    const graded = effectiveLinkProfile();
+    return { detail: 1000, balanced: 2000, slow: 3000, tiny: 10000 }[graded] || 3000;
+  }
+  return profile === "tiny" ? 10000 : profile === "slow" ? 3000 : 1000;
 }
 function chartWindowLabel() {
   return `X 최근 ${Math.round(MAX_POINTS * telemetryIntervalMs() / 1000)}초`;
@@ -119,8 +124,9 @@ function pruneCoreHistory(keys) {
 function setConnection(kind, label) {
   const el = $("connectionState");
   if (!el) return;
-  el.className = `status-chip ${kind}`;
-  el.textContent = label;
+  // The badge shows the link grade (04-link-grade.js) and turns "연결 끊김" when status stops.
+  if (typeof renderLinkBadge === "function") renderLinkBadge();
+  else { el.className = `status-chip ${kind}`; el.textContent = label; }
   // Telemetry stopped: the status bar must not keep an old recorder state.
   if (kind !== "ok") renderRecordingStatus();
 }

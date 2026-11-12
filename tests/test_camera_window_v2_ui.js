@@ -53,7 +53,7 @@ function fixture(){
 {
  const snippet=source.slice(source.indexOf('function cameraWebSocketUrl('),source.indexOf('function startCameraLive('));
  for(const [query,expected]of[['',false],['?camera_ack_window=3',true],['?camera_ack_window=4',false]]){
-  const f=fixture();Object.assign(f.context,{URLSearchParams,location:{search:query,protocol:'http:',host:'127.0.0.1'},liveNetworkProfile:()=> 'detail'});
+  const f=fixture();Object.assign(f.context,{URLSearchParams,location:{search:query,protocol:'http:',host:'127.0.0.1'},liveNetworkProfile:()=> 'detail',effectiveLinkProfile:()=>'detail'});
   f.context.state.cameraLive.resolution='1920x1080';f.context.state.cameraLive.fps=30;vm.runInContext(snippet,f.context);
   const u=new URL(f.context.cameraWebSocketUrl());assert.equal(u.searchParams.get('flow'),expected?'decode-ack-v2':'decode-ack');
  }
@@ -70,7 +70,7 @@ function fixture(){
 }
 {
  const snippet=source.slice(source.indexOf('function cameraWebSocketUrl('),source.indexOf('function startCameraLive('));
- const f=fixture();Object.assign(f.context,{URLSearchParams,location:{search:'?camera_preview=original',protocol:'http:',host:'127.0.0.1'},liveNetworkProfile:()=> 'auto'});
+ const f=fixture();Object.assign(f.context,{URLSearchParams,location:{search:'?camera_preview=original',protocol:'http:',host:'127.0.0.1'},liveNetworkProfile:()=> 'auto',effectiveLinkProfile:()=>'balanced'});
  f.context.state.cameraLive.resolution='1280x720';f.context.state.cameraLive.fps=30;vm.runInContext(snippet,f.context);
  const u=new URL(f.context.cameraWebSocketUrl());assert.equal(u.searchParams.get('quality_mode'),'original');assert.equal(u.searchParams.get('resolution'),'1920x1080');
  f.context.location.search='?camera_preview=legacy';f.context.window.UBTS_CAMERA_ORIGINAL_PREVIEW=true;

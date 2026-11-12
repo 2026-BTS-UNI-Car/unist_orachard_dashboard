@@ -15,7 +15,7 @@ function fixture() {
   });
   const timers = [];
   const context = {
-    URL, AbortController, DOMException, Promise, JSON, Error, Number, String, Math,
+    URL, AbortController, DOMException, Promise, JSON, Error, Number, String, Math, performance,
     location: {href: 'http://dash.local/rover-control', origin: 'http://dash.local'},
     state: {roverControl: {lease: null}},
     setTimeout: (fn, ms) => { timers.push({fn, ms}); return timers.length; }, clearTimeout: () => {},
@@ -101,7 +101,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
       sent.push({path: String(input), etag: headers.get('If-None-Match'), priority: init.priority});
       return Promise.resolve(next());
     };
-    const context = {URL, AbortController, DOMException, Promise, JSON, Error, Number, String, Math, Map, Headers, Response,
+    const context = {URL, AbortController, DOMException, Promise, JSON, Error, Number, String, Math, Map, Headers, Response, performance,
       location: {href: 'http://dash.local/rover-control', origin: 'http://dash.local'}, state: {roverControl: {lease: null}},
       setTimeout, clearTimeout};
     context.window = {fetch};

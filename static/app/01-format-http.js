@@ -161,6 +161,7 @@ async function controlRequest(path, payload = {}, options = {}) {
     : op === "stop" ? CONTROL_TIMEOUT_MS.stop : CONTROL_TIMEOUT_MS.other;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const started = performance.now();
   try {
     const res = await pageFetch(path, {
       method: "POST",
@@ -170,6 +171,8 @@ async function controlRequest(path, payload = {}, options = {}) {
       body: JSON.stringify(payload || {}),
       signal: controller.signal,
     });
+    // The control round trip is also a link sample (NET-10), without the server's own time.
+    window.LinkGrade?.note?.(performance.now() - started - serverTimeMs(res), res.ok, "control");
     if (!res.ok) throw new Error(`${path}: ${res.status}`);
     return await res.json();
   } catch (err) {
