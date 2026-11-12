@@ -4,9 +4,19 @@
    Rules for the rest of the CSS: sizes, colours and radii come from here;
    no gradients, no blur, no glow; a shadow only on overlays. */
 
-/* No font file is loaded for the interface: the first load has to stay light
-   on a slow link. Text is drawn with the fonts of the device, so layouts must
-   not depend on the widths of one particular font. */
+/* Interface font: one variable file (weights 400 to 700, Latin and the 2,350
+   common Hangul syllables, about 320 kB), a renamed subset of Pretendard
+   (static/vendor/ubts-sans, SIL OFL 1.1). font-display: swap shows the text
+   in a device font at once and swaps when the file has arrived, so a slow
+   link never waits for it; rare syllables outside the subset fall back to
+   the device font. Layouts must not depend on the widths of one font. */
+@font-face {
+  font-family: "UBTS Sans";
+  src: url("/static/vendor/ubts-sans/ubts-sans-var.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   color-scheme: light;
@@ -20,7 +30,7 @@
   --space-6: 32px;
 
   /* Type: 12, 14, 16, 20, 28 with a fixed line height each; weights 400 and 600. */
-  --font-sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
+  --font-sans: "UBTS Sans", system-ui, -apple-system, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
   --text-xs: 12px;
   --text-sm: 14px;

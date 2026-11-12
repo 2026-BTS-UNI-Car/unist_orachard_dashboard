@@ -2,16 +2,16 @@
  "schema": "ubts.ui_check.run",
  "schema_version": 1,
  "tool_version": "1.0.0",
- "created_at": "2026-11-12T04:42:42+09:00",
- "duration_s": 118.9,
- "label": "after design round 1: tokens, components, application frame with STOP on every route, restyled panels (branch ui-20261112, 7bf725b, light theme = the default)",
+ "created_at": "2026-11-12T14:52:30+09:00",
+ "duration_s": 120.2,
+ "label": "after design round 1 plus the interface font UBTS Sans, a Pretendard subset (measured on bd1dc17 with the font change in the work tree, light theme = the default)",
  "static_dir": "static",
  "static_fingerprint": {
-  "files": 47,
-  "bytes": 3670013,
-  "sha256": "df625b201e23dc46042425b4e8d4b6b83f90936420c83e417805b34515515e59"
+  "files": 64,
+  "bytes": 3996079,
+  "sha256": "d496dcb5584c75ddb62600fcec799793eb8e94d1529a203404bb4ea00e8d93ac"
  },
- "static_git_head": "7bf725b32eb57a31850cb045894e8f1ba558f08e",
+ "static_git_head": "bd1dc179b57f83b89a01e680cfc689aa584dad1f",
  "browser": {
   "name": "chromium",
   "channel": "chrome",
@@ -142,9 +142,9 @@
    "empty": {
     "api": {
      "/api/autonomy": 10,
-     "/api/autonomy/observe": 10,
+     "/api/autonomy/observe": 11,
      "/api/docs": 46,
-     "/api/live/map": 14,
+     "/api/live/map": 16,
      "/api/maps/status": 5,
      "/api/plan": 46,
      "/api/recordings": 5,
@@ -163,8 +163,8 @@
    },
    "stress": {
     "api": {
-     "/api/autonomy": 10,
-     "/api/autonomy/observe": 10,
+     "/api/autonomy": 9,
+     "/api/autonomy/observe": 11,
      "/api/docker/container/mock0000": 5,
      "/api/docker/container/mock0000/logs": 5,
      "/api/docs": 45,
@@ -196,7 +196,7 @@
     "pages": 9,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 8.73,
+    "max_screens": 8.71,
     "stop_visible_pages": 9,
     "stop_in_first_viewport_pages": 9,
     "outside_viewport_elements": 0,
@@ -219,7 +219,7 @@
     "pages": 9,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 15.25,
+    "max_screens": 15.21,
     "stop_visible_pages": 9,
     "stop_in_first_viewport_pages": 9,
     "outside_viewport_elements": 0,
@@ -242,7 +242,7 @@
     "pages": 9,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 5.03,
+    "max_screens": 5.02,
     "stop_visible_pages": 9,
     "stop_in_first_viewport_pages": 9,
     "outside_viewport_elements": 0,
@@ -288,7 +288,7 @@
     "pages": 9,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 5.24,
+    "max_screens": 5.22,
     "stop_visible_pages": 9,
     "stop_in_first_viewport_pages": 9,
     "outside_viewport_elements": 0,
@@ -311,7 +311,7 @@
     "pages": 9,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 12.41,
+    "max_screens": 12.34,
     "stop_visible_pages": 9,
     "stop_in_first_viewport_pages": 9,
     "outside_viewport_elements": 0,
@@ -334,7 +334,7 @@
     "pages": 9,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 21.02,
+    "max_screens": 20.93,
     "stop_visible_pages": 9,
     "stop_in_first_viewport_pages": 9,
     "outside_viewport_elements": 0,
@@ -357,7 +357,7 @@
     "pages": 9,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 6.94,
+    "max_screens": 6.92,
     "stop_visible_pages": 9,
     "stop_in_first_viewport_pages": 9,
     "outside_viewport_elements": 0,
@@ -403,7 +403,7 @@
     "pages": 9,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 7.31,
+    "max_screens": 7.3,
     "stop_visible_pages": 9,
     "stop_in_first_viewport_pages": 9,
     "outside_viewport_elements": 0,
@@ -436,9 +436,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 286,
+   "load_ms": 376,
    "settled": true,
-   "settle_ms": 1586,
+   "settle_ms": 1600,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -729,9 +729,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 284,
+   "load_ms": 378,
    "settled": true,
-   "settle_ms": 1591,
+   "settle_ms": 1596,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -1022,9 +1022,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 307,
+   "load_ms": 396,
    "settled": true,
-   "settle_ms": 1558,
+   "settle_ms": 1580,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -1315,9 +1315,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 317,
+   "load_ms": 455,
    "settled": true,
-   "settle_ms": 1583,
+   "settle_ms": 1575,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -1608,9 +1608,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 300,
+   "load_ms": 392,
    "settled": true,
-   "settle_ms": 1577,
+   "settle_ms": 1586,
    "pointer_coarse": false,
    "final_path": "/",
    "screenshots": {
@@ -1998,9 +1998,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 333,
+   "load_ms": 339,
    "settled": true,
-   "settle_ms": 1577,
+   "settle_ms": 1588,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2032,8 +2032,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 2538,
-    "screens": 3.01,
+    "page_height_px": 2506,
+    "screens": 2.97,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -2055,7 +2055,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 390,
      "client_width": 390,
-     "scroll_height": 2538,
+     "scroll_height": 2506,
      "client_height": 844,
      "body_scroll_width": 390,
      "inner_width": 390,
@@ -2192,25 +2192,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 424,
+      "scroll_y": 416,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 847,
+      "scroll_y": 831,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1271,
+      "scroll_y": 1247,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1694,
+      "scroll_y": 1662,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -2260,9 +2260,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 387,
+   "load_ms": 418,
    "settled": true,
-   "settle_ms": 1596,
+   "settle_ms": 1594,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2522,9 +2522,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 332,
+   "load_ms": 443,
    "settled": true,
-   "settle_ms": 1595,
+   "settle_ms": 1579,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2784,9 +2784,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 265,
+   "load_ms": 399,
    "settled": true,
-   "settle_ms": 1580,
+   "settle_ms": 1564,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -3046,9 +3046,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 409,
+   "load_ms": 471,
    "settled": true,
-   "settle_ms": 1590,
+   "settle_ms": 1592,
    "pointer_coarse": false,
    "final_path": "/connection",
    "screenshots": {
@@ -3209,7 +3209,7 @@
      {
       "sel": "button#lidarTestButton.action-button.secondary",
       "text": "상태 새로고침",
-      "w": 114.9,
+      "w": 101.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -3217,7 +3217,7 @@
      {
       "sel": "button#lidarLiveButton.action-button.secondary.active",
       "text": "실시간 중지",
-      "w": 100.9,
+      "w": 89.8,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -3225,7 +3225,7 @@
      {
       "sel": "button#lidarDownloadButton.action-button.secondary",
       "text": "현재 지도 다운로드",
-      "w": 147.8,
+      "w": 129.5,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -3321,7 +3321,7 @@
      {
       "sel": "button#cameraLiveButton.action-button.secondary.active",
       "text": "실시간 중지",
-      "w": 100.9,
+      "w": 89.8,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -3525,9 +3525,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 336,
+   "load_ms": 401,
    "settled": true,
-   "settle_ms": 1572,
+   "settle_ms": 1602,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -3559,8 +3559,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1916,
-    "screens": 2.27,
+    "page_height_px": 1884,
+    "screens": 2.23,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -3582,7 +3582,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 390,
      "client_width": 390,
-     "scroll_height": 1916,
+     "scroll_height": 1884,
      "client_height": 844,
      "body_scroll_width": 390,
      "inner_width": 390,
@@ -3615,7 +3615,7 @@
      {
       "sel": "canvas#chartCpu.resource-chart",
       "x": 25,
-      "y": 211,
+      "y": 179,
       "w": 340,
       "h": 190,
       "css_w": 340,
@@ -3629,7 +3629,7 @@
      {
       "sel": "canvas#chartMemory.resource-chart",
       "x": 25,
-      "y": 539,
+      "y": 507,
       "w": 340,
       "h": 190,
       "css_w": 340,
@@ -3643,7 +3643,7 @@
      {
       "sel": "canvas#chartSwap.resource-chart",
       "x": 25,
-      "y": 943,
+      "y": 911,
       "w": 340,
       "h": 190,
       "css_w": 340,
@@ -3657,7 +3657,7 @@
      {
       "sel": "canvas#chartSystemNetwork.resource-chart",
       "x": 25,
-      "y": 1259,
+      "y": 1227,
       "w": 340,
       "h": 190,
       "css_w": 340,
@@ -3671,7 +3671,7 @@
      {
       "sel": "canvas#chartPower.resource-chart",
       "x": 25,
-      "y": 1575,
+      "y": 1543,
       "w": 340,
       "h": 190,
       "css_w": 340,
@@ -3843,25 +3843,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 268,
+      "scroll_y": 260,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 536,
+      "scroll_y": 520,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 804,
+      "scroll_y": 780,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1072,
+      "scroll_y": 1040,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -3911,9 +3911,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 296,
+   "load_ms": 338,
    "settled": true,
-   "settle_ms": 1571,
+   "settle_ms": 1580,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -4297,9 +4297,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 401,
+   "load_ms": 487,
    "settled": true,
-   "settle_ms": 1584,
+   "settle_ms": 1605,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -4683,9 +4683,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 345,
+   "load_ms": 406,
    "settled": true,
-   "settle_ms": 1581,
+   "settle_ms": 1580,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -5069,9 +5069,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 290,
+   "load_ms": 382,
    "settled": true,
-   "settle_ms": 1589,
+   "settle_ms": 1574,
    "pointer_coarse": false,
    "final_path": "/system",
    "screenshots": {
@@ -5232,7 +5232,7 @@
      {
       "sel": "button.active[data-cpu-mode=\"combined\"]",
       "text": "통합",
-      "w": 59,
+      "w": 53.3,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -5240,7 +5240,7 @@
      {
       "sel": "button[data-cpu-mode=\"separate\"]",
       "text": "코어별",
-      "w": 59,
+      "w": 53.3,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -5552,9 +5552,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 394,
+   "load_ms": 447,
    "settled": true,
-   "settle_ms": 1589,
+   "settle_ms": 1573,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -5814,9 +5814,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 320,
+   "load_ms": 411,
    "settled": true,
-   "settle_ms": 1585,
+   "settle_ms": 1584,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -6076,9 +6076,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 294,
+   "load_ms": 335,
    "settled": true,
-   "settle_ms": 1577,
+   "settle_ms": 1568,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -6338,9 +6338,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 400,
+   "load_ms": 382,
    "settled": true,
-   "settle_ms": 1607,
+   "settle_ms": 1595,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -6600,9 +6600,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 320,
+   "load_ms": 352,
    "settled": true,
-   "settle_ms": 1559,
+   "settle_ms": 1582,
    "pointer_coarse": false,
    "final_path": "/network",
    "screenshots": {
@@ -6763,7 +6763,7 @@
      {
       "sel": "button#networkEnableApButton.action-button.primary",
       "text": "AP 전환",
-      "w": 77.4,
+      "w": 71.9,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -6771,7 +6771,7 @@
      {
       "sel": "button#networkScanWifiButton.action-button.secondary",
       "text": "Wi-Fi 검색",
-      "w": 93.9,
+      "w": 88,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -6959,9 +6959,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 291,
+   "load_ms": 272,
    "settled": true,
-   "settle_ms": 1572,
+   "settle_ms": 1569,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7252,9 +7252,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 413,
+   "load_ms": 452,
    "settled": true,
-   "settle_ms": 1581,
+   "settle_ms": 1589,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7545,9 +7545,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 314,
+   "load_ms": 336,
    "settled": true,
-   "settle_ms": 1581,
+   "settle_ms": 1587,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7838,9 +7838,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 271,
+   "load_ms": 296,
    "settled": true,
-   "settle_ms": 1575,
+   "settle_ms": 1590,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -8131,9 +8131,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 390,
+   "load_ms": 460,
    "settled": true,
-   "settle_ms": 1579,
+   "settle_ms": 1619,
    "pointer_coarse": false,
    "final_path": "/docker",
    "screenshots": {
@@ -8294,7 +8294,7 @@
      {
       "sel": "button#containerRefreshButton.action-button.secondary",
       "text": "새로고침",
-      "w": 82,
+      "w": 74.4,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -8513,9 +8513,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 320,
+   "load_ms": 393,
    "settled": true,
-   "settle_ms": 1574,
+   "settle_ms": 1601,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -8775,9 +8775,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 268,
+   "load_ms": 308,
    "settled": true,
-   "settle_ms": 1572,
+   "settle_ms": 1595,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -9037,9 +9037,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 364,
+   "load_ms": 416,
    "settled": true,
-   "settle_ms": 1586,
+   "settle_ms": 1588,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -9299,9 +9299,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 300,
+   "load_ms": 383,
    "settled": true,
-   "settle_ms": 1592,
+   "settle_ms": 1566,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -9561,9 +9561,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 269,
+   "load_ms": 298,
    "settled": true,
-   "settle_ms": 1569,
+   "settle_ms": 1577,
    "pointer_coarse": false,
    "final_path": "/fan",
    "screenshots": {
@@ -9936,9 +9936,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 420,
+   "load_ms": 466,
    "settled": true,
-   "settle_ms": 1602,
+   "settle_ms": 1578,
    "pointer_coarse": true,
    "final_path": "/research",
    "screenshots": {
@@ -10159,9 +10159,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 350,
+   "load_ms": 406,
    "settled": true,
-   "settle_ms": 1597,
+   "settle_ms": 1580,
    "pointer_coarse": true,
    "final_path": "/research",
    "screenshots": {
@@ -10382,9 +10382,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 317,
+   "load_ms": 342,
    "settled": true,
-   "settle_ms": 1577,
+   "settle_ms": 1558,
    "pointer_coarse": true,
    "final_path": "/research",
    "screenshots": {
@@ -10605,9 +10605,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 360,
+   "load_ms": 513,
    "settled": true,
-   "settle_ms": 1587,
+   "settle_ms": 1581,
    "pointer_coarse": true,
    "final_path": "/research",
    "screenshots": {
@@ -10828,9 +10828,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 297,
+   "load_ms": 368,
    "settled": true,
-   "settle_ms": 1591,
+   "settle_ms": 1592,
    "pointer_coarse": false,
    "final_path": "/research",
    "screenshots": {
@@ -11132,9 +11132,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 263,
+   "load_ms": 370,
    "settled": true,
-   "settle_ms": 1557,
+   "settle_ms": 1587,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -11355,9 +11355,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 403,
+   "load_ms": 480,
    "settled": true,
-   "settle_ms": 1590,
+   "settle_ms": 1588,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -11578,9 +11578,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 276,
+   "load_ms": 366,
    "settled": true,
-   "settle_ms": 1572,
+   "settle_ms": 1570,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -11801,7 +11801,7 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 309,
+   "load_ms": 334,
    "settled": true,
    "settle_ms": 1577,
    "pointer_coarse": true,
@@ -12024,9 +12024,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 388,
+   "load_ms": 410,
    "settled": true,
-   "settle_ms": 1603,
+   "settle_ms": 1570,
    "pointer_coarse": false,
    "final_path": "/docs",
    "screenshots": {
@@ -12328,9 +12328,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 357,
+   "load_ms": 527,
    "settled": true,
-   "settle_ms": 1577,
+   "settle_ms": 1579,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -12362,8 +12362,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 7368,
-    "screens": 8.73,
+    "page_height_px": 7352,
+    "screens": 8.71,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -12385,7 +12385,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 390,
      "client_width": 390,
-     "scroll_height": 7368,
+     "scroll_height": 7352,
      "client_height": 844,
      "body_scroll_width": 390,
      "inner_width": 390,
@@ -12446,7 +12446,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 26,
-      "y": 3293.4,
+      "y": 3277.4,
       "w": 338,
       "h": 220,
       "css_w": 338,
@@ -12460,7 +12460,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 25,
-      "y": 6134.4,
+      "y": 6118.4,
       "w": 340,
       "h": 340,
       "css_w": 340,
@@ -12474,7 +12474,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 26,
-      "y": 6966.4,
+      "y": 6950.4,
       "w": 338,
       "h": 300,
       "css_w": 338,
@@ -12619,7 +12619,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 273,
-      "y": 3848.4,
+      "y": 3832.4,
       "w": 92,
       "h": 44
      },
@@ -12633,7 +12633,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 141,
-      "y": 4457.4,
+      "y": 4441.4,
       "w": 108,
       "h": 56
      }
@@ -12646,25 +12646,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1631,
+      "scroll_y": 1627,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3262,
+      "scroll_y": 3254,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4893,
+      "scroll_y": 4881,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 6524,
+      "scroll_y": 6508,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -12714,9 +12714,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 334,
+   "load_ms": 451,
    "settled": true,
-   "settle_ms": 1569,
+   "settle_ms": 1591,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -12748,8 +12748,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 5946,
-    "screens": 15.25,
+    "page_height_px": 5930,
+    "screens": 15.21,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -12771,7 +12771,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 5946,
+     "scroll_height": 5930,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
@@ -12832,7 +12832,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 34,
-      "y": 2433,
+      "y": 2417,
       "w": 362,
       "h": 220,
       "css_w": 362,
@@ -12846,7 +12846,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 162,
-      "y": 4442,
+      "y": 4426,
       "w": 520,
       "h": 520,
       "css_w": 520,
@@ -12860,7 +12860,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 34,
-      "y": 5432,
+      "y": 5416,
       "w": 776,
       "h": 420,
       "css_w": 776,
@@ -13005,7 +13005,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 719,
-      "y": 2408,
+      "y": 2392,
       "w": 92,
       "h": 44
      },
@@ -13019,7 +13019,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 571,
-      "y": 3017,
+      "y": 3001,
       "w": 116,
       "h": 56
      }
@@ -13032,25 +13032,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1389,
+      "scroll_y": 1385,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2778,
+      "scroll_y": 2770,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4167,
+      "scroll_y": 4155,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 5556,
+      "scroll_y": 5540,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -13100,9 +13100,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 267,
+   "load_ms": 355,
    "settled": true,
-   "settle_ms": 1586,
+   "settle_ms": 1588,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -13134,8 +13134,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 5934,
-    "screens": 5.03,
+    "page_height_px": 5918,
+    "screens": 5.02,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -13157,7 +13157,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 820,
      "client_width": 820,
-     "scroll_height": 5934,
+     "scroll_height": 5918,
      "client_height": 1180,
      "body_scroll_width": 820,
      "inner_width": 820,
@@ -13218,7 +13218,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 34,
-      "y": 2421,
+      "y": 2405,
       "w": 350,
       "h": 220,
       "css_w": 350,
@@ -13232,7 +13232,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 150,
-      "y": 4430,
+      "y": 4414,
       "w": 520,
       "h": 520,
       "css_w": 520,
@@ -13246,7 +13246,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 34,
-      "y": 5420,
+      "y": 5404,
       "w": 752,
       "h": 420,
       "css_w": 752,
@@ -13391,7 +13391,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 695,
-      "y": 2396,
+      "y": 2380,
       "w": 92,
       "h": 44
      },
@@ -13405,7 +13405,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 555,
-      "y": 3005,
+      "y": 2989,
       "w": 112,
       "h": 56
      }
@@ -13418,25 +13418,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1189,
+      "scroll_y": 1185,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2377,
+      "scroll_y": 2369,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3566,
+      "scroll_y": 3554,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4754,
+      "scroll_y": 4738,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -13486,9 +13486,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 283,
+   "load_ms": 403,
    "settled": true,
-   "settle_ms": 1600,
+   "settle_ms": 1593,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -13804,25 +13804,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1058,
+      "scroll_y": 1057,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2116,
+      "scroll_y": 2114,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3174,
+      "scroll_y": 3171,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4232,
+      "scroll_y": 4228,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -13872,9 +13872,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 308,
+   "load_ms": 361,
    "settled": true,
-   "settle_ms": 1582,
+   "settle_ms": 1567,
    "pointer_coarse": false,
    "final_path": "/rover-control",
    "screenshots": {
@@ -13906,8 +13906,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 4717,
-    "screens": 5.24,
+    "page_height_px": 4701,
+    "screens": 5.22,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -13929,7 +13929,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 1440,
      "client_width": 1440,
-     "scroll_height": 4717,
+     "scroll_height": 4701,
      "client_height": 900,
      "body_scroll_width": 1440,
      "inner_width": 1440,
@@ -14035,7 +14035,7 @@
      {
       "sel": "select[data-network-profile=\"\"]",
       "text": "자동 조절64 kbps매우 느린 망균형고화질",
-      "w": 118,
+      "w": 106,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14043,7 +14043,7 @@
      {
       "sel": "button#roverLidarToggle.action-button.secondary.active",
       "text": "LiDAR 중지",
-      "w": 99.2,
+      "w": 92.2,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14091,7 +14091,7 @@
      {
       "sel": "button#liveMapStart.action-button.primary",
       "text": "그리기 시작",
-      "w": 100.9,
+      "w": 89.8,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14099,7 +14099,7 @@
      {
       "sel": "button#liveMapStop.action-button.secondary",
       "text": "그리기 멈춤",
-      "w": 100.9,
+      "w": 89.8,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -14107,7 +14107,7 @@
      {
       "sel": "button#liveMapReset.action-button.secondary",
       "text": "새 지도",
-      "w": 72.9,
+      "w": 65.6,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14123,7 +14123,7 @@
      {
       "sel": "button[data-live-zoom=\"out\"]",
       "text": "−",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14131,7 +14131,7 @@
      {
       "sel": "button.active[data-live-zoom=\"fit\"]",
       "text": "로버 주변",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14139,7 +14139,7 @@
      {
       "sel": "button[data-live-zoom=\"full\"]",
       "text": "구간 전체",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14147,7 +14147,7 @@
      {
       "sel": "button[data-live-zoom=\"in\"]",
       "text": "+",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14155,7 +14155,7 @@
      {
       "sel": "button#roverCameraToggle.action-button.secondary.active",
       "text": "스트리밍 중지",
-      "w": 114.9,
+      "w": 101.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14179,7 +14179,7 @@
      {
       "sel": "button#roverGpsFollow.action-button.secondary.active",
       "text": "로버 중심 추적 중",
-      "w": 138.8,
+      "w": 120.7,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14195,7 +14195,7 @@
      {
       "sel": "button#roverImuToggle.action-button.secondary",
       "text": "IMU 중지",
-      "w": 87,
+      "w": 79.2,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14299,7 +14299,7 @@
      {
       "sel": "button#roverRecordStopButton.action-button.danger",
       "text": "중지",
-      "w": 54,
+      "w": 50.2,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14315,7 +14315,7 @@
      {
       "sel": "button#roverRecordLidarButton.action-button.secondary",
       "text": "LiDAR",
-      "w": 80.7,
+      "w": 81.9,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -14323,7 +14323,7 @@
      {
       "sel": "button#roverRecordCameraButton.action-button.secondary",
       "text": "Camera",
-      "w": 80.7,
+      "w": 81.9,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -14331,7 +14331,7 @@
      {
       "sel": "button#roverRecordBothButton.action-button.secondary.active",
       "text": "LiDAR+Camera",
-      "w": 118.6,
+      "w": 116.3,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -14363,7 +14363,7 @@
      {
       "sel": "button#roverArchiveRefreshButton.action-button.secondary",
       "text": "새로고침",
-      "w": 82,
+      "w": 74.4,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14371,7 +14371,7 @@
      {
       "sel": "button#roverArchivePlayButton.action-button.secondary",
       "text": "재생",
-      "w": 54,
+      "w": 50.2,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -14379,7 +14379,7 @@
      {
       "sel": "input#roverArchiveSyncToggle",
       "text": "on",
-      "w": 86.9,
+      "w": 77.9,
       "h": 36,
       "hit_source": "label",
       "disabled": false
@@ -14387,7 +14387,7 @@
      {
       "sel": "input#roverArchiveOverviewToggle",
       "text": "on",
-      "w": 133.8,
+      "w": 117.7,
       "h": 36,
       "hit_source": "label",
       "disabled": false
@@ -14411,7 +14411,7 @@
      {
       "sel": "button#liveArchiveRegenerate.action-button.secondary",
       "text": "새 지도 만들기",
-      "w": 119.8,
+      "w": 105.3,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -14419,7 +14419,7 @@
      {
       "sel": "button[data-archive-zoom=\"out\"]",
       "text": "−",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14427,7 +14427,7 @@
      {
       "sel": "button.active[data-archive-zoom=\"fit\"]",
       "text": "로버 주변",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14435,7 +14435,7 @@
      {
       "sel": "button[data-archive-zoom=\"full\"]",
       "text": "구간 전체",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14443,7 +14443,7 @@
      {
       "sel": "button[data-archive-zoom=\"in\"]",
       "text": "+",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -14501,7 +14501,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 632.4,
-      "y": 3684.8,
+      "y": 3668.8,
       "w": 331.2,
       "h": 331.2,
       "css_w": 331.2,
@@ -14515,7 +14515,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 585.8,
-      "y": 4203.2,
+      "y": 4187.2,
       "w": 820.2,
       "h": 420,
       "css_w": 820.2,
@@ -14687,25 +14687,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 954,
+      "scroll_y": 950,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1909,
+      "scroll_y": 1901,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2863,
+      "scroll_y": 2851,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3817,
+      "scroll_y": 3801,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -14755,9 +14755,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 270,
+   "load_ms": 363,
    "settled": true,
-   "settle_ms": 1560,
+   "settle_ms": 1579,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -15048,9 +15048,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 244,
+   "load_ms": 337,
    "settled": true,
-   "settle_ms": 1622,
+   "settle_ms": 1565,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -15341,9 +15341,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 212,
+   "load_ms": 237,
    "settled": true,
-   "settle_ms": 1570,
+   "settle_ms": 1562,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -15634,9 +15634,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 181,
+   "load_ms": 289,
    "settled": true,
-   "settle_ms": 1574,
+   "settle_ms": 1575,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -15927,9 +15927,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 349,
+   "load_ms": 312,
    "settled": true,
-   "settle_ms": 1556,
+   "settle_ms": 1593,
    "pointer_coarse": false,
    "final_path": "/",
    "screenshots": {
@@ -16317,9 +16317,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 287,
+   "load_ms": 279,
    "settled": true,
-   "settle_ms": 1559,
+   "settle_ms": 1640,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -16351,8 +16351,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 4363,
-    "screens": 5.17,
+    "page_height_px": 4331,
+    "screens": 5.13,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -16374,7 +16374,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 390,
      "client_width": 390,
-     "scroll_height": 4363,
+     "scroll_height": 4331,
      "client_height": 844,
      "body_scroll_width": 390,
      "inner_width": 390,
@@ -16511,25 +16511,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 880,
+      "scroll_y": 872,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1760,
+      "scroll_y": 1744,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2639,
+      "scroll_y": 2615,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3519,
+      "scroll_y": 3487,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -16579,9 +16579,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 189,
+   "load_ms": 286,
    "settled": true,
-   "settle_ms": 1573,
+   "settle_ms": 1583,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -16841,9 +16841,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 317,
+   "load_ms": 318,
    "settled": true,
-   "settle_ms": 1558,
+   "settle_ms": 1565,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -17103,9 +17103,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 255,
+   "load_ms": 259,
    "settled": true,
-   "settle_ms": 1559,
+   "settle_ms": 1573,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -17365,9 +17365,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 205,
+   "load_ms": 273,
    "settled": true,
-   "settle_ms": 1569,
+   "settle_ms": 1576,
    "pointer_coarse": false,
    "final_path": "/connection",
    "screenshots": {
@@ -17528,7 +17528,7 @@
      {
       "sel": "button#lidarTestButton.action-button.secondary",
       "text": "상태 새로고침",
-      "w": 114.9,
+      "w": 101.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -17536,7 +17536,7 @@
      {
       "sel": "button#lidarLiveButton.action-button.secondary.active",
       "text": "실시간 중지",
-      "w": 100.9,
+      "w": 89.8,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -17544,7 +17544,7 @@
      {
       "sel": "button#lidarDownloadButton.action-button.secondary",
       "text": "현재 지도 다운로드",
-      "w": 147.8,
+      "w": 129.5,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -17640,7 +17640,7 @@
      {
       "sel": "button#cameraLiveButton.action-button.secondary.active",
       "text": "실시간 중지",
-      "w": 100.9,
+      "w": 89.8,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -17844,9 +17844,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 493,
+   "load_ms": 269,
    "settled": true,
-   "settle_ms": 1577,
+   "settle_ms": 1558,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -18230,9 +18230,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 409,
+   "load_ms": 228,
    "settled": true,
-   "settle_ms": 1582,
+   "settle_ms": 1570,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -18264,8 +18264,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 2269,
-    "screens": 5.82,
+    "page_height_px": 2237,
+    "screens": 5.74,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -18287,7 +18287,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 2269,
+     "scroll_height": 2237,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
@@ -18320,7 +18320,7 @@
      {
       "sel": "canvas#chartCpu.resource-chart",
       "x": 33,
-      "y": 223,
+      "y": 191,
       "w": 364,
       "h": 210,
       "css_w": 364,
@@ -18348,7 +18348,7 @@
      {
       "sel": "canvas#chartSwap.resource-chart",
       "x": 33,
-      "y": 851,
+      "y": 819,
       "w": 364,
       "h": 210,
       "css_w": 364,
@@ -18362,7 +18362,7 @@
      {
       "sel": "canvas#chartSystemNetwork.resource-chart",
       "x": 447,
-      "y": 851,
+      "y": 819,
       "w": 364,
       "h": 210,
       "css_w": 364,
@@ -18376,7 +18376,7 @@
      {
       "sel": "canvas#chartPower.resource-chart",
       "x": 33,
-      "y": 1199,
+      "y": 1167,
       "w": 364,
       "h": 210,
       "css_w": 364,
@@ -18548,25 +18548,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 470,
+      "scroll_y": 462,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 940,
+      "scroll_y": 924,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1409,
+      "scroll_y": 1385,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1879,
+      "scroll_y": 1847,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -18616,9 +18616,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 187,
+   "load_ms": 257,
    "settled": true,
-   "settle_ms": 1580,
+   "settle_ms": 1583,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -18650,8 +18650,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 2269,
-    "screens": 1.92,
+    "page_height_px": 2237,
+    "screens": 1.9,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -18673,7 +18673,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 820,
      "client_width": 820,
-     "scroll_height": 2269,
+     "scroll_height": 2237,
      "client_height": 1180,
      "body_scroll_width": 820,
      "inner_width": 820,
@@ -18706,7 +18706,7 @@
      {
       "sel": "canvas#chartCpu.resource-chart",
       "x": 33,
-      "y": 223,
+      "y": 191,
       "w": 352,
       "h": 210,
       "css_w": 352,
@@ -18734,7 +18734,7 @@
      {
       "sel": "canvas#chartSwap.resource-chart",
       "x": 33,
-      "y": 851,
+      "y": 819,
       "w": 352,
       "h": 210,
       "css_w": 352,
@@ -18748,7 +18748,7 @@
      {
       "sel": "canvas#chartSystemNetwork.resource-chart",
       "x": 435,
-      "y": 851,
+      "y": 819,
       "w": 352,
       "h": 210,
       "css_w": 352,
@@ -18762,7 +18762,7 @@
      {
       "sel": "canvas#chartPower.resource-chart",
       "x": 33,
-      "y": 1199,
+      "y": 1167,
       "w": 352,
       "h": 210,
       "css_w": 352,
@@ -18934,25 +18934,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 272,
+      "scroll_y": 264,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 545,
+      "scroll_y": 529,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 817,
+      "scroll_y": 793,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1089,
+      "scroll_y": 1057,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -19002,9 +19002,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 305,
+   "load_ms": 349,
    "settled": true,
-   "settle_ms": 1585,
+   "settle_ms": 1590,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -19388,9 +19388,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 267,
+   "load_ms": 292,
    "settled": true,
-   "settle_ms": 1569,
+   "settle_ms": 1585,
    "pointer_coarse": false,
    "final_path": "/system",
    "screenshots": {
@@ -19551,7 +19551,7 @@
      {
       "sel": "button.active[data-cpu-mode=\"combined\"]",
       "text": "통합",
-      "w": 59,
+      "w": 53.3,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -19559,7 +19559,7 @@
      {
       "sel": "button[data-cpu-mode=\"separate\"]",
       "text": "코어별",
-      "w": 59,
+      "w": 53.3,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -19871,9 +19871,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 180,
+   "load_ms": 241,
    "settled": true,
-   "settle_ms": 1554,
+   "settle_ms": 1572,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -20133,9 +20133,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 266,
+   "load_ms": 330,
    "settled": true,
-   "settle_ms": 1597,
+   "settle_ms": 1602,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -20167,8 +20167,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1658,
-    "screens": 4.25,
+    "page_height_px": 1642,
+    "screens": 4.21,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -20190,7 +20190,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 1658,
+     "scroll_height": 1642,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
@@ -20223,7 +20223,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 33,
-      "y": 593,
+      "y": 577,
       "w": 778,
       "h": 260,
       "css_w": 778,
@@ -20327,25 +20327,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 317,
+      "scroll_y": 313,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 634,
+      "scroll_y": 626,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 951,
+      "scroll_y": 939,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1268,
+      "scroll_y": 1252,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -20395,9 +20395,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 273,
+   "load_ms": 256,
    "settled": true,
-   "settle_ms": 1581,
+   "settle_ms": 1590,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -20429,8 +20429,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1658,
-    "screens": 1.41,
+    "page_height_px": 1642,
+    "screens": 1.39,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -20452,7 +20452,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 820,
      "client_width": 820,
-     "scroll_height": 1658,
+     "scroll_height": 1642,
      "client_height": 1180,
      "body_scroll_width": 820,
      "inner_width": 820,
@@ -20485,7 +20485,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 33,
-      "y": 593,
+      "y": 577,
       "w": 754,
       "h": 260,
       "css_w": 754,
@@ -20589,25 +20589,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 120,
+      "scroll_y": 116,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 239,
+      "scroll_y": 231,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 359,
+      "scroll_y": 347,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 478,
+      "scroll_y": 462,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -20657,9 +20657,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 180,
+   "load_ms": 249,
    "settled": true,
-   "settle_ms": 1577,
+   "settle_ms": 1576,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -20919,9 +20919,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 282,
+   "load_ms": 322,
    "settled": true,
-   "settle_ms": 1570,
+   "settle_ms": 1594,
    "pointer_coarse": false,
    "final_path": "/network",
    "screenshots": {
@@ -21082,7 +21082,7 @@
      {
       "sel": "button#networkEnableApButton.action-button.primary",
       "text": "AP 전환",
-      "w": 77.4,
+      "w": 71.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -21090,7 +21090,7 @@
      {
       "sel": "button#networkScanWifiButton.action-button.secondary",
       "text": "Wi-Fi 검색",
-      "w": 93.9,
+      "w": 88,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -21278,9 +21278,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 261,
+   "load_ms": 264,
    "settled": true,
-   "settle_ms": 1559,
+   "settle_ms": 1572,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -21312,8 +21312,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 9485,
-    "screens": 11.24,
+    "page_height_px": 9505,
+    "screens": 11.26,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -21335,7 +21335,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 390,
      "client_width": 390,
-     "scroll_height": 9485,
+     "scroll_height": 9505,
      "client_height": 844,
      "body_scroll_width": 390,
      "inner_width": 390,
@@ -21503,25 +21503,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 2160,
+      "scroll_y": 2165,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4321,
+      "scroll_y": 4331,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 6481,
+      "scroll_y": 6496,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 8641,
+      "scroll_y": 8661,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -21571,9 +21571,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 229,
+   "load_ms": 253,
    "settled": true,
-   "settle_ms": 1573,
+   "settle_ms": 1557,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -21864,9 +21864,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 290,
+   "load_ms": 320,
    "settled": true,
-   "settle_ms": 1599,
+   "settle_ms": 1627,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -22157,9 +22157,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 233,
+   "load_ms": 248,
    "settled": true,
-   "settle_ms": 1593,
+   "settle_ms": 1575,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -22450,9 +22450,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 203,
+   "load_ms": 242,
    "settled": true,
-   "settle_ms": 1618,
+   "settle_ms": 1603,
    "pointer_coarse": false,
    "final_path": "/docker",
    "screenshots": {
@@ -22613,7 +22613,7 @@
      {
       "sel": "#containerActions button[data-container-action=\"start\"]",
       "text": "시작",
-      "w": 54,
+      "w": 50.2,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -22621,7 +22621,7 @@
      {
       "sel": "#containerActions button[data-container-action=\"stop\"]",
       "text": "중지",
-      "w": 54,
+      "w": 50.2,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -22629,7 +22629,7 @@
      {
       "sel": "#containerActions button[data-container-action=\"restart\"]",
       "text": "재시작",
-      "w": 68,
+      "w": 62.3,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -22637,7 +22637,7 @@
      {
       "sel": "button#containerRefreshButton.action-button.secondary",
       "text": "새로고침",
-      "w": 82,
+      "w": 74.4,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -22856,9 +22856,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 330,
+   "load_ms": 324,
    "settled": true,
-   "settle_ms": 1588,
+   "settle_ms": 1609,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -23118,9 +23118,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 235,
+   "load_ms": 238,
    "settled": true,
-   "settle_ms": 1576,
+   "settle_ms": 1603,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -23380,9 +23380,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 178,
+   "load_ms": 222,
    "settled": true,
-   "settle_ms": 1575,
+   "settle_ms": 1569,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -23642,9 +23642,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 239,
+   "load_ms": 364,
    "settled": true,
-   "settle_ms": 1645,
+   "settle_ms": 1616,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -23904,9 +23904,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 223,
+   "load_ms": 283,
    "settled": true,
-   "settle_ms": 1578,
+   "settle_ms": 1555,
    "pointer_coarse": false,
    "final_path": "/fan",
    "screenshots": {
@@ -24279,9 +24279,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 175,
+   "load_ms": 362,
    "settled": true,
-   "settle_ms": 1554,
+   "settle_ms": 1576,
    "pointer_coarse": true,
    "final_path": "/research",
    "screenshots": {
@@ -24502,9 +24502,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 210,
+   "load_ms": 243,
    "settled": true,
-   "settle_ms": 1570,
+   "settle_ms": 1584,
    "pointer_coarse": true,
    "final_path": "/research",
    "screenshots": {
@@ -24536,8 +24536,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1469,
-    "screens": 3.77,
+    "page_height_px": 1421,
+    "screens": 3.64,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -24559,7 +24559,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 1469,
+     "scroll_height": 1421,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
@@ -24657,25 +24657,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 270,
+      "scroll_y": 258,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 540,
+      "scroll_y": 516,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 809,
+      "scroll_y": 773,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1079,
+      "scroll_y": 1031,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -24725,9 +24725,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 296,
+   "load_ms": 272,
    "settled": true,
-   "settle_ms": 1582,
+   "settle_ms": 1573,
    "pointer_coarse": true,
    "final_path": "/research",
    "screenshots": {
@@ -24948,9 +24948,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 219,
+   "load_ms": 253,
    "settled": true,
-   "settle_ms": 1569,
+   "settle_ms": 1565,
    "pointer_coarse": true,
    "final_path": "/research",
    "screenshots": {
@@ -25171,9 +25171,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 180,
+   "load_ms": 220,
    "settled": true,
-   "settle_ms": 1587,
+   "settle_ms": 1593,
    "pointer_coarse": false,
    "final_path": "/research",
    "screenshots": {
@@ -25475,9 +25475,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 327,
+   "load_ms": 371,
    "settled": true,
-   "settle_ms": 1572,
+   "settle_ms": 1615,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -25494,7 +25494,7 @@
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
     "interactive_total": 18,
-    "interactive_in_first_viewport": 7,
+    "interactive_in_first_viewport": 8,
     "small_targets": 1,
     "tiny_targets": 1,
     "small_inline_links": 0,
@@ -25509,8 +25509,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 5619,
-    "screens": 6.66,
+    "page_height_px": 5331,
+    "screens": 6.32,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -25532,7 +25532,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 390,
      "client_width": 390,
-     "scroll_height": 5619,
+     "scroll_height": 5331,
      "client_height": 844,
      "body_scroll_width": 390,
      "inner_width": 390,
@@ -25559,7 +25559,7 @@
       {
        "sel": "#docMarkdown div.table-wrap",
        "axis": "x",
-       "over_px": 269
+       "over_px": 280
       }
      ]
     },
@@ -25569,8 +25569,8 @@
      {
       "sel": "#docMarkdown a",
       "text": "아주 긴 연결 글자",
-      "w": 128.9,
-      "h": 21,
+      "w": 108.8,
+      "h": 19,
       "hit_source": "self",
       "disabled": false
      }
@@ -25650,25 +25650,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1194,
+      "scroll_y": 1122,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2388,
+      "scroll_y": 2244,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3581,
+      "scroll_y": 3365,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4775,
+      "scroll_y": 4487,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -25719,9 +25719,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 236,
+   "load_ms": 253,
    "settled": true,
-   "settle_ms": 1591,
+   "settle_ms": 1588,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -25753,8 +25753,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 3827,
-    "screens": 9.81,
+    "page_height_px": 3779,
+    "screens": 9.69,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -25776,7 +25776,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 3827,
+     "scroll_height": 3779,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
@@ -25803,7 +25803,7 @@
       {
        "sel": "#docMarkdown div.table-wrap",
        "axis": "x",
-       "over_px": 179
+       "over_px": 190
       }
      ]
     },
@@ -25813,8 +25813,8 @@
      {
       "sel": "#docMarkdown a",
       "text": "아주 긴 연결 글자",
-      "w": 128.9,
-      "h": 21,
+      "w": 108.8,
+      "h": 19,
       "hit_source": "self",
       "disabled": false
      }
@@ -25894,25 +25894,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 859,
+      "scroll_y": 847,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1719,
+      "scroll_y": 1695,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2578,
+      "scroll_y": 2542,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3437,
+      "scroll_y": 3389,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -25963,9 +25963,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 177,
+   "load_ms": 221,
    "settled": true,
-   "settle_ms": 1572,
+   "settle_ms": 1569,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -26047,7 +26047,7 @@
       {
        "sel": "#docMarkdown div.table-wrap",
        "axis": "x",
-       "over_px": 211
+       "over_px": 222
       }
      ]
     },
@@ -26057,8 +26057,8 @@
      {
       "sel": "#docMarkdown a",
       "text": "아주 긴 연결 글자",
-      "w": 128.9,
-      "h": 21,
+      "w": 108.8,
+      "h": 19,
       "hit_source": "self",
       "disabled": false
      }
@@ -26207,9 +26207,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 307,
+   "load_ms": 295,
    "settled": true,
-   "settle_ms": 1605,
+   "settle_ms": 1572,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -26271,8 +26271,8 @@
      "inner_height": 820,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 71,
-     "elements_hidden_by_clipping": 130
+     "visible_elements": 72,
+     "elements_hidden_by_clipping": 129
     },
     "outside_viewport": [],
     "outside_viewport_count_with_ancestors": 0,
@@ -26281,8 +26281,14 @@
     "clipped_texts": [],
     "ellipsis_truncations": [],
     "scrollable_x": {
-     "count": 0,
-     "items": []
+     "count": 1,
+     "items": [
+      {
+       "sel": "#docMarkdown pre",
+       "axis": "x",
+       "over_px": 938
+      }
+     ]
     },
     "overlaps": [],
     "overlaps_pinned_vs_flow": [],
@@ -26290,8 +26296,8 @@
      {
       "sel": "#docMarkdown a",
       "text": "아주 긴 연결 글자",
-      "w": 128.9,
-      "h": 21,
+      "w": 108.8,
+      "h": 19,
       "hit_source": "self",
       "disabled": false
      }
@@ -26440,9 +26446,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 297,
+   "load_ms": 261,
    "settled": true,
-   "settle_ms": 1615,
+   "settle_ms": 1608,
    "pointer_coarse": false,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -26609,8 +26615,8 @@
      {
       "sel": "#docMarkdown a",
       "text": "아주 긴 연결 글자",
-      "w": 128.9,
-      "h": 21,
+      "w": 108.8,
+      "h": 19,
       "hit_source": "self",
       "disabled": false
      }
@@ -26759,9 +26765,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 235,
+   "load_ms": 346,
    "settled": true,
-   "settle_ms": 1617,
+   "settle_ms": 1589,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -26793,8 +26799,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 10470,
-    "screens": 12.41,
+    "page_height_px": 10418,
+    "screens": 12.34,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -26816,7 +26822,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 390,
      "client_width": 390,
-     "scroll_height": 10470,
+     "scroll_height": 10418,
      "client_height": 844,
      "body_scroll_width": 390,
      "inner_width": 390,
@@ -26877,7 +26883,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 26,
-      "y": 3417.4,
+      "y": 3365.4,
       "w": 338,
       "h": 220,
       "css_w": 338,
@@ -26891,7 +26897,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 25,
-      "y": 9236.4,
+      "y": 9184.4,
       "w": 340,
       "h": 340,
       "css_w": 340,
@@ -26905,7 +26911,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 26,
-      "y": 10068.4,
+      "y": 10016.4,
       "w": 338,
       "h": 300,
       "css_w": 338,
@@ -27050,7 +27056,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 273,
-      "y": 3972.4,
+      "y": 3920.4,
       "w": 92,
       "h": 44
      },
@@ -27064,7 +27070,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 141,
-      "y": 4597.4,
+      "y": 4545.4,
       "w": 108,
       "h": 56
      }
@@ -27077,25 +27083,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 2407,
+      "scroll_y": 2394,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4813,
+      "scroll_y": 4787,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 7220,
+      "scroll_y": 7181,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 9626,
+      "scroll_y": 9574,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -27145,9 +27151,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 381,
+   "load_ms": 409,
    "settled": true,
-   "settle_ms": 1639,
+   "settle_ms": 1589,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -27179,8 +27185,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 8196,
-    "screens": 21.02,
+    "page_height_px": 8164,
+    "screens": 20.93,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -27202,7 +27208,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 8196,
+     "scroll_height": 8164,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
@@ -27263,7 +27269,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 34,
-      "y": 2517,
+      "y": 2485,
       "w": 362,
       "h": 220,
       "css_w": 362,
@@ -27277,7 +27283,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 162,
-      "y": 6692,
+      "y": 6660,
       "w": 520,
       "h": 520,
       "css_w": 520,
@@ -27291,7 +27297,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 34,
-      "y": 7682,
+      "y": 7650,
       "w": 776,
       "h": 420,
       "css_w": 776,
@@ -27436,7 +27442,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 719,
-      "y": 2492,
+      "y": 2460,
       "w": 92,
       "h": 44
      },
@@ -27450,7 +27456,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 571,
-      "y": 3117,
+      "y": 3085,
       "w": 116,
       "h": 56
      }
@@ -27463,25 +27469,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1952,
+      "scroll_y": 1944,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3903,
+      "scroll_y": 3887,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 5855,
+      "scroll_y": 5831,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 7806,
+      "scroll_y": 7774,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -27531,9 +27537,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 346,
+   "load_ms": 410,
    "settled": true,
-   "settle_ms": 1569,
+   "settle_ms": 1576,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -27565,8 +27571,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 8184,
-    "screens": 6.94,
+    "page_height_px": 8168,
+    "screens": 6.92,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -27588,7 +27594,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 820,
      "client_width": 820,
-     "scroll_height": 8184,
+     "scroll_height": 8168,
      "client_height": 1180,
      "body_scroll_width": 820,
      "inner_width": 820,
@@ -27649,7 +27655,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 34,
-      "y": 2505,
+      "y": 2473,
       "w": 350,
       "h": 220,
       "css_w": 350,
@@ -27663,7 +27669,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 150,
-      "y": 6680,
+      "y": 6664,
       "w": 520,
       "h": 520,
       "css_w": 520,
@@ -27677,7 +27683,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 34,
-      "y": 7670,
+      "y": 7654,
       "w": 752,
       "h": 420,
       "css_w": 752,
@@ -27822,7 +27828,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 695,
-      "y": 2480,
+      "y": 2448,
       "w": 92,
       "h": 44
      },
@@ -27836,7 +27842,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 555,
-      "y": 3105,
+      "y": 3073,
       "w": 112,
       "h": 56
      }
@@ -27849,25 +27855,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1751,
+      "scroll_y": 1747,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3502,
+      "scroll_y": 3494,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 5253,
+      "scroll_y": 5241,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 7004,
+      "scroll_y": 6988,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -27917,9 +27923,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 242,
+   "load_ms": 308,
    "settled": true,
-   "settle_ms": 1586,
+   "settle_ms": 1587,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -28235,25 +28241,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1621,
+      "scroll_y": 1620,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3241,
+      "scroll_y": 3239,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4862,
+      "scroll_y": 4859,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 6482,
+      "scroll_y": 6478,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -28303,9 +28309,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 298,
+   "load_ms": 335,
    "settled": true,
-   "settle_ms": 1599,
+   "settle_ms": 1656,
    "pointer_coarse": false,
    "final_path": "/rover-control",
    "screenshots": {
@@ -28337,8 +28343,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 6582,
-    "screens": 7.31,
+    "page_height_px": 6566,
+    "screens": 7.3,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -28360,7 +28366,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 1440,
      "client_width": 1440,
-     "scroll_height": 6582,
+     "scroll_height": 6566,
      "client_height": 900,
      "body_scroll_width": 1440,
      "inner_width": 1440,
@@ -28466,7 +28472,7 @@
      {
       "sel": "select[data-network-profile=\"\"]",
       "text": "자동 조절64 kbps매우 느린 망균형고화질",
-      "w": 118,
+      "w": 106,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28474,7 +28480,7 @@
      {
       "sel": "button#roverLidarToggle.action-button.secondary.active",
       "text": "LiDAR 중지",
-      "w": 99.2,
+      "w": 92.2,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28522,7 +28528,7 @@
      {
       "sel": "button#liveMapStart.action-button.primary",
       "text": "그리기 시작",
-      "w": 100.9,
+      "w": 89.8,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28530,7 +28536,7 @@
      {
       "sel": "button#liveMapStop.action-button.secondary",
       "text": "그리기 멈춤",
-      "w": 100.9,
+      "w": 89.8,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -28538,7 +28544,7 @@
      {
       "sel": "button#liveMapReset.action-button.secondary",
       "text": "새 지도",
-      "w": 72.9,
+      "w": 65.6,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28554,7 +28560,7 @@
      {
       "sel": "button[data-live-zoom=\"out\"]",
       "text": "−",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28562,7 +28568,7 @@
      {
       "sel": "button.active[data-live-zoom=\"fit\"]",
       "text": "로버 주변",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28570,7 +28576,7 @@
      {
       "sel": "button[data-live-zoom=\"full\"]",
       "text": "구간 전체",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28578,7 +28584,7 @@
      {
       "sel": "button[data-live-zoom=\"in\"]",
       "text": "+",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28586,7 +28592,7 @@
      {
       "sel": "button#roverCameraToggle.action-button.secondary.active",
       "text": "스트리밍 중지",
-      "w": 114.9,
+      "w": 101.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28610,7 +28616,7 @@
      {
       "sel": "button#roverGpsFollow.action-button.secondary.active",
       "text": "로버 중심 추적 중",
-      "w": 138.8,
+      "w": 120.7,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28626,7 +28632,7 @@
      {
       "sel": "button#roverImuToggle.action-button.secondary.active",
       "text": "IMU 중지",
-      "w": 87,
+      "w": 79.2,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28730,7 +28736,7 @@
      {
       "sel": "button#roverRecordStopButton.action-button.danger",
       "text": "중지",
-      "w": 54,
+      "w": 50.2,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -28746,7 +28752,7 @@
      {
       "sel": "button#roverRecordLidarButton.action-button.secondary",
       "text": "LiDAR",
-      "w": 80.7,
+      "w": 81.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28754,7 +28760,7 @@
      {
       "sel": "button#roverRecordCameraButton.action-button.secondary",
       "text": "Camera",
-      "w": 80.7,
+      "w": 81.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28762,7 +28768,7 @@
      {
       "sel": "button#roverRecordBothButton.action-button.secondary.active",
       "text": "LiDAR+Camera",
-      "w": 118.6,
+      "w": 116.3,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28794,7 +28800,7 @@
      {
       "sel": "button#roverArchiveRefreshButton.action-button.secondary",
       "text": "새로고침",
-      "w": 82,
+      "w": 74.4,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28802,7 +28808,7 @@
      {
       "sel": "button#roverArchivePlayButton.action-button.secondary",
       "text": "재생",
-      "w": 54,
+      "w": 50.2,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -28810,7 +28816,7 @@
      {
       "sel": "input#roverArchiveSyncToggle",
       "text": "on",
-      "w": 86.9,
+      "w": 77.9,
       "h": 36,
       "hit_source": "label",
       "disabled": false
@@ -28818,7 +28824,7 @@
      {
       "sel": "input#roverArchiveOverviewToggle",
       "text": "on",
-      "w": 133.8,
+      "w": 117.7,
       "h": 36,
       "hit_source": "label",
       "disabled": false
@@ -28842,7 +28848,7 @@
      {
       "sel": "button#liveArchiveRegenerate.action-button.secondary",
       "text": "새 지도 만들기",
-      "w": 119.8,
+      "w": 105.3,
       "h": 36,
       "hit_source": "self",
       "disabled": true
@@ -28850,7 +28856,7 @@
      {
       "sel": "button[data-archive-zoom=\"out\"]",
       "text": "−",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28858,7 +28864,7 @@
      {
       "sel": "button.active[data-archive-zoom=\"fit\"]",
       "text": "로버 주변",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28866,7 +28872,7 @@
      {
       "sel": "button[data-archive-zoom=\"full\"]",
       "text": "구간 전체",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28874,7 +28880,7 @@
      {
       "sel": "button[data-archive-zoom=\"in\"]",
       "text": "+",
-      "w": 77.9,
+      "w": 68.9,
       "h": 36,
       "hit_source": "self",
       "disabled": false
@@ -28932,7 +28938,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 632.4,
-      "y": 3772.8,
+      "y": 3756.8,
       "w": 331.2,
       "h": 331.2,
       "css_w": 331.2,
@@ -28946,7 +28952,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 585.8,
-      "y": 4291.2,
+      "y": 4275.2,
       "w": 820.2,
       "h": 420,
       "css_w": 820.2,
@@ -29118,25 +29124,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1421,
+      "scroll_y": 1417,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2841,
+      "scroll_y": 2833,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4262,
+      "scroll_y": 4250,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 5682,
+      "scroll_y": 5666,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true

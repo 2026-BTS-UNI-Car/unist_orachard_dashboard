@@ -116,23 +116,40 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   assert.match(base, /@media \(prefers-reduced-motion: reduce\)/);
 }
 
-// First-load weight (the dashboard is used over a slow link): the interface
-// loads no font file and no image; text uses the fonts of the device.
+// Interface font: exactly one font file, declared in tokens.css, never blocking the text. The first load
+// has to stay usable on a slow link, so the text shows in a device font until the file has arrived.
 {
+  const fontFile = 'vendor/ubts-sans/ubts-sans-var.woff2';
+  const record = JSON.parse(read('vendor/ubts-sans/ubts-sans-var.json'));
+  const bytes = fs.readFileSync(path.join(staticDir, fontFile));
+  assert.equal(bytes.length, record.bytes, 'font file size equals its record');
+  assert.equal(require('node:crypto').createHash('sha256').update(bytes).digest('hex'), record.sha256, 'font file hash equals its record');
+  assert.ok(bytes.length <= 400 * 1024, `interface font is ${bytes.length} bytes (limit 400 kB)`);
+  assert.equal(bytes.subarray(0, 4).toString('latin1'), 'wOF2', 'font file is WOFF2');
+  assert.ok(fs.existsSync(path.join(staticDir, 'vendor/ubts-sans/PRETENDARD-OFL.txt')), 'licence text is shipped with the font');
+  assert.equal(record.hangul_syllables, 2350);
   for (const name of systemSheets) {
-    const css = read(name);
-    assert.doesNotMatch(css, /@font-face/i, `${name}: @font-face (the interface must not load a font file)`);
-    assert.doesNotMatch(css, /\.(woff2?|ttf|otf|eot)\b/i, `${name}: reference to a font file`);
-    assert.doesNotMatch(stripComments(css), /url\(/i, `${name}: url() (no font, image or icon file; draw icons with CSS or inline SVG)`);
+    const css = stripComments(read(name));
+    const faces = [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map(match => match[1]);
+    if (name !== 'css/tokens.css') {
+      assert.equal(faces.length, 0, `${name}: @font-face belongs in tokens.css`);
+      assert.doesNotMatch(css, /url\(/i, `${name}: url() (no font, image or icon file; draw icons with CSS or inline SVG)`);
+      continue;
+    }
+    assert.equal(faces.length, 1, 'one @font-face');
+    assert.match(faces[0], /font-family:\s*"UBTS Sans"/);
+    assert.match(faces[0], /font-display:\s*swap/, 'text is shown before the font arrives');
+    assert.match(faces[0], /font-weight:\s*400 700/);
+    assert.deepEqual([...css.matchAll(/url\(([^)]*)\)/g)].map(match => match[1].replace(/["']/g, '')), [`/static/${fontFile}`], 'the only url() is the interface font');
   }
-  // The font tokens are stacks of installed fonts that end in a generic family.
+  // The font tokens name the interface font first, then installed fonts, and end in a generic family.
   const families = value => value.split(',').map(item => item.trim());
   const sans = families(light['--font-sans']), mono = families(light['--font-mono']);
-  assert.deepEqual([sans[0], sans.at(-1)], ['system-ui', 'sans-serif']);
+  assert.deepEqual([sans[0], sans[1], sans.at(-1)], ['"UBTS Sans"', 'system-ui', 'sans-serif'], 'device fonts follow the interface font');
   assert.equal(mono.at(-1), 'monospace');
   for (const korean of ['"Apple SD Gothic Neo"', '"Malgun Gothic"', '"Noto Sans KR"']) assert.ok(sans.includes(korean), `${korean} in --font-sans`);
   for (const name of [...systemSheets, ...pageSheets]) {
-    for (const match of stripComments(read(name)).matchAll(/font-family\s*:\s*([^;}]+)/g)) {
+    for (const match of stripComments(read(name)).replace(/@font-face\s*\{[^}]*\}/g, '').matchAll(/font-family\s*:\s*([^;}]+)/g)) {
       const value = match[1].trim();
       assert.match(value, /^(inherit|var\(--font-(sans|mono)\))$/, `${name}: font-family ${value} (use the font tokens)`);
     }
