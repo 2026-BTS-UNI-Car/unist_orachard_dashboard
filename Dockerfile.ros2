@@ -11,15 +11,15 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY dashboard_server ./dashboard_server
-COPY scripts/__init__.py ./scripts/__init__.py
+COPY scripts/__init__.py scripts/ros_executor.py ./scripts/
 COPY scripts/lidar_ws_bridge.py ./scripts/lidar_ws_bridge.py
 COPY scripts/camera_ros2_driver.py ./scripts/camera_ros2_driver.py
-COPY scripts/camera_cadence.py scripts/camera_preview_worker.py scripts/camera_mjpeg.py ./scripts/
+COPY scripts/camera_cadence.py scripts/camera_preview_worker.py scripts/camera_mjpeg.py scripts/camera_original_preview.py scripts/camera_stream_policy.py ./scripts/
 COPY scripts/camera_ws_bridge.py ./scripts/camera_ws_bridge.py
 COPY scripts/imu_ros2_driver.py ./scripts/imu_ros2_driver.py
 COPY scripts/imu_ws_bridge.py ./scripts/imu_ws_bridge.py
 COPY scripts/esp_wheel_controller.py scripts/esp_motor.py scripts/rover_control_core.py scripts/rover_control_bridge.py scripts/stream_policy.py ./scripts/
-COPY scripts/data_recorder_service.py ./scripts/data_recorder_service.py
+COPY scripts/data_recorder_service.py scripts/recording_durability.py ./scripts/
 COPY scripts/native_camera_encoder.py scripts/mapping_sensor_writer.py scripts/recording_postprocess.py scripts/export_recording_camera.py scripts/build_adaptive_recording.py scripts/native_jpeg_vfr.py scripts/hls_bandwidth.py scripts/install_adaptive_recording.py ./scripts/
 COPY scripts/gps_ros2_driver.py scripts/gps_ws_bridge.py ./scripts/
 
