@@ -1,16 +1,16 @@
-현재 설치·검증 범위: [최종 IMU 만료 복구와 지도 작업 분리](../../docs/NATIVE_FINAL_SCALAR_RECOVERY_PROGRESS_20261010.md). GPS 통합 지도와 실차 모터 자율주행은 미완료입니다.
+현재 설치·검증 범위: [최종 IMU 만료 복구와 지도 작업 분리](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/NATIVE_FINAL_SCALAR_RECOVERY_PROGRESS_20261010.md). GPS 통합 지도와 실차 모터 자율주행은 미완료입니다.
 
-현재 V17 센서 경로와 기본 OFF 자율주행 supervisor 구현·제한은 [현재 상태](../../docs/native_map_gap_fence_default_OFF_supervisor_20261010.md)에 기록했습니다. 아래 내용은 보존된 이전 체크포인트입니다.
+현재 V17 센서 경로와 기본 OFF 자율주행 supervisor 구현·제한은 [현재 상태](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/native_map_gap_fence_default_OFF_supervisor_20261010.md)에 기록했습니다. 아래 내용은 보존된 이전 체크포인트입니다.
 
-현재 Jetson에 설치된 비동기 지도 생성·웹 표시와 남은 오류는 [설치 검증 기록](../../docs/NATIVE_ASYNC_MAP_INSTALL_20261010.md)에 정리했습니다. 아래 내용은 이전 체크포인트의 기록입니다.
+현재 Jetson에 설치된 비동기 지도 생성·웹 표시와 남은 오류는 [설치 검증 기록](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/NATIVE_ASYNC_MAP_INSTALL_20261010.md)에 정리했습니다. 아래 내용은 이전 체크포인트의 기록입니다.
 
 # Native 센서 관찰 서비스
 
-현재 v9 센서 시간 만료·누락 처리는 [설치와 시험](../../docs/NATIVE_INPUT_RECOVERY_PROGRESS_20261010.md)에 있다. 아래 내용은 이전 설치 시점의 기록이다.
+현재 v9 센서 시간 만료·누락 처리는 [설치와 시험](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/NATIVE_INPUT_RECOVERY_PROGRESS_20261010.md)에 있다. 아래 내용은 이전 설치 시점의 기록이다.
 
-현재 v7 원본 LiDAR/IMU 계측의 설치·시험은 [후속 기록](../../docs/NATIVE_IMU_GAP_PROGRESS_20261010.md)에 있다. 아래 내용은 이전 설치 시점의 기록이다.
+현재 v7 원본 LiDAR/IMU 계측의 설치·시험은 [후속 기록](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/NATIVE_IMU_GAP_PROGRESS_20261010.md)에 있다. 아래 내용은 이전 설치 시점의 기록이다.
 
-현재 v6 원본 시각 계측의 설치·시험·제한은 [진행 기록](../../docs/NATIVE_ADMISSION_PROGRESS_20261010.md)에 있다. 아래 이전 이미지·결과와 구분한다.
+현재 v6 원본 시각 계측의 설치·시험·제한은 [진행 기록](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/NATIVE_ADMISSION_PROGRESS_20261010.md)에 있다. 아래 이전 이미지·결과와 구분한다.
 
 이 서비스는 원본 LiDAR·IMU를 읽고 주행 **제안**을 확인하는 관찰용 서비스입니다. 휠 전원을 OFF로 유지합니다. 모터 명령, 운전 lease, PWM 출력, 자율주행 활성화 기능은 연결하지 않습니다. `OBSERVE_ONLY`에서 좌·우 제안은 각각 0–30%이고 실제 적용값은 항상 0%입니다. 비율은 미교정 선호값이며 측정된 속도(m/s)가 아닙니다.
 
@@ -117,4 +117,4 @@ services:
 
 ## 검증한 선택적 처리 최적화
 
-원본 CDR·ownership·시계 경계를 유지하는 typed digest와 정확히 같은 endpoint의 surface 캐시를 별도 `optimized-package`에 제공한다. 기본 `Dockerfile.stream`의 legacy 패키지를 보존한다. 새 `Dockerfile.optimized`는 검증한 cached ARM binary를 재사용하고 명시적인 패키지 SHA를 요구한다. 설치·실패 이력과 검사 명령은 [추가 처리 개선](../../docs/NATIVE_LATENCY_PROGRESS_20261010.md)을 참고한다. 실제 지속 입력과 모터 자율 구동은 아직 합격하지 않았다.
+원본 CDR·ownership·시계 경계를 유지하는 typed digest와 정확히 같은 endpoint의 surface 캐시를 별도 `optimized-package`에 제공한다. 기본 `Dockerfile.stream`의 legacy 패키지를 보존한다. 새 `Dockerfile.optimized`는 검증한 cached ARM binary를 재사용하고 명시적인 패키지 SHA를 요구한다. 설치·실패 이력과 검사 명령은 [추가 처리 개선](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/NATIVE_LATENCY_PROGRESS_20261010.md)을 참고한다. 실제 지속 입력과 모터 자율 구동은 아직 합격하지 않았다.

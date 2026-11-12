@@ -56,14 +56,26 @@ class DashboardApiTest(unittest.TestCase):
             self.assertNotIn(b"\n  ", decoded)
 
     def test_docs_assets_are_served_but_path_traversal_is_blocked(self):
-        path = "/docs-assets/orchard_perception_models/rf_yolo11_trunk_seg.jpg"
-        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=3) as res:
-            self.assertEqual(res.status, 200)
-            self.assertEqual(res.headers.get("Content-Type"), "image/jpeg")
-            self.assertGreater(len(res.read()), 100)
-        with self.assertRaises(urllib.error.HTTPError) as context:
-            urllib.request.urlopen(f"http://127.0.0.1:{self.port}/docs-assets/../architecture.md", timeout=3)
-        self.assertIn(context.exception.code, {403, 404})
+        # The repository ships no document images at the moment, so the route is checked against a temporary
+        # docs folder: an image below docs/assets is served, a path that climbs out of it is not.
+        import tempfile
+        from unittest.mock import patch
+        import dashboard_server.app as app_module
+        with tempfile.TemporaryDirectory() as root:
+            docs = Path(root)
+            (docs / "assets" / "figures").mkdir(parents=True)
+            image = bytes((0xFF, 0xD8, 0xFF, 0xE0)) + bytes(200)
+            (docs / "assets" / "figures" / "sample.jpg").write_bytes(image)
+            (docs / "architecture.md").write_bytes(b"outside the asset folder")
+            with patch.object(app_module, "DOCS_ROOT", docs):
+                path = "/docs-assets/figures/sample.jpg"
+                with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=3) as res:
+                    self.assertEqual(res.status, 200)
+                    self.assertEqual(res.headers.get("Content-Type"), "image/jpeg")
+                    self.assertEqual(res.read(), image)
+                with self.assertRaises(urllib.error.HTTPError) as context:
+                    urllib.request.urlopen(f"http://127.0.0.1:{self.port}/docs-assets/../architecture.md", timeout=3)
+                self.assertIn(context.exception.code, {403, 404})
 
     def post_json(self, path: str, payload: dict | None = None) -> dict:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -678,19 +690,14 @@ class DashboardApiTest(unittest.TestCase):
         index = self.get_json("/api/docs")
         self.assertGreaterEqual(len(index["documents"]), 3)
         slugs = [item["slug"] for item in index["documents"]]
-        self.assertIn("simulation-run", slugs)
-        self.assertIn("lidar-connection", slugs)
-        self.assertIn("lidar-drive-test-recording", slugs)
-        self.assertIn("usb-camera-connection", slugs)
-        self.assertIn("imu-ros2-recording", slugs)
-        self.assertIn("jetson-offline-access-20260827", slugs)
-        self.assertIn("esp-rover-control", slugs)
-        self.assertIn("rover-control-dashboard", slugs)
-        self.assertIn("rover-control-todo", slugs)
-        sim_doc = self.get_json("/api/docs/simulation-run")
-        self.assertTrue(sim_doc["ok"])
-        self.assertIn("orchard_full.launch.py", sim_doc["markdown"])
-        self.assertIn("mode:=sim", sim_doc["markdown"])
+        for slug in ("docs-index", "lidar-connection", "usb-camera-connection", "imu-ros2-recording",
+                     "jetson-offline-access", "esp-rover-control", "rover-control-dashboard"):
+            self.assertIn(slug, slugs)
+        for item in index["documents"]:
+            self.assertIsNotNone(item["updated_at"], item["source"])  # every listed file exists
+        index_doc = self.get_json("/api/docs/docs-index")
+        self.assertTrue(index_doc["ok"])
+        self.assertIn("HISTORY.md", index_doc["markdown"])
         doc = self.get_json("/api/docs/lidar-connection")
         self.assertTrue(doc["ok"])
         self.assertIn("RPLIDAR", doc["markdown"])
@@ -701,22 +708,16 @@ class DashboardApiTest(unittest.TestCase):
         self.assertTrue(imu_doc["ok"])
         self.assertIn("/imu/data_raw", imu_doc["markdown"])
         self.assertIn("Dashboard", imu_doc["markdown"])
-        offline_doc = self.get_json("/api/docs/jetson-offline-access-20260827")
+        offline_doc = self.get_json("/api/docs/jetson-offline-access")
         self.assertTrue(offline_doc["ok"])
         self.assertIn("wlP1p1s0", offline_doc["markdown"])
         self.assertIn("jetson-ssh.sarihub.com", offline_doc["markdown"])
-        drive_doc = self.get_json("/api/docs/lidar-drive-test-recording")
-        self.assertTrue(drive_doc["ok"])
-        self.assertIn("rosbag2", drive_doc["markdown"])
         rover_doc = self.get_json("/api/docs/esp-rover-control")
         self.assertTrue(rover_doc["ok"])
         self.assertIn("ESP8266", rover_doc["markdown"])
         control_doc = self.get_json("/api/docs/rover-control-dashboard")
         self.assertTrue(control_doc["ok"])
         self.assertIn("control.sock", control_doc["markdown"])
-        todo_doc = self.get_json("/api/docs/rover-control-todo")
-        self.assertTrue(todo_doc["ok"])
-        self.assertIn("Rover Control TODO", todo_doc["markdown"])
         html = self.get_text("/docs/lidar-connection")
         self.assertIn("id=\"docMarkdown\"", html)
 
@@ -1002,17 +1003,12 @@ class DashboardApiTest(unittest.TestCase):
                 os.environ["LIDAR_WS_UPSTREAM"] = old_upstream
             thread.join(timeout=2)
 
-    def test_docs_catalog_contains_runtime_and_fan_docs(self):
+    def test_docs_catalog_contains_index_and_fan_docs(self):
         index = self.get_json("/api/docs")
         slugs = {item["slug"] for item in index["documents"]}
-        self.assertIn("jetson-runtime-architecture", slugs)
+        self.assertIn("docs-index", slugs)
         self.assertIn("fan-control", slugs)
-        self.assertIn("simulation-run", slugs)
-        self.assertIn("lidar-drive-test-recording", slugs)
-        self.assertIn("rover-control-dashboard", slugs)
-        self.assertIn("rover-control-todo", slugs)
-        self.assertIn("imu-ros2-recording", slugs)
-        self.assertIn("jetson-offline-access-20260827", slugs)
+        self.assertIn("jetson-offline-access", slugs)
 
 
 if __name__ == "__main__":

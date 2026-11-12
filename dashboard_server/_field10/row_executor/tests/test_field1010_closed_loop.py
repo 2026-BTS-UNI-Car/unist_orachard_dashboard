@@ -14,6 +14,14 @@ import unittest
 from dataclasses import replace
 
 REPO = Path(__file__).resolve().parents[3]
+if not (REPO / 'tools' / 'row_executor').is_dir():
+    # The plant model (tools/field_response) and harness come from the simulation repository; the dashboard
+    # repository's copy of the executor does not have them, so this test only runs there.
+    reason = 'runs in the simulation repository layout (tools/row_executor, sim/ubts)'
+    if __name__ == '__main__':  # run as a script: report the skip instead of a traceback
+        print('skipped: ' + reason)
+        sys.exit(0)
+    raise unittest.SkipTest(reason)
 for directory in (REPO / 'tools', REPO / 'sim/ubts'):
     sys.path.insert(0, str(directory))
 sys.dont_write_bytecode = True
