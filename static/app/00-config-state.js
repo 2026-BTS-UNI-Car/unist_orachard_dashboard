@@ -1,5 +1,5 @@
 const SIMULATION = document.documentElement.dataset.runtimeMode === "simulation";
-const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/docs"];
+const ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/tuning", "/docs"];
 const HISTORY_KEYS = ["cpu", "memory", "swap", "power", "temp", "rx", "tx", "dockerCpu", "dockerMemory", "fanTemp", "fanPwm"];
 const MAX_POINTS = 90;
 const CHART_BUFFER_POINTS = MAX_POINTS + 1;

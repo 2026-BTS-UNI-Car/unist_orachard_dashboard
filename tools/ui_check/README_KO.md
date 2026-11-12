@@ -35,7 +35,7 @@
 `<out>`은 static 폴더 밖이어야 한다(안쪽이면 거절한다).
 
 ```
-# 1) 재기: 경로 9개 × 화면 5종 × 자료 2종 = 90쪽, 2분쯤 걸린다
+# 1) 재기: 경로 10개 × 화면 5종 × 자료 2종 = 100쪽, 2분쯤 걸린다 (조정 /tuning 은 2026-11-13 UI-12에서 더함)
 python run_checks.py --static <static> --out <out>
 
 # 2) 판정: 고정 규칙 + 받아들인 상태와 비교. 끝내는 값 0 = 통과, 1 = 실패, 2 = 파일·인자 오류
@@ -66,7 +66,8 @@ python mock_server.py --static <static> --dataset stress
 | 인자 | 뜻 |
 | --- | --- |
 | `--dataset empty\|stress\|both` | 모의 자료 묶음. 기본 both |
-| `--route rover-control` | 점검할 경로(여러 번 가능). 기본은 9개 전부. `/` 대신 `overview`라고 적는다 |
+| `--route rover-control` | 점검할 경로(여러 번 가능). 기본은 10개 전부. `/` 대신 `overview`라고 적는다 |
+| `--vehicle front_steer` | 차량 종류. 실제 서버처럼 화면에 `data-vehicle-kind`를 붙여 조향 패널·자율 칸이 보이는 화면으로 잰다(기본 `differential`) |
 | `--viewport 390x844` | 화면 크기(여러 번 가능). 기본 390x844, 844x390, 820x1180, 1180x820, 1440x900 |
 | `--stop-selector "#id"` | STOP 조작 요소를 찾는 선택자(여러 번 가능, 앞의 것이 우선) |
 | `--theme page\|light\|dark` | 테마. `page`(기본)는 화면이 주는 그대로, `light`·`dark`는 화면이 테마를 읽기 전에 저장 값(`ubts-theme`)을 넣어 그 테마로 잰다 |

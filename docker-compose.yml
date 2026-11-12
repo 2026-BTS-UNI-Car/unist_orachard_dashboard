@@ -319,6 +319,40 @@ services:
       - /run/udev:/run/udev:ro
     command: ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && python3 -m scripts.rover_control_bridge"]
 
+  # Front-steer V3 bridge (D-11, docs/STEERING_SERVER_KO.md). Optional profile "steer": never started by default
+  # (docker compose --profile steer up -d ros2-esp-steer-bridge). It uses the same control socket and serial device
+  # as ros2-esp-rover-bridge (V2), so stop that one first; the lock next to the socket refuses a second bridge.
+  # Needs V3 firmware on the ESP (without it every arm is refused: firmware_v3_required) and a host profile JSON
+  # with a fixed cal_id on the host (UBTS_STEER_HOST_PROFILE_FILE).
+  ros2-esp-steer-bridge:
+    profiles: ["steer"]
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-esp-rover-bridge:latest
+    container_name: unist-orachard-ros2-esp-steer-bridge
+    restart: "no"
+    network_mode: host
+    ipc: host
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      ROVER_SERIAL_PORT: "/dev/ubts-motor"
+      ROVER_ESP_IDENTITY: "${ROVER_ESP_IDENTITY:-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001}"
+      ROVER_CONTROL_SOCKET: "/run/ubts-rover/control.sock"
+      ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
+      UBTS_STEER_HOST_PROFILE: "/app/steer/host_profile.json"
+    devices:
+      - "${ROVER_ESP_DEVICE:-/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0}:/dev/ubts-motor"
+    volumes:
+      - ./runtime:/app/runtime
+      - /run/ubts-rover:/run/ubts-rover
+      - /run/lock:/run/lock
+      - /run/udev:/run/udev:ro
+      - "${UBTS_STEER_HOST_PROFILE_FILE:-./runtime/steer_host_profile.json}:/app/steer/host_profile.json:ro"
+    command: ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && python3 -m scripts.steer_rover_bridge --transport serial"]
+
   ros2-gps-driver:
     build:
       context: .
