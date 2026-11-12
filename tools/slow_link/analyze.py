@@ -370,20 +370,43 @@ def link_window(link, t_from, t_to):
     return out
 
 
+FRESH_HORIZON_MS = 15000.0  # how long after a stall a stream is watched for data made after the stall
+
+
 def stall_recovery(client, stalls, t_from, t_to):
-    """After each stall: how long until each stream delivered again, and how old that first delivery was."""
+    """After each stall: how long until each stream delivered again, and how old that first delivery was.
+
+    Two more numbers tell backlog from recovery (a message row is [arrival, publish stamp, bytes]):
+      backlog_messages   messages that arrived after the stall but were made before it ended (old data delivered late)
+      fresh_after_ms     stall end until the first message arrived that was made after the stall ended
+    A stream is watched until the next stall starts, at most FRESH_HORIZON_MS. A stall with no fresh message in that
+    time counts in not_fresh_within_horizon (not when the record itself ends earlier).
+    """
     arrivals = {}
     for s in client["samples"]:
         if not s:
             continue
         for k, rows in s["arrivals"].items():
             arrivals.setdefault(k, []).extend(rows)
+    record_end = max((r[0] for rows in arrivals.values() for r in rows), default=0)
+    stalls = sorted(stalls)
     out = {}
     for stream, rows in arrivals.items():
         rows.sort()
-        waits, ages, worst_after = [], [], []
-        for start, end in stalls:
+        waits, ages, worst_after, backlog, fresh, not_fresh = [], [], [], [], [], 0
+        for index, (start, end) in enumerate(stalls):
             end_ms = end * 1000
+            watch_end = end_ms + FRESH_HORIZON_MS
+            if index + 1 < len(stalls):
+                watch_end = min(watch_end, stalls[index + 1][0] * 1000)
+            watched = [r for r in rows if end_ms <= r[0] < watch_end and r[1]]
+            first_fresh = next((r for r in watched if r[1] >= end_ms), None)
+            if first_fresh is not None:
+                fresh.append(first_fresh[0] - end_ms)
+            elif record_end >= watch_end:
+                not_fresh += 1
+            if first_fresh is not None or record_end >= watch_end:
+                backlog.append(sum(1 for r in watched if r[1] < end_ms))
             after = [r for r in rows if r[0] >= end_ms and r[0] < end_ms + 5000]
             if not after:
                 continue
@@ -391,9 +414,10 @@ def stall_recovery(client, stalls, t_from, t_to):
             ages.append(after[0][0] - after[0][1])
             within = [r for r in after if r[0] < end_ms + 3000] or after[:1]  # the first message may come later than 3 s
             worst_after.append(max(r[0] - r[1] for r in within))
-        if waits:
+        if waits or backlog:
             out[stream] = dict(stalls=len(waits), first_message_after_ms=dist(waits), age_of_first_message_ms=dist(ages),
-                               worst_age_within_3s_ms=dist(worst_after))
+                               worst_age_within_3s_ms=dist(worst_after), backlog_messages=dist(backlog), fresh_after_ms=dist(fresh),
+                               not_fresh_within_horizon=not_fresh, fresh_horizon_ms=FRESH_HORIZON_MS)
     return out
 
 

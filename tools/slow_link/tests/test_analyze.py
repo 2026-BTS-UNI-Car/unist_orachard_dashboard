@@ -180,6 +180,32 @@ class LinkAndProcessTest(unittest.TestCase):
         self.assertEqual(camera["first_message_after_ms"]["p50"], 4200)
         self.assertEqual(camera["worst_age_within_3s_ms"]["max"], 6200)
 
+    def test_backlog_and_fresh_data_after_a_stall(self):
+        stall_end = T0 + 5000
+        imu = [[T0 + 3900, T0 + 3700, 100],                                                         # before the stall
+               [stall_end + 100, stall_end - 900, 100], [stall_end + 150, stall_end - 500, 100],    # made before the stall ended: backlog
+               [stall_end + 700, stall_end + 300, 100], [stall_end + 900, stall_end + 800, 100],    # made after it: fresh
+               [stall_end + 20000, stall_end + 19900, 100]]                                         # the record goes on for 20 s
+        camera = [[stall_end + 4000, stall_end - 3000, 100], [stall_end + 16000, stall_end + 9000, 100]]  # nothing fresh in the watched 15 s
+        client = dict(samples=[dict(arrivals={"/ws/imu": imu, "/ws/camera": camera})])
+        result = analyze.stall_recovery(client, [[T0 / 1000 + 4.0, T0 / 1000 + 5.0]], T0, T0 + 30_000)
+        self.assertEqual(result["/ws/imu"]["backlog_messages"]["max"], 2)
+        self.assertEqual(result["/ws/imu"]["fresh_after_ms"]["max"], 700)
+        self.assertEqual(result["/ws/imu"]["not_fresh_within_horizon"], 0)
+        self.assertEqual(result["/ws/camera"]["backlog_messages"]["max"], 1)
+        self.assertEqual(result["/ws/camera"]["fresh_after_ms"], dict(n=0))
+        self.assertEqual((result["/ws/camera"]["not_fresh_within_horizon"], result["/ws/camera"]["fresh_horizon_ms"]), (1, 15000.0))
+
+    def test_a_stall_near_the_end_of_the_record_is_not_counted_as_unrecovered(self):
+        first_end, second_end = T0 + 5000, T0 + 25000
+        arrivals = [[first_end + 300, first_end + 200, 100], [second_end + 100, second_end - 600, 100]]  # the record ends 0.1 s after the second stall
+        client = dict(samples=[dict(arrivals={"/ws/lidar": arrivals})])
+        stalls = [[T0 / 1000 + 4.0, T0 / 1000 + 5.0], [T0 / 1000 + 24.0, T0 / 1000 + 25.0]]
+        lidar = analyze.stall_recovery(client, stalls, T0, T0 + 26_000)["/ws/lidar"]
+        self.assertEqual(lidar["fresh_after_ms"], dict(n=1, p50=300, p90=300, p95=300, max=300))
+        self.assertEqual(lidar["not_fresh_within_horizon"], 0)
+        self.assertEqual(lidar["backlog_messages"], dict(n=1, p50=0, p90=0, p95=0, max=0))   # only the first stall could be judged
+
     def test_host_pauses_are_gaps_in_the_once_per_second_samples(self):
         rows = [dict(t=100.0), dict(t=101.0), dict(t=102.1), dict(t=108.6), dict(t=109.6)]
         self.assertEqual(analyze.host_pauses(rows), [[102.1, 6.5]])
