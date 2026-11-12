@@ -36,4 +36,4 @@
 - `CAMERA_ORIGINAL1080_PRODUCTION_PROBE_20261024T205127Z/ROOT_RESULT.json`
 - `CAMERA_ORIGINAL1080_BOOTSTRAP_ENABLE_20261025_R1/ROOT_RESULT.json`
 
-위 경로는 `D:/Develop/UBTS/codex-continue-20261023/` 아래다. 원본 센서 파일·이미지·GPS·쿠키·토큰은 이 소스나 문서에 포함하지 않았다.
+위 경로는 레포 밖 PC 작업 기록 폴더(2026-10-23 작업분) 아래다. 그 폴더는 지금 `D:/Develop/UBTS/_archive/mapping_ui_work/` 아래에 있다(`D:/Develop/UBTS/_archive/INDEX.md` 참고). 원본 센서 파일·이미지·GPS·쿠키·토큰은 이 소스나 문서에 포함하지 않았다.
