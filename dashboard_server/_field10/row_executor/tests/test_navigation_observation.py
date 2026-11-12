@@ -6,6 +6,10 @@ import unittest
 
 TESTS = Path(__file__).resolve().parent
 REPO = TESTS.parents[2]
+if not (REPO / 'tools' / 'row_executor').is_dir():
+    # Needs the simulation repository's harness (closed_loop) and plant model next to the executor; the
+    # dashboard repository's copy of the executor does not have them, so this test only runs there.
+    raise unittest.SkipTest('runs in the simulation repository layout (tools/row_executor, sim/ubts)')
 for root in (TESTS, REPO / 'tools', REPO / 'sim/ubts'):
     sys.path.insert(0, str(root))
 sys.dont_write_bytecode = True

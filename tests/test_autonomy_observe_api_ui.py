@@ -192,7 +192,9 @@ class ObserveAPITests(unittest.TestCase):
                 ManagedArchiveMapping=Mock(return_value=object()), MappingOperations=Mock(return_value=object())),
             'dashboard_server.autonomy_settings': types.SimpleNamespace(AutonomySettings=Mock(return_value=object())),
             'dashboard_server.autonomy_observation': types.SimpleNamespace(AutonomyObservation=constructor),
-            'dashboard_server.record_based_autonomy': types.SimpleNamespace(RecordBasedAutonomy=Mock(return_value=planner)),
+            'dashboard_server.record_based_autonomy': types.SimpleNamespace(RecordBasedAutonomy=Mock(return_value=object())),
+            # The installed server builds the observation planner with the field shadow factory.
+            'dashboard_server.field10_shadow': types.SimpleNamespace(make_field10_shadow_planner=Mock(return_value=planner)),
         }
         native = types.SimpleNamespace(input=lambda: None)
         native_constructor = Mock(return_value=native)
@@ -203,9 +205,10 @@ class ObserveAPITests(unittest.TestCase):
             for socket_path in ('', '/run/ubts-native-stream/observe.sock'):
                 with self.subTest(socket_path=socket_path):
                     constructor.reset_mock();native_constructor.reset_mock()
-                    with patch.dict('sys.modules', modules), patch.dict(app.os.environ, {'UBTS_NATIVE_STREAM_SOCKET': socket_path}), patch.object(app, 'TelemetryProvider', return_value=types.SimpleNamespace(recording_archive_dir='unused')), patch.object(app, 'DashboardServer', return_value=types.SimpleNamespace()), patch.object(app, 'dashboard_log'):
+                    with patch.dict('sys.modules', modules), patch.dict(app.os.environ, {'UBTS_NATIVE_STREAM_SOCKET': socket_path, 'UBTS_NATIVE_CONTROL_COMPARISON_V1': '0'}), patch.object(app, 'TelemetryProvider', return_value=types.SimpleNamespace(recording_archive_dir='unused')), patch.object(app, 'DashboardServer', return_value=types.SimpleNamespace()), patch.object(app, 'dashboard_log'):
                         server = app.create_server('127.0.0.1', 0)
-                    constructor.assert_called_once_with(planner=planner, input_provider=native.input if socket_path else live.observation_input)
+                    constructor.assert_called_once_with(planner=planner, input_provider=native.input if socket_path else live.observation_input,
+                                                        comparison_provider=None)
                     if socket_path:native_constructor.assert_called_once_with(socket_path)
                     else:native_constructor.assert_not_called()
                     self.assertIs(server.autonomy_observation, observer)
