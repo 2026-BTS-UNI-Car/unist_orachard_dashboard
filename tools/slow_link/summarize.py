@@ -36,6 +36,11 @@ def find_results(paths):
 
 def row_of(folder):
     summary = json.loads((Path(folder) / "SUMMARY.json").read_text(encoding="utf-8"))
+    return row_from_summary(summary, Path(folder).name)
+
+
+def row_from_summary(summary, name=None):
+    """Flat row of one run from its summary (the same numbers the tables show)."""
     run = summary.get("run") or {}
     live = summary.get("live") or {}
     client = g(live, "clients", 0) or {}
@@ -43,7 +48,7 @@ def row_of(folder):
     control = live.get("control") or {}
     command = g(control, "per_op", "command") or {}
     row = dict(
-        folder=Path(folder).name, source=g(run, "source", "short"), source_rev=g(run, "source", "rev"), profile=run.get("profile"),
+        folder=name, source=g(run, "source", "short"), source_rev=g(run, "source", "rev"), profile=run.get("profile"),
         scenario=run.get("scenario"), label=run.get("label"), failed=run.get("failed"), browser_error=summary.get("error"),
         host_paused=bool(summary.get("host_pauses")),
         live_s=live.get("duration_s"),
