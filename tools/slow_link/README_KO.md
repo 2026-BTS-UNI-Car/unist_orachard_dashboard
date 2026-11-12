@@ -63,6 +63,60 @@ python -B -m unittest
 끝내는 값: 모든 실행이 끝까지 돌면 0, 실패한 실행이 있으면 1(실패한 실행도 폴더와 `FAILED.json`이 남는다).
 실행이 끝난 뒤 시험대 포트가 열려 있으면 거기서 멈춘다.
 
+## 받아들인 값과 견주기 (`compare.py`)
+
+고치기 전의 핵심 수치를 `accepted/baseline.json`에 적어 두고, 고친 뒤의 실행을 거기에 견준다. 목표는 `targets.json`에 있다
+(기준 측정, 목표의 까닭, 허용 폭의 근거는 `docs/slow_link.md`). 아래 명령은 레포 맨 위에서 친다. 표준 라이브러리만 쓴다.
+
+```
+# 1) 고친 커밋을 잰다 (위의 run_bench.py). 그 결과 폴더를 받아들인 값과 견준다
+python -B tools/slow_link/compare.py --run <결과 폴더>
+python -B tools/slow_link/compare.py --run <결과 폴더들이 든 폴더>          # --profile all로 잰 네 실행을 한 번에
+
+# 2) 목표표의 목표를 만족하는지 본다 (--run 없이 치면 받아들인 값 자체로)
+python -B tools/slow_link/compare.py --targets --run <결과 폴더>
+
+# 3) 의도한 변경으로 수치가 바뀌었으면, 확인한 뒤 그 실행을 새 받아들인 값으로 쓴다
+python -B tools/slow_link/compare.py --accept <결과 폴더> [<결과 폴더> ...]
+
+# 문서의 목표표를 다시 만든다 (targets.json을 고친 뒤 docs/slow_link.md의 두 표시 줄 사이에 붙인다)
+python -B tools/slow_link/compare.py --targets-table
+```
+
+**견주기.** 실행의 시나리오와 프로필로 칸을 찾는다(예: `drive/normal`). 수치마다 한 줄: 받아들인 값, 이번 값, 변화, 허용 폭, 판정.
+
+| 판정 | 뜻 | 끝내는 값에 주는 영향 |
+| --- | --- | --- |
+| 같음 | 변화가 허용 폭 안 | 없음 |
+| 좋아짐 | 허용 폭을 넘어 좋아짐 | 없음 (받아들일지는 사람이 정한다) |
+| 나빠짐 | 허용 폭을 넘어 나빠짐 | 1 |
+| 없음 | 받아들인 값은 있는데 이번 실행에 수치가 없다 (화면의 이름이 바뀌어 계측이 비었을 때 등) | 1 (`--allow-missing`이면 없음) |
+| 새 수치 | 이번 실행에만 있다 | 없음 |
+
+끝내는 값: 0 = 나빠지거나 없어진 수치가 없다, 1 = 있다, 2 = 견줄 수 없다(실패한 실행, PC가 멈춘 실행, 받아들인 값이 없는 칸, 잰 조건이 다른 실행, 읽을 수 없는 파일).
+`--json <파일>`을 주면 같은 판정을 JSON으로도 쓴다(판정 이름은 better, same, worse, missing, new).
+
+- 허용 폭은 `accepted/baseline.json`의 `tolerances`에 수치마다 있다: max(`abs`, `rel` × 받아들인 값). 멈춤이 있는 프로필(`bad`, `very_bad`)은 `stall_rel`, `stall_abs`를 쓴다.
+  **잠정 값이다.** 칸마다 실행이 한 번뿐이라, 같은 코드의 반복 측정이 쌓이면 좁힌다. 이 값만은 파일에서 손으로 고쳐도 된다(`--accept`가 지우지 않는다. `--reset-tolerances`면 도구의 기본값으로 돌아간다).
+- `mode`가 `report`인 수치(지금은 `control_presend_max` 하나)는 나빠져도 알리기만 하고 실패로 세지 않는다. `--strict`를 주면 센다.
+- 잰 조건(프로필의 속도·지연·대기열·멈춤, 시나리오의 실시간 길이 등, 화면 수)이 받아들인 값을 잴 때와 다르면 견주지 않고 2로 끝난다. `--ignore-conditions`로 그래도 견줄 수 있다.
+- `--cell drive/normal`처럼 칸을 직접 정할 수 있다(다른 프로필의 값에 견주어 볼 때).
+- 요약 파일(`SUMMARY.json`) 하나만 줘도 된다. 결과 폴더를 주면 옛 요약에 없는 것(PC 멈춤, 멈춤 뒤 밀린 메시지 수)을 폴더의 `cpu.jsonl`·`RAW.json`에서 다시 읽는다. 폴더에는 아무것도 쓰지 않는다.
+
+**받아들이기(`--accept`).** 준 실행들의 수치로 그 칸만 바꿔 쓴다. 다른 칸과 허용 폭은 그대로 둔다. 칸마다 실행 하나만 줄 수 있고, 실패했거나 PC가 멈춘 실행은 받지 않는다.
+`--replace-all`을 주면 준 실행에 없는 칸은 지운다. 파일에는 실행 폴더의 이름, 커밋, 잰 시각, 잰 조건, 수치만 들어가고 폴더의 경로는 들어가지 않는다.
+받아들인 값을 바꾸는 커밋에는 왜 바뀌었는지(어느 변경의 결과인지) 적는다. 지금 파일은 다음 명령으로 만들었다(`<r>`은 2026-11-12 측정의 결과 폴더).
+
+```
+python -B tools/slow_link/compare.py --replace-all --accept <r>/20261112T042334Z_drive_good_d962013 <r>/20261112T042607Z_drive_normal_d962013 \
+    <r>/20261112T042849Z_drive_bad_d962013 <r>/20261112T043211Z_drive_very_bad_d962013 <r>/20261112T045534Z_drive_map_bad_d962013 \
+    <r>/20261112T050929Z_hidden_normal_d962013 <r>/20261112T054908Z_session_expiry_normal_d962013_rerun <r>/20261112T051208Z_quick_none_d962013_unshaped
+```
+
+**목표(`--targets`).** `targets.json`의 목표마다 이번 값과 만족 여부를 찍는다. 목표의 `kind`가 `keep`(이미 만족하는 지킬 값)인데 깨졌거나 수치가 없으면 1로 끝난다.
+`reach`(뒤 과제가 닿을 값)는 못 미쳐도 0이다. `--strict`를 주면 못 미친 목표가 하나라도 있을 때 1이다(모든 최적화가 끝난 뒤의 확인용).
+`targets.json`의 `today`는 목표를 정한 날의 받아들인 값이고, 단위 시험이 두 파일과 문서의 표가 서로 같은지 본다.
+
 자주 쓰는 인자:
 
 | 인자 | 뜻 |
@@ -153,6 +207,7 @@ DevTools 명령마다 답 기한(60초)이 있다. 시험 탭의 렌더러가 �
 | 상태 kB/s, req/s | 실시간 지도와 조종을 뺀 모든 `/api/*` 요청 (텔레메트리, 기록 상태, 자율주행 상태 등) |
 | 지도 kB/s, req/s | `/api/live/map*` 요청. `drive_map`에서는 응답 크기가 시간에 따라 어떻게 변하는지도 (`--series`) |
 | link down/up kbit/s, % of rate | 중계기가 실제로 내려보낸/올려보낸 양과 프로필 속도에 대한 비율 |
+| after_stall (멈춤이 있는 프로필) | 멈춤이 끝난 뒤 통로마다: 첫 메시지까지의 시간과 그 메시지의 나이, 밀린 메시지 수(`backlog_messages`: 멈춤이 끝난 뒤에 닿았지만 끝나기 전에 만들어진 것), 새 자료가 닿기까지(`fresh_after_ms`: 멈춤이 끝난 뒤에 만들어진 첫 메시지). 다음 멈춤 전까지, 길어야 15초를 본다. 그 안에 새 자료가 없던 멈춤은 `not_fresh_within_horizon`에 센다 |
 
 **측정 A — 조종과 STOP** (조종 연습이 있는 시나리오):
 
@@ -202,6 +257,9 @@ DevTools 명령마다 답 기한(60초)이 있다. 시험 탭의 렌더러가 �
 | `browser_runner.mjs` | 화면 없는 Chrome을 DevTools 프로토콜로 몬다. 열기·다시 열기·실시간·조종 연습 |
 | `page_instrument.js` | 페이지에 미리 넣는 계측. 관찰과 얇은 감싸기만 하고 메시지를 바꾸지 않는다 |
 | `analyze.py`, `summarize.py` | 실행 하나의 요약, 여러 실행의 표 |
+| `compare.py` | 받아들인 값과 견주기, 목표 확인, 받아들인 값 다시 만들기 |
+| `accepted/baseline.json` | 받아들인 값(칸별 핵심 수치)과 허용 폭 |
+| `targets.json` | 목표표(`docs/slow_link.md`의 표가 여기서 나온다) |
 | `profiles.json` | 연결 프로필 |
 | `tests/` | 단위 시험(브라우저 없음)과 선택 시험 `test_browser_bench.py` |
 
