@@ -858,6 +858,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         with _SESSION_LOCK:
             _prune_sessions(now)
             if token and token in _SESSIONS:
+                # NET-11: a session in use slides. Past half of its lifetime it is
+                # extended and the cookie sent again, so an open page (and its
+                # sensor streams) is not cut off when the first lifetime ends.
+                item = _SESSIONS[token]
+                if item.get("expires_at", 0.0) - now < SESSION_TTL_S / 2:
+                    item["expires_at"] = now + SESSION_TTL_S
+                    self._session_created = token
                 return token
             if not create:
                 return None
@@ -1251,6 +1258,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             connection_id = secrets.token_urlsafe(8)
             registry[connection_id] = {"session": session_token, "connected_at": now, "remote": self.client_address[0]}
 
+        def current_deadline(token=session_token, fallback=session_deadline):
+            # The session's expiry as it is now (it slides while the page uses it).
+            with _SESSION_LOCK:
+                item = _SESSIONS.get(token)
+                return float(item.get("expires_at", fallback)) if item else fallback
+
         accept = base64.b64encode(
             hashlib.sha1((client_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
         ).decode("ascii")
@@ -1265,7 +1278,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         upstream_url = self._upstream_with_client_query(default_upstream)
         try:
             unavailable_logged = False
-            while time.time() < session_deadline:
+            while time.time() < current_deadline():
                 try:
                     upstream, initial_upstream = self._connect_ws_upstream(upstream_url, label.upper())
                 except OSError as exc:
@@ -1280,10 +1293,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     )
                     if not ok:
                         return
-                    time.sleep(min(2.0, max(0.1, session_deadline - time.time())))
+                    time.sleep(min(2.0, max(0.1, current_deadline() - time.time())))
                     continue
                 try:
-                    self._relay_websocket(upstream, initial_upstream, session_deadline)
+                    self._relay_websocket(upstream, initial_upstream, current_deadline)
                 finally:
                     try:
                         upstream.close()
@@ -1399,7 +1412,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
         self.close_connection = True
 
-    def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b"", deadline: float | None = None):
+    def _relay_websocket(self, upstream: socket.socket, initial_upstream: bytes = b"", deadline=None):
         # Sensor previews only. A slow reader must not block reverse ACKs or
         # retain this registry entry/upstream after the write/session deadline.
         # Opaque TCP chunks do not establish WS frame boundaries. Injecting an

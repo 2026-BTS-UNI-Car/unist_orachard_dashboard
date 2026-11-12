@@ -44,8 +44,10 @@ SCENARIOS = {
 }
 
 
-def load_profiles():
-    return json.loads((TOOL_DIR / "profiles.json").read_text(encoding="utf-8"))["profiles"]
+def load_profiles(extra=False):
+    """The four link profiles; with extra=True also those chosen only by name (longer stalls)."""
+    document = json.loads((TOOL_DIR / "profiles.json").read_text(encoding="utf-8"))
+    return {**document["profiles"], **document.get("extra_profiles", {})} if extra else document["profiles"]
 
 
 def write_json(path, value):
@@ -138,7 +140,7 @@ def run_once(args, scenario_name, profile_name, source, inputs, out_root, work):
         scenario["live_s"] = args.live_s
     if args.no_drive:
         scenario["drive"] = None
-    profile = None if profile_name == "none" else dict(load_profiles()[profile_name])
+    profile = None if profile_name == "none" else dict(load_profiles(extra=True)[profile_name])
     if profile is not None and args.queue_bytes is not None:
         profile["queue_bytes"] = args.queue_bytes
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -241,8 +243,8 @@ def main(argv=None):
     parser.add_argument("--chrome-arg", action="append", default=[], help="extra Chrome command-line flag (repeatable), recorded in run.json")
     parser.add_argument("--keep-scratch", action="store_true")
     args = parser.parse_args(argv)
-    profiles = load_profiles()
-    names = list(profiles) if args.profile == "all" else [args.profile]
+    profiles = load_profiles(extra=True)
+    names = list(load_profiles()) if args.profile == "all" else [args.profile]
     for name in names:
         if name != "none" and name not in profiles:
             raise SystemExit(f"unknown profile {name}; choose from {sorted(profiles)}, none, all")

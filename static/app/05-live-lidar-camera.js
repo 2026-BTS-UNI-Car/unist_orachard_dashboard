@@ -30,8 +30,13 @@ function sensorReconnectDelay(attempt, closeEvent = {}, random = Math.random) {
   const base = Math.min(SENSOR_RECONNECT_MAX_MS, SENSOR_RECONNECT_BASE_MS * 2 ** step);
   return Math.round(Math.min(SENSOR_RECONNECT_MAX_MS, base * (0.8 + 0.4 * random())));
 }
+// NET-11: when the link comes back the channels do not all reconnect at the same
+// moment: LiDAR first, IMU 0.25 s later, the camera (the big one) 0.6 s later.
+const SENSOR_RECONNECT_STAGGER_MS = { lidar: 0, imu: 250, camera: 600 };
 function nextSensorReconnectDelay(live, closeEvent = {}) {
-  const delay = sensorReconnectDelay(live.reconnectAttempt || 0, closeEvent);
+  const channel = live === state.cameraLive ? "camera" : live === state.imuLive ? "imu" : "lidar";
+  const fast = closeEvent?.code === 4001 && closeEvent?.reason === "autonomy_priority";
+  const delay = sensorReconnectDelay(live.reconnectAttempt || 0, closeEvent) + (fast ? 0 : SENSOR_RECONNECT_STAGGER_MS[channel]);
   if (!(closeEvent?.code === 4001 && closeEvent?.reason === "autonomy_priority")) {
     live.reconnectAttempt = (live.reconnectAttempt || 0) + 1;
   }

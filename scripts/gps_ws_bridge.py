@@ -67,7 +67,10 @@ async def stream(websocket, state):
             payload = state.snapshot()
             payload['stream_seq'] = sequence
             await asyncio.wait_for(websocket.send(json.dumps(payload, allow_nan=False, separators=(',', ':'))), 2)
-            await wait_for_ack(websocket, lambda message: message.get('ack') == sequence)
+            # NET-11: the answer may take as long as a stall of the link; a dead
+            # connection ends through the WebSocket keepalive. With the old 2 s
+            # limit a 2 s stall closed the stream and the page had to reconnect.
+            await wait_for_ack(websocket, lambda message: message.get('ack') == sequence, timeout=30.0)
             await asyncio.sleep(max(0, 1/rate-(time.monotonic()-start)))
     except Exception:
         await websocket.close()
