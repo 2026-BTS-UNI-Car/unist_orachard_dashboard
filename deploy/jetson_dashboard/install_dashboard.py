@@ -79,12 +79,27 @@ REMOVE_CODE = (
     "        os.remove(p); n+=1\n"
     "print('UBTS_KIT_REMOVE_OK', n)\n"
 )
+# Imports the given modules and every dashboard_server module that app.py imports anywhere: the server
+# imports the mapping and autonomy modules inside create_server(), so importing app.py alone would not
+# show a missing package (for example scipy) that stops the server at start.
 IMPORT_CODE = (
-    "import importlib,json,sys\n"
-    "sys.path.insert(0,'/app')\n"
-    "for m in sys.argv[1:]:\n"
-    "    importlib.import_module(m)\n"
-    "print('UBTS_KIT_IMPORT_OK '+json.dumps(sys.argv[1:]))\n"
+    "import ast,importlib,json,os,sys\n"
+    "root=os.environ.get('UBTS_KIT_APP_ROOT','/app')\n"
+    "sys.path.insert(0,root)\n"
+    "mods=list(sys.argv[1:])\n"
+    "tree=ast.parse(open(os.path.join(root,'dashboard_server','app.py'),encoding='utf-8').read())\n"
+    "for n in ast.walk(tree):\n"
+    "    if isinstance(n,ast.ImportFrom) and n.level==0 and (n.module or '').startswith('dashboard_server'):\n"
+    "        mods.append(n.module)\n"
+    "    elif isinstance(n,ast.ImportFrom) and n.level==1:\n"
+    "        mods.append('dashboard_server'+('.'+n.module if n.module else ''))\n"
+    "    elif isinstance(n,ast.Import):\n"
+    "        mods+=[a.name for a in n.names if a.name.startswith('dashboard_server')]\n"
+    "done=[]\n"
+    "for m in mods:\n"
+    "    if m not in done:\n"
+    "        importlib.import_module(m); done.append(m)\n"
+    "print('UBTS_KIT_IMPORT_OK '+json.dumps(done))\n"
 )
 
 
@@ -1104,7 +1119,12 @@ class Installer:
             if code != 0 or 'UBTS_KIT_IMPORT_OK' not in logs:
                 r['preflight_log_tail'] = logs[-1500:]
                 raise KitError('preflight_import_failed', 'exit %s' % code)
-            r['preflight'] = dict(ok=True, modules=list(PREFLIGHT_MODULES))
+            imported = logs[logs.index('UBTS_KIT_IMPORT_OK') + len('UBTS_KIT_IMPORT_OK'):].strip()
+            try:
+                imported = json.loads(imported.splitlines()[0]) if imported else None
+            except ValueError:
+                imported = None
+            r['preflight'] = dict(ok=True, modules=imported)
             self.log('새 이미지에서 대시보드 모듈 import 확인')
             self.save()
 

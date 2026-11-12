@@ -17,6 +17,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import unittest.mock
 import urllib.parse
 from pathlib import Path
 
@@ -748,6 +749,25 @@ class SourcePolicy(unittest.TestCase):
         self.assertEqual(kit.image_config_diff(snapshot, fixed), [])
         self.assertEqual(kit.image_config_diff(snapshot, leaked), ['Entrypoint'])
         self.assertEqual(kit.spec_diff(dict(Config=dict(Entrypoint=None)), dict(Config=dict(Entrypoint=[]))), [])
+
+    def test_preflight_imports_what_create_server_imports(self):
+        imported = []
+        fake = type(sys)('importlib')
+        fake.import_module = imported.append
+        out = io.StringIO()
+        root = str(Path(__file__).resolve().parents[1])
+        with unittest.mock.patch.dict(sys.modules, {'importlib': fake}), \
+                unittest.mock.patch.dict('os.environ', {'UBTS_KIT_APP_ROOT': root}), \
+                unittest.mock.patch.object(sys, 'argv', ['-c', 'dashboard_server.app']), \
+                unittest.mock.patch.object(sys, 'path', list(sys.path)), \
+                unittest.mock.patch('sys.stdout', out):
+            exec(compile(kit.IMPORT_CODE, 'preflight', 'exec'), {'__name__': '__main__'})
+        self.assertEqual(imported[0], 'dashboard_server.app')
+        for module in ('dashboard_server.source_live_mapping', 'dashboard_server.mapping_operations',
+                       'dashboard_server.static_assets', 'dashboard_server.telemetry'):
+            self.assertIn(module, imported)
+        self.assertEqual(len(imported), len(set(imported)))
+        self.assertIn('UBTS_KIT_IMPORT_OK', out.getvalue())
 
     def test_strip_versions(self):
         self.assertEqual(kit.strip_versions(b'import a from "./a.mjs?v=0123456789";'), b'import a from "./a.mjs";')
