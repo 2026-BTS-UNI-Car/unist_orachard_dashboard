@@ -171,17 +171,19 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   const loaded = [...html.matchAll(/<(?:link|script)\b[^>]*\b(?:href|src)="([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(loaded, [
     '/static/favicon.ico', '/static/assets/favicon.png', '/static/assets/apple-touch-icon.png',
-    '/static/css/tokens.css', '/static/css/base.css', '/static/css/components.css', '/static/css/frame.css',
-    '/static/styles.css', '/static/vendor/maplibre-gl/maplibre-gl.css', '/static/gps-map.css', '/static/live-map.css',
+    '/static/vendor/maplibre-gl/maplibre-gl.css',
+    '/static/css/tokens.css', '/static/css/base.css', '/static/css/components.css', '/static/css/frame.css', '/static/styles.css',
     '/static/vendor/hls/hls.min.js', '/static/archive-video.js',
     '/static/app/00-config-state.js', '/static/app/01-format-http.js', '/static/app/02-shell.js',
     '/static/app/03-sensor-settings.js', '/static/app/04-telemetry.js', '/static/app/05-live-lidar-camera.js',
     '/static/app/06-live-imu.js', '/static/app/07-lidar-data.js', '/static/app/08-system-panels.js',
     '/static/app/09-docs.js', '/static/app/10-rover-control.js', '/static/app/11-recording.js',
     '/static/app/12-archive.js', '/static/app/13-charts-canvas.js', '/static/app/99-main.js',
-    '/static/field-preparation.css', '/static/field-preparation.js', '/static/vendor/pmtiles/pmtiles.js',
-    '/static/gps-map.js', '/static/live-map.js', '/static/media-jobs.css', '/static/media-jobs.js',
+    '/static/field-preparation.js', '/static/vendor/pmtiles/pmtiles.js',
+    '/static/gps-map.js', '/static/live-map.js', '/static/media-jobs.js',
   ], 'files that index.html loads');
+  // One page sheet: the map, preparation and media job rules live in styles.css (four requests fewer).
+  assert.deepEqual(pageSheets, ['styles.css'], 'page style sheets');
   // The markup itself brings no picture: an <img> gets its source from a live stream or a recording.
   for (const match of html.matchAll(/<img\b[^>]*>/g)) assert.doesNotMatch(match[0], /\bsrc=/, `image loaded with the page: ${match[0]}`);
 }

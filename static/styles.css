@@ -1856,3 +1856,407 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+/* ==== GPS map panels (was gps-map.css) ==== */
+/* GPS map panels. Colours and sizes come from css/tokens.css. */
+.rover-gps-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.rover-gps-panel > .panel-head {
+  margin-bottom: 0;
+}
+
+.gps-map {
+  position: relative;
+  width: 100%;
+  height: clamp(340px, 38vw, 540px);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-fill);
+}
+
+.gps-map .maplibregl-canvas {
+  outline: none;
+}
+
+.gps-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* Fix state beside the title: a status mark and words. */
+.gps-map-actions [data-state] {
+  color: var(--color-text);
+}
+
+.gps-map-actions [data-state]::before {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-round);
+  background: var(--color-text-disabled);
+  content: "";
+}
+
+.gps-map-actions [data-state="fix"]::before {
+  background: var(--color-ok);
+}
+
+.gps-map-actions [data-state="waiting"]::before {
+  background: var(--color-warning);
+}
+
+/* Five read-outs. The position takes two tracks, so every row is full: 2+1 and 1+1+1 in three tracks,
+   2 / 1+1 / 1+1 in two tracks. The wide live panel shows all five in one row. */
+.gps-readouts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+.gps-readouts > div:first-child {
+  grid-column: span 2;
+}
+
+@media (min-width: 1181px) {
+  .rover-gps-panel .gps-readouts {
+    grid-template-columns: 2fr 1.1fr 1.1fr 1fr 1fr;
+  }
+
+  .rover-gps-panel .gps-readouts > div:first-child {
+    grid-column: auto;
+  }
+}
+
+.gps-readouts > div {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.gps-readouts span {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.gps-readouts strong {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  overflow-wrap: anywhere;
+}
+
+.gps-map-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.gps-diagnostics p {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+/* Rover mark on the map. The map tiles are light in both themes, so the mark
+   keeps one colour pair. */
+.gps-rover-marker {
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
+}
+
+.gps-marker-dot {
+  position: absolute;
+  inset: 5px;
+  border: 3px solid var(--color-media-text);
+  border-radius: var(--radius-round);
+  background: var(--chart-1);
+  outline: 1px solid var(--color-media-bg);
+}
+
+.gps-rover-marker.stale .gps-marker-dot {
+  background: var(--color-text-disabled);
+}
+
+.gps-marker-arrow {
+  position: absolute;
+  inset: -4px;
+  display: none;
+  transform: rotate(var(--gps-course, 0deg));
+}
+
+.gps-marker-arrow::before {
+  display: block;
+  width: 0;
+  height: 0;
+  margin: -8px auto 0;
+  border-right: 7px solid transparent;
+  border-bottom: 15px solid var(--chart-1);
+  border-left: 7px solid transparent;
+  content: "";
+}
+
+.gps-rover-marker.has-course .gps-marker-arrow {
+  display: block;
+}
+
+.gps-archive-map {
+  height: 350px;
+}
+
+.gps-map .maplibregl-ctrl-attrib {
+  background: var(--color-media-text);
+  color: var(--color-media-bg);
+}
+
+.gps-map .maplibregl-ctrl-attrib a {
+  color: var(--color-media-bg);
+}
+
+@media (max-width: 720px) {
+  .gps-readouts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gps-map {
+    height: 350px;
+  }
+
+  .gps-map-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+/* ==== Occupancy grid map panels (live and recorded) (was live-map.css) ==== */
+/* Occupancy grid map panels (live and recorded). Colours and sizes come from
+   css/tokens.css. The cells themselves are drawn by the map scripts. */
+.sim-live-map-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.mapping-job-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mapping-job-row p {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.mapping-job-row button {
+  flex: 0 0 auto;
+}
+
+.sim-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sim-map-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-media-bg);
+}
+
+.sim-map-stage canvas {
+  display: block;
+  width: 100%;
+  height: 350px;
+  touch-action: none;
+}
+
+.sim-archive-grid .sim-map-stage canvas {
+  height: 420px;
+}
+
+.sim-map-status {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.map-view-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.map-segment-gallery {
+  display: flex;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-2) 0;
+  overflow-x: auto;
+}
+
+.map-segment-card {
+  flex: 0 0 160px;
+  min-width: 0;
+  padding: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-segment-card[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.map-segment-card img {
+  display: block;
+  width: 100%;
+  height: 96px;
+  background: var(--color-media-bg);
+  object-fit: contain;
+}
+
+.map-segment-card span {
+  display: block;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .mapping-job-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
+  .sim-map-stage canvas,
+  .sim-archive-grid .sim-map-stage canvas {
+    height: 300px;
+  }
+
+  .sim-map-actions .action-button {
+    flex: 1 1 auto;
+  }
+}
+
+/* ==== Field test preparation and observation block (was field-preparation.css) ==== */
+/* Field test preparation list and the observation block of the drive panel.
+   Colours and sizes come from css/tokens.css. */
+.field-preparation {
+  min-width: 0;
+}
+
+.field-preparation p {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.field-preparation ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-5);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.field-check-passed {
+  color: var(--color-text-secondary);
+}
+
+.field-check-pending {
+  color: var(--color-text);
+}
+
+.field-observation {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.field-observation h3 {
+  margin: 0 0 var(--space-2);
+}
+
+.field-observation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.field-observation p strong {
+  color: var(--color-text);
+}
+
+.field-observation-notice {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-fill);
+}
+
+/* ==== Recording video conversion jobs (was media-jobs.css) ==== */
+/* Recording video conversion jobs. Colours and sizes come from css/tokens.css. */
+.media-jobs-note {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.media-job {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.media-job-description {
+  flex: 1 1 280px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.media-job-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
