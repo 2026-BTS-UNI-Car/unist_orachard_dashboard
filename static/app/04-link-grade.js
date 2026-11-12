@@ -6,13 +6,19 @@
 // Measure: a tiny GET /api/ping (204, no body) every second, and while driving
 // also the round trip of every control request. The server time (Server-Timing)
 // is taken off, so a sample is the network round trip including queueing.
-// Judge: the smallest of the last 4 samples (queueing only adds time, so the
+// Judge: the smallest sample of the last 4 s (queueing only adds time, so the
 // smallest is close to the bare round trip):
 //   good < 25 ms, normal < 90 ms, slow < 220 ms, otherwise very slow.
-// A worse grade is taken at once (4 s of samples), a better one only after it
-// has held for 10 s with 15 % margin, so a link that swings does not swing the
-// plan. (A 30 % margin left a 150 ms link that once looked slower stuck in the
-// very-slow plan: 160 ms is never under 0.7 x 220 ms. Seen on the bench, 097519b.) Two pings in a row without an answer (3 s each) is "offline".
+// A worse grade is taken when the smallest of 4 s is 15 % past the boundary; a
+// better one only after it has held for 10 s with 15 % margin, so a link that
+// swings does not swing the plan. Two pings in a row without an answer (3 s
+// each) is "offline". Seen on the bench (097519b), and why the window is time:
+// - with "the last 4 samples", the control answers while driving (about 5 a
+//   second) all waited behind one camera picture now and then, the grade fell,
+//   the smaller plan made the link fast again, and the plan changed 13 times in
+//   2 minutes on the normal link;
+// - a 30 % upgrade margin left a 150 ms link that once looked slower stuck in
+//   the very-slow plan (160 ms is never under 0.7 x 220 ms).
 // The thresholds are assumptions; the field link log (below) is meant to replace them.
 //
 // Field log (optional, NET-10 (5)): with ?link_log=1 or localStorage
@@ -21,7 +27,9 @@
 const LINK_GRADE = {
   pingIntervalMs: 1000,
   pingTimeoutMs: 3000,
-  window: 4,
+  windowMs: 4000,
+  warmupSamples: 4,
+  degradeMargin: 1.15,
   thresholdsMs: { good: 25, normal: 90, slow: 220 },
   upgradeHoldMs: 10000,
   upgradeMargin: 0.85,
@@ -57,18 +65,23 @@ function linkGradeOf(rttMs, margin = 1) {
 // `now` is a millisecond clock. Returns the new grade (may be unchanged).
 function nextLinkGrade(model, now) {
   if (model.failures >= LINK_GRADE.offlineAfterFailures) return "offline";
-  const recent = model.samples.slice(-LINK_GRADE.window);
+  const inWindow = model.samples.filter((sample) => now - sample[0] <= LINK_GRADE.windowMs).map((sample) => sample[1]);
+  const recent = inWindow.length ? inWindow : model.samples.slice(-1).map((sample) => sample[1]);
   if (!recent.length) return model.grade === "offline" ? "offline" : model.grade;
   // The first answer often comes while the page is still starting (seen: 300-500 ms
   // on localhost); wait for a second one, and take the first seconds without the
   // upgrade hold so the page does not sit in the very-slow plan for 10 s.
-  if (model.grade === "unknown" && recent.length < 2) return "unknown";
-  const warmingUp = model.samples.length < LINK_GRADE.window;
+  if (model.grade === "unknown" && model.samples.length < 2) return "unknown";
+  const warmingUp = (model.count || model.samples.length) < LINK_GRADE.warmupSamples;
   const base = Math.min(...recent);
   const current = model.grade;
-  const worse = linkGradeOf(base);
   const rank = (grade) => LINK_GRADE.order.indexOf(grade);
-  if (warmingUp || current === "unknown" || current === "offline" || rank(worse) > rank(current)) {
+  if (warmingUp || current === "unknown" || current === "offline") {
+    model.betterGrade = null;
+    return linkGradeOf(base);
+  }
+  const worse = linkGradeOf(base, LINK_GRADE.degradeMargin);
+  if (rank(worse) > rank(current)) {
     model.betterGrade = null;
     return worse;
   }
@@ -85,8 +98,9 @@ function nextLinkGrade(model, now) {
 function noteLinkSample(rttMs, ok = true, kind = "ping") {
   const now = performance.now();
   if (ok && Number.isFinite(rttMs) && rttMs >= 0) {
-    linkGrade.samples.push(rttMs);
-    if (linkGrade.samples.length > 16) linkGrade.samples.splice(0, linkGrade.samples.length - 16);
+    linkGrade.samples.push([now, rttMs]);
+    linkGrade.count = (linkGrade.count || 0) + 1;
+    if (linkGrade.samples.length > 64) linkGrade.samples.splice(0, linkGrade.samples.length - 64);
     if (kind === "ping") linkGrade.failures = 0;
   } else if (kind === "ping") {
     linkGrade.failures += 1;
@@ -147,7 +161,9 @@ function applyLinkProfile() {
 }
 
 function linkGradeReason() {
-  const base = linkGrade.samples.length ? Math.round(Math.min(...linkGrade.samples.slice(-LINK_GRADE.window))) : null;
+  const now = performance.now();
+  const recent = linkGrade.samples.filter((sample) => now - sample[0] <= LINK_GRADE.windowMs).map((sample) => sample[1]);
+  const base = recent.length ? Math.round(Math.min(...recent)) : null;
   const rtt = base === null ? "" : ` (왕복 ${base} ms)`;
   if (linkGrade.grade === "offline") return "연결 끊김 · 조종 중이었다면 차는 입력 만료로 스스로 정지합니다.";
   if (liveNetworkProfile() !== "auto") return `전송 품질을 직접 골랐습니다${rtt}.`;
@@ -209,7 +225,7 @@ window.LinkGrade = {
   grade: () => linkGrade.grade,
   profile: () => linkGrade.profile,
   constrained: () => linkGrade.profile === "slow" || linkGrade.profile === "tiny",
-  samples: () => linkGrade.samples.slice(),
+  samples: () => linkGrade.samples.map((sample) => sample[1]),
   note: noteLinkSample,
   changesPerMinute: () => linkGrade.changes.filter((t) => performance.now() - t < 60000).length,
 };

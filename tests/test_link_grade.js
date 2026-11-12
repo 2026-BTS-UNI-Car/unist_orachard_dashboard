@@ -87,6 +87,20 @@ for (const [rtt, grade, profile] of [[45, 'normal', 'balanced'], [160, 'slow', '
   assert.equal(f.grade(), 'slow', `still ${f.grade()} after ${seconds} s`);
   assert.ok(seconds <= 15, `back to slow after ${seconds} s`);
 }
+// While driving, control answers come about 5 a second and some wait behind a camera picture:
+// a burst of slow control samples does not lower the grade while the pings show the bare link.
+{
+  const f = fixture();
+  for (let k = 0; k < 6; k++) f.sample(45);
+  assert.equal(f.grade(), 'normal');
+  for (let second = 0; second < 60; second++) {
+    f.sample(46);
+    for (let k = 0; k < 5; k++) { f.advance(150); f.context.noteLinkSample(120 + (k * 37) % 90, true, 'control'); }
+    f.advance(-750);
+  }
+  assert.equal(f.grade(), 'normal', 'queued control answers do not change the plan');
+  assert.equal(f.context.window.LinkGrade.changesPerMinute(), 0);
+}
 // A link that swings between good and slow every 6 s changes the grade at most 4 times a minute.
 {
   const f = fixture();
