@@ -72,7 +72,10 @@ function resumeSensorStreamsForVisiblePage() {
   const cameraPausedByAck = state.cameraLive.ackExhausted === true;
   if ((closed.camera || cameraPausedByAck) && routeSupportsCameraLive() && !state.cameraLive.socket &&
       (cameraPausedByAck || !state.cameraLive.userStopped)) {
-    state.cameraLive.reconnectAttempt = 0; startCameraLive();
+    state.cameraLive.reconnectAttempt = 0;
+    // An off-screen camera panel stays closed until it is scrolled back (NET-08).
+    if (cameraPanel.visible === false) cameraPanel.closed = true;
+    else startCameraLive();
   }
   if (closed.imu && routeSupportsImuLive() && !state.imuLive.socket && !state.imuLive.userStopped) {
     state.imuLive.reconnectAttempt = 0; startImuLive();
@@ -85,6 +88,52 @@ function handleSensorStreamVisibility() {
   }
   resumeSensorStreamsForVisiblePage();
   tick();
+}
+
+// Hidden camera panel (NET-08): when the picture box of the camera has been off
+// screen (scrolled away, collapsed or display:none) for 1 s, the camera socket is
+// closed (not a user stop) and opened again as soon as the box is back on screen.
+// Nothing else changes: a user stop stays a user stop and the recording is untouched.
+const CAMERA_PANEL_HIDDEN_MS = 1000;
+const cameraPanel = { observer: null, element: null, visible: null, timer: null, closed: false };
+function cameraPanelElement() {
+  const image = $(currentRoute() === "/rover-control" ? "roverCameraImage" : "cameraLiveImage");
+  return image?.parentElement || image || null;
+}
+function watchCameraPanel() {
+  if (typeof IntersectionObserver !== "function") return;
+  const element = cameraPanelElement();
+  if (element === cameraPanel.element) return;
+  if (!cameraPanel.observer) cameraPanel.observer = new IntersectionObserver(onCameraPanelIntersection);
+  if (cameraPanel.element) cameraPanel.observer.unobserve(cameraPanel.element);
+  cameraPanel.element = element;
+  cameraPanel.visible = null;
+  if (element) cameraPanel.observer.observe(element);
+}
+function onCameraPanelIntersection(entries) {
+  const entry = [...entries].reverse().find((item) => item.target === cameraPanel.element);
+  if (!entry) return;
+  cameraPanel.visible = Boolean(entry.isIntersecting);
+  if (cameraPanel.visible) {
+    if (cameraPanel.timer) { window.clearTimeout(cameraPanel.timer); cameraPanel.timer = null; }
+    if (cameraPanel.closed) {
+      cameraPanel.closed = false;
+      if (!document.hidden && routeSupportsCameraLive() && !state.cameraLive.socket && !state.cameraLive.userStopped) {
+        state.cameraLive.reconnectAttempt = 0;
+        startCameraLive();
+      }
+    }
+  } else if (!cameraPanel.timer) {
+    cameraPanel.timer = window.setTimeout(closeCameraForHiddenPanel, CAMERA_PANEL_HIDDEN_MS);
+  }
+}
+function closeCameraForHiddenPanel() {
+  cameraPanel.timer = null;
+  if (cameraPanel.visible !== false) return;
+  if ((state.cameraLive.socket || state.cameraLive.enabled) && !state.cameraLive.userStopped) {
+    cameraPanel.closed = true;
+    closeCameraLive("카메라 화면이 보이지 않아 수신을 쉽니다.", { userStopped: false });
+  }
 }
 
 function toggleLidarLive() {
@@ -288,9 +337,7 @@ function cameraWebSocketUrl() {
     transport: "binary-v1",
     flow: "decode-ack",
   });
-  const originalPreview = new URLSearchParams(location.search).get("camera_preview") ??
-    (window.UBTS_CAMERA_ORIGINAL_PREVIEW === true ? "original" : "legacy");
-  if (originalPreview === "original") {
+  if (cameraPreviewMode() === "original") {
     params.set("resolution", "1920x1080");
     params.set("quality_mode", "original");
   }
@@ -309,6 +356,18 @@ function cameraWebSocketUrl() {
   return `${scheme}://${location.host}/ws/camera?${params.toString()}`;
 }
 
+// Which preview the camera asks for (NET-08). The 1920x1080 original JPEG (about
+// 112 kB a picture) is a preview choice only; the recording is always the original.
+// It is used when it is asked for: ?camera_preview=original, or the transfer quality
+// "detail" on a dashboard that allows it (window.UBTS_CAMERA_ORIGINAL_PREVIEW).
+// Automatic mode starts with the bridge's re-encoded ladder (640x360 up to 1280x720).
+function cameraPreviewMode(profile = liveNetworkProfile()) {
+  const explicit = new URLSearchParams(location.search).get("camera_preview");
+  if (explicit === "original" || explicit === "legacy") return explicit;
+  if (window.UBTS_CAMERA_ORIGINAL_PREVIEW !== true) return "legacy";
+  return profile === "detail" ? "original" : "legacy";
+}
+
 function startCameraLive() {
   if (!routeSupportsCameraLive()) {
     debugLog("camera", "skip start outside live routes");
@@ -316,6 +375,13 @@ function startCameraLive() {
   }
   if (state.cameraLive.socket) return;
   clearCameraReconnectTimer();
+  watchCameraPanel();
+  if (cameraPanel.visible === false) {
+    // Off screen: open when the picture box is visible again (NET-08).
+    state.cameraLive.userStopped = false;
+    cameraPanel.closed = true;
+    return;
+  }
   const url = cameraWebSocketUrl();
   state.cameraLive.enabled = true;
   state.cameraLive.userStopped = false;
