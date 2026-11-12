@@ -387,14 +387,15 @@ function cameraPreviewMode(profile = liveNetworkProfile()) {
 // Camera preview per link grade in automatic mode (NET-08 (1)(3), NET-10). The
 // size, rate and quality bound what the camera may take of the link so that
 // control answers do not wait behind it (pictures measured on the bench frames:
-// 640x360 Q55 about 24 kB, 320x180 Q35 about 5.5 kB, 160x90 Q30 about 2 kB):
+// 640x360 Q40 about 19 kB, 320x180 Q35 about 6 kB, 160x90 Q30 about 2 kB):
 //   good      original 1080 preview where allowed, one picture on the way
-//   normal    640x360 Q55, 6 per second, two on the way
+//   normal    640x360 Q40, 6 per second, one on the way (two let a control answer
+//             wait behind two pictures: command p95 312 ms on the bench, 5a15199)
 //   slow      320x180 Q35, 5 per second, two on the way
 //   very slow the bridge's "tiny" profile (160x90, 2 per second, 3 kB/s)
 const CAMERA_STREAM_PLAN = {
   detail: { original: true, profile: "detail", resolution: "1280x720", fps: 30, quality: 70, window: 1 },
-  balanced: { original: false, profile: "balanced", resolution: "640x360", fps: 6, quality: 55, window: 2 },
+  balanced: { original: false, profile: "balanced", resolution: "640x360", fps: 6, quality: 40, window: 1 },
   slow: { original: false, profile: "balanced", resolution: "320x180", fps: 5, quality: 35, window: 2 },
   tiny: { original: false, profile: "tiny", resolution: "320x180", fps: 2, quality: 30, window: 1 },
 };

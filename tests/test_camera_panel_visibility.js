@@ -95,7 +95,7 @@ assert.equal(urlFor('auto', '?camera_preview=original').get('quality_mode'), 'or
 assert.equal(urlFor('detail', '?camera_preview=legacy').has('quality_mode'), false, 'and the explicit legacy option too');
 const plans = {
   detail: { resolution: '1920x1080', fps: '30', original: true, flow: 'decode-ack' },
-  balanced: { resolution: '640x360', fps: '6', quality: '55', profile: 'balanced', flow: 'decode-ack-v2', window: '2' },
+  balanced: { resolution: '640x360', fps: '6', quality: '40', profile: 'balanced', flow: 'decode-ack' },
   slow: { resolution: '320x180', fps: '5', quality: '35', profile: 'balanced', flow: 'decode-ack-v2', window: '2' },
   tiny: { resolution: '320x180', fps: '2', profile: 'tiny', flow: 'decode-ack' },
 };

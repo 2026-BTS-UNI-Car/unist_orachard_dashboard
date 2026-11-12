@@ -128,6 +128,10 @@ DOCS_CATALOG = [{'slug': 'gps-offline-map', 'title': 'GPS · 대한민국 오프
 class DashboardHandler(BaseHTTPRequestHandler):
     provider: TelemetryProvider
     protocol_version = "HTTP/1.1"
+
+    def version_string(self):
+        # A short Server header (NET-06): every answer carried "BaseHTTP/0.6 Python/3.x.y".
+        return "ubts"
     # D-12 extension points (dashboard_server/extensions.py). create_server() sets them from the environment.
     dashboard_settings = DashboardSettings()
     extension_routes = RouteTable()

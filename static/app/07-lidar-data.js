@@ -6,7 +6,7 @@
 const LIDAR_STREAM_PLAN = {
   detail: { profile: "detail", maxPoints: 720 },    // 10 Hz
   balanced: { profile: "detail", maxPoints: 300 },  // 10 Hz, about 1.7 kB a scan
-  slow: { profile: "balanced", maxPoints: 180 },    // 5 Hz, about 1.1 kB
+  slow: { profile: "balanced", maxPoints: 120 },    // 5 Hz, about 0.8 kB
   tiny: { profile: "slow", maxPoints: 90 },         // 3 Hz, about 0.6 kB
 };
 function lidarStreamPlan(profile = effectiveLinkProfile()) {
