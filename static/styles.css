@@ -700,6 +700,7 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
 }
 
 .steer-drive,
+.tune-stack,
 .steer-pad > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -735,6 +736,13 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
 .steer-gauge > .measured {
   top: var(--space-2);
   background: var(--color-text);
+}
+
+/* Tuning fields (UI-12): as many columns as fit, one on a phone. */
+.tune-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-3);
 }
 
 /* Autonomy status (UI-08): values older than 1.5 s are dimmed. */

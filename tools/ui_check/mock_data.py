@@ -467,6 +467,44 @@ def _executor_status(dataset: str, now: float) -> dict:
     }}
 
 
+def _tuning_view(dataset: str) -> dict:
+    """GET /api/executor/tuning (docs/STEERING_SERVER_KO.md 7). empty: no executor; stress: every group, long values."""
+    rows = [("speed_table_scale", "basic", "속도 표 배율", "배", 0.8, 1.2, 0.01, 1.0),
+            ("target_speed_m_s", "basic", "목표 속도", "m/s", 0.2, 0.5, 0.05, 0.4),
+            ("lookahead_m", "basic", "주시거리", "m", 1.0, 4.0, 0.1, 2.0),
+            ("lateral_gain", "basic", "횡 이득", "rad/m", 0.1, 1.5, 0.05, 0.4),
+            ("heading_gain", "basic", "방향 이득", "rad/rad", 0.1, 3.0, 0.05, 0.9),
+            ("steer_rate_limit_deg_s", "basic", "조향 속도 제한", "°/s", 4.0, 30.0, 1.0, 24.0),
+            ("min_speed_m_s", "advanced", "최저 목표 속도", "m/s", 0.1, 0.4, 0.05, 0.2),
+            ("corridor_lost_s", "advanced", "통로 잃음 판정", "s", 0.5, 5.0, 0.1, None),
+            ("operator_timeout_s", "safety", "화면 연결 끊김 정지", "s", 0.5, 3.0, 0.1, 0.5),
+            ("steer_limit_left_mrad", "safety", "왼쪽 조향 한계", "mrad", 0, 409, 1, 409)]
+    stress = dataset == "stress"
+    source = "자리값: 점검용으로 지어낸 아주 긴 출처 설명 · 문서 이름과 절 번호가 이어진다" if stress else "자리값"
+    params = [{"name": name, "group": group, "label": label, "unit": unit, "min": low, "max": high, "step": step,
+               "default": default, "value": (default if default is not None else 1.234) if stress else None, "source": source,
+               "editable": stress and group != "safety", "editable_when_stopped": group == "basic" or (stress and group == "advanced")}
+              for name, group, label, unit, low, high, step, default in rows]
+    if not stress:
+        return {"ok": True, "schema": "ubts.executor_tuning.v0", "configured": False, "reachable": False,
+                "error": "executor_not_configured", "run_state": None, "applicable": False, "tuning": {}, "params": params}
+    return {"ok": True, "schema": "ubts.executor_tuning.v0", "configured": True, "reachable": True, "error": None,
+            "run_state": "idle", "applicable": True,
+            "tuning": {"preset": "mock_preset_with_a_long_name_for_layout_check", "revision": 12345, "editable": True},
+            "params": params}
+
+
+def _tuning_log(dataset: str, now: float) -> dict:
+    if dataset == "empty":
+        return {"ok": True, "entries": []}
+    return {"ok": True, "entries": [
+        {"at": now - index * 60, "by": "abcdefgh", "ok": index % 3 != 0,
+         "error": None if index % 3 else "out_of_range_mock_reason_with_a_long_identifier",
+         "changes": {"target_speed_m_s": [0.4, 0.35], "lookahead_m": [2.0, 2.5], "mock_unknown_parameter_with_a_long_name": [1, 2]},
+         "revision_before": 12345 - index, "revision_after": 12346 - index}
+        for index in range(50)]}
+
+
 def http_payloads(dataset: str, now: float | None = None) -> dict:
     """정확히 일치하는 GET 경로 -> JSON 응답."""
     if dataset not in DATASETS:
@@ -496,6 +534,8 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
             "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
             "/api/rover/status": _steer_rover_status(dataset, now),
             "/api/executor/status": _executor_status(dataset, now),
+            "/api/executor/tuning": _tuning_view(dataset),
+            "/api/executor/tuning/log": _tuning_log(dataset, now),
         }
     checks = [{"id": key, "passed": index % 3 == 0} for index, key in enumerate(PREPARATION_CHECK_IDS)]
     return {
@@ -573,6 +613,8 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
         "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
         "/api/rover/status": _steer_rover_status(dataset, now),
         "/api/executor/status": _executor_status(dataset, now),
+        "/api/executor/tuning": _tuning_view(dataset),
+        "/api/executor/tuning/log": _tuning_log(dataset, now),
     }
 
 

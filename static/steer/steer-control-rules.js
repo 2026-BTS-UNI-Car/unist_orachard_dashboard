@@ -619,7 +619,7 @@
       var m = self.measuredMrad();
       var lim = self.limits();
       self.hostTarget = m !== null && lim ? clamp(m, -lim.right, lim.left) : null;
-      self._say('ok', '조종 활성화: W/S 구동, A/D 조향, 중앙 맞춤은 누르는 동안, Esc = STOP');
+      self._say('ok', '조종 활성화: W/S 구동, A/D 조향, C 가운데(누르는 동안), Esc = STOP');
     }).then(function () { self._emit(); });
   };
 

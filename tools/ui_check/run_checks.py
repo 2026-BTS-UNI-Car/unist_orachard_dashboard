@@ -30,7 +30,7 @@ import summarize  # noqa: E402
 import ui_metrics  # noqa: E402
 
 TOOL_VERSION = "1.0.0"
-DEFAULT_ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs", "/rover-control"]
+DEFAULT_ROUTES = ["/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs", "/rover-control", "/tuning"]
 DEFAULT_VIEWPORTS = ["390x844", "844x390", "820x1180", "1180x820", "1440x900"]
 # 앱 틀의 STOP(data-ui-check="stop")이 있으면 그것을 재고, 없으면(개편 전 화면) 주행 패널의 STOP을 잰다.
 DEFAULT_STOP_SELECTORS = ["[data-ui-check~='stop']", "#roverStopButton", "[data-rover-drive='stop']"]

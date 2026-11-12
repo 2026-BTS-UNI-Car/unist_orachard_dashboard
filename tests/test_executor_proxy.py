@@ -30,6 +30,7 @@ class FakeExecutor(ThreadingHTTPServer):
         self.host_header = "127.0.0.1:%d" % self.server_address[1]
         self.calls = []
         self.state = {"run_state": "idle", "mode": "MOTOR", "session": None}
+        self.tuning = {"preset": "field", "revision": 1, "editable": True, "values": {"target_speed_m_s": 0.4, "lookahead_m": 2.0}}
         self.extra_status = {}
 
 
@@ -60,7 +61,7 @@ class FakeHandler(BaseHTTPRequestHandler):
         self.reply(200, {"run_state": state["run_state"], "mode": state["mode"], "go_ready": state["run_state"] == "armed",
                          "operator_link": {"fresh": state["session"] is not None, "age_s": 0.05, "timeout_s": 0.5},
                          "gnss": {"state": "fix", "lat": 35.1, "lon": 129.1, "h_acc_m": 4.2},
-                         "log": {"path": "/home/x/run.jsonl"}, **self.server.extra_status})
+                         "log": {"path": "/home/x/run.jsonl"}, "tuning": self.server.tuning, **self.server.extra_status})
 
     def do_POST(self):
         if not self.checked():
@@ -91,6 +92,14 @@ class FakeHandler(BaseHTTPRequestHandler):
             state["run_state"] = "ready"
         elif route == "/api/end":
             state["run_state"] = "ended"
+        elif route == "/api/params":
+            if state["run_state"] not in ("idle", "ready", "ended"):
+                return self.reply(409, {"ok": False, "error": "not_stopped"})
+            if set(body) - {"speed_table_scale", "target_speed_m_s", "lookahead_m", "lateral_gain", "heading_gain",
+                            "steer_rate_limit_deg_s"}:
+                return self.reply(400, {"ok": False, "error": "unknown_parameter"})
+            self.server.tuning["values"].update(body)
+            self.server.tuning["revision"] += 1
         else:
             return self.reply(409, {"ok": False, "error": "refused"})
         self.reply(200, {"ok": True, "run_state": state["run_state"]})

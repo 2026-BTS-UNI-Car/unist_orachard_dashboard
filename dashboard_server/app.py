@@ -30,7 +30,7 @@ STATIC_ROOT = ROOT / "static"
 DOCS_ROOT = ROOT / "docs"
 # Content-hash addresses, long caching and kept gzip results for /static/ and the page (NET-04).
 STATIC_ASSETS = StaticAssets(STATIC_ROOT)
-APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/docs"}
+APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/tuning", "/docs"}
 SESSION_COOKIE_NAME = "ubts_session"
 SESSION_TTL_S = int(os.environ.get("DASHBOARD_SESSION_TTL_S", "3600"))
 _SESSION_LOCK = threading.Lock()
@@ -133,6 +133,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     extension_routes = RouteTable()
     # Relay of the row executor's operator API (dashboard_server/executor_proxy.py); None = not configured.
     executor_client = None
+    # Change log of the tuning screen (dashboard_server/steer_tuning.py); create_server() sets it.
+    tuning_log = None
     _last_telemetry_log_at = 0.0
 
     def do_HEAD(self):
@@ -287,29 +289,41 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _executor_request(self, parsed, action=False):
         """/api/executor/*: the row executor's operator API on behalf of the page (docs/STEERING_SERVER_KO.md 6)."""
         from dashboard_server import executor_proxy as proxy
+        from dashboard_server import steer_tuning
         client = self.executor_client
         name = parsed.path.removeprefix("/api/executor/")
         if not action:
             if name == "status":
                 self._send_json(client.status() if client is not None else proxy.not_configured_status())
+            elif name == "tuning":
+                self._send_json(steer_tuning.view(client.status() if client is not None else proxy.not_configured_status()))
+            elif name == "tuning/log":
+                log = self.tuning_log
+                self._send_json({"ok": True, "entries": log.recent() if log is not None else []})
             else:
                 self.send_error(404, "Not found")
             return
-        if name not in proxy.ACTIONS:
+        if name not in proxy.ACTIONS and name != "params":
             self.send_error(404, "Not found")
             return
         origin = self.headers.get("Origin")
         if origin and urlparse(origin).netloc != self.headers.get("Host"):
             self.send_error(403, "Origin mismatch")
             return
-        if not self._ensure_session(create=False):
+        session = self._ensure_session(create=False)
+        if not session:
             self.send_error(403, "Dashboard session required")
             return
         try:
             body = proxy.read_body(self)
             if client is None:
                 raise proxy.ExecutorError(503, "executor_not_configured")
-            status, reply = client.action(name, body)
+            if name == "params":
+                if self.tuning_log is None:
+                    raise proxy.ExecutorError(503, "tuning_log_not_configured")
+                status, reply = steer_tuning.apply(client, body, self.tuning_log, session[:8])
+            else:
+                status, reply = client.action(name, body)
         except proxy.ExecutorError as exc:
             if name == "stop":
                 dashboard_log("executor.stop_failed", error=exc.error)
@@ -1390,7 +1404,9 @@ def create_server(host: str, port: int, config: str | None = None, *, autonomy_b
     STATIC_ASSETS.set_page_filter(extensions.page_filter(settings, extension))
     DashboardHandler.provider = extensions.load_provider(settings, config) or TelemetryProvider(config)
     from dashboard_server.executor_proxy import ExecutorClient
+    from dashboard_server.steer_tuning import TuningLog
     DashboardHandler.executor_client = ExecutorClient.from_env()
+    DashboardHandler.tuning_log = TuningLog(Path(os.environ.get("UBTS_EXECUTOR_TUNING_LOG") or ROOT / "runtime/executor_tuning_log.jsonl"))
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
     from dashboard_server.autonomy_settings import AutonomySettings

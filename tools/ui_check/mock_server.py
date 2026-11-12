@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mock_data  # noqa: E402
 
 HOST = "127.0.0.1"
-APP_ROUTES = ("/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs", "/rover-control")
+APP_ROUTES = ("/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/docs", "/rover-control", "/tuning")
 VEHICLES = ("differential", "front_steer")
 WS_CHANNELS = {"/ws/lidar": "lidar", "/ws/camera": "camera", "/ws/imu": "imu", "/ws/gps": "gps"}
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"

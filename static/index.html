@@ -37,6 +37,7 @@
 <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13.5 6.5 19 12l-5.5 5.5"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 0-14.6-4L4 9.3M4 4.5v4.8h4.8M4 12.5a8 8 0 0 0 14.6 4l1.4-1.8M20 19.5v-4.8h-4.8"/></symbol>
 <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></symbol>
+<symbol id="i-tune" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
 <symbol id="i-rover" viewBox="0 0 24 24"><rect height="7" rx="2" width="17" x="3.5" y="9"/><circle cx="8" cy="18" r="2"/><circle cx="16" cy="18" r="2"/><path d="M12 9V5.5M9.5 5.5h5"/></symbol>
 </svg>
 <div hidden="" class="simulation-banner" role="status">SIMULATION · Gazebo 센서 · 실제 Jetson에 연결되지 않음</div>
@@ -59,6 +60,7 @@
 <div class="sidebar-brand"><span class="sidebar-mark"><svg aria-hidden="true" class="icon"><use href="#i-rover"/></svg></span><span class="sidebar-name"><strong>UBTS</strong><small>로버 대시보드</small></span></div>
 <nav class="nav-list">
 <a data-route="/rover-control" href="/rover-control"><svg aria-hidden="true" class="icon"><use href="#i-drive"/></svg><span>주행</span></a>
+<a data-route="/tuning" href="/tuning"><svg aria-hidden="true" class="icon"><use href="#i-tune"/></svg><span>조정</span></a>
 <a data-route="/connection" href="/connection"><svg aria-hidden="true" class="icon"><use href="#i-link"/></svg><span>연결</span></a>
 <a data-route="/" href="/"><svg aria-hidden="true" class="icon"><use href="#i-overview"/></svg><span>개요</span></a>
 <a data-route="/system" href="/system"><svg aria-hidden="true" class="icon"><use href="#i-system"/></svg><span>시스템</span></a>
@@ -819,6 +821,32 @@
 </div>
 </article>
 </section>
+</section>
+<section class="page" data-page="/tuning">
+<header class="page-head">
+<h1>조정</h1>
+<span class="status-chip" id="tuneState">확인 중</span>
+<p class="page-note">자율주행 실행기의 값 · 차가 정지했을 때만 적용 · 안전 한계는 잠금</p>
+</header>
+<form class="dashboard-grid" id="tuneForm" novalidate="">
+<article class="panel">
+<div class="panel-head"><h2>기본 묶음</h2><small id="tuneRevision">판 --</small></div>
+<div class="test-result" hidden="" id="tuneNotice"></div>
+<div class="tune-fields" id="tuneBasic"></div>
+<div class="sim-map-actions"><button class="action-button primary" disabled="" id="tuneApply" type="submit">적용</button><button class="action-button secondary" id="tuneClear" type="button">입력 지우기</button></div>
+<p class="help-text">빈 칸은 지금 값을 그대로 둔다. 범위 밖이나 주행 중에는 적용하지 않는다. 실행기가 마지막으로 판정한다.</p>
+</article>
+<article class="panel tune-stack">
+<div class="panel-head"><h2>고급 묶음</h2><small>실행기가 받는다고 알릴 때만 바꾼다</small></div>
+<div id="tuneAdvanced"></div>
+<div class="panel-head mini"><h3>안전 한계</h3><span class="status-chip">잠금</span></div>
+<div id="tuneSafety"></div>
+</article>
+<article class="panel wide">
+<div class="panel-head"><h2>변경 기록</h2><small>새 것부터</small><button class="action-button secondary" hidden="" id="tuneLogMore" type="button">전체 보기</button></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>시각</th><th>바뀐 값</th><th>결과</th><th>판</th><th>화면</th></tr></thead><tbody id="tuneLogBody"></tbody></table></div>
+</article>
+</form>
 </section>
 <section class="page" data-page="/docs">
 <header class="page-head">
