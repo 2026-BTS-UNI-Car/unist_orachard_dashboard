@@ -86,7 +86,7 @@ const between = (begin, end) => { const a = source.indexOf(begin), b = source.in
     const nativeMap = read('native-accepted-map.mjs');
     assert.match(nativeMap, /for\(const button of \[start,stop,fresh\]\)button\.className='action-button secondary';/);
     assert.match(nativeMap, /actions\.className='field-observation-actions';actions\.append\(start,stop,fresh\);/);
-    assert.match(read('field-preparation.css'), /\.field-observation-actions\s*\{[^}]*gap:/);
+    assert.match(read('styles.css'), /\.field-observation-actions\s*\{[^}]*gap:/);
   }
   // S33: the container log box is refreshed every 2.5 s; unchanged text is not rewritten
   // (a rewrite replaces the text node and drops the reader's selection).

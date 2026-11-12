@@ -208,8 +208,9 @@ class RulesFileTest(unittest.TestCase):
                         "style-no-gradient", "style-no-blur", "style-shadow-kinds", "style-font-size-kinds",
                         "style-font-weight-kinds", "style-no-heavy-text"):
             self.assertEqual(by_id[rule_id]["mode"], "fail", rule_id)
+        # 글자 굵기는 디자인 2차에서 규칙표가 네 가지(400·500·600·700)가 되어 4다(1차는 400·600에 여유 1을 둔 3이었다).
         self.assertEqual([by_id[name]["value"] for name in ("style-no-gradient", "style-no-blur", "style-shadow-kinds", "style-font-size-kinds", "style-font-weight-kinds")],
-                         [0, 0, 1, 6, 3])
+                         [0, 0, 1, 6, 4])
         # 누름 영역 규칙: 터치 화면 네 가지에서 화면의 조작 요소는 모두 44px 이상. 문서 본문과 마우스 화면은 알리기만 한다.
         touch = by_id["touch-target-44"]
         self.assertEqual((touch["value"], touch["viewports"]), (0, ["390x844", "844x390", "820x1180", "1180x820"]))

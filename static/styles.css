@@ -1,6 +1,6 @@
 /* Screens and panels of the dashboard. Loaded after the design system sheets
    (css/tokens.css, base.css, components.css, frame.css): colours, sizes and the
-   look of buttons, inputs, chips, panels and notices come from there. This
+   look of buttons, inputs, badges, panels and notices come from there. This
    sheet places things inside the pages. No raw colours, no gradients, no
    shadows here. */
 
@@ -9,11 +9,13 @@
 .resource-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
+  gap: var(--page-gutter);
 }
 
-.resource-grid {
-  align-items: start;
+/* The CPU card has the most to show and takes a full row; the other four pair up
+   (the two cards of a row are equally tall). */
+.resource-grid > .resource-card:first-child {
+  grid-column: 1 / -1;
 }
 
 .wide {
@@ -30,6 +32,7 @@
 .fan-head-actions > strong {
   font-size: var(--text-lg);
   line-height: var(--leading-lg);
+  letter-spacing: var(--tracking-tight);
 }
 
 .panel-head.mini {
@@ -40,17 +43,30 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: var(--space-1);
   min-width: var(--control-height);
   min-height: var(--control-height);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
 }
 
-/* Secondary one-line explanations under a control or a map. */
+.text-link .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Secondary explanations under a control, a map or a list. */
 .help-text,
 .control-note,
 .sim-map-note,
-.gps-caption {
+.gps-caption,
+.gps-map-footer,
+.gps-diagnostics p,
+.field-preparation p,
+.media-jobs-note,
+.archive-motor-caption,
+.container-self-lock {
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
@@ -66,9 +82,11 @@
 .panel details > summary {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   min-height: var(--control-height);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
+  font-weight: var(--weight-medium);
   list-style: none;
   overflow-wrap: anywhere;
 }
@@ -79,31 +97,74 @@
 
 .panel details > summary::before {
   flex: 0 0 auto;
-  width: 0;
-  height: 0;
-  margin-right: var(--space-2);
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid var(--color-text-secondary);
+  width: 16px;
+  height: 16px;
+  background: var(--color-text-secondary);
+  -webkit-mask: var(--icon-chevron) center / contain no-repeat;
   content: "";
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .panel details[open] > summary::before {
   transform: rotate(90deg);
 }
 
+/* Name, value and detail cells in a grid (device probe, container details,
+   GPS read-outs, plan): quiet tiles, not bordered boxes. */
+.probe-card,
+.container-detail-grid article,
+.gps-readouts > div,
+.milestone {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-fill);
+}
+
+.probe-card span,
+.container-detail-grid span,
+.gps-readouts span {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
+}
+
+.probe-card strong,
+.container-detail-grid strong,
+.gps-readouts strong {
+  min-width: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  overflow-wrap: anywhere;
+}
+
+.probe-card small,
+.container-detail-grid small {
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
 /* ---- Charts ------------------------------------------------------------ */
+/* A chart over its legend: the plot has the whole width of the panel. */
 .chart-frame {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(136px, 172px);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
-  align-items: start;
+}
+
+.chart-frame > .chart-readout {
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: var(--space-2);
 }
 
 .resource-chart {
   display: block;
   width: 100%;
-  height: 210px;
+  height: 190px;
   contain: layout paint style;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
@@ -112,7 +173,7 @@
 }
 
 .chart-panel .resource-chart {
-  height: 260px;
+  height: 220px;
 }
 
 /* Read-out list beside a chart or under a sensor view. One row per value:
@@ -120,26 +181,48 @@
 .chart-readout {
   display: grid;
   align-content: start;
-  gap: var(--space-2);
+  gap: 6px;
   min-width: 0;
 }
 
+/* Mark, name and value share a line; a value that does not fit beside its
+   name moves below it as a whole (an address is not cut in the middle). */
 .chart-readout .readout-row {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) minmax(0, auto);
-  column-gap: var(--space-2);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  align-content: start;
+  column-gap: var(--space-2);
   min-width: 0;
 }
 
+/* In a list the rows are separated by a rule. */
+.chart-readout .readout-row + .readout-row {
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Beside a chart, and wherever the rows sit side by side, each row is a chip:
+   the legend of the chart. */
+.chart-frame > .chart-readout .readout-row,
+.network-mode-panel .chart-readout .readout-row,
+.sensor-overview .chart-readout .readout-row {
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--color-fill);
+}
+
+/* The mark of a series is a small square (a status dot is round). */
 .chart-readout .swatch {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-round);
+  flex: 0 0 10px;
+  height: 10px;
+  border-radius: var(--radius-small);
   background: var(--chart-3);
 }
 
 .chart-readout span {
+  flex: 1 1 auto;
   min-width: 0;
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
@@ -148,24 +231,21 @@
 }
 
 .chart-readout b {
-  grid-column: 3;
-  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
   overflow-wrap: anywhere;
   text-align: right;
 }
 
+/* The detail starts under the name, past the mark. */
 .chart-readout small {
-  grid-column: 2 / -1;
-  display: block;
+  flex: 1 1 100%;
   min-width: 0;
+  padding-left: 18px;
   color: var(--color-text-secondary);
   overflow-wrap: anywhere;
-}
-
-.cpu-mode-view {
-  min-width: 0;
 }
 
 .core-chart-grid {
@@ -176,7 +256,7 @@
 
 .core-chart {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px;
+  grid-template-columns: minmax(0, 1fr) 76px;
   gap: var(--space-2);
   align-items: start;
   min-width: 0;
@@ -206,13 +286,13 @@
 .core-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2) var(--space-4);
-  margin-top: var(--space-3);
+  gap: var(--space-2) var(--space-5);
+  margin-top: var(--space-4);
 }
 
 .core {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 52px;
+  grid-template-columns: 48px minmax(0, 1fr) 56px;
   gap: var(--space-2);
   align-items: center;
   color: var(--color-text-secondary);
@@ -226,7 +306,7 @@
 }
 
 .resource-card > .progress {
-  margin-top: var(--space-3);
+  margin-top: var(--space-4);
 }
 
 .resource-card > small {
@@ -239,8 +319,8 @@
 /* ---- LiDAR polar view -------------------------------------------------- */
 .lidar-map-frame {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(170px, 230px);
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 240px);
+  gap: var(--space-5);
   align-items: start;
 }
 
@@ -250,7 +330,7 @@
 
 .lidar-map-frame > div:last-child {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .lidar-map-stage {
@@ -295,6 +375,7 @@
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
 }
 
 .map-control strong {
@@ -322,14 +403,14 @@
 /* ---- Camera frames ----------------------------------------------------- */
 .camera-live-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(178px, 238px);
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) minmax(178px, 240px);
+  gap: var(--space-5);
   align-items: start;
 }
 
 .camera-controls {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -340,7 +421,6 @@
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-media-bg);
 }
@@ -366,17 +446,18 @@
   opacity: 0;
 }
 
-/* Caption over a camera picture. */
+/* Caption over a camera picture or an attitude view. */
 .camera-frame figcaption,
 .rover-camera-frame span,
-.archive-camera-frame figcaption {
+.archive-camera-frame figcaption,
+.imu-attitude-stage > span {
   position: absolute;
   bottom: var(--space-2);
   left: var(--space-2);
   z-index: var(--z-raised);
   max-width: calc(100% - var(--space-4));
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-control);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-small);
   background: var(--color-media-scrim);
   color: var(--color-media-text);
   font-size: var(--text-xs);
@@ -409,17 +490,17 @@
 .rover-layout {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
+  gap: var(--page-gutter);
   align-items: start;
 }
 
-.rover-layout .wide {
-  grid-column: 1 / -1;
-}
-
+/* Panels whose parts are stacked with one gap. */
 .rover-live-panel,
 .rover-drive-panel,
-.rover-record-panel {
+.rover-record-panel,
+.rover-gps-panel,
+.network-mode-panel,
+.fan-pwm-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
@@ -427,10 +508,14 @@
   min-width: 0;
 }
 
+/* The gap follows the header bar: 4px more gives the 16px of the other panels. */
 .rover-live-panel > .panel-head,
 .rover-drive-panel > .panel-head,
-.rover-record-panel > .panel-head {
-  margin-bottom: 0;
+.rover-record-panel > .panel-head,
+.rover-gps-panel > .panel-head,
+.network-mode-panel > .panel-head,
+.fan-pwm-panel > .panel-head {
+  margin-bottom: var(--space-1);
 }
 
 .rover-lidar-stage {
@@ -444,21 +529,18 @@
   min-width: 0;
 }
 
-/* Drive panel: title, then the panel switch and STOP on one row. */
-.rover-drive-panel .panel-head {
-  display: block;
-}
-
+/* Drive panel header: title, then the panel switch and STOP at the right. In
+   a narrow column the two buttons move below the title. */
 .rover-drive-panel h2 {
   white-space: nowrap;
 }
 
 .drive-head-actions {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--space-2);
-  margin-top: var(--space-2);
 }
 
 .drive-head-actions .action-button {
@@ -470,14 +552,32 @@
   border-color: var(--color-stop);
   background: var(--color-stop);
   color: var(--color-on-stop);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
 }
 
-.rover-layout.drive-collapsed .rover-drive-panel {
-  min-height: auto;
+@media (hover: hover) {
+  .drive-head-actions .action-button.danger:not(:disabled):hover {
+    border-color: var(--color-stop-hover);
+    background: var(--color-stop-hover);
+  }
+}
+
+.drive-head-actions .action-button.danger:not(:disabled):active,
+.rover-pad button[data-rover-drive="stop"]:active {
+  border-color: var(--color-stop);
+  background: var(--color-on-stop);
+  color: var(--color-stop);
 }
 
 .rover-layout.drive-collapsed .rover-drive-panel > :not(.panel-head) {
   display: none;
+}
+
+/* Only the header bar is left: it needs no rule under it. */
+.rover-layout.drive-collapsed .rover-drive-panel > .panel-head {
+  margin-bottom: calc(var(--panel-padding) * -1);
+  border-bottom: 0;
 }
 
 .rover-arm-controls {
@@ -486,28 +586,49 @@
   min-width: 0;
 }
 
+/* The arm button is the first step of driving: as tall as a touch control
+   everywhere. While driving is armed it has the tint of the armed badge in
+   the status bar. */
+.rover-arm-controls .action-button {
+  min-height: 44px;
+}
+
+.rover-arm-controls .action-button[aria-pressed="true"],
+.rover-arm-controls .action-button[aria-pressed="true"]:not(:disabled):hover {
+  border-color: var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+}
+
 .rover-speed-control {
   display: grid;
   gap: 0;
   min-width: 0;
 }
 
-.rover-speed-control label {
+.rover-speed-control label,
+.sim-autonomy-controls > label {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
-}
-
-.rover-speed-control span {
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
 }
 
 .rover-speed-control strong {
+  color: var(--color-text);
   font-size: var(--text-lg);
   line-height: var(--leading-lg);
+  letter-spacing: var(--tracking-tight);
+}
+
+.sim-autonomy-controls > label strong {
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
 }
 
 .rover-pad {
@@ -518,11 +639,13 @@
 }
 
 .rover-pad button {
+  /* W over A, STOP, D over S: the middle column unless a rule below says otherwise. */
+  grid-column: 2;
   min-width: 0;
   min-height: var(--hold-height);
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-control);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--color-fill);
   color: var(--color-text);
   font-family: inherit;
   font-size: var(--text-md);
@@ -536,33 +659,27 @@
   -webkit-touch-callout: none;
 }
 
-.rover-pad button[data-rover-drive="forward"] {
-  grid-column: 2;
-}
-
 .rover-pad button[data-rover-drive="left"] {
   grid-column: 1;
-}
-
-.rover-pad button[data-rover-drive="stop"] {
-  grid-column: 2;
-  border-color: var(--color-stop);
-  background: var(--color-stop);
-  color: var(--color-on-stop);
 }
 
 .rover-pad button[data-rover-drive="right"] {
   grid-column: 3;
 }
 
-.rover-pad button[data-rover-drive="backward"] {
-  grid-column: 2;
-}
-
+/* A held direction is solid at once (no transition on the drive pad). */
 .rover-pad button.active {
   border-color: var(--color-accent);
   background: var(--color-accent);
   color: var(--color-on-accent);
+}
+
+.rover-pad button[data-rover-drive="stop"] {
+  border-color: var(--color-stop);
+  background: var(--color-stop);
+  color: var(--color-on-stop);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
 }
 
 .sim-autonomy-controls {
@@ -570,22 +687,6 @@
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   min-width: 0;
-}
-
-.sim-autonomy-controls > label {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
-
-.sim-autonomy-controls > label strong {
-  color: var(--color-text);
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
 }
 
 .sim-autonomy-controls > .sim-map-status {
@@ -597,7 +698,6 @@
   position: relative;
   min-height: 220px;
   overflow: hidden;
-  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-media-bg);
 }
@@ -608,22 +708,10 @@
   height: 220px;
 }
 
-.imu-attitude-stage > span {
-  position: absolute;
-  bottom: var(--space-2);
-  left: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-control);
-  background: var(--color-media-scrim);
-  color: var(--color-media-text);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
-
 .imu-heading-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
 }
 
@@ -631,11 +719,13 @@
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
 }
 
 .imu-heading-row strong {
   font-size: var(--text-lg);
   line-height: var(--leading-lg);
+  letter-spacing: var(--tracking-tight);
 }
 
 /* ---- Recording controls ------------------------------------------------ */
@@ -667,7 +757,7 @@
 .record-button-grid .action-button {
   flex: 1 1 0;
   min-width: min-content;
-  padding: 0 var(--space-2);
+  padding: 6px var(--space-2);
 }
 
 /* Keep the label beside its check box and wrap the words inside the label. */
@@ -680,41 +770,56 @@
 .archive-layout {
   display: grid;
   grid-template-columns: minmax(240px, 0.58fr) minmax(0, 1.42fr);
-  gap: var(--space-4);
+  gap: var(--space-5);
   align-items: start;
   container-type: inline-size;
 }
 
-.archive-list {
+/* A list of things to pick from (recordings, documents): rounded rows, the
+   picked one tinted, like the menu. */
+.archive-list,
+.doc-group {
   display: grid;
+  gap: 2px;
   min-width: 0;
-  border-top: 1px solid var(--color-border);
 }
 
-.archive-list button {
+.archive-list button,
+.doc-link {
   display: grid;
   gap: 2px;
   width: 100%;
   min-width: 0;
-  padding: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
   border: 0;
-  border-bottom: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text);
   font-family: inherit;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
-.archive-list button:hover {
-  background: var(--color-fill);
+@media (hover: hover) {
+  .archive-list button:hover,
+  .doc-link:hover,
+  .container-row:hover {
+    background: var(--color-fill);
+    text-decoration: none;
+  }
 }
 
-.archive-list button.active {
+.archive-list button.active,
+.doc-link.active,
+.container-row.active {
   background: var(--color-accent-soft);
 }
 
-.archive-list strong {
+.archive-list strong,
+.doc-link strong {
   min-width: 0;
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
@@ -726,7 +831,8 @@
 }
 
 .archive-list span,
-.archive-list small {
+.archive-list small,
+.doc-link small {
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
@@ -768,7 +874,8 @@
   min-height: 260px;
 }
 
-.archive-camera-frame img {
+.archive-camera-frame img,
+.archive-camera-frame video {
   display: block;
   width: 100%;
   height: 100%;
@@ -778,10 +885,6 @@
 
 .archive-camera-frame video {
   display: none;
-  width: 100%;
-  height: 100%;
-  min-height: 260px;
-  object-fit: contain;
 }
 
 .archive-camera-frame.native-video video {
@@ -815,7 +918,7 @@
   display: grid;
   gap: var(--space-2);
   min-width: 0;
-  padding-top: var(--space-3);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
 }
 
@@ -832,14 +935,9 @@
   min-height: 240px;
 }
 
-.archive-motor-status,
-.archive-motor-caption {
+.archive-motor-status {
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
-}
-
-.archive-motor-caption {
-  color: var(--color-text-secondary);
 }
 
 .archive-motor-table-wrap {
@@ -852,6 +950,12 @@
   white-space: nowrap;
 }
 
+/* The two PWM columns are numbers. */
+.archive-motor-table th:nth-child(n + 4),
+.archive-motor-table td:nth-child(n + 4) {
+  text-align: right;
+}
+
 .archive-download-actions {
   display: grid;
   justify-items: start;
@@ -860,17 +964,19 @@
 .archive-download-button {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-height: var(--control-height);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
+  padding: 6px 14px;
+  border: 1px solid var(--color-border-control);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-text);
-  font-weight: var(--weight-strong);
+  font-weight: var(--weight-medium);
+  transition: background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 
 .archive-download-button:hover {
+  border-color: var(--color-border-strong);
   background: var(--color-fill);
   text-decoration: none;
 }
@@ -887,14 +993,9 @@
 }
 
 /* ---- Network mode ------------------------------------------------------ */
-.network-mode-panel {
-  display: grid;
-  align-content: start;
-  gap: var(--space-3);
-}
-
-.network-mode-panel > .panel-head {
-  margin-bottom: 0;
+/* Both panels under the mode panel take the full row (the list of interfaces was a lone half). */
+.page[data-page="/network"] .dashboard-grid > .panel {
+  grid-column: 1 / -1;
 }
 
 .network-mode-actions {
@@ -902,25 +1003,16 @@
 }
 
 .network-mode-panel .chart-readout {
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-3) var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2) var(--space-3);
 }
 
 /* ---- Fan --------------------------------------------------------------- */
 .fan-control-grid {
   display: grid;
   grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
-  gap: var(--space-4);
+  gap: var(--page-gutter);
   align-items: start;
-}
-
-.fan-pwm-panel {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.fan-pwm-panel > .panel-head {
-  margin-bottom: 0;
 }
 
 .fan-head-actions {
@@ -953,6 +1045,7 @@
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
 }
 
 .slider-row b {
@@ -980,11 +1073,16 @@
   gap: var(--space-3);
   min-width: 0;
   min-height: 44px;
-  padding: var(--space-1) 0;
+  padding: 6px 0;
   border-bottom: 1px solid var(--color-border);
 }
 
+.status-item:first-child {
+  padding-top: 0;
+}
+
 .status-item:last-child {
+  padding-bottom: 0;
   border-bottom: 0;
 }
 
@@ -1014,44 +1112,104 @@
   min-width: 0;
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-medium);
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+/* A status list of a panel before its first data: two quiet bars. */
+.panel > .status-list:empty::before,
+.panel > .status-list:empty::after {
+  height: 14px;
+  margin: 9px 0;
+  border-radius: var(--radius-small);
+  background: var(--color-fill-strong);
+  animation: skeleton-pulse 1.2s ease-in-out infinite alternate;
+  content: "";
+}
+
+.panel > .status-list:empty::after {
+  width: 60%;
+}
+
+/* A list that was filled with nothing says so, like .empty-state (the page
+   script leaves the box empty, so the icon and the line are drawn here). */
+.panel > .status-list[data-render-key]:empty,
+.timeline:empty {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.panel > .status-list[data-render-key]:empty::before,
+.timeline:empty::before {
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  border-radius: 0;
+  background: var(--color-text-disabled);
+  -webkit-mask: var(--icon-empty) center / contain no-repeat;
+  animation: none;
+  content: "";
+}
+
+.panel > .status-list[data-render-key]:empty::after,
+.timeline:empty::after {
+  width: auto;
+  height: auto;
+  margin: 0;
+  background: none;
+  animation: none;
+  content: "표시할 항목이 없습니다.";
 }
 
 .disk-row {
   display: grid;
   grid-template-columns: minmax(160px, 0.7fr) minmax(0, 1fr) 64px;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-4);
   min-width: 0;
-  padding: var(--space-2) 0;
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--color-border);
 }
 
+.disk-row:first-child {
+  padding-top: 0;
+}
+
 .disk-row:last-child {
+  padding-bottom: 0;
   border-bottom: 0;
 }
 
 .interface-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
   min-width: 0;
 }
 
 .interface-card {
   min-width: 0;
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--color-border);
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-fill);
 }
 
 .interface-card .card-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   min-width: 0;
+}
+
+/* On the tinted tile the neutral badge needs the stronger fill. */
+.interface-card .tag:not(.ok) {
+  background: var(--color-fill-strong);
 }
 
 .interface-metrics {
@@ -1071,7 +1229,7 @@
 
 .interface-metrics b {
   color: var(--color-text);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-medium);
   overflow-wrap: anywhere;
   text-align: right;
 }
@@ -1079,26 +1237,29 @@
 /* ---- Containers -------------------------------------------------------- */
 .container-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 90px 72px 96px minmax(120px, 0.8fr);
+  grid-template-columns: minmax(180px, 1fr) 104px 72px 96px minmax(120px, 0.8fr);
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  min-height: 48px;
+  min-height: 52px;
+  margin: 0 calc(var(--space-2) * -1);
   padding: var(--space-1) var(--space-2);
   border-bottom: 1px solid var(--color-border);
   cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
-.container-row:hover {
-  background: var(--color-fill);
+.container-row:last-child {
+  border-bottom: 0;
 }
 
-.container-row.active {
-  background: var(--color-accent-soft);
+/* The state badge keeps the width of its word in its column. */
+.container-row .tag {
+  justify-self: start;
 }
 
 .container-detail {
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .container-toolbar,
@@ -1112,17 +1273,10 @@
   max-width: 100%;
 }
 
-.container-self-lock {
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
-
-/* Name, value and detail cells in a grid (container details, device probe). */
 .container-detail-grid,
 .probe-grid {
   display: grid;
-  gap: var(--space-3) var(--space-4);
+  gap: var(--space-2) var(--space-3);
 }
 
 .container-detail-grid {
@@ -1134,44 +1288,23 @@
   margin-top: var(--space-3);
 }
 
-.container-detail-grid article,
-.probe-card {
-  display: grid;
-  align-content: start;
-  gap: 2px;
-  min-width: 0;
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--color-border);
-}
-
-.container-detail-grid span,
-.probe-card span {
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
-
-.container-detail-grid strong,
-.probe-card strong {
-  min-width: 0;
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-  overflow-wrap: anywhere;
-}
-
-.container-detail-grid small,
-.probe-card small {
-  color: var(--color-text-secondary);
-  overflow-wrap: anywhere;
+/* Boxes that scroll inside the page have a slim scroll bar. */
+.log-view,
+.table-wrap,
+.archive-motor-table-wrap,
+.docs-index,
+.markdown-body,
+.markdown-body pre {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-control) transparent;
 }
 
 .log-view {
   width: 100%;
   max-height: 360px;
   margin: 0;
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   overflow: auto;
-  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-fill);
   color: var(--color-text);
@@ -1183,13 +1316,7 @@
 .timeline {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.milestone {
-  min-width: 0;
-  padding-top: var(--space-2);
-  border-top: 2px solid var(--color-border-strong);
+  gap: var(--space-3);
 }
 
 .milestone p {
@@ -1199,22 +1326,32 @@
   line-height: var(--leading-xs);
 }
 
+/* State of a step, as a badge. */
 .milestone small {
-  display: inline-flex;
+  justify-self: start;
   margin-top: var(--space-2);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-fill-strong);
   color: var(--color-text-secondary);
+  font-weight: var(--weight-medium);
 }
 
 .milestone small.done {
-  color: var(--color-text);
-  font-weight: var(--weight-strong);
+  background: var(--color-ok-soft);
+  color: var(--color-ok-text);
+}
+
+.milestone small.in_progress {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
 }
 
 /* ---- Documents --------------------------------------------------------- */
 .docs-layout {
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  gap: var(--space-4);
+  gap: var(--page-gutter);
   align-items: start;
   min-height: 0;
 }
@@ -1227,45 +1364,17 @@
   min-height: 0;
 }
 
-.doc-group {
-  display: grid;
-}
-
 .doc-group h3 {
   margin: var(--space-3) 0 var(--space-1);
+  padding: 0 var(--space-3);
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
 }
 
-.doc-link {
-  display: grid;
-  gap: 2px;
-  min-height: 44px;
-  padding: var(--space-2);
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text);
-}
-
-.doc-link:hover {
-  background: var(--color-fill);
-  text-decoration: none;
-}
-
-.doc-link.active {
-  background: var(--color-accent-soft);
-}
-
-.doc-link strong {
-  min-width: 0;
-  font-size: var(--text-sm);
-  line-height: var(--leading-sm);
-  overflow-wrap: anywhere;
-}
-
-.doc-link small {
-  color: var(--color-text-secondary);
-  overflow-wrap: anywhere;
+.doc-group:first-child h3 {
+  margin-top: 0;
 }
 
 .doc-reader-head {
@@ -1273,8 +1382,8 @@
   flex-wrap: wrap;
   justify-content: space-between;
   gap: var(--space-2) var(--space-4);
-  margin-bottom: var(--space-3);
-  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--color-border);
   overflow-wrap: anywhere;
 }
@@ -1302,7 +1411,7 @@
 }
 
 .markdown-body {
-  max-width: 980px;
+  max-width: 880px;
   font-size: var(--text-md);
   line-height: var(--leading-md);
   /* Break a word only when it does not fit its line; tables keep their columns. */
@@ -1314,7 +1423,7 @@
    page scrolls as a whole. */
 @media (min-height: 600px) {
   .page[data-page="/docs"].active {
-    height: calc(100dvh - var(--statusbar-height) - var(--banner-height) - 2 * var(--space-4));
+    height: calc(100dvh - var(--statusbar-height) - var(--banner-height) - 2 * var(--page-gutter));
     grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
   }
@@ -1354,7 +1463,7 @@
 }
 
 .markdown-body h2 {
-  padding-bottom: var(--space-1);
+  padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--color-border);
   font-size: var(--text-lg);
   line-height: var(--leading-lg);
@@ -1385,17 +1494,17 @@
 }
 
 .markdown-body code {
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-control);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-small);
   background: var(--color-fill);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
 }
 
-.markdown-body pre {
-  padding: var(--space-3);
+.markdown-body pre,
+.markdown-body .math-block {
+  padding: var(--space-3) var(--space-4);
   overflow: auto;
-  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-fill);
 }
@@ -1411,11 +1520,6 @@
 
 .markdown-body .math-block {
   margin: 0 0 var(--space-4);
-  padding: var(--space-3);
-  overflow-x: auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-fill);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   line-height: var(--leading-sm);
@@ -1433,10 +1537,10 @@
   object-fit: contain;
 }
 
+/* A quotation keeps the rule at its left: a convention of text, not a notice. */
 .markdown-body blockquote {
-  padding: var(--space-2) var(--space-3);
-  border-left: 3px solid var(--color-border-strong);
-  background: var(--color-fill);
+  padding: var(--space-1) var(--space-4);
+  border-left: 3px solid var(--color-border-control);
   color: var(--color-text-secondary);
 }
 
@@ -1469,80 +1573,331 @@
   vertical-align: top;
 }
 
+.markdown-body tr:last-child > td {
+  border-bottom: 0;
+}
+
 .markdown-body th {
   background: var(--color-fill);
   color: var(--color-text-secondary);
+  font-weight: var(--weight-medium);
 }
 
-/* ---- Wide screens: three columns on the drive page --------------------- */
+/* ---- GPS map panels ---------------------------------------------------- */
+.gps-map {
+  position: relative;
+  width: 100%;
+  height: clamp(340px, 38vw, 540px);
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  background: var(--color-fill);
+}
+
+.gps-map .maplibregl-canvas {
+  outline: none;
+}
+
+.gps-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* Fix state beside the title: a badge with a dot. */
+.gps-map-actions [data-state]::before {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: currentColor;
+  content: "";
+}
+
+.gps-map-actions [data-state="fix"] {
+  background: var(--color-ok-soft);
+  color: var(--color-ok-text);
+}
+
+.gps-map-actions [data-state="waiting"] {
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+}
+
+/* Five read-outs. The position takes two tracks, so every row is full: 2+1 and 1+1+1 in three tracks,
+   2 / 1+1 / 1+1 in two tracks. The wide live panel shows all five in one row. */
+.gps-readouts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-3);
+}
+
+.gps-readouts > div:first-child {
+  grid-column: span 2;
+}
+
 @media (min-width: 1181px) {
+  .rover-gps-panel .gps-readouts {
+    grid-template-columns: 2fr 1.1fr 1.1fr 1fr 1fr;
+  }
+
+  .rover-gps-panel .gps-readouts > div:first-child {
+    grid-column: auto;
+  }
+}
+
+.gps-map-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.gps-diagnostics p,
+.field-preparation p,
+.media-jobs-note {
+  margin: 0 0 var(--space-2);
+}
+
+/* Rover mark on the map. The map tiles are light in both themes, so the mark
+   keeps one colour pair. */
+.gps-rover-marker {
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
+}
+
+.gps-marker-dot {
+  position: absolute;
+  inset: 5px;
+  border: 3px solid var(--color-media-text);
+  border-radius: var(--radius-round);
+  background: var(--chart-1);
+  outline: 1px solid var(--color-media-bg);
+}
+
+.gps-rover-marker.stale .gps-marker-dot {
+  background: var(--color-text-disabled);
+}
+
+.gps-marker-arrow {
+  position: absolute;
+  inset: -4px;
+  display: none;
+  transform: rotate(var(--gps-course, 0deg));
+}
+
+.gps-marker-arrow::before {
+  display: block;
+  width: 0;
+  height: 0;
+  margin: -8px auto 0;
+  border-right: 7px solid transparent;
+  border-bottom: 15px solid var(--chart-1);
+  border-left: 7px solid transparent;
+  content: "";
+}
+
+.gps-rover-marker.has-course .gps-marker-arrow {
+  display: block;
+}
+
+.gps-archive-map {
+  height: 350px;
+}
+
+.gps-map .maplibregl-ctrl-attrib {
+  background: var(--color-media-text);
+  color: var(--color-media-bg);
+}
+
+.gps-map .maplibregl-ctrl-attrib a {
+  color: var(--color-media-bg);
+}
+
+/* ---- Occupancy grid map panels (live and recorded) ---------------------- */
+/* The cells themselves are drawn by the map scripts. */
+.sim-live-map-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.mapping-job-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mapping-job-row p {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.mapping-job-row button {
+  flex: 0 0 auto;
+}
+
+.sim-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sim-map-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  background: var(--color-media-bg);
+}
+
+.sim-map-stage canvas {
+  display: block;
+  width: 100%;
+  height: 350px;
+  touch-action: none;
+}
+
+.sim-archive-grid .sim-map-stage canvas {
+  height: 420px;
+}
+
+.sim-map-status {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.map-view-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.map-segment-gallery {
+  display: flex;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-2) 0;
+  overflow-x: auto;
+}
+
+.map-segment-card {
+  flex: 0 0 160px;
+  min-width: 0;
+  padding: var(--space-1);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-segment-card[aria-pressed="true"] {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-soft);
+}
+
+.map-segment-card img {
+  display: block;
+  width: 100%;
+  height: 96px;
+  border-radius: var(--radius-small);
+  background: var(--color-media-bg);
+  object-fit: contain;
+}
+
+.map-segment-card span {
+  display: block;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Field test preparation and observation block of the drive panel ---- */
+.field-preparation {
+  min-width: 0;
+}
+
+.field-preparation ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-5);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.field-check-passed {
+  color: var(--color-text-secondary);
+}
+
+.field-check-pending {
+  color: var(--color-text);
+}
+
+.field-observation {
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.field-observation h3 {
+  margin: 0 0 var(--space-2);
+}
+
+.field-observation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.field-observation p strong {
+  color: var(--color-text);
+}
+
+.field-observation-notice {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-fill);
+}
+
+/* ---- Recording video conversion jobs ----------------------------------- */
+.media-job {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.media-job-description {
+  flex: 1 1 280px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  overflow-wrap: anywhere;
+}
+
+.media-job-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ---- From 900px: three columns on the drive page ----------------------- */
+@media (min-width: 900px) {
   /* The first row is as tall as the drive panel; the rest of the tall sensor
      panels goes to the second row, so no gap opens under the drive panel. */
-  .rover-layout {
-    grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) minmax(240px, 0.78fr);
-    grid-template-rows: auto 1fr;
-  }
-
-  .rover-lidar-panel {
-    grid-column: 1;
-    grid-row: 1 / span 2;
-  }
-
-  .rover-camera-panel {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-
-  .rover-drive-panel {
-    grid-column: 3;
-    grid-row: 1;
-  }
-
-  .rover-record-panel {
-    grid-column: 3;
-    grid-row: 2;
-  }
-
-  .rover-lidar-stage {
-    min-height: clamp(300px, 24vw, 430px);
-  }
-
-  .rover-lidar-stage .lidar-map {
-    width: min(100%, clamp(300px, 23vw, 430px));
-  }
-
-  .rover-sensor-controls {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* A mouse does not need the tall hold buttons: the drive panel stays short. */
-@media (min-width: 1181px) and (pointer: fine) {
-  .rover-layout .rover-pad button {
-    min-height: 40px;
-  }
-}
-
-/* ---- Up to 1180px ------------------------------------------------------ */
-@media (max-width: 1180px) {
-  .chart-frame,
-  .lidar-map-frame,
-  .camera-live-layout,
-  .archive-layout,
-  .archive-media-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .chart-frame .chart-readout {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  }
-
-  .page[data-page="/connection"] .dashboard-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (min-width: 900px) and (max-width: 1180px) {
   .rover-layout {
     grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr) minmax(220px, 0.78fr);
     grid-template-rows: auto 1fr;
@@ -1581,6 +1936,54 @@
   }
 }
 
+@media (min-width: 1181px) {
+  .rover-layout {
+    grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) minmax(240px, 0.78fr);
+  }
+
+  .rover-lidar-stage {
+    min-height: clamp(300px, 24vw, 430px);
+  }
+
+  .rover-lidar-stage .lidar-map {
+    width: min(100%, clamp(300px, 23vw, 430px));
+  }
+
+  /* The full-width CPU card lists the cores four across. */
+  .core-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* A mouse does not need the tall hold buttons: the drive panel stays short. */
+@media (min-width: 1181px) and (pointer: fine) {
+  .rover-layout .rover-pad button {
+    min-height: 44px;
+  }
+}
+
+/* ---- Up to 1180px ------------------------------------------------------ */
+@media (max-width: 1180px) {
+  .lidar-map-frame,
+  .camera-live-layout,
+  .archive-layout,
+  .archive-media-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page[data-page="/connection"] .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The two half-width panels of the connection page share a row (they are not
+   neighbours in the markup; the wide panels keep their order). */
+@media (min-width: 1181px) {
+  .page[data-page="/connection"] .dashboard-grid {
+    grid-auto-flow: dense;
+  }
+}
+
 @media (max-width: 900px) {
   .archive-imu-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -1602,8 +2005,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .resource-chart {
-    height: 190px;
+  .resource-chart,
+  .chart-panel .resource-chart {
+    height: 170px;
   }
 
   .lidar-map-stage {
@@ -1639,7 +2043,12 @@
   .disk-row {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-1);
-    padding: var(--space-2);
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .disk-row {
+    padding-right: 0;
+    padding-left: 0;
   }
 
   .container-row b,
@@ -1697,17 +2106,36 @@
   }
 }
 
-@media (max-width: 639px) {
-  .panel {
-    padding: var(--space-3);
+@media (max-width: 720px) {
+  .gps-readouts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .dashboard-grid,
-  .resource-grid,
-  .rover-layout,
-  .fan-control-grid,
-  .docs-layout {
-    gap: var(--space-3);
+  .gps-map {
+    height: 350px;
+  }
+
+  .gps-map-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  .mapping-job-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
+  .sim-map-stage canvas,
+  .sim-archive-grid .sim-map-stage canvas {
+    height: 300px;
+  }
+
+  .sim-map-actions .action-button {
+    flex: 1 1 auto;
   }
 }
 
@@ -1725,13 +2153,11 @@
   max-height: 104px;
   padding-bottom: var(--space-1);
   overflow-x: auto;
-  border-top: 0;
 }
 
 .archive-layout:has(.sensor-overview) > .archive-list button {
   flex: 0 0 220px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
 }
 
 .archive-preview.sensor-overview {
@@ -1830,11 +2256,6 @@
   top: var(--space-1);
   left: var(--space-1);
   margin: 0;
-}
-
-.sensor-overview .archive-motor-table-wrap {
-  max-width: 100%;
-  overflow-x: auto;
 }
 
 .sensor-overview .map-segment-card img {

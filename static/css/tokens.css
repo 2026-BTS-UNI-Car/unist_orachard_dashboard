@@ -1,12 +1,22 @@
 /* Design tokens of the dashboard. Loaded before every other style sheet.
    Light is the default theme. Dark is chosen with the theme switch
    (html[data-theme="dark"]) and remembered in localStorage "ubts-theme".
-   Rules for the rest of the CSS: sizes, colours and radii come from here;
-   no gradients, no blur, no glow; a shadow only on overlays. */
+   Rules for the rest of the CSS: sizes, colours, weights and radii come from
+   here; no gradients, no blur, no glow; a shadow only on overlays. */
 
-/* No font file is loaded for the interface: the first load has to stay light
-   on a slow link. Text is drawn with the fonts of the device, so layouts must
-   not depend on the widths of one particular font. */
+/* Interface font: one variable file (weights 400 to 700, Latin and the 2,350
+   common Hangul syllables, about 320 kB), a renamed subset of Pretendard
+   (static/vendor/ubts-sans, SIL OFL 1.1). font-display: swap shows the text
+   in a device font at once and swaps when the file has arrived, so a slow
+   link never waits for it; rare syllables outside the subset fall back to
+   the device font. Layouts must not depend on the widths of one font. */
+@font-face {
+  font-family: "UBTS Sans";
+  src: url("/static/vendor/ubts-sans/ubts-sans-var.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   color-scheme: light;
@@ -19,33 +29,50 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  /* Type: 12, 14, 16, 20, 28 with a fixed line height each; weights 400 and 600. */
-  --font-sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
+  /* Type: caption and label 13, body 14, panel title 16, key value 20, page
+     title 24, with one line height each. */
+  --font-sans: "UBTS Sans", system-ui, -apple-system, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
-  --text-xs: 12px;
+  --text-xs: 13px;
   --text-sm: 14px;
   --text-md: 16px;
   --text-lg: 20px;
-  --text-xl: 28px;
-  --leading-xs: 16px;
+  --text-xl: 24px;
+  --leading-xs: 18px;
   --leading-sm: 20px;
   --leading-md: 24px;
   --leading-lg: 28px;
-  --leading-xl: 36px;
+  --leading-xl: 32px;
+  /* Weights: text; labels and buttons; titles and values; page title and STOP. */
   --weight-regular: 400;
+  --weight-medium: 500;
   --weight-strong: 600;
+  --weight-bold: 700;
+  /* Headings and large numbers sit a little tighter. */
+  --tracking-tight: -0.01em;
+  --tracking-title: -0.02em;
 
-  /* Radius: controls, panels, and round for status dots only. */
-  --radius-control: 4px;
-  --radius-panel: 8px;
+  /* Radius: small marks, controls, panels, pills (badges, switches), dots. */
+  --radius-small: 4px;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --radius-pill: 999px;
   --radius-round: 50%;
 
   /* Sizes of the frame and of controls. Controls grow to 44px for fingers (below). */
   --control-height: 36px;
   --hold-height: 56px;
   --statusbar-height: 56px;
-  --rail-width: 200px;
+  --rail-width: 224px;
   --banner-height: 0px;
+  --page-gutter: 24px;
+  --panel-padding: 20px;
+  --content-max: 1600px;
+
+  /* Motion: hover, press and the drawer only; never on data updates. */
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
 
   /* Layers, lowest to highest. */
   --z-raised: 2;
@@ -54,30 +81,43 @@
   --z-drawer: 50;
   --z-dialog: 60;
 
-  /* Neutral palette. */
-  --color-bg: #f4f5f7;
+  /* Cool neutrals: page, panel, two fills, hairline, control outline, field outline (3:1). */
+  --color-bg: #f5f6f8;
   --color-surface: #ffffff;
-  --color-fill: #eef0f3;
-  --color-border: #d8dce2;
-  --color-border-strong: #858f9c;
-  --color-text: #1b2027;
-  --color-text-secondary: #586270;
-  --color-text-disabled: #9aa3ae;
+  --color-fill: #f1f3f6;
+  --color-fill-strong: #e6e9ee;
+  --color-border: #e4e7ec;
+  --color-border-control: #cdd3db;
+  --color-border-strong: #8892a0;
+  --color-text: #171c24;
+  --color-text-secondary: #5a6473;
+  --color-text-disabled: #a0a8b3;
 
-  /* One accent: primary buttons, selection, links, focus ring. */
-  --color-accent: #1f5fbf;
-  --color-accent-soft: #e6eefa;
+  /* One accent: primary buttons, switches and sliders (solid), links and
+     selection (text on the soft tint), focus ring. */
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d54d1;
+  --color-accent-active: #1947b5;
+  --color-accent-text: #1f5bdb;
+  --color-accent-soft: #edf3ff;
+  --color-accent-border: #b6ccfa;
   --color-on-accent: #ffffff;
 
-  /* Three status colours: status marks only. */
-  --color-ok: #1a7f4b;
-  --color-warning: #9a5a00;
-  --color-on-warning: #ffffff;
-  --color-danger: #c62828;
-  --color-on-danger: #ffffff;
+  /* Status: a mark colour (dots), a soft tint (badge and notice background)
+     and a text colour that reads on the tint and on the surface. */
+  --color-ok: #16a34a;
+  --color-ok-text: #126b34;
+  --color-ok-soft: #e7f6ec;
+  --color-warning: #d97706;
+  --color-warning-text: #8a4a00;
+  --color-warning-soft: #fdf3dc;
+  --color-danger: #dc2626;
+  --color-danger-text: #b42318;
+  --color-danger-soft: #fdecec;
 
-  /* STOP red is for STOP only. */
-  --color-stop: #c62828;
+  /* STOP is the only solid red. */
+  --color-stop: #d92d20;
+  --color-stop-hover: #b42318;
   --color-on-stop: #ffffff;
 
   /* Camera and video frames stay dark in both themes. */
@@ -93,47 +133,83 @@
   --chart-4: #eda100;
   --chart-5: #6250d6;
   --chart-surface: #ffffff;
-  --chart-grid: #e3e6ea;
+  --chart-grid: #eceef2;
 
-  /* Overlays (menus, drawer, dialogs) are the only elements with a shadow. */
-  --shadow-overlay: 0 8px 24px rgba(16, 19, 24, 0.18);
-  --color-scrim: rgba(16, 19, 24, 0.45);
+  /* Overlays (drawer, dialogs, toasts) are the only elements with a shadow. */
+  --shadow-overlay: 0 16px 40px rgba(16, 24, 40, 0.16);
+  --color-scrim: rgba(16, 24, 40, 0.4);
+
+  /* Small inline pictures for things that markup cannot carry (a script
+     replaces the text of notices; a select has no child element). Masks take
+     the colour of the text; the select arrow and the slider fill are images
+     and are redefined for the dark theme. */
+  --icon-info: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v5.5M12 7.5v.2'/%3E%3C/svg%3E");
+  --icon-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='m8.3 12.4 2.5 2.5 4.9-5.3'/%3E%3C/svg%3E");
+  --icon-warn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4 2.8 19.5h18.4zM12 10v4.5M12 17v.2'/%3E%3C/svg%3E");
+  --icon-bad: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7.5V13M12 16.3v.2'/%3E%3C/svg%3E");
+  --icon-empty: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 13.5 6 5.5h12l2.5 8v5h-17zM3.5 13.5h4.7l1.3 2.5h5l1.3-2.5h4.7'/%3E%3C/svg%3E");
+  --icon-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9.5 6 6 6-6 6'/%3E%3C/svg%3E");
+  --icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5.5 12.6 4.2 4.2 8.8-9.3'/%3E%3C/svg%3E");
+  --icon-select: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a6473' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6.5 9.5 5.5 5.5 5.5-5.5'/%3E%3C/svg%3E");
+  --range-fill-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1' preserveAspectRatio='none'%3E%3Cpath d='M0 0h1v1H0z' fill='%232563eb'/%3E%3C/svg%3E");
+  /* Filled share of a slider track; the page script sets it on each slider. */
+  --range-fill: 0%;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-bg: #101318;
-  --color-surface: #181d24;
-  --color-fill: #212833;
-  --color-border: #2b333e;
-  --color-border-strong: #5f6b7b;
-  --color-text: #e7eaee;
-  --color-text-secondary: #a2acb8;
-  --color-text-disabled: #6b7480;
-  --color-accent: #6ea8ff;
-  --color-accent-soft: #1b2b45;
-  --color-on-accent: #0c1322;
-  --color-ok: #4cc38a;
-  --color-warning: #f0b354;
-  --color-on-warning: #1c1408;
-  --color-danger: #ff6b6b;
-  --color-on-danger: #1c0c0c;
-  --color-stop: #d32f2f;
-  --color-on-stop: #ffffff;
+  --color-bg: #0d1015;
+  --color-surface: #151a20;
+  --color-fill: #1c222a;
+  --color-fill-strong: #28303a;
+  --color-border: #252c35;
+  --color-border-control: #39424e;
+  --color-border-strong: #6d7888;
+  --color-text: #e8ebef;
+  --color-text-secondary: #9ca6b3;
+  --color-text-disabled: #5f6975;
+  --color-accent: #2f6bea;
+  --color-accent-hover: #285fd4;
+  --color-accent-active: #2253bd;
+  --color-accent-text: #8ab4ff;
+  --color-accent-soft: #16233d;
+  --color-accent-border: #2b4a85;
+  --color-on-accent: #ffffff;
+  --color-ok: #3fb970;
+  --color-ok-text: #6fd89b;
+  --color-ok-soft: #12281c;
+  --color-warning: #e0a030;
+  --color-warning-text: #f2bd62;
+  --color-warning-soft: #2c2210;
+  --color-danger: #f0625d;
+  --color-danger-text: #ff9a94;
+  --color-danger-soft: #331a1a;
+  --color-stop: #d93025;
+  --color-stop-hover: #bf2a20;
   --chart-1: #3987e5;
   --chart-2: #d95926;
   --chart-3: #199e70;
   --chart-4: #c98500;
   --chart-5: #9085e9;
-  --chart-surface: #181d24;
-  --chart-grid: #2b333e;
-  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --color-scrim: rgba(0, 0, 0, 0.55);
+  --chart-surface: #151a20;
+  --chart-grid: #222932;
+  --shadow-overlay: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --color-scrim: rgba(0, 0, 0, 0.6);
+  --icon-select: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca6b3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6.5 9.5 5.5 5.5 5.5-5.5'/%3E%3C/svg%3E");
+  --range-fill-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1' preserveAspectRatio='none'%3E%3Cpath d='M0 0h1v1H0z' fill='%232f6bea'/%3E%3C/svg%3E");
 }
 
 /* Fingers and the drawer layout (below 1024px) get 44px controls. */
 @media (pointer: coarse), (max-width: 1023px) {
   :root {
     --control-height: 44px;
+  }
+}
+
+/* Tablets and phones: 16px gutters and panel padding. */
+@media (max-width: 1023px) {
+  :root {
+    --page-gutter: 16px;
+    --panel-padding: 16px;
   }
 }
