@@ -26,6 +26,7 @@ function harness(replies,options={}){
   fetch:()=>{const next=replies[fetches++];if(next instanceof Error)return Promise.reject(next);return Promise.resolve(next);},
   maplibregl:{Map:class{constructor(){maps++;}addControl(){}on(){}},NavigationControl:class{},ScaleControl:class{},Marker:class{}}
  };
+ context.mapLibrary=async()=>context.maplibregl; // the page loads the library when a map is first created
  vm.createContext(context);vm.runInContext(code,context,{timeout:1000});
  return{view:prefix=>new context.View(prefix,true),at:t=>{clock=t;},get fetches(){return fetches;},
   get maps(){return maps;},get fonts(){return fonts;},errors};

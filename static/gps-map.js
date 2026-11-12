@@ -1,9 +1,21 @@
-import * as maplibregl from './vendor/maplibre-gl/maplibre-gl.mjs';
 import {FollowModel, validFix, coordinates, frameAt, pathFeatures, accuracyCircle, usedSatellitesText, receptionText} from './gps-map-model.mjs';
 
-// The map library otherwise finds its worker file from its own address, without the content-hash version, so a
-// browser would ask for the worker again on every visit. Naming it here lets the server add the version (NET-04).
-maplibregl.setWorkerUrl?.("/static/vendor/maplibre-gl/maplibre-gl-worker.mjs");
+// The map library (about 300 kB compressed) and the Korean label font (about 630 kB) are needed only while a map is
+// on screen, so they are loaded then and not with the page (NET-03). The server gives these addresses their
+// content-hash versions (NET-04); the library would otherwise find its worker file from its own address without one.
+const MAP_LIBRARY_URL = "/static/vendor/maplibre-gl/maplibre-gl.mjs";
+const MAP_WORKER_URL = "/static/vendor/maplibre-gl/maplibre-gl-worker.mjs";
+let mapLibraryPromise = null;
+function mapLibrary() {
+  if (!mapLibraryPromise) {
+    mapLibraryPromise = import(MAP_LIBRARY_URL).then(library => {
+      library.setWorkerUrl?.(MAP_WORKER_URL);
+      library.addProtocol('pmtiles', new window.pmtiles.Protocol().tile);
+      return library;
+    }).catch(error => { mapLibraryPromise = null; throw error; });
+  }
+  return mapLibraryPromise;
+}
 
 const byId = id => document.getElementById(id);
 const text = (id, value) => { const element = byId(id); if (element) element.textContent = value; };
@@ -23,8 +35,6 @@ function samePathFeatures(left, right) {
   }
   return true;
 }
-const protocol = new window.pmtiles.Protocol();
-maplibregl.addProtocol('pmtiles', protocol.tile);
 const qualityName = {autonomous:'일반 GNSS', dgps:'DGNSS', rtk_float:'RTK FLOAT', rtk_fixed:'RTK FIX', dead_reckoning:'추정 위치', no_fix:'위치 미확정'};
 let bundlePromise;
 function bundle() {
@@ -81,6 +91,19 @@ class GpsMapView {
     button.classList.toggle('active', this.model.follow);
     button.textContent = this.model.follow ? '로버 중심 추적 중' : '로버 중심으로';
   }
+  // The live map starts when its box comes within 200 px of the screen (NET-03): a page opened on a phone, or with
+  // the map below the visible part, does not download the map library and label font until the map is wanted.
+  initWhenVisible() {
+    const container = byId(`${this.prefix}Map`);
+    if (this.map || this.initializing || !container || typeof IntersectionObserver !== 'function') return this.init();
+    if (this.visibility) return;
+    this.visibility = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      this.visibility.disconnect(); this.visibility = null;
+      this.init();
+    }, {rootMargin: '200px'});
+    this.visibility.observe(container);
+  }
   async init() {
     if (this.map) return; // ResizeObserver handles layout changes, not each GPS frame.
     if (this.initializing) return this.initializing;
@@ -95,6 +118,7 @@ class GpsMapView {
   async create() {
     const info = await bundle();
     if (!info.ok) throw new Error(info.error || '오프라인 지도 파일 확인 필요');
+    const maplibregl = await mapLibrary();
     const font = new FontFace('UBTS Map Korean', 'url(/maps/fonts/korean.woff2)', {weight:'400'});
     document.fonts.add(await font.load());
     const style = await localStyle();
@@ -271,7 +295,7 @@ function connect() {
   ws.onerror = () => text('roverGpsConnection', 'GPS 브리지 연결 대기');
 }
 function routeChanged() {
-  if (active()) { live.init(); connect(); }
+  if (active()) { live.initWhenVisible(); connect(); }
   else closeSocket();
 }
 window.RoverGps = {

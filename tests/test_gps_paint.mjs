@@ -50,6 +50,7 @@ function harness(){
  };
  context.window=context;context.window.pmtiles={Protocol:class{tile(){}}};context.window.addEventListener=()=>{};
  vm.createContext(context);vm.runInContext(source,context,{filename:'candidate/static/gps-map.js'});
+ context.mapLibrary=async()=>context.maplibregl; // the page imports the library when a map is first created
  const attach=view=>{
   view.map=new FakeMap();view.marker=new FakeMarker();view.markerElement=node(view.prefix+'Marker');view.addOverlays();return view;
  };
