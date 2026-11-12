@@ -26,7 +26,9 @@ async function tick() {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 6000);
   try {
-    state.telemetry = await getJson("/api/telemetry", { signal: controller.signal });
+    const path = telemetryPath();
+    state.telemetryPath = path;
+    state.telemetry = await getJson(path, { signal: controller.signal });
     state.telemetryCameraSettingsRevision = cameraSettingsRevision;
     pushHistory(state.telemetry);
     renderTelemetry(state.telemetry);
@@ -41,6 +43,12 @@ async function tick() {
     window.clearTimeout(timeout);
     state.tickInFlight = false;
   }
+}
+
+// The drive screen asks only for its own status (NET-06): sensors, services and
+// the rover, about a third of the full answer. Every other screen gets the full one.
+function telemetryPath(route = currentRoute()) {
+  return route === "/rover-control" ? "/api/telemetry?bundle=drive" : "/api/telemetry";
 }
 
 function telemetryIntervalMs(profile = liveNetworkProfile()) {

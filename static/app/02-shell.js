@@ -59,6 +59,11 @@ function renderRoute() {
   }
   // The recording indicator of the status bar has a different source off the drive page.
   if (route !== "/rover-control") renderRecordingStatus();
+  // A screen that needs a different part of the status asks for it now (NET-06).
+  if (state.telemetryPath && state.telemetryPath !== telemetryPath(route)) {
+    state.lastTelemetryPoll = 0;
+    tick();
+  }
   window.RoverGps?.routeChanged();
   requestChartAnimation();
 }

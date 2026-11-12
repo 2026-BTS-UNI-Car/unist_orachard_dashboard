@@ -92,5 +92,49 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     f.timers.at(-1).fn();
     await assert.rejects(command, /응답 없음 5초/);
   }
-  console.log('Control requests bypass the limiter; status 4 (2 while driving); bulk waits; timeouts: PASS');
+  {
+    // Conditional status polls (NET-06): an unchanged answer is a 304 and the caller gets the kept copy.
+    const sent = [];
+    let next = null;
+    const fetch = (input, init = {}) => {
+      const headers = new Headers(init.headers || undefined);
+      sent.push({path: String(input), etag: headers.get('If-None-Match'), priority: init.priority});
+      return Promise.resolve(next());
+    };
+    const context = {URL, AbortController, DOMException, Promise, JSON, Error, Number, String, Math, Map, Headers, Response,
+      location: {href: 'http://dash.local/rover-control', origin: 'http://dash.local'}, state: {roverControl: {lease: null}},
+      setTimeout, clearTimeout};
+    context.window = {fetch};
+    vm.createContext(context); vm.runInContext(source, context);
+    const body = JSON.stringify({ok: true, state: 'idle'});
+    next = () => new Response(body, {status: 200, headers: {'Content-Type': 'application/json', ETag: '"jabc"'}});
+    let answer = await context.window.fetch('/api/autonomy/observe', {cache: 'no-store'});
+    assert.deepEqual(await answer.json(), {ok: true, state: 'idle'});
+    await flush(); await flush();
+    assert.equal(sent[0].etag, null, 'the first request has nothing to name');
+    next = () => new Response(null, {status: 304, headers: {ETag: '"jabc"'}});
+    answer = await context.window.fetch('/api/autonomy/observe', {cache: 'no-store'});
+    assert.equal(sent[1].etag, '"jabc"', 'the next poll names the kept copy');
+    assert.equal(answer.status, 200, 'the caller sees an ordinary answer');
+    assert.equal(answer.headers.get('Content-Type'), 'application/json');
+    assert.deepEqual(await answer.json(), {ok: true, state: 'idle'}, 'with the kept body');
+    next = () => new Response(JSON.stringify({ok: true, state: 'running'}), {status: 200, headers: {'Content-Type': 'application/json', ETag: '"jdef"'}});
+    answer = await context.window.fetch('/api/autonomy/observe');
+    assert.equal((await answer.json()).state, 'running', 'a changed answer replaces the kept copy');
+    await flush(); await flush();
+    next = () => new Response(null, {status: 304});
+    await context.window.fetch('/api/autonomy/observe');
+    assert.equal(sent[3].etag, '"jdef"');
+    next = () => new Response('{"ok":false}', {status: 500, headers: {'Content-Type': 'application/json'}});
+    answer = await context.window.fetch('/api/autonomy/observe');
+    assert.equal(answer.status, 500, 'errors pass through');
+    next = () => new Response('{"ok":true}', {status: 200, headers: {'Content-Type': 'application/json'}});
+    await context.window.fetch('/api/autonomy/observe');
+    assert.equal(sent[5].etag, null, 'and drop the kept copy');
+    next = () => new Response('{"x":1}', {status: 200, headers: {'Content-Type': 'application/json', ETag: '"jx"'}});
+    await context.window.fetch('/api/recordings'); await flush(); await flush();
+    await context.window.fetch('/api/recordings');
+    assert.equal(sent.at(-1).etag, null, 'bulk requests are not made conditional');
+  }
+  console.log('Control requests bypass the limiter; status 4 (2 while driving); bulk waits; timeouts; conditional status polls: PASS');
 })().catch(error => { console.error(error); process.exit(1); });

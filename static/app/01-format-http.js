@@ -143,10 +143,16 @@ async function postJson(path, payload = {}) {
 // jobs, documents) go one at a time and only when no status request waits while
 // the lease is held. User actions (POST) are not queued. The server keeps
 // connections open (keep-alive), so a request does not pay a new connection.
+//
+// Status polls are also conditional (NET-06): the page keeps the last small JSON
+// answer of each address with its ETag and names it in If-None-Match; an answer
+// that has not changed comes back as "304" without a body and the caller gets
+// the kept copy, exactly as if the server had sent it again.
 const CONTROL_TIMEOUT_MS = { stop: 8000, other: 5000 };
 const REQUEST_LIMIT = { normal: 4, constrained: 2 };
 const BULK_REQUEST = /^\/api\/(?:recordings(?:$|\/(?!status$))|live\/recordings\/|live\/mapping-jobs|docker\/container\/|docs|plan$|site-map$|maps\/status$)/;
 const requestQueue = { active: 0, bulkActive: 0, waiting: [] };
+const CONDITIONAL_CACHE = { entries: new Map(), maxEntries: 24, maxBytes: 65536 };
 const pageFetch = window.fetch.bind(window);
 
 async function controlRequest(path, payload = {}, options = {}) {
@@ -226,7 +232,8 @@ function limitedFetch(input, init) {
       if (kind === "bulk") requestQueue.bulkActive += 1;
       let request;
       try {
-        request = pageFetch(input, { priority: "low", ...(init || {}) });
+        request = kind === "status" ? conditionalFetch(input, init)
+          : pageFetch(input, { priority: "low", ...(init || {}) });
       } catch (err) {
         request = Promise.reject(err);
       }
@@ -241,5 +248,47 @@ function limitedFetch(input, init) {
     requestQueue.waiting.push(item);
     startQueuedRequests();
   });
+}
+function conditionalKey(input) {
+  if (typeof input !== "string" && !(input instanceof URL)) return "";
+  try {
+    const url = new URL(String(input), location.href);
+    return url.origin === location.origin ? url.pathname + url.search : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+async function conditionalFetch(input, init) {
+  const key = conditionalKey(input);
+  const kept = key ? CONDITIONAL_CACHE.entries.get(key) : null;
+  const options = { priority: "low", ...(init || {}) };
+  if (kept) {
+    const headers = new Headers(init?.headers || undefined);
+    headers.set("If-None-Match", kept.etag);
+    options.headers = headers;
+  }
+  const response = await pageFetch(input, options);
+  if (response.status === 304 && kept) {
+    // Most recently used goes last; the oldest is dropped first.
+    CONDITIONAL_CACHE.entries.delete(key);
+    CONDITIONAL_CACHE.entries.set(key, kept);
+    return new Response(kept.body, { status: 200, statusText: "OK", headers: kept.headers });
+  }
+  const etag = response.headers?.get?.("ETag");
+  const type = response.headers?.get?.("Content-Type") || "";
+  if (key && response.status === 200 && etag && type.includes("json")) {
+    response.clone().text().then((body) => {
+      if (body.length > CONDITIONAL_CACHE.maxBytes) return;
+      CONDITIONAL_CACHE.entries.delete(key);
+      CONDITIONAL_CACHE.entries.set(key, { etag, body, headers: [["Content-Type", type], ["ETag", etag]] });
+      while (CONDITIONAL_CACHE.entries.size > CONDITIONAL_CACHE.maxEntries) {
+        CONDITIONAL_CACHE.entries.delete(CONDITIONAL_CACHE.entries.keys().next().value);
+      }
+    }).catch(() => {});
+  } else if (key && response.status !== 304) {
+    CONDITIONAL_CACHE.entries.delete(key);
+  }
+  return response;
 }
 window.fetch = limitedFetch;

@@ -213,6 +213,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_static("index.html")
         elif path == "/api/health":
             self._send_json(self.provider.health())
+        elif path == "/api/telemetry" and parse_qs(parsed.query).get("bundle") == ["drive"]:
+            # NET-06: the drive screen's status only (sensors, services, rover).
+            if isinstance(self.provider, TelemetryProvider):
+                payload = self._shared_telemetry("drive").get()
+            else:
+                payload = self.provider.telemetry()
+            self._send_json(payload)
         elif path == "/api/telemetry":
             payload = self._shared_telemetry().get() if isinstance(self.provider, TelemetryProvider) else self.provider.telemetry()
             payload["connection"]["lidar_websocket"] = lidar_websocket_stats()
@@ -521,6 +528,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except OSError:
             pass
         self._body_consumed = False
+        self._session_created = None
         super().handle_one_request()
 
     def parse_request(self):
@@ -555,17 +563,38 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if started is not None:
             self.send_header("Server-Timing", f"app;dur={(time.perf_counter() - started) * 1000:.1f}")
 
-    def _shared_telemetry(self):
-        from dashboard_server.telemetry_snapshot import SharedTelemetry
-        shared = getattr(DashboardHandler, "_telemetry_snapshot", None)
-        if shared is None or shared.provider is not self.provider:
-            shared = SharedTelemetry(self.provider, ttl_s=float(os.environ.get("TELEMETRY_SNAPSHOT_TTL_S", "1.0")))
-            DashboardHandler._telemetry_snapshot = shared
+    def _shared_telemetry(self, bundle: str = "full"):
+        from dashboard_server.telemetry_snapshot import SharedTelemetry, DriveTelemetry
+        attribute = "_telemetry_snapshot" if bundle == "full" else "_telemetry_snapshot_drive"
+        shared = getattr(DashboardHandler, attribute, None)
+        if shared is None or getattr(shared, "owner", shared.provider) is not self.provider:
+            source = self.provider if bundle == "full" else DriveTelemetry(self.provider)
+            shared = SharedTelemetry(source, ttl_s=float(os.environ.get("TELEMETRY_SNAPSHOT_TTL_S", "1.0")))
+            shared.owner = self.provider
+            setattr(DashboardHandler, attribute, shared)
         return shared
+
+    # Conditional GET for JSON (NET-06). A polled status answer that has not
+    # changed is answered "304 Not Modified" without a body when the page names
+    # the ETag of the copy it holds. The body is hashed after it is built, so the
+    # answer is the same JSON either way; large answers are not hashed.
+    JSON_ETAG_MAX_BYTES = 256 * 1024
 
     def _send_json(self, payload, status=200, headers=None):
         session_token = self._ensure_session(create=True)
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        etag = None
+        if status == 200 and self.command in ("GET", "HEAD") and len(body) <= self.JSON_ETAG_MAX_BYTES:
+            etag = '"j' + hashlib.sha1(body).hexdigest()[:20] + '"'
+            if self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self._server_timing_header()
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "no-store")
+                self._send_connection_header()
+                self._send_session_cookie(session_token)
+                self.end_headers()
+                return
         accepts_gzip = "gzip" in self.headers.get("Accept-Encoding", "").lower()
         encoded = gzip.compress(body, compresslevel=1) if accepts_gzip and len(body) >= 1024 else body
         self.send_response(status)
@@ -576,6 +605,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Vary", "Accept-Encoding")
         if encoded is not body:
             self.send_header("Content-Encoding", "gzip")
+        if etag:
+            self.send_header("ETag", etag)
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self._send_session_cookie(session_token)
@@ -755,11 +786,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return None
             token = secrets.token_urlsafe(24)
             _SESSIONS[token] = {"created_at": now, "expires_at": now + SESSION_TTL_S}
+        self._session_created = token
         dashboard_log("session.created", session=token[:8], remote=self.client_address[0])
         return token
 
     def _send_session_cookie(self, token: str | None):
-        if not token:
+        # The cookie is sent when the session is created (NET-06). The session
+        # does not slide, so sending it again on every answer only added about
+        # 100 bytes to each one.
+        if not token or getattr(self, "_session_created", None) != token:
             return
         self.send_header(
             "Set-Cookie",
