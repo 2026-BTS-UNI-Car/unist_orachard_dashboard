@@ -10,8 +10,9 @@
 // smallest is close to the bare round trip):
 //   good < 25 ms, normal < 90 ms, slow < 220 ms, otherwise very slow.
 // A worse grade is taken at once (4 s of samples), a better one only after it
-// has held for 10 s with 30 % margin, so a link that swings does not swing the
-// plan. Two pings in a row without an answer (3 s each) is "offline".
+// has held for 10 s with 15 % margin, so a link that swings does not swing the
+// plan. (A 30 % margin left a 150 ms link that once looked slower stuck in the
+// very-slow plan: 160 ms is never under 0.7 x 220 ms. Seen on the bench, 097519b.) Two pings in a row without an answer (3 s each) is "offline".
 // The thresholds are assumptions; the field link log (below) is meant to replace them.
 //
 // Field log (optional, NET-10 (5)): with ?link_log=1 or localStorage
@@ -23,7 +24,7 @@ const LINK_GRADE = {
   window: 4,
   thresholdsMs: { good: 25, normal: 90, slow: 220 },
   upgradeHoldMs: 10000,
-  upgradeMargin: 0.7,
+  upgradeMargin: 0.85,
   offlineAfterFailures: 2,
   order: ["good", "normal", "slow", "very_slow"],
   profile: { good: "detail", normal: "balanced", slow: "slow", very_slow: "tiny", offline: null, unknown: "slow" },

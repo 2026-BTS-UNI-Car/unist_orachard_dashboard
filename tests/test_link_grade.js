@@ -76,6 +76,17 @@ for (const [rtt, grade, profile] of [[45, 'normal', 'balanced'], [160, 'slow', '
   assert.equal(f.grade(), 'good');
   assert.ok(seconds >= 10 && seconds <= 15, `upgraded after ${seconds} s`);
 }
+// A first answer slower than the link (the page was starting) does not hold a bench "bad" link
+// (150 ms round trip, about 160 ms measured) in the very slow plan: it comes back to "slow".
+{
+  const f = fixture();
+  f.sample(480); f.sample(310); f.sample(300); f.sample(290);
+  assert.equal(f.grade(), 'very_slow');
+  let seconds = 0;
+  while (f.grade() === 'very_slow' && seconds < 30) { f.sample(158 + (seconds % 3) * 6); seconds += 1; }
+  assert.equal(f.grade(), 'slow', `still ${f.grade()} after ${seconds} s`);
+  assert.ok(seconds <= 15, `back to slow after ${seconds} s`);
+}
 // A link that swings between good and slow every 6 s changes the grade at most 4 times a minute.
 {
   const f = fixture();
