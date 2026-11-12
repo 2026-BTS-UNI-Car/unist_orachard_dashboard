@@ -275,3 +275,17 @@ stateDiagram-v2
 3. GNSS 약한 층(S1b)의 상태를 `gnss {state, fix, age_s, h_acc_m, used}`로. 좌표는 내보내지 않아도 된다.
 4. `speed.limit_reason` 값의 목록(화면 이름표용). 화면은 모르는 값을 "기타(값)"로 보인다.
 5. heartbeat를 go 전 armed부터 받아 주기(go 때 `operator_link_not_fresh`가 없게). 다른 세션의 heartbeat가 오면 409 `session_conflict`.
+
+## 12. 구현 상태 (2026-11-13, 브랜치 `screens-20261113`)
+
+| 항목 | 구현 | 남은 것 |
+| --- | --- | --- |
+| 확장 지점(2절, D-12) | `dashboard_server/extensions.py`, `GET /api/dashboard/config`, 화면 표시 `data-vehicle-kind` | 시뮬레이션 쪽 모듈을 이 지점에 꽂기(D-13, 묶음 S5) |
+| 조향 호스트 코드(D-11) | `scripts/esp_motor_v3.py` 등 4개와 시험 7개, compose 프로필 `steer`(기록: `STEERING_HOST_PORT_KO.md`) | 실기 ESP·USB·Jetson 확인(사용자) |
+| 수동 조향(3·4절, UI-07) | `static/steer/steer-control-rules.js`, `steer-drive.mjs`. `front_steer`에서만 보임 | 큰 보기 하나(카메라·지도·LiDAR 고름), 한 화면에 다 보이는 배치는 화면 재구성(라3)에서 |
+| 자율 시작·정지(6절, UI-08) | `dashboard_server/executor_proxy.py`, `static/steer/auto-model.mjs`, `auto-panel.mjs` | 중심선이 겹친 지도, 지도 갱신 지연, 센서 상태 묶음은 지도 화면(라4)과 같이. 실행기(S1) 실제 연결 확인 |
+| 조정(7절, UI-12) | `/tuning`, `dashboard_server/steer_tuning.py`, `static/steer/tuning-model.mjs`, `tuning-page.mjs`, 변경 기록 | PWM-속도 표 그래프, 판 되돌리기·내보내기·가져오기(실행기 판 관리가 정해진 뒤) |
+| 조향 기록(5절) | 바꾸지 않음 | 녹화기 토픽·사이드카(P9) |
+| 조종 WebSocket(3절) | 없음(HTTP) | NET-05(S4a) 측정 뒤 결정 |
+
+모든 확인은 가짜 MCU·가짜 실행기·모의 서버로 했다. 자리값 기반 결과이고 현장 검증이 아니다.
