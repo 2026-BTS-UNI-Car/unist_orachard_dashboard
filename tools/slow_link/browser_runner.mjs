@@ -44,6 +44,8 @@ async function clockOffset(url = cfg.clock_url) {
 // ---------------------------------------------------------------- browser and protocol plumbing
 const port = 9600 + Math.floor(Math.random() * 300);
 const profile = mkdtempSync(join(tmpdir(), 'slow-link-chrome-'));
+// If this process is killed (it then cannot clean up), run_bench.py removes the profile folder named here.
+writeFileSync(join(cfg.out, 'browser_profile.txt'), profile);
 const W0 = cfg.clients?.[0]?.width ?? 1366, H0 = cfg.clients?.[0]?.height ?? 900;
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`,
   '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-background-networking', '--disable-component-update',

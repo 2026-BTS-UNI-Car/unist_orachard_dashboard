@@ -62,6 +62,33 @@ class ScenariosTest(unittest.TestCase):
                 self.assertEqual(key, "DASHBOARD_SESSION_TTL_S", name)
 
 
+class BrowserProfileCleanupTest(unittest.TestCase):
+    def test_only_a_bench_profile_in_the_temp_folder_is_removed(self):
+        with tempfile.TemporaryDirectory() as out:
+            profile = Path(tempfile.mkdtemp(prefix=stack.CHROME_PROFILE_PREFIX))
+            (profile / "Default").mkdir()
+            Path(out, "browser_profile.txt").write_bytes(str(profile).encode("utf-8"))
+            self.assertEqual(run_bench.remove_browser_profile(out), str(profile))
+            self.assertFalse(profile.exists())
+            self.assertIsNone(run_bench.remove_browser_profile(out))  # already gone
+            other = Path(tempfile.mkdtemp(prefix="not-the-bench-"))
+            try:
+                Path(out, "browser_profile.txt").write_bytes(str(other).encode("utf-8"))
+                self.assertIsNone(run_bench.remove_browser_profile(out))
+                self.assertTrue(other.exists())
+                inside = Path(out, stack.CHROME_PROFILE_PREFIX + "x")
+                inside.mkdir()
+                Path(out, "browser_profile.txt").write_bytes(str(inside).encode("utf-8"))
+                self.assertIsNone(run_bench.remove_browser_profile(out))  # not directly in the temp folder
+                self.assertTrue(inside.exists())
+            finally:
+                other.rmdir()
+
+    def test_no_note_means_nothing_to_do(self):
+        with tempfile.TemporaryDirectory() as out:
+            self.assertIsNone(run_bench.remove_browser_profile(out))
+
+
 class StackSettingsTest(unittest.TestCase):
     def make(self, folder, profile, clients=1):
         return stack.Stack(python=sys.executable, app=folder / "app", scratch=folder, out=folder / "out", inputs={}, profile=profile, clients=clients)

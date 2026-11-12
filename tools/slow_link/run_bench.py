@@ -100,6 +100,21 @@ def tool_version():
         return dict(commit=None, tool_folder_modified=None)
 
 
+def remove_browser_profile(out):
+    """The runner names its temporary Chrome profile; remove it when the runner could not (it was killed)."""
+    note = Path(out) / "browser_profile.txt"
+    if not note.is_file():
+        return None
+    import stack
+    folder = Path(note.read_text(encoding="utf-8").strip())
+    if folder.parent.resolve() != Path(tempfile.gettempdir()).resolve() or not folder.name.startswith(stack.CHROME_PROFILE_PREFIX):
+        return None
+    if folder.is_dir():
+        shutil.rmtree(folder, ignore_errors=True)
+        return str(folder)
+    return None
+
+
 def leftover_browsers(kill=False):
     """Bench browsers still alive (matched by the bench's own profile-folder name)."""
     import psutil
@@ -183,9 +198,12 @@ def run_once(args, scenario_name, profile_name, source, inputs, out_root, work):
     finally:
         left = bench.stop() if bench is not None else []
         browsers = leftover_browsers(kill=True)
+        if browsers:
+            time.sleep(1.0)  # let the killed browser release its profile files
+        removed_profile = remove_browser_profile(out)
         run["finished_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         run["wall_s"] = round(time.time() - started, 1)
-        run["cleanup"] = dict(ports_still_open=left, bench_browsers_killed=browsers)
+        run["cleanup"] = dict(ports_still_open=left, bench_browsers_killed=browsers, leftover_profile_removed=removed_profile)
         write_json(out / "run.json", run)
         if not args.keep_scratch:
             shutil.rmtree(scratch, ignore_errors=True)
