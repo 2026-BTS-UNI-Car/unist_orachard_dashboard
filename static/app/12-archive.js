@@ -905,7 +905,7 @@ function renderArchiveFrame(options={}) {
   const cameraCaption = state.archivePlayback.nativeVideoError
     ? `video error · ${state.archivePlayback.nativeVideoError}`
     : nativeVideo
-      ? `${nativeVideo.videoHeight || state.archivePlayback.videoQuality?.height || sourceVideo.height || ""}p · ${state.archivePlayback.videoQuality?.auto ? "자동 · " : ""}${fmtNumber(sourceVideo.fps || 0, 1)} fps · ${fmtClock(timeS)}`
+      ? `${state.archivePlayback.videoQuality?.retrying ? "네트워크 재연결 중 · " : ""}${nativeVideo.videoHeight || state.archivePlayback.videoQuality?.height || sourceVideo.height || ""}p · ${state.archivePlayback.videoQuality?.auto ? "자동 · " : ""}${fmtNumber(sourceVideo.fps || 0, 1)} fps · ${fmtClock(timeS)}`
     : cameraFrame
       ? `${nativeVideo ? `native ${fmtNumber(sourceVideo.fps || 0, 0)} fps · ` : ""}${cameraFrame.frame_id || "camera"} · ${fmtClock(timeS)} · ${cameraFrame.source_width || cameraFrame.width}x${cameraFrame.source_height || cameraFrame.height}`
       : state.archivePlayback.sync ? "카메라 화면 없음" : "동시 재생 꺼짐";
