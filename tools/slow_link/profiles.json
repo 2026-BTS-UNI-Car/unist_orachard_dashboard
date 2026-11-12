@@ -1,0 +1,28 @@
+{
+  "schema": "ubts.slow_link.profiles",
+  "version": 1,
+  "note": "Assumed 2.4 GHz access-point link conditions. Nothing here was measured on the rover's link yet.",
+  "queue_rule": "queue_bytes is about 250 ms of traffic at the link rate (first-in-first-out, shared by all connections of one client)",
+  "profiles": {
+    "good": {
+      "label": "close to the rover",
+      "rate_kbps": 10000, "rtt_ms": 10, "queue_bytes": 262144,
+      "stall_every_s": 0, "stall_ms": 0
+    },
+    "normal": {
+      "label": "tens of metres, some trees",
+      "rate_kbps": 2000, "rtt_ms": 40, "queue_bytes": 65536,
+      "stall_every_s": 0, "stall_ms": 0
+    },
+    "bad": {
+      "label": "far or behind trees",
+      "rate_kbps": 500, "rtt_ms": 150, "queue_bytes": 16384,
+      "stall_every_s": 20, "stall_ms": 1000, "stall_first_s": 10
+    },
+    "very_bad": {
+      "label": "edge of coverage",
+      "rate_kbps": 150, "rtt_ms": 300, "queue_bytes": 8192,
+      "stall_every_s": 20, "stall_ms": 2000, "stall_first_s": 10
+    }
+  }
+}
