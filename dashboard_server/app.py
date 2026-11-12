@@ -20,6 +20,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
+from dashboard_server.extensions import DashboardSettings, RouteTable
 from dashboard_server.static_assets import StaticAssets
 from dashboard_server.telemetry import ROOT, TelemetryProvider
 from dashboard_server.ws_relay import relay_sensor_stream
@@ -127,6 +128,9 @@ DOCS_CATALOG = [{'slug': 'gps-offline-map', 'title': 'GPS · 대한민국 오프
 class DashboardHandler(BaseHTTPRequestHandler):
     provider: TelemetryProvider
     protocol_version = "HTTP/1.1"
+    # D-12 extension points (dashboard_server/extensions.py). create_server() sets them from the environment.
+    dashboard_settings = DashboardSettings()
+    extension_routes = RouteTable()
     _last_telemetry_log_at = 0.0
 
     def do_HEAD(self):
@@ -177,7 +181,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.set_fan_preset(str(payload.get("preset", ""))))
         elif path.startswith("/api/docker/container/"):
             self._post_docker_container_action(path)
-        else:
+        elif not self._extension_request(parsed):
             self.send_error(404, "Not found")
 
     def do_GET(self):
@@ -259,15 +263,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._proxy_rover_request(parsed)
         elif path.startswith("/static/"):
             self._send_static(path.removeprefix("/static/"), parse_qs(parsed.query).get("v", [None])[0])
-        else:
+        elif path == "/api/dashboard/config":
+            self._send_json({"ok": True, **self.dashboard_settings.public()})
+        elif path.startswith("/ext-static/") and self.dashboard_settings.extra_static is not None:
+            folder = self.dashboard_settings.extra_static
+            self._send_file(folder / unquote(path.removeprefix("/ext-static/")), allowed_root=folder)
+        elif not self._extension_request(parsed):
             self.send_error(404, "Not found")
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
         if parsed.path.startswith("/occupancy-api"):
             self._proxy_occupancy_request(parsed)
-        else:
+        elif not self._extension_request(parsed):
             self.send_error(404, "Not found")
+
+    def _extension_request(self, parsed) -> bool:
+        """An extra route of a simulation extension (D-12). Only paths the dashboard itself does not serve."""
+        handler = self.extension_routes.find(self.command, parsed.path)
+        if handler is None:
+            return False
+        handler(self, parsed)
+        return True
 
     def _live_request(self, parsed, action=False):
         if action:
@@ -1323,7 +1340,15 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 def create_server(host: str, port: int, config: str | None = None, *, autonomy_bindings=None) -> ThreadingHTTPServer:
-    DashboardHandler.provider = TelemetryProvider(config)
+    from dashboard_server import extensions
+    settings = extensions.DashboardSettings.from_env()
+    if settings.ignored:
+        dashboard_log("settings.ignored_in_live_mode", names=list(settings.ignored))
+    extension = extensions.load_extension(settings)
+    DashboardHandler.dashboard_settings = settings
+    DashboardHandler.extension_routes = extensions.routes_of(extension)
+    STATIC_ASSETS.set_page_filter(extensions.page_filter(settings, extension))
+    DashboardHandler.provider = extensions.load_provider(settings, config) or TelemetryProvider(config)
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
     from dashboard_server.autonomy_settings import AutonomySettings

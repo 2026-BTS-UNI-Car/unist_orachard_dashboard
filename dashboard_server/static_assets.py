@@ -71,6 +71,18 @@ class StaticAssets:
         self._gzip: OrderedDict[tuple, bytes] = OrderedDict()
         self._gzip_bytes = 0
         self.stats = {"hashed": 0, "gzip_made": 0, "gzip_reused": 0}
+        self._page_filter = None
+
+    def set_page_filter(self, page_filter) -> None:
+        """A function that changes the text of the page (index.html) before it is versioned, or None (D-12:
+        simulation mode and the vehicle kind). Cached bodies are dropped so the next request uses it."""
+        with self._lock:
+            if page_filter is self._page_filter:
+                return
+            self._page_filter = page_filter
+            self._entries.clear()
+            self._gzip.clear()
+            self._gzip_bytes = 0
 
     # --- paths -------------------------------------------------------------------------------------------------
     def resolve(self, rel: str) -> Path | None:
@@ -144,6 +156,8 @@ class StaticAssets:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
             return raw, ()
+        if rel == "index.html" and self._page_filter is not None:
+            text = self._page_filter(text)
         deps: dict[str, str] = {}
         base = posixpath.dirname(rel)
 
