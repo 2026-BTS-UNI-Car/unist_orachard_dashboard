@@ -164,6 +164,7 @@ function startLidarLive() {
   debugLog("ws", `connecting ${url}`);
   try {
     const socket = new WebSocket(url);
+    socket.binaryType = "arraybuffer";  // polar-v2 scans are binary (NET-07)
     state.lidarLive.socket = socket;
     socket.addEventListener("open", () => {
       if (socket !== state.lidarLive.socket) return;

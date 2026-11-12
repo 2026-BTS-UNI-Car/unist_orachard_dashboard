@@ -57,7 +57,16 @@
   // ---- WebSocket arrivals (listener registered first, so it runs before the application handler)
   const NativeWS = window.WebSocket;
   const stampOf = {
-    '/ws/lidar': d => { if (typeof d !== 'string' || !d.startsWith('{"type":"scan"')) return null; const m = /"stamp":([0-9.]+)/.exec(d); return m ? Number(m[1]) * 1000 : null; },
+    '/ws/lidar': d => {
+      // polar-v1 JSON, or a polar-v2 binary scan ("ULS2", version 2, uint32 metadata length, metadata JSON, arrays).
+      if (d instanceof ArrayBuffer) {
+        if (d.byteLength < 10) return null;
+        try { const b = new Uint8Array(d, 0, 5); if (b[0] !== 85 || b[1] !== 76 || b[2] !== 83 || b[3] !== 50) return null;
+          const n = new DataView(d).getUint32(5, false); const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(d, 9, n)));
+          return meta.type === 'scan' ? Number(meta.stamp) * 1000 : null; } catch { return null; }
+      }
+      if (typeof d !== 'string' || !d.startsWith('{"type":"scan"')) return null; const m = /"stamp":([0-9.]+)/.exec(d); return m ? Number(m[1]) * 1000 : null;
+    },
     '/ws/imu': d => { if (typeof d !== 'string' || d.indexOf('"type":"imu"') < 0) return null; const m = /"stamp":\{"sec":(\d+),"nanosec":(\d+)\}/.exec(d); return m ? Number(m[1]) * 1000 + Number(m[2]) / 1e6 : null; },
     '/ws/gps': d => { if (typeof d !== 'string') return null; const m = /"received_at":([0-9.]+)/.exec(d); return m ? Number(m[1]) * 1000 : null; },
     '/ws/camera': d => {

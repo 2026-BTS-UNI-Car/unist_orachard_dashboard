@@ -5,6 +5,7 @@ import json
 import math
 import os
 import signal
+import struct
 import sys
 import threading
 import time
@@ -28,6 +29,9 @@ class ScanState:
     error: str | None = None
     raw_scan: dict = field(default_factory=dict)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    # Called (from the ROS thread) after every new scan; the WebSocket server
+    # uses it to send a new scan as soon as it arrives instead of polling.
+    notify: Any = None
 
     def update(
         self,
@@ -45,6 +49,9 @@ class ScanState:
             self.raw_scan = raw_scan or {}
             self.last_scan_at = time.time()
             self.error = None
+        notify = self.notify
+        if notify is not None:
+            notify()
 
     def set_error(self, message: str) -> None:
         with self.lock:
@@ -136,6 +143,7 @@ def scan_to_points(msg: Any, max_points: int) -> list[dict[str, float | int]]:
         )
         valid.append(
             {
+                "i": index,
                 "angle_deg": round(angle_deg, 3),
                 "distance_m": round(r, 3),
                 "quality": quality,
@@ -261,6 +269,71 @@ def compact_scan_payload(snap, points, sequence, compact=True, overlay=True):
     return payload
 
 
+# ---- polar-v2 (NET-07): one binary message per scan for the dashboard preview.
+#   bytes 0-3   magic b"ULS2"
+#   byte  4     version 2
+#   bytes 5-8   metadata length L (uint32, big-endian, like the camera's binary-v1)
+#   bytes 9..   metadata JSON (UTF-8): the polar-v1 fields without "points", plus
+#               angle_encoding, angle_min_deg, angle_increment_deg
+#   then        N uint16 angles, N uint16 distances in mm, N uint8 qualities (little-endian)
+# The points are exactly those of polar-v1 for the same scan and point limit.
+# Angles are the beam index i (angle = angle_min + i * angle_increment, the
+# same formula the bridge used for polar-v1) or, without beam geometry,
+# centi-degrees. Only valid beams are sent, so a distance is never 0.
+LIDAR_BINARY_MAGIC = b"ULS2"
+LIDAR_BINARY_VERSION = 2
+
+
+def encode_scan_v2(snap, points, sequence) -> bytes:
+    raw = snap.get("raw_scan") or {}
+    angle_min = raw.get("angle_min")
+    increment = raw.get("angle_increment")
+    by_index = (
+        isinstance(angle_min, (int, float)) and isinstance(increment, (int, float))
+        and math.isfinite(angle_min) and math.isfinite(increment) and increment != 0
+        and all(isinstance(p.get("i"), int) and 0 <= p["i"] <= 0xFFFF for p in points)
+    )
+    meta = compact_scan_payload(snap, points, sequence, compact=True)
+    meta.pop("points", None)
+    meta["point_encoding"] = "polar-v2"
+    if by_index:
+        meta.update(angle_encoding="beam_index", angle_min_deg=math.degrees(angle_min),
+                    angle_increment_deg=math.degrees(increment))
+        angles = [p["i"] for p in points]
+    else:
+        meta["angle_encoding"] = "centi_degree"
+        angles = [int(round(float(p["angle_deg"]) * 100)) % 36000 for p in points]
+    distances = [max(1, min(0xFFFF, int(round(float(p["distance_m"]) * 1000)))) for p in points]
+    qualities = [max(0, min(255, int(p.get("quality") or 0))) for p in points]
+    count = len(points)
+    metadata = json.dumps(meta, allow_nan=False, separators=(",", ":")).encode("utf-8")
+    return (LIDAR_BINARY_MAGIC + bytes([LIDAR_BINARY_VERSION]) + struct.pack("!I", len(metadata)) + metadata
+            + struct.pack(f"<{count}H", *angles) + struct.pack(f"<{count}H", *distances)
+            + struct.pack(f"<{count}B", *qualities))
+
+
+def decode_scan_v2(message: bytes) -> dict:
+    """The polar-v1 payload of a polar-v2 message (used by tests and tools)."""
+    if message[:4] != LIDAR_BINARY_MAGIC or message[4] != LIDAR_BINARY_VERSION:
+        raise ValueError("not a polar-v2 scan")
+    length = struct.unpack("!I", message[5:9])[0]
+    meta = json.loads(message[9:9 + length].decode("utf-8"))
+    body = message[9 + length:]
+    count = int(meta["point_count"])
+    if len(body) != 5 * count:
+        raise ValueError("polar-v2 scan has the wrong length")
+    angles = struct.unpack(f"<{count}H", body[:2 * count])
+    distances = struct.unpack(f"<{count}H", body[2 * count:4 * count])
+    qualities = struct.unpack(f"<{count}B", body[4 * count:])
+    if meta["angle_encoding"] == "beam_index":
+        degrees = [(meta["angle_min_deg"] + i * meta["angle_increment_deg"]) % 360.0 for i in angles]
+    else:
+        degrees = [a / 100.0 for a in angles]
+    meta["points"] = [[round(a, 3), d / 1000.0, q] for a, d, q in zip(degrees, distances, qualities)]
+    meta["point_encoding"] = "polar-v1"
+    return meta
+
+
 async def serve_websocket(
     state: ScanState,
     host: str,
@@ -271,6 +344,17 @@ async def serve_websocket(
 ):
     import websockets
     from scripts.stream_policy import StreamBudget, wait_for_ack
+
+    loop = asyncio.get_running_loop()
+    waiters: set = set()
+
+    def notify_scan():
+        for event in list(waiters):
+            try:
+                loop.call_soon_threadsafe(event.set)
+            except RuntimeError:
+                pass  # the server is shutting down
+    state.notify = notify_scan
 
     async def handler(websocket, legacy_path=None):
         actual_path = (
@@ -283,8 +367,24 @@ async def serve_websocket(
             return
         params = parse_qs(urlparse(actual_path).query)
         mapping = (params.get("profile") or [""])[0] == "mapping"
-        compact = (params.get("format") or [""])[0] == "polar-v1"
+        point_format = (params.get("format") or [""])[0]
+        binary = point_format == "polar-v2" and not mapping
+        compact = point_format in ("polar-v1", "polar-v2")
         ack_flow = (params.get("flow") or [""])[0] == "ack"
+        # polar-v2 clients may let two scans be on the way (NET-07): the next scan
+        # leaves while the answer for the previous one is still travelling, so the
+        # rate is not one scan per round trip. Still the newest scan only.
+        try:
+            ack_window = int((params.get("ack_window") or ["1"])[0])
+        except ValueError:
+            ack_window = 1
+        ack_window = 2 if (binary and ack_flow and ack_window == 2) else 1
+        scan_ready = asyncio.Event()
+        waiters.add(scan_ready)
+        acked = {"sequence": 0, "error": None}
+        sent_at = {}
+        ack_event = asyncio.Event()
+        reader = None
         budget = StreamBudget((params.get("profile") or ["auto"])[0])
         requested = client_max_points(
             actual_path, default=900, source_max=source_max_points
@@ -292,6 +392,34 @@ async def serve_websocket(
         last_stamp = None
         sequence = 0
         last_status = 0.0
+
+        async def read_acks():
+            # Background reader for the windowed flow; the newest acknowledged
+            # sequence frees the window. Anything else is ignored.
+            try:
+                async for raw in websocket:
+                    try:
+                        reply = json.loads(raw) if isinstance(raw, str) else None
+                    except ValueError:
+                        reply = None
+                    if not isinstance(reply, dict) or reply.get("type") != "scan_ack":
+                        continue
+                    number = reply.get("sequence")
+                    if type(number) is not int or number <= acked["sequence"] or number > sequence:
+                        continue
+                    acked["sequence"] = number
+                    started_at = sent_at.pop(number, None)
+                    for old in [key for key in sent_at if key < number]:
+                        sent_at.pop(old, None)
+                    if started_at is not None:
+                        budget.acknowledge(time.monotonic() - started_at)
+                    ack_event.set()
+                acked["error"] = ConnectionError("closed")
+            except Exception as exc:  # the connection closed
+                acked["error"] = exc
+            finally:
+                ack_event.set()
+
         try:
             await websocket.send(
                 json.dumps(
@@ -299,7 +427,8 @@ async def serve_websocket(
                         "type": "socket",
                         "ok": True,
                         "latest_only": True,
-                        "max_inflight_frames": 1,
+                        "max_inflight_frames": ack_window,
+                        "point_encoding": "polar-v2" if binary else ("polar-v1" if compact else "points"),
                     }
                 )
             )
@@ -346,20 +475,48 @@ async def serve_websocket(
                     )
                     last_status = started
                 if not alive or not points or snap["stamp"] == last_stamp:
-                    await asyncio.sleep(0.04)
+                    # Wait for the next scan (woken by ScanState.update), not a fixed 40 ms poll.
+                    scan_ready.clear()
+                    if state.snapshot()["stamp"] == snap["stamp"]:
+                        try:
+                            await asyncio.wait_for(scan_ready.wait(), 0.25)
+                        except asyncio.TimeoutError:
+                            pass
                     continue
+                if ack_window > 1:
+                    if reader is None:
+                        reader = asyncio.create_task(read_acks())
+                    # The window is full: wait for an answer. No time limit here: a
+                    # slow link only slows the scans; a dead connection ends through
+                    # the WebSocket keepalive (ping) and closes the reader.
+                    while sequence - acked["sequence"] >= ack_window and acked["error"] is None:
+                        ack_event.clear()
+                        if sequence - acked["sequence"] < ack_window:
+                            break
+                        await ack_event.wait()
+                    if acked["error"] is not None:
+                        break
+                    snap = state.snapshot()
+                    points = decimate_points(snap["points"], min(requested, limit))
+                    if not points or snap["stamp"] == last_stamp:
+                        continue
                 sequence += 1
-                payload = compact_scan_payload(
-                    snap, points, sequence, compact, budget.values[0] > 320
-                )
-                if mapping:
-                    payload["raw_scan"] = snap["raw_scan"]
-                    payload["points"] = []
-                    payload["source"] = "source_native_LaserScan"
-                message = json.dumps(payload, allow_nan=False, separators=(",", ":"))
+                if binary:
+                    message = encode_scan_v2(snap, points, sequence)
+                else:
+                    payload = compact_scan_payload(
+                        snap, points, sequence, compact, budget.values[0] > 320
+                    )
+                    if mapping:
+                        payload["raw_scan"] = snap["raw_scan"]
+                        payload["points"] = []
+                        payload["source"] = "source_native_LaserScan"
+                    message = json.dumps(payload, allow_nan=False, separators=(",", ":"))
+                if ack_window > 1:
+                    sent_at[sequence] = time.monotonic()
                 await asyncio.wait_for(websocket.send(message), timeout=2)
                 last_stamp = snap["stamp"]
-                if ack_flow:
+                if ack_flow and ack_window == 1:
                     await wait_for_ack(websocket, lambda reply:
                                        reply.get("type") == "scan_ack" and reply.get("sequence") == sequence)
                     budget.acknowledge(time.monotonic() - started)
@@ -382,6 +539,10 @@ async def serve_websocket(
         except Exception as exc:
             bridge_log("preview_closed", reason=type(exc).__name__)
         finally:
+            waiters.discard(scan_ready)
+            if reader is not None:
+                reader.cancel()
+                await asyncio.gather(reader, return_exceptions=True)
             await websocket.close()
 
     async with websockets.serve(
