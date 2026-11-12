@@ -144,3 +144,31 @@ function setCpuMode(mode) {
   text("cpuModeText", state.cpuMode === "separate" ? "코어별 개별 그래프" : "전체 코어 통합 그래프");
   requestChartAnimation();
 }
+
+// Slider fill: the style sheet draws the filled part of a slider track from
+// the custom property --range-fill. Keep it equal to the value, whether the
+// value comes from the pointer, the keyboard or a script.
+function paintRangeFill(input) {
+  const min = Number(input.min) || 0;
+  const max = input.max === "" ? 100 : Number(input.max);
+  const share = max > min ? (Number(input.value) - min) / (max - min) : 0;
+  input.style.setProperty("--range-fill", `${Math.max(0, Math.min(1, share)) * 100}%`);
+}
+
+function initRangeFill() {
+  const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  const limits = new MutationObserver((records) => records.forEach((record) => paintRangeFill(record.target)));
+  document.querySelectorAll('input[type="range"]').forEach((input) => {
+    // A script that assigns input.value fires no event: wrap the property on
+    // this element. The native getter and setter still do the work.
+    Object.defineProperty(input, "value", {
+      configurable: true,
+      enumerable: true,
+      get() { return native.get.call(this); },
+      set(next) { native.set.call(this, next); paintRangeFill(this); },
+    });
+    input.addEventListener("input", () => paintRangeFill(input));
+    limits.observe(input, { attributes: true, attributeFilter: ["min", "max"] });
+    paintRangeFill(input);
+  });
+}

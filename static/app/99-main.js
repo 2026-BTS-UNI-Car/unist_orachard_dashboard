@@ -49,6 +49,7 @@ initDockerControls();
 initNetworkControls();
 initRoverControl();
 initCanvasResize();
+initRangeFill();
 renderRoute();
 loadPlan().catch(console.error);
 loadDocs().catch(console.error);
