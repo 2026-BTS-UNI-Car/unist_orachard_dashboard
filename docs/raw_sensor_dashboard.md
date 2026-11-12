@@ -21,4 +21,4 @@ IMU 소프트웨어 회전·녹화 시작 영점·gyro bias 보정과 수동 영
 ros2-lidar-bridge, ros2-data-recorder만 교체한다. vision-ai-worker는 중지하고 재시작 정책을 해제한다.
 센서 드라이버·ESP motor bridge·GPS·IMU bridge·기존 occupancy 서비스는 재시작하지 않는다.
 차량 주행과 새 녹화를 실행하지 않고 센서 수신·HTTP·WebSocket·기존 archive를 확인한다.
-배포 결과와 복구 경로는 `RAW_DEPLOYMENT.md` 및 Jetson의 private checkpoint에 기록한다.
+배포 결과와 복구 경로는 [`RAW_DEPLOYMENT.md`](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/RAW_DEPLOYMENT.md)(보존 태그) 및 Jetson의 private checkpoint에 기록한다.

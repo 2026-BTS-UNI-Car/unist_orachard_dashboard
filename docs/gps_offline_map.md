@@ -13,7 +13,7 @@ GPS를 Jetson으로 되돌린 후 USB 분리 예외로 종료됐던 기존 드�
 정상 패킷 922개·거절 0개를 받았습니다. NAV-SIG 14개 응답 모두 추적 잠금은
 0개였고, 마지막 두 응답의 GPS 14만 C/N₀ 12/7 dBHz·quality 3(검출됐으나 사용 불가)였습니다.
 독립 NAV-PVT 15개도 모두 no-fix·사용 위성 0이었습니다.
-[실내 비교 근거](windows_gps_placement_comparison.json).
+[실내 비교 근거](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/windows_gps_placement_comparison.json).
 
 앞선 창가 관측 마지막에는 GPS 8/27·GLONASS 18의 추적 잠금과 C/N₀ 30/29/27 dBHz를
 확인했습니다. 동일 PC/케이블에서 배치에 따라 수신 상태가 달라진 근거지만,
@@ -35,7 +35,7 @@ GPS를 Jetson으로 되돌린 후 USB 분리 예외로 종료됐던 기존 드�
 quality 7(코드·반송파 잠금 및 시각 동기화)로 보고됐습니다.
 그러나 독립 NAV-PVT 45개는 모두 `fix_type=0`, `fix_ok=false`, `used_satellites=0`입니다.
 **신호 추적은 확인했지만 위치 fix는 아직 없습니다.** 신호/위성 목록의 행 수를 위치 계산에 사용한 위성 수로 취급하지 않습니다.
-[Windows 관측 근거](windows_gps_reception_diagnosis.json).
+[Windows 관측 근거](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/windows_gps_reception_diagnosis.json).
 
 사용자는 같은 안테나를 유지하면서 GPS 보드와 외장 안테나를 모두 창가 쪽으로 옮겼고 USB 케이블은
 Jetson의 USB 3.0 C-to-A에서 PC의 C-to-C로 바꿨다고 확인했습니다.
@@ -51,7 +51,7 @@ Jetson의 USB 3.0 C-to-A에서 PC의 C-to-C로 바꿨다고 확인했습니다.
 MON-RF/NAV-SAT/NAV-SIG 응답은 각각 4회이며 위성 목록은 매번 0개였습니다.
 신호 목록은 0/0/1/0개였고, 한 번 나타난 BeiDou 행은 **C/N₀=0, quality=1(탐색 중)**입니다.
 수신·추적 성공이나 위치 확정으로 취급하지 않습니다. 7,059바이트를 받았고 UBX 거절은 0건입니다.
-[002 진단 근거](jetson_gps_antenna_diagnosis.json).
+[002 진단 근거](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/jetson_gps_antenna_diagnosis.json).
 
 RAM에서 안테나 전압 제어·단락 감지·개방 감지·단락 시 전원 차단·자동 복구를
 각각 독립 조회했고, 5개 값 모두 `false`로 응답했습니다. 이는 수신기의 제어·감독
@@ -91,7 +91,7 @@ MON-RF 정의를 따릅니다. 실내 차폐와 안테나 경로 문제를 구�
 진단 중 GPS 서비스만 잠시 중지하여 장치를 단독 조회했고 동일 서비스로
 복구했습니다. 수신기 설정/리셋/Flash 쓰기는 하지 않았습니다. 복구7개 검사,
 다른15개 컨테이너와32개 보관 기록 보존을 확인했습니다.
-[정제된 진단 근거](jetson_gps_reception_diagnosis.json).
+[정제된 진단 근거](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/jetson_gps_reception_diagnosis.json).
 
 ## 2026-09-30 USB 연결 적용
 
@@ -100,7 +100,7 @@ GPS 드라이버 한 서비스의 장치 매핑을 기존 UART에서 확인된 U
 통과했으며 다른 컨테이너·설정·32개 기록은 보존했습니다. 8초 사전 수신에서
 정상 패킷131개/거절0개·위치 메시지16개를 받았습니다. 현재 상태는
 **장치 연결됨, 위성0개, no_fix**입니다. USB 통신 성공과 위치 확정을 구분합니다.
-[적용 근거](jetson_usb_gps_deployment.json)
+[적용 근거](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/jetson_usb_gps_deployment.json)
 
 아래 9월26일 UART 진단은 연결 변경 전의 이력입니다.
 
@@ -267,7 +267,7 @@ RTCM 인터페이스이고 출력/입력 프로토콜 설정에 따라 NMEA/UBX 
 참고용 정상 UART 배선은 Jetson 10번 RX ← GPS TX, Jetson 8번 TX → GPS RX,
 공통 GND다. 전원 입력은 캐리어 보드 사양에 따라 다르며 모듈 칩 전압과 혼동하지 않는다.
 
-40핀 전수 설정 확인과 GPIO 입력 관찰은 [전체 핀 원격 점검표](gps_pin_inspection.md)를
+40핀 전수 설정 확인과 GPIO 입력 관찰은 [전체 핀 원격 점검표](https://github.com/2026-BTS-UNI-Car/unist_orachard_dashboard/blob/archive-before-cleanup-20261113/docs/gps_pin_inspection.md)를
 참고한다. 40핀 헤더의 I2C는 3/5번 → Linux 버스 7, 27/28번 → Linux 버스 1이다.
 
 ## 출처 및 라이선스

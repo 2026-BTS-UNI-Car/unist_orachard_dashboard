@@ -56,14 +56,26 @@ class DashboardApiTest(unittest.TestCase):
             self.assertNotIn(b"\n  ", decoded)
 
     def test_docs_assets_are_served_but_path_traversal_is_blocked(self):
-        path = "/docs-assets/orchard_perception_models/rf_yolo11_trunk_seg.jpg"
-        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=3) as res:
-            self.assertEqual(res.status, 200)
-            self.assertEqual(res.headers.get("Content-Type"), "image/jpeg")
-            self.assertGreater(len(res.read()), 100)
-        with self.assertRaises(urllib.error.HTTPError) as context:
-            urllib.request.urlopen(f"http://127.0.0.1:{self.port}/docs-assets/../architecture.md", timeout=3)
-        self.assertIn(context.exception.code, {403, 404})
+        # The repository ships no document images at the moment, so the route is checked against a temporary
+        # docs folder: an image below docs/assets is served, a path that climbs out of it is not.
+        import tempfile
+        from unittest.mock import patch
+        import dashboard_server.app as app_module
+        with tempfile.TemporaryDirectory() as root:
+            docs = Path(root)
+            (docs / "assets" / "figures").mkdir(parents=True)
+            image = bytes((0xFF, 0xD8, 0xFF, 0xE0)) + bytes(200)
+            (docs / "assets" / "figures" / "sample.jpg").write_bytes(image)
+            (docs / "architecture.md").write_bytes(b"outside the asset folder")
+            with patch.object(app_module, "DOCS_ROOT", docs):
+                path = "/docs-assets/figures/sample.jpg"
+                with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=3) as res:
+                    self.assertEqual(res.status, 200)
+                    self.assertEqual(res.headers.get("Content-Type"), "image/jpeg")
+                    self.assertEqual(res.read(), image)
+                with self.assertRaises(urllib.error.HTTPError) as context:
+                    urllib.request.urlopen(f"http://127.0.0.1:{self.port}/docs-assets/../architecture.md", timeout=3)
+                self.assertIn(context.exception.code, {403, 404})
 
     def post_json(self, path: str, payload: dict | None = None) -> dict:
         body = None if payload is None else json.dumps(payload).encode("utf-8")

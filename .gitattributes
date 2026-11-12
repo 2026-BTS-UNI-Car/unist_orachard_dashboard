@@ -5,7 +5,6 @@ static/vendor/gps-map-vendors.json text eol=lf whitespace
 
 static/field-preparation.js text eol=lf
 static/field-preparation.css text eol=lf
-docs/AUTONOMY_SOFTWARE_DELIVERY_20261010.md text eol=lf
 .gitattributes text eol=lf
 
 # Preserve raw source bytes used by file-hash verification.
