@@ -49,6 +49,13 @@ def export_source(repo, commit, dest):
                                stdout=subprocess.PIPE)
     with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
         archive.extractall(dest, filter="data")
+    # The tar reader stops at the end-of-archive marker, but git still writes the
+    # record padding after it (up to 10 kB). On Windows the pipe holds less than
+    # that, so git waited for a reader that was waiting for git (seen once: the
+    # export of one commit hung for 13 minutes). Read the rest before waiting.
+    while process.stdout.read(65536):
+        pass
+    process.stdout.close()
     if process.wait() != 0:
         raise RuntimeError(f"git archive failed for {commit}")
     (dest / "runtime").mkdir(exist_ok=True)
