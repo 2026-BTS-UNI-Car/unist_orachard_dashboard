@@ -131,6 +131,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # D-12 extension points (dashboard_server/extensions.py). create_server() sets them from the environment.
     dashboard_settings = DashboardSettings()
     extension_routes = RouteTable()
+    page_filter = None          # changes the page text (simulation mode, vehicle kind); None = the page as it is
     # Relay of the row executor's operator API (dashboard_server/executor_proxy.py); None = not configured.
     executor_client = None
     # Change log of the tuning screen (dashboard_server/steer_tuning.py); create_server() sets it.
@@ -682,6 +683,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         (?v=...) is cached for a year; anything else is checked again next time (see static_assets.py)."""
         session_token = self._ensure_session(create=True)
         accept_gzip = "gzip" in self.headers.get("Accept-Encoding", "").lower()
+        # D-12: read through the class (a function stored on the class would bind to the instance); no work when it is
+        # the filter already in use.
+        STATIC_ASSETS.set_page_filter(type(self).page_filter)
         try:
             served = STATIC_ASSETS.serve(rel, requested_version, accept_gzip)
         except OSError:
@@ -1395,18 +1399,18 @@ class DashboardServer(ThreadingHTTPServer):
 
 def create_server(host: str, port: int, config: str | None = None, *, autonomy_bindings=None) -> ThreadingHTTPServer:
     from dashboard_server import extensions
-    settings = extensions.DashboardSettings.from_env()
+    from dashboard_server.executor_proxy import ExecutorClient
+    from dashboard_server.steer_tuning import TuningLog
+    settings = extensions.DashboardSettings.from_env(os.environ)
     if settings.ignored:
         dashboard_log("settings.ignored_in_live_mode", names=list(settings.ignored))
     extension = extensions.load_extension(settings)
     DashboardHandler.dashboard_settings = settings
     DashboardHandler.extension_routes = extensions.routes_of(extension)
-    STATIC_ASSETS.set_page_filter(extensions.page_filter(settings, extension))
+    DashboardHandler.page_filter = extensions.page_filter(settings, extension)
     DashboardHandler.provider = extensions.load_provider(settings, config) or TelemetryProvider(config)
-    from dashboard_server.executor_proxy import ExecutorClient
-    from dashboard_server.steer_tuning import TuningLog
-    DashboardHandler.executor_client = ExecutorClient.from_env()
-    DashboardHandler.tuning_log = TuningLog(Path(os.environ.get("UBTS_EXECUTOR_TUNING_LOG") or ROOT / "runtime/executor_tuning_log.jsonl"))
+    DashboardHandler.executor_client = ExecutorClient.from_env(os.environ)
+    DashboardHandler.tuning_log = TuningLog(os.environ.get("UBTS_EXECUTOR_TUNING_LOG") or ROOT / "runtime/executor_tuning_log.jsonl")
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
     from dashboard_server.autonomy_settings import AutonomySettings

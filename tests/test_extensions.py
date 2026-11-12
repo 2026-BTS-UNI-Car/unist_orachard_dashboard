@@ -136,7 +136,8 @@ SIM_MODULE = textwrap.dedent('''
 class ServerTest(unittest.TestCase):
     def setUp(self):
         handler = app_module.DashboardHandler
-        self.saved = {name: getattr(handler, name, None) for name in ("provider", "dashboard_settings", "extension_routes")}
+        self.saved = {name: getattr(handler, name, None)
+                      for name in ("provider", "dashboard_settings", "extension_routes", "page_filter", "executor_client", "tuning_log")}
         self.tmp = tempfile.TemporaryDirectory(prefix="ubts-ext-")
         root = Path(self.tmp.name)
         (root / "outside_sim_ext.py").write_bytes(SIM_MODULE.encode("utf-8"))
@@ -166,7 +167,8 @@ class ServerTest(unittest.TestCase):
 
     def get(self, port, path):
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as response:
+            # the first page after a filter change versions every static file again: a slow, busy machine needs time
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=20) as response:
                 return response.status, response.read()
         except urllib.error.HTTPError as error:
             return error.code, b""

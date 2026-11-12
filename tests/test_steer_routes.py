@@ -185,7 +185,8 @@ class UiStack:
         self.loop.start()
         app = mods['app']
         self._handler_state = {name: getattr(app.DashboardHandler, name, None)
-                               for name in ('provider', 'dashboard_settings', 'extension_routes')}
+                               for name in ('provider', 'dashboard_settings', 'extension_routes', 'page_filter',
+                                            'executor_client', 'tuning_log')}
         self.server = app.create_server('127.0.0.1', port)
         self.port = self.server.server_address[1]
         self.base = 'http://127.0.0.1:%d' % self.port

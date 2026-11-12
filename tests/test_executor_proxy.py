@@ -218,7 +218,8 @@ except ImportError:  # pragma: no cover - Windows
 class DashboardRouteTest(FakeExecutorCase):
     def serve(self, env):
         handler = app_module.DashboardHandler
-        saved = {name: getattr(handler, name, None) for name in ("provider", "dashboard_settings", "extension_routes", "executor_client")}
+        saved = {name: getattr(handler, name, None)
+                 for name in ("provider", "dashboard_settings", "extension_routes", "page_filter", "executor_client", "tuning_log")}
         base = {key: value for key, value in os.environ.items() if not key.startswith(("DASHBOARD_", "UBTS_EXECUTOR_"))}
         base.update(env, DASHBOARD_LIVE_MAP_WORKER="0")
         with mock.patch.dict(os.environ, base, clear=True):
