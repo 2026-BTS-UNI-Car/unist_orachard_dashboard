@@ -133,11 +133,13 @@
   } catch {}
   try { performance.setResourceTimingBufferSize(200000); } catch {}
   const controlTimings = [];
+  // The address (with its ?v= version) the page loaded the map module from; this observer clears the timing list.
+  let metricMapSeen = null;
   const round1 = v => Math.round(v * 10) / 10;
   try {
     new PerformanceObserver(l => {
       for (const e of l.getEntries()) {
-        let p = e.name; try { const u = new URL(e.name); p = u.pathname.replace(/\/recordings\/\d{8}T\d{6}Z[^/]*/, '/recordings/:id').replace(/\/segment-\d+\.m4s$/, '/segment-N.m4s'); } catch {}
+        let p = e.name; try { const u = new URL(e.name); if (u.pathname === '/static/metric-map.mjs' && !metricMapSeen) metricMapSeen = u.pathname + u.search; p = u.pathname.replace(/\/recordings\/\d{8}T\d{6}Z[^/]*/, '/recordings/:id').replace(/\/segment-\d+\.m4s$/, '/segment-N.m4s'); } catch {}
         const bytes = e.transferSize || 0;
         const r = U.resources[p] ||= {n: 0, bytes: 0, durs: [], sizes: []}; r.n++; r.bytes += bytes; r.durs.push(Math.round(e.duration));
         if (r.durs.length > 3000) r.durs.splice(0, 1500);
@@ -210,16 +212,8 @@
   // ---- occupancy map hooks through the module instance the page already loaded. Hooked after the load event,
   // so the instrumentation does not fetch the module ahead of the page (first-load order and weight stay the page's own).
   // The server may name the module with a content-hash version (?v=...); a module is one instance per address, so
-  // the hook imports exactly the address the page used (taken from the resource timing list).
-  const metricMapAddress = () => {
-    for (const entry of performance.getEntriesByType('resource')) {
-      try {
-        const url = new URL(entry.name);
-        if (/^\/static\/metric-map\.mjs$/.test(url.pathname) && /^(\?v=[0-9a-f]+)?$/.test(url.search)) return url.pathname + url.search;
-      } catch {}
-    }
-    return '/static/metric-map.mjs';
-  };
+  // the hook imports exactly the address the page used (recorded by the resource observer above).
+  const metricMapAddress = () => metricMapSeen || '/static/metric-map.mjs';
   const hookMaps = () => import(metricMapAddress()).then(m => {
     const P = m.MetricMap.prototype;
     const draw = P.draw, commit = P.commit;
