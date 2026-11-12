@@ -24,6 +24,13 @@ body {
   font-weight: var(--weight-regular);
   /* Read-outs keep their width while the digits change. */
   font-variant-numeric: tabular-nums;
+  /* Hangul breaks between words, not inside them; a word that is wider than
+     its box still breaks. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
 }
 
 h1,
@@ -35,18 +42,23 @@ figure {
   margin: 0;
 }
 
+/* Page title. */
 h1 {
-  font-size: var(--text-lg);
-  line-height: var(--leading-lg);
-  font-weight: var(--weight-strong);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-title);
 }
 
+/* Panel title. */
 h2 {
   font-size: var(--text-md);
   line-height: var(--leading-md);
   font-weight: var(--weight-strong);
+  letter-spacing: var(--tracking-tight);
 }
 
+/* Title of a part of a panel. */
 h3,
 h4 {
   font-size: var(--text-sm);
@@ -68,7 +80,7 @@ small {
 }
 
 a {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   text-decoration: none;
 }
 
@@ -82,6 +94,7 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+  letter-spacing: inherit;
 }
 
 code,
@@ -99,6 +112,27 @@ summary {
 
 [hidden] {
   display: none !important;
+}
+
+/* Line icons: an inline <svg class="icon"><use href="#i-name"/></svg> that
+   refers to a symbol of the page (no icon font, no image file). The symbols
+   sit in one hidden <svg class="icon-sprite"> at the top of the body. */
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* One focus ring for every interactive element. */

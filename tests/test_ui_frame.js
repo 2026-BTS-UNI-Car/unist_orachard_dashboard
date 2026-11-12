@@ -13,6 +13,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 // Requests as plain text: objects made inside the vm context have another Object prototype.
 const sent = calls => calls.map(call => `${call.p} ${JSON.stringify(call.payload)}`);
 const STOP_REQUEST = '/api/rover/stop {"reason":"operator_stop"}';
+// A menu item: route, href, icon name, label.
+const NAV_ITEM = /<a data-route="([^"]+)" href="([^"]+)"><svg aria-hidden="true" class="icon"><use href="#i-([a-z]+)"\/><\/svg><span>([^<]+)<\/span><\/a>/g;
 
 // ---- Markup: one status bar, outside every page, so it is on all nine routes ----
 const ROUTES = ['/', '/connection', '/system', '/network', '/docker', '/fan', '/research', '/rover-control', '/docs'];
@@ -35,12 +37,23 @@ const ROUTES = ['/', '/connection', '/system', '/network', '/docker', '/fan', '/
   // The drive panel STOP and the pad STOP are still there.
   assert.match(html, /<button class="action-button danger" id="roverStopButton" type="button">STOP<\/button>/);
   assert.match(html, /<button data-rover-drive="stop" type="button">STOP<\/button>/);
-  // Navigation: nine routes, drive first, Korean labels.
+  // Navigation: nine routes, drive first, each an icon and a Korean label.
   const nav = html.match(/<nav class="nav-list">([\s\S]*?)<\/nav>/)[1];
-  assert.deepEqual([...nav.matchAll(/<a data-route="([^"]+)" href="([^"]+)">([^<]+)<\/a>/g)].map(match => [match[1], match[3]]), [
+  const items = [...nav.matchAll(NAV_ITEM)];
+  assert.deepEqual(items.map(match => [match[1], match[4]]), [
     ['/rover-control', '주행'], ['/connection', '연결'], ['/', '개요'], ['/system', '시스템'], ['/network', '네트워크'],
     ['/docker', '컨테이너'], ['/fan', '팬'], ['/docs', '문서'], ['/research', '연구']]);
-  assert.ok([...nav.matchAll(/data-route="([^"]+)" href="([^"]+)"/g)].every(match => match[1] === match[2]));
+  assert.equal((nav.match(/<a /g) || []).length, items.length, 'every menu item is an icon and a label');
+  assert.equal(new Set(items.map(match => match[3])).size, items.length, 'every menu item has its own icon');
+  assert.ok(items.every(match => match[1] === match[2]));
+  // The rail: brand, menu, then the theme switch and the time of the last telemetry.
+  const rail = html.match(/<aside aria-label="메뉴" class="sidebar" id="sidebar">([\s\S]*?)<\/aside>/)[1];
+  const railOrder = ['class="sidebar-brand"', '<nav class="nav-list">', 'class="sidebar-footer"', 'id="themeToggle"', 'id="updatedAt"'].map(marker => rail.indexOf(marker));
+  assert.ok(railOrder.every(position => position >= 0), 'rail parts');
+  assert.deepEqual([...railOrder].sort((a, b) => a - b), railOrder, 'rail order');
+  assert.match(rail, /<button aria-pressed="false" class="toggle" id="themeToggle" type="button"><svg aria-hidden="true" class="icon"><use href="#i-moon"\/><\/svg><span id="themeLabel">다크 테마<\/span><span class="toggle-track"><\/span><\/button>/);
+  // The menu button shows a menu icon, or a cross while the menu is open.
+  assert.match(bar[0], /id="mobileMenuButton" type="button">\n<svg aria-hidden="true" class="icon icon-open"><use href="#i-menu"\/><\/svg>\n<svg aria-hidden="true" class="icon icon-close"><use href="#i-close"\/><\/svg>\n<\/button>/);
 }
 
 // ---- Style: the bar is fixed; STOP is at least 44px high and 88px wide ----
@@ -64,6 +77,15 @@ const ROUTES = ['/', '/connection', '/system', '/network', '/docker', '/fan', '/
   // The drawer and its backdrop start below the status bar, so STOP is never covered by the menu.
   const drawer = frameCss.slice(frameCss.indexOf('@media (max-width: 1023px)'), frameCss.indexOf('@media (max-width: 639px)'));
   assert.equal([...drawer.matchAll(/top: calc\(var\(--statusbar-height\) \+ var\(--banner-height\)\);/g)].length, 2);
+  // Wide screens: the rail runs the full height and the status bar starts at its right edge;
+  // the brand block is as tall as the bar, so one rule runs across both.
+  assert.match(frameCss, /@media \(min-width: 1024px\) \{\n  \.statusbar \{\n    left: var\(--rail-width\);\n  \}\n\}/);
+  assert.match(rule('.sidebar-brand'), /height: var\(--statusbar-height\);/);
+  assert.match(rule('.sidebar'), /top: var\(--banner-height\);/);
+  assert.match(rule('.main-surface'), /padding: calc\(var\(--statusbar-height\) \+ var\(--page-gutter\)\) var\(--page-gutter\) var\(--page-gutter\);/);
+  // The menu button swaps its two icons with aria-expanded; nothing else hides them.
+  assert.match(frameCss, /\.menu-button \.icon-close,\n\.menu-button\[aria-expanded="true"\] \.icon-open \{\n  display: none;\n\}/);
+  assert.match(frameCss, /\.menu-button\[aria-expanded="true"\] \.icon-close \{\n  display: block;\n\}/);
 }
 
 // ---- STOP in the status bar: the same function, reason and request as the drive panel STOP ----
@@ -220,7 +242,8 @@ function setup(route = '/rover-control') {
   }
   // ---- Page header: one compact row per page, titled like its menu item; no banner ----
   {
-    const labels = Object.fromEntries([...html.matchAll(/<a data-route="([^"]+)" href="[^"]+">([^<]+)<\/a>/g)].map(match => [match[1], match[2]]));
+    const labels = Object.fromEntries([...html.matchAll(NAV_ITEM)].map(match => [match[1], match[4]]));
+    assert.equal(Object.keys(labels).length, 9);
     const pages = html.split(/<section class="page[^"]*" data-page="/).slice(1);
     assert.equal(pages.length, 9);
     for (const page of pages) {
@@ -230,7 +253,8 @@ function setup(route = '/rover-control') {
       assert.ok(page.indexOf('<header class="page-head">') < 40, `${route}: the header is the first element of the page`);
       assert.deepEqual([...heads[0][1].matchAll(/<h1>([^<]*)<\/h1>/g)].map(match => match[1]), [labels[route]], `${route}: title is the menu label`);
       assert.doesNotMatch(heads[0][1], /eyebrow|hero-copy/, `${route}: no banner parts`);
-      assert.ok((heads[0][1].match(/<p /g) || []).length <= 1, `${route}: at most one note line`);
+      assert.deepEqual((heads[0][1].match(/<p [^>]*>/g) || []), ['<p class="page-note">'], `${route}: one line of context`);
+      assert.ok(heads[0][1].trimEnd().endsWith('</p>'), `${route}: the context line is the last element of the header`);
     }
     assert.doesNotMatch(html, /hero-copy|class="kpi"|kpi-grid|network-focus-grid/, 'banner and card markup is gone');
     assert.match(html, /<span class="status-chip" id="roverModeLabel">실차<\/span>/);

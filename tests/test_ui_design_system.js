@@ -25,10 +25,15 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
 {
   const px = (bag, prefix) => Object.keys(bag).filter(name => name.startsWith(prefix)).map(name => bag[name]);
   assert.deepEqual(px(light, '--space-'), ['4px', '8px', '12px', '16px', '24px', '32px']);
-  assert.deepEqual(px(light, '--text-'), ['12px', '14px', '16px', '20px', '28px']);
-  assert.deepEqual(px(light, '--leading-'), ['16px', '20px', '24px', '28px', '36px'], 'one line height per size');
-  assert.deepEqual(px(light, '--weight-'), ['400', '600']);
-  assert.deepEqual([light['--radius-control'], light['--radius-panel'], light['--radius-round']], ['4px', '8px', '50%']);
+  // Caption and label 13, body 14, panel title 16, key value 20, page title 24.
+  assert.deepEqual(px(light, '--text-'), ['13px', '14px', '16px', '20px', '24px']);
+  assert.deepEqual(px(light, '--leading-'), ['18px', '20px', '24px', '28px', '32px'], 'one line height per size');
+  assert.deepEqual(px(light, '--weight-'), ['400', '500', '600', '700'], 'regular, medium, strong, bold: the range of the interface font');
+  assert.deepEqual(px(light, '--radius-'), ['4px', '8px', '12px', '999px', '50%'], 'small marks, controls, panels, pills, dots');
+  assert.deepEqual(px(light, '--tracking-'), ['-0.01em', '-0.02em'], 'headings sit a little tighter');
+  assert.deepEqual([light['--page-gutter'], light['--panel-padding']], ['24px', '20px']);
+  assert.match(tokens, /@media \(max-width: 1023px\) \{\n  :root \{\n    --page-gutter: 16px;\n    --panel-padding: 16px;/, '16px gutters below the rail layout');
+  assert.deepEqual(px(light, '--motion-'), ['120ms', '180ms'], 'hover and press, drawer');
   assert.match(tokens, /:root \{\n  color-scheme: light;/, 'light is the default theme');
 }
 
@@ -38,6 +43,8 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   const darkOwn = block(':root[data-theme="dark"]');
   assert.deepEqual(colourNames(darkOwn).filter(name => !(name in light)), [], 'dark defines a colour that light lacks');
   const sameInBoth = new Set(['--color-media-bg', '--color-media-text', '--color-media-scrim', '--color-on-stop']);
+  // The pictures whose colour is fixed (not masks) are redefined for dark as well.
+  for (const name of ['--icon-select', '--range-fill-image']) assert.ok(name in darkOwn && darkOwn[name] !== light[name], `${name} has a dark value`);
   assert.deepEqual(colourNames(light).filter(name => !(name in darkOwn) && !sameInBoth.has(name)), [], 'light colour without a dark value');
 }
 
@@ -50,11 +57,17 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   };
   const ratio = (a, b) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
   const pairs = [
-    ['--color-text', '--color-bg'], ['--color-text', '--color-surface'], ['--color-text', '--color-fill'], ['--color-text', '--color-accent-soft'],
-    ['--color-text-secondary', '--color-bg'], ['--color-text-secondary', '--color-surface'], ['--color-text-secondary', '--color-fill'],
-    ['--color-accent', '--color-bg'], ['--color-accent', '--color-surface'], ['--color-accent', '--color-fill'], ['--color-accent', '--color-accent-soft'],
-    ['--color-on-accent', '--color-accent'], ['--color-on-danger', '--color-danger'], ['--color-on-warning', '--color-warning'],
-    ['--color-on-stop', '--color-stop'], ['--color-media-text', '--color-media-bg'],
+    ['--color-text', '--color-bg'], ['--color-text', '--color-surface'], ['--color-text', '--color-fill'], ['--color-text', '--color-fill-strong'], ['--color-text', '--color-accent-soft'],
+    ['--color-text-secondary', '--color-bg'], ['--color-text-secondary', '--color-surface'], ['--color-text-secondary', '--color-fill'], ['--color-text-secondary', '--color-fill-strong'],
+    // Links and selected items: the accent as text, also on its soft tint.
+    ['--color-accent-text', '--color-bg'], ['--color-accent-text', '--color-surface'], ['--color-accent-text', '--color-fill'], ['--color-accent-text', '--color-accent-soft'],
+    // Solid accent (primary button) in its three states.
+    ['--color-on-accent', '--color-accent'], ['--color-on-accent', '--color-accent-hover'], ['--color-on-accent', '--color-accent-active'],
+    // Status words on their tint (badges, notices) and on a panel.
+    ['--color-ok-text', '--color-ok-soft'], ['--color-ok-text', '--color-surface'],
+    ['--color-warning-text', '--color-warning-soft'], ['--color-warning-text', '--color-surface'],
+    ['--color-danger-text', '--color-danger-soft'], ['--color-danger-text', '--color-surface'],
+    ['--color-on-stop', '--color-stop'], ['--color-on-stop', '--color-stop-hover'], ['--color-media-text', '--color-media-bg'],
   ];
   for (const [name, theme] of [['light', light], ['dark', dark]]) {
     for (const [fg, bg] of pairs) {
@@ -62,7 +75,8 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
       assert.ok(value >= 4.5, `${name}: ${fg} on ${bg} is ${value.toFixed(2)}:1`);
     }
     // Status marks (dots, strip edges) and control outlines are not text: 3:1 against the surface.
-    for (const mark of ['--color-ok', '--color-warning', '--color-danger', '--color-stop', '--color-border-strong']) {
+    // The solid accent is such a mark too (switch, slider fill, focus ring).
+    for (const mark of ['--color-ok', '--color-warning', '--color-danger', '--color-stop', '--color-border-strong', '--color-accent']) {
       const value = ratio(theme[mark], theme['--color-surface']);
       assert.ok(value >= 3, `${name}: ${mark} on the surface is ${value.toFixed(2)}:1`);
     }
@@ -101,14 +115,31 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
     assert.doesNotMatch(css, /backdrop-filter|\bfilter\s*:|text-shadow/, `${name}: blur, filter or text shadow`);
     assert.doesNotMatch(css, /text-transform\s*:\s*uppercase/, `${name}: upper-case label`);
     for (const match of css.matchAll(/box-shadow\s*:\s*([^;]+);/g)) assert.equal(match[1].trim(), 'var(--shadow-overlay)', `${name}: one shadow, for overlays`);
-    for (const match of css.matchAll(/font-weight\s*:\s*([^;]+);/g)) assert.match(match[1].trim(), /^var\(--weight-(regular|strong)\)$/, `${name}: font-weight ${match[1]}`);
+    for (const match of css.matchAll(/font-weight\s*:\s*([^;]+);/g)) assert.match(match[1].trim(), /^var\(--weight-(regular|medium|strong|bold)\)$/, `${name}: font-weight ${match[1]}`);
     for (const match of css.matchAll(/font-size\s*:\s*([^;]+);/g)) assert.match(match[1].trim(), /^var\(--text-(xs|sm|md|lg|xl)\)$/, `${name}: font-size ${match[1]}`);
-    for (const match of css.matchAll(/border-radius\s*:\s*([^;]+);/g)) assert.match(match[1].trim(), /^(var\(--radius-(control|panel|round)\)|2px)$/, `${name}: border-radius ${match[1]}`);
+    for (const match of css.matchAll(/border-radius\s*:\s*([^;]+);/g)) assert.match(match[1].trim(), /^(var\(--radius-(small|control|panel|pill|round)\)|0)$/, `${name}: border-radius ${match[1]}`);
+    // Motion: colour changes, the switch and the drawer only, with the two durations of the token file.
+    for (const match of css.matchAll(/transition\s*:\s*([^;]+);/g)) {
+      for (const part of match[1].split(/,(?![^(]*\))/)) assert.match(part.trim(), /^[a-z-]+ (var\(--motion-(fast|base)\) var\(--ease-out\)|0s( linear var\(--motion-base\))?)$/, `${name}: transition ${part.trim()}`);
+    }
+    for (const match of css.matchAll(/animation\s*:\s*([^;]+);/g)) assert.match(match[1].trim(), /^(skeleton-pulse |none$)/, `${name}: animation ${match[1]} (only the loading skeleton moves by itself)`);
+    assert.doesNotMatch(css, /url\(/i, `${name}: url() (pictures are tokens: var(--icon-...))`);
   }
-  for (const name of [...systemSheets, ...pageSheets]) {
-    const css = stripComments(read(name));
-    assert.doesNotMatch(css, /@import/, `${name}: @import`);
-    for (const match of css.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/g)) assert.match(match[1], /^\/static\//, `${name}: url(${match[1]}) is not a dashboard file`);
+  for (const name of [...systemSheets, ...pageSheets]) assert.doesNotMatch(stripComments(read(name)), /@import/, `${name}: @import`);
+  // All our CSS together stays small: it is on the first load of every route.
+  {
+    const total = [...systemSheets, ...pageSheets].reduce((sum, name) => sum + fs.statSync(path.join(staticDir, name)).size, 0);
+    assert.ok(total <= 100 * 1024, `style sheets are ${total} bytes together (limit 100 kB)`);
+  }
+  // Solid red is STOP only: the status bar STOP, the drive panel STOP and the pad STOP. A danger button is tinted.
+  {
+    const all = [...systemSheets, ...pageSheets].map(name => stripComments(read(name))).join('\n');
+    const solid = [...all.matchAll(/([^{}]+)\{[^{}]*background(?:-color)?:\s*var\(--color-(?:stop|danger)\);/g)].map(match => match[1].trim().split(/\s*,\s*/).pop());
+    assert.deepEqual(solid.sort(), ['.drive-head-actions .action-button.danger', '.rover-pad button[data-rover-drive="stop"]', '.status-dot.bad', '.stop-button'],
+      'rules with a solid red background: the three STOP buttons and the 8px status dot');
+    const danger = read('css/components.css').match(/\.btn-danger,\n\.action-button\.danger \{([^}]*)\}/);
+    assert.ok(danger, 'danger button rule');
+    assert.match(danger[1], /background: var\(--color-danger-soft\);/); assert.match(danger[1], /color: var\(--color-danger-text\);/);
   }
   // Focus ring and reduced motion exist once, for everything.
   const base = read('css/base.css');
@@ -140,7 +171,21 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
     assert.match(faces[0], /font-family:\s*"UBTS Sans"/);
     assert.match(faces[0], /font-display:\s*swap/, 'text is shown before the font arrives');
     assert.match(faces[0], /font-weight:\s*400 700/);
-    assert.deepEqual([...css.matchAll(/url\(([^)]*)\)/g)].map(match => match[1].replace(/["']/g, '')), [`/static/${fontFile}`], 'the only url() is the interface font');
+    // The only file is the interface font. The other url() values are small inline SVG pictures (a notice
+    // icon, the select arrow, the slider fill): data, not requests, each a named token of at most 1 kB.
+    const urls = [...css.matchAll(/url\("([^"]*)"\)/g)].map(match => match[1]);
+    assert.equal(urls.length, (css.match(/url\(/g) || []).length, 'every url() is double-quoted');
+    assert.deepEqual(urls.filter(url => !url.startsWith('data:')), [`/static/${fontFile}`], 'the only file url() is the interface font');
+    const pictures = urls.filter(url => url.startsWith('data:'));
+    assert.ok(pictures.length >= 8, 'inline pictures');
+    for (const url of pictures) {
+      assert.match(url, /^data:image\/svg\+xml,%3Csvg xmlns='http:\/\/www\.w3\.org\/2000\/svg' /, `inline picture is SVG: ${url.slice(0, 40)}`);
+      assert.ok(url.length <= 1024, `inline picture is ${url.length} bytes (limit 1 kB)`);
+      assert.doesNotMatch(url.slice(60), /[()<>;]|href|url|script|http/i, 'an inline picture refers to nothing');
+    }
+    const named = [...css.matchAll(/(--[a-z0-9-]+):\s*url\("data:/g)].map(match => match[1]);
+    assert.equal(named.length, pictures.length, 'every inline picture is a custom property');
+    for (const name of named) assert.match(name, /^--(icon-[a-z]+|range-fill-image)$/, name);
   }
   // The font tokens name the interface font first, then installed fonts, and end in a generic family.
   const families = value => value.split(',').map(item => item.trim());
@@ -194,16 +239,53 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   for (const sheet of ['tokens', 'base', 'components', 'frame']) assert.ok(kit.includes(`href="/static/css/${sheet}.css"`), sheet);
   assert.ok(kit.indexOf('css/tokens.css') < kit.indexOf('css/base.css') && kit.indexOf('css/base.css') < kit.indexOf('css/components.css'), 'tokens are loaded first');
   for (const cls of ['btn btn-primary', 'btn btn-danger', 'btn btn-quiet', 'btn btn-hold', 'stop-button', 'toggle', 'toggle-track', 'slider', 'check', 'select', 'input',
-    'tabs', 'tab', 'segmented', 'status-chip ok', 'status-chip warn', 'status-chip bad', 'statusbar', 'page-head', 'status-strip', 'status-strip-item',
-    'panel', 'panel-head', 'panel-section', 'kv-list', 'table', 'notice', 'notice ok', 'notice warn', 'notice bad', 'empty-state', 'progress', 'dialog']) {
+    'tabs', 'tab', 'segmented', 'btn-group', 'status-chip ok', 'status-chip warn', 'status-chip bad', 'status-chip info', 'status-dot', 'statusbar', 'sidebar', 'nav-list',
+    'page-head', 'page-note', 'status-strip', 'status-strip-item', 'panel', 'panel-head', 'panel-actions', 'panel-section', 'kv-list', 'table', 'num',
+    'notice', 'notice info', 'notice ok', 'notice warn', 'notice bad', 'empty-state', 'skeleton', 'progress', 'dialog', 'toast', 'icon']) {
     assert.ok(new RegExp(`class="[^"]*\\b${cls.replace(/ /g, '\\b[^"]*\\b')}\\b`).test(kit), `ui-kit.html shows .${cls}`);
   }
-  const components = read('css/components.css') + read('css/frame.css');
-  for (const cls of ['btn', 'btn-primary', 'btn-danger', 'btn-quiet', 'btn-hold', 'toggle', 'slider', 'select', 'input', 'tabs', 'tab', 'status-chip',
-    'panel', 'panel-head', 'kv-list', 'table', 'notice', 'empty-state', 'dialog', 'statusbar', 'stop-button', 'page-head', 'status-strip']) {
+  // Disabled, switched-on, selected and held states are shown as well.
+  for (const state of ['disabled=""', 'aria-pressed="true"', 'aria-selected="true"', 'btn btn-hold active', 'checked=""']) assert.ok(kit.includes(state), `ui-kit.html shows ${state}`);
+  const components = read('css/base.css') + read('css/components.css') + read('css/frame.css');
+  for (const cls of ['btn', 'btn-primary', 'btn-danger', 'btn-quiet', 'btn-hold', 'toggle', 'toggle-track', 'slider', 'check', 'select', 'input', 'tabs', 'tab', 'segmented', 'btn-group',
+    'status-chip', 'status-dot', 'panel', 'panel-head', 'kv-list', 'table', 'notice', 'empty-state', 'skeleton', 'progress', 'dialog', 'toast', 'icon',
+    'statusbar', 'stop-button', 'sidebar', 'nav-list', 'page-head', 'page-note', 'status-strip']) {
     assert.match(components, new RegExp(`\\.${cls}\\b[^{}]*\\{`), `.${cls} has a rule`);
   }
+  // Controls are drawn by the sheets, the same in every browser: no native select arrow, slider or check box.
+  for (const selector of ['.select,\nselect', '.slider,\ninput[type="range"]', '.check > input,\n.switch-control > input']) {
+    const start = components.indexOf(`${selector} {`);
+    assert.ok(start >= 0, selector);
+    assert.ok(components.slice(start, components.indexOf('}', start)).includes('\n  appearance: none;'), `${selector.split(',')[0]} is drawn by the sheet`);
+  }
+  for (const part of ['::-webkit-slider-runnable-track', '::-webkit-slider-thumb', '::-moz-range-track', '::-moz-range-progress', '::-moz-range-thumb']) {
+    assert.ok(components.includes(`input[type="range"]${part} {`), `slider ${part}`);
+  }
+  assert.doesNotMatch(components, /accent-color/, 'no browser-drawn control colour');
+  // Hover styles are for devices that hover; a notice has no coloured side stripe.
+  assert.match(components, /@media \(hover: hover\) \{\n  \.btn:not\(:disabled\):hover,/);
+  assert.doesNotMatch(read('css/components.css'), /border-left:\s*\d+px solid var\(--color-(ok|warning|danger|accent)/, 'no coloured side stripe');
   assert.doesNotMatch(read('index.html'), /ui-kit/, 'the check page is not linked from the dashboard');
+}
+
+// Icons: one set of line symbols inside the page (no icon font, no image file, no request). Every icon
+// that is used exists, every symbol is used, and the check page carries the same symbols.
+{
+  const sprite = html => { const match = html.match(/<svg aria-hidden="true" class="icon-sprite"[^>]*>[\s\S]*?<\/svg>/); assert.ok(match, 'icon symbols'); return match[0]; };
+  const index = read('index.html'), kit = read('ui-kit.html');
+  assert.equal(sprite(kit), sprite(index), 'ui-kit.html has the symbols of index.html');
+  assert.ok(index.indexOf('class="icon-sprite"') < index.indexOf('<header class="statusbar"'), 'the symbols come first in the body');
+  const symbols = [...sprite(index).matchAll(/<symbol id="(i-[a-z-]+)" viewBox="0 0 24 24">/g)].map(match => match[1]);
+  assert.ok(symbols.length >= 12 && new Set(symbols).size === symbols.length, 'symbols with unique names on a 24px grid');
+  assert.equal((sprite(index).match(/<symbol /g) || []).length, symbols.length, 'every symbol has an i- name and the 24px grid');
+  assert.doesNotMatch(sprite(index), /fill=|stroke=|style=|<image|href=/, 'symbols carry shapes only; .icon gives the stroke');
+  const used = html => [...html.matchAll(/<svg aria-hidden="true" class="icon[^"]*"><use href="#([^"]+)"\/><\/svg>/g)].map(match => match[1]);
+  assert.equal((index.match(/<use /g) || []).length, used(index).length, 'every icon is written the same way and hidden from assistive technology');
+  for (const name of [...used(index), ...used(kit)]) assert.ok(symbols.includes(name), `icon ${name} has no symbol`);
+  for (const name of symbols) assert.ok(used(index).includes(name), `symbol ${name} is not used by the dashboard`);
+  assert.ok(sprite(index).length <= 4096, `icon symbols are ${sprite(index).length} bytes (limit 4 kB)`);
+  const icon = read('css/base.css').match(/\n\.icon \{([^}]*)\}/);
+  assert.ok(icon); assert.match(icon[1], /stroke: currentColor;/); assert.match(icon[1], /stroke-width: 1\.75;/); assert.match(icon[1], /stroke-linecap: round;/);
 }
 
 // The old variable names are gone from the sheets, the pages and the scripts.
@@ -220,4 +302,4 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   }
 }
 
-console.log('PASS: token scales, both themes with text contrast, defined custom properties, no raw values or decoration in any sheet, device fonts and a fixed request list, check page');
+console.log('PASS: token scales, both themes with text contrast, defined custom properties, no raw values or decoration in any sheet, one font file and a fixed request list, icons, check page');

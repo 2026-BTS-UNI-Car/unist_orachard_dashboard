@@ -23,14 +23,30 @@
 <link href="/static/styles.css" rel="stylesheet"/>
 </head>
 <body>
+<svg aria-hidden="true" class="icon-sprite" focusable="false" height="0" width="0">
+<symbol id="i-drive" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 14.5V21M9.6 11.2 3.4 9.4M14.4 11.2l6.2-1.8"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/></symbol>
+<symbol id="i-overview" viewBox="0 0 24 24"><rect height="9" rx="1.5" width="7" x="3.5" y="3.5"/><rect height="5" rx="1.5" width="7" x="13.5" y="3.5"/><rect height="9" rx="1.5" width="7" x="13.5" y="11.5"/><rect height="5" rx="1.5" width="7" x="3.5" y="15.5"/></symbol>
+<symbol id="i-system" viewBox="0 0 24 24"><rect height="12" rx="2" width="12" x="6" y="6"/><rect height="4" rx="0.5" width="4" x="10" y="10"/><path d="M9.5 3v3M14.5 3v3M9.5 18v3M14.5 18v3M3 9.5h3M3 14.5h3M18 9.5h3M18 14.5h3"/></symbol>
+<symbol id="i-network" viewBox="0 0 24 24"><path d="M2.5 9.5a14 14 0 0 1 19 0M5.8 13a9.3 9.3 0 0 1 12.4 0M9 16.4a4.6 4.6 0 0 1 6 0M12 19.8v.1"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3 4 7.3v9.4l8 4.3 8-4.3V7.3zM4 7.3l8 4.3 8-4.3M12 11.6V21"/></symbol>
+<symbol id="i-fan" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1.5"/><path d="M12 10.5c-.3-2.3.8-4.3 3-5.3"/><path d="M12 10.5c-.3-2.3.8-4.3 3-5.3" transform="rotate(120 12 12)"/><path d="M12 10.5c-.3-2.3.8-4.3 3-5.3" transform="rotate(240 12 12)"/></symbol>
+<symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7.5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7.5zM14 3v4.5h4.5M9 12.5h6M9 16.5h6"/></symbol>
+<symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5.3 8.8A2.1 2.1 0 0 0 6.5 21h11a2.1 2.1 0 0 0 1.8-3.2L14 9V3M7.6 15h8.8"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.3A8.3 8.3 0 0 1 9.7 4a8.3 8.3 0 1 0 10.3 10.3z"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13.5 6.5 19 12l-5.5 5.5"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 0-14.6-4L4 9.3M4 4.5v4.8h4.8M4 12.5a8 8 0 0 0 14.6 4l1.4-1.8M20 19.5v-4.8h-4.8"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></symbol>
+<symbol id="i-rover" viewBox="0 0 24 24"><rect height="7" rx="2" width="17" x="3.5" y="9"/><circle cx="8" cy="18" r="2"/><circle cx="16" cy="18" r="2"/><path d="M12 9V5.5M9.5 5.5h5"/></symbol>
+</svg>
 <div hidden="" class="simulation-banner" role="status">SIMULATION · Gazebo 센서 · 실제 Jetson에 연결되지 않음</div>
 <header class="statusbar" id="statusBar">
 <button aria-controls="sidebar" aria-expanded="false" aria-label="메뉴 열기" class="menu-button" id="mobileMenuButton" type="button">
-<span></span>
-<span></span>
-<span></span>
+<svg aria-hidden="true" class="icon icon-open"><use href="#i-menu"/></svg>
+<svg aria-hidden="true" class="icon icon-close"><use href="#i-close"/></svg>
 </button>
-<strong class="statusbar-brand">UBTS</strong>
 <div class="statusbar-items">
 <span class="status-chip" id="connectionState">확인 중</span>
 <span class="status-chip" id="frameDriveState">조종 비활성</span>
@@ -42,19 +58,20 @@
 <button aria-label="메뉴 닫기" class="mobile-nav-backdrop" id="mobileNavBackdrop" type="button"></button>
 <div class="app-shell">
 <aside aria-label="메뉴" class="sidebar" id="sidebar">
+<div class="sidebar-brand"><span class="sidebar-mark"><svg aria-hidden="true" class="icon"><use href="#i-rover"/></svg></span><span class="sidebar-name"><strong>UBTS</strong><small>로버 대시보드</small></span></div>
 <nav class="nav-list">
-<a data-route="/rover-control" href="/rover-control">주행</a>
-<a data-route="/connection" href="/connection">연결</a>
-<a data-route="/" href="/">개요</a>
-<a data-route="/system" href="/system">시스템</a>
-<a data-route="/network" href="/network">네트워크</a>
-<a data-route="/docker" href="/docker">컨테이너</a>
-<a data-route="/fan" href="/fan">팬</a>
-<a data-route="/docs" href="/docs">문서</a>
-<a data-route="/research" href="/research">연구</a>
+<a data-route="/rover-control" href="/rover-control"><svg aria-hidden="true" class="icon"><use href="#i-drive"/></svg><span>주행</span></a>
+<a data-route="/connection" href="/connection"><svg aria-hidden="true" class="icon"><use href="#i-link"/></svg><span>연결</span></a>
+<a data-route="/" href="/"><svg aria-hidden="true" class="icon"><use href="#i-overview"/></svg><span>개요</span></a>
+<a data-route="/system" href="/system"><svg aria-hidden="true" class="icon"><use href="#i-system"/></svg><span>시스템</span></a>
+<a data-route="/network" href="/network"><svg aria-hidden="true" class="icon"><use href="#i-network"/></svg><span>네트워크</span></a>
+<a data-route="/docker" href="/docker"><svg aria-hidden="true" class="icon"><use href="#i-box"/></svg><span>컨테이너</span></a>
+<a data-route="/fan" href="/fan"><svg aria-hidden="true" class="icon"><use href="#i-fan"/></svg><span>팬</span></a>
+<a data-route="/docs" href="/docs"><svg aria-hidden="true" class="icon"><use href="#i-doc"/></svg><span>문서</span></a>
+<a data-route="/research" href="/research"><svg aria-hidden="true" class="icon"><use href="#i-flask"/></svg><span>연구</span></a>
 </nav>
 <div class="sidebar-footer">
-<button aria-pressed="false" class="toggle" id="themeToggle" type="button"><span class="toggle-track"></span><span id="themeLabel">다크 테마</span></button>
+<button aria-pressed="false" class="toggle" id="themeToggle" type="button"><svg aria-hidden="true" class="icon"><use href="#i-moon"/></svg><span id="themeLabel">다크 테마</span><span class="toggle-track"></span></button>
 <small>최근 수신 <span id="updatedAt">--</span></small>
 </div>
 </aside>
@@ -62,6 +79,7 @@
 <section class="page page-overview" data-page="/">
 <header class="page-head">
 <h1>개요</h1>
+<p class="page-note">Jetson과 로버 서비스 상태 요약</p>
 </header>
 <section class="status-strip">
 <div class="status-strip-item"><span>CPU</span><strong id="overviewCpu">--</strong><small id="overviewLoad">load --</small></div>
@@ -73,7 +91,7 @@
 <article class="panel chart-panel">
 <div class="panel-head">
 <h2>CPU · 메모리</h2>
-<a class="text-link" href="/system">자세히</a>
+<a class="text-link" href="/system">자세히<svg aria-hidden="true" class="icon"><use href="#i-arrow"/></svg></a>
 </div>
 <div class="chart-frame">
 <canvas class="resource-chart" height="280" id="chartOverviewSystem" width="900"></canvas>
@@ -83,7 +101,7 @@
 <article class="panel chart-panel">
 <div class="panel-head">
 <h2>네트워크 RX · TX</h2>
-<a class="text-link" href="/network">자세히</a>
+<a class="text-link" href="/network">자세히<svg aria-hidden="true" class="icon"><use href="#i-arrow"/></svg></a>
 </div>
 <div class="chart-frame">
 <canvas class="resource-chart" height="280" id="chartOverviewNetwork" width="900"></canvas>
@@ -114,6 +132,7 @@
 <section class="page" data-page="/connection">
 <header class="page-head">
 <h1>연결</h1>
+<p class="page-note">센서 연결 상태와 실시간 미리 보기</p>
 </header>
 <section class="status-strip">
 <div class="status-strip-item"><span>LiDAR</span><strong id="connectionLidarState">--</strong><small data-shorten="24" id="connectionLidarDevice">--</small></div>
@@ -125,7 +144,7 @@
 <article class="panel">
 <div class="panel-head">
 <h2>RPLIDAR 상태 확인</h2>
-<button class="action-button secondary" id="lidarTestButton" type="button">상태 새로고침</button>
+<button class="action-button secondary" id="lidarTestButton" type="button"><svg aria-hidden="true" class="icon"><use href="#i-refresh"/></svg>상태 새로고침</button>
 </div>
 <div class="test-result" id="lidarTestResult">대기 중</div>
 <div class="probe-grid">
@@ -259,6 +278,7 @@
 <section class="page" data-page="/system">
 <header class="page-head">
 <h1>시스템</h1>
+<p class="page-note">CPU · 메모리 · 전력 · 디스크</p>
 </header>
 <section class="resource-grid">
 <article class="panel resource-card">
@@ -326,6 +346,7 @@
 <section class="page" data-page="/network">
 <header class="page-head">
 <h1>네트워크</h1>
+<p class="page-note">주소 · Wi-Fi 방식 · 전송량</p>
 </header>
 <section class="status-strip cols-2">
 <div class="status-strip-item"><span>외부 IP</span><strong id="networkExternalIp">--</strong><small id="networkExternalIpText">--</small></div>
@@ -366,6 +387,7 @@
 <section class="page" data-page="/docker">
 <header class="page-head">
 <h1>컨테이너</h1>
+<p class="page-note">컨테이너 상태 · 자원 사용 · 로그</p>
 </header>
 <section class="status-strip">
 <div class="status-strip-item"><span>컨테이너</span><strong id="dockerContainerCount">--</strong><small id="dockerRunningText">--</small></div>
@@ -400,7 +422,7 @@
 <h2 id="containerDetailTitle">컨테이너 상세</h2>
 <div class="container-toolbar">
 <div class="container-actions" id="containerActions"></div>
-<button class="action-button secondary" id="containerRefreshButton" type="button">새로고침</button>
+<button class="action-button secondary" id="containerRefreshButton" type="button"><svg aria-hidden="true" class="icon"><use href="#i-refresh"/></svg>새로고침</button>
 </div>
 </div>
 <div class="container-detail" id="containerDetail">
@@ -412,6 +434,7 @@
 <section class="page" data-page="/fan">
 <header class="page-head">
 <h1>팬</h1>
+<p class="page-note">온도와 팬 출력</p>
 </header>
 <section class="fan-control-grid">
 <div class="status-strip cols-1"><div class="status-strip-item"><span>온도</span><strong id="fanTempValue">--</strong><small id="fanTempText">--</small></div></div>
@@ -487,6 +510,7 @@
 <h1>주행</h1>
 <span class="status-chip" id="roverModeLabel">실차</span>
 <div class="page-head-actions"><label class="field-inline">전송 품질 <select aria-label="전송 품질 선택" data-network-profile=""><option value="auto">자동 조절</option><option value="tiny">64 kbps</option><option value="slow">매우 느린 망</option><option value="balanced">균형</option><option value="detail">고화질</option></select></label></div>
+<p class="page-note">수동 조종 · 실시간 센서 · 기록</p>
 </header>
 <section class="status-strip">
 <div class="status-strip-item"><span id="roverControllerLabel">ESP8266</span><strong id="roverControlState">--</strong><small data-shorten="24" id="roverControlBase">--</small></div>
@@ -685,7 +709,7 @@
 <article class="panel wide">
 <div class="panel-head">
 <h2>기록 데이터</h2>
-<button class="action-button secondary" id="roverArchiveRefreshButton" type="button">새로고침</button>
+<button class="action-button secondary" id="roverArchiveRefreshButton" type="button"><svg aria-hidden="true" class="icon"><use href="#i-refresh"/></svg>새로고침</button>
 </div>
 <div class="archive-layout">
 <div class="archive-list" id="roverArchiveList"></div>
@@ -760,6 +784,7 @@
 </section>
 <div class="archive-download-actions">
 <a class="archive-download-button" download="" hidden="" href="#" id="roverArchiveDownloadButton">
+<svg aria-hidden="true" class="icon"><use href="#i-download"/></svg>
 <span>기록 데이터 다운로드</span>
 <small id="roverArchiveDownloadMeta">tar.gz</small>
 </a>
@@ -772,6 +797,7 @@
 <section class="page" data-page="/docs">
 <header class="page-head">
 <h1>문서</h1>
+<p class="page-note">프로젝트 문서</p>
 </header>
 <section class="docs-layout">
 <aside class="panel docs-index-panel">
