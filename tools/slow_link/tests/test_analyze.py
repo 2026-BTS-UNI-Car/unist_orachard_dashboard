@@ -207,9 +207,53 @@ class LinkAndProcessTest(unittest.TestCase):
         self.assertEqual(lidar["backlog_messages"], dict(n=1, p50=0, p90=0, p95=0, max=0))   # only the first stall could be judged
 
     def test_host_pauses_are_gaps_in_the_once_per_second_samples(self):
+        # Without wake probe logs (runs made before the probes) the gaps of the CPU sampler are used.
         rows = [dict(t=100.0), dict(t=101.0), dict(t=102.1), dict(t=108.6), dict(t=109.6)]
         self.assertEqual(analyze.host_pauses(rows), [[102.1, 6.5]])
         self.assertEqual(analyze.host_pauses(rows[:3]), [])
+        self.assertEqual(analyze.sampler_gaps(rows), [[102.1, 6.5]])
+
+    @staticmethod
+    def probe(late_at=None, late_ms=0.0, silent=None, t_from=100, t_to=130):
+        rows = []
+        for t in range(t_from, t_to):
+            if silent and silent[0] < t < silent[1]:
+                continue
+            rows.append(dict(t=float(t), max_ms=late_ms if t == late_at else 25.0, over100=0, over500=0, n=48))
+        return rows
+
+    def test_a_late_sampler_alone_is_not_a_pc_pause(self):
+        # The CPU sampler wrote a row every 2 to 6 s (a busy PC), but every stack process woke on time.
+        cpu = [dict(t=t) for t in (100.0, 106.2, 111.1, 114.3, 118.3, 120.0)]
+        probes = {name: self.probe() for name in ("dashboard", "link", "control", "bridge_lidar", "bridge_camera", "bridge_imugps")}
+        self.assertEqual(analyze.host_pauses(cpu, probes), [])
+        self.assertEqual(analyze.sampler_gaps(cpu), [[100.0, 6.2], [106.2, 4.9], [111.1, 3.2], [114.3, 4.0]])
+
+    def test_a_pc_pause_stops_at_least_half_of_the_wake_probes(self):
+        cpu = [dict(t=float(t)) for t in range(100, 130)]
+        names = ("dashboard", "link", "control", "bridge_lidar", "bridge_camera", "bridge_imugps")
+        # All processes woke 5 s late at t=110: the PC stood still from about 105 to 110.
+        probes = {name: self.probe(late_at=110, late_ms=5000.0) for name in names}
+        self.assertEqual(analyze.host_pauses(cpu, probes), [[105.0, 5.0]])
+        # Half of them silent for 6 s (no rows) is a pause as well.
+        probes = {name: (self.probe(silent=(110, 117)) if i < 3 else self.probe()) for i, name in enumerate(names)}
+        self.assertEqual(analyze.host_pauses(cpu, probes), [[110.0, 7.0]])
+        # One process late by 4 s (its own work) is not a PC pause, and neither are two of six.
+        probes = {name: (self.probe(late_at=110, late_ms=4000.0) if i < 2 else self.probe()) for i, name in enumerate(names)}
+        self.assertEqual(analyze.host_pauses(cpu, probes), [])
+        # Late by less than the limit everywhere (a busy PC) is not a pause.
+        probes = {name: self.probe(late_at=110, late_ms=1500.0) for name in names}
+        self.assertEqual(analyze.host_pauses(cpu, probes), [])
+
+    def test_pause_fields_of_a_run_folder(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / "cpu.jsonl").write_text("".join(json.dumps(dict(t=t)) + "\n" for t in (100.0, 104.5, 105.5)), encoding="utf-8")
+            for name in ("dashboard", "link"):
+                (folder / f"stall_{name}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in self.probe(t_from=100, t_to=106)),
+                                                            encoding="utf-8")
+            fields = analyze.pause_fields(folder)
+        self.assertEqual(fields, dict(host_pauses=[], sampler_gaps=[[100.0, 4.5]], pause_rule=analyze.PAUSE_RULE))
 
     def test_cpu_summary(self):
         rows = [dict(t=T0 / 1000 + i, host_cpu_pct=10.0 + i, ncpu=8, procs=dict(dashboard=dict(cpu_pct=50.0, rss_mb=100.0 + i, threads=9)),

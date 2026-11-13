@@ -42,14 +42,23 @@ class Sampler(threading.Thread):
         import psutil
         self.psutil = psutil
         self.path, self.stop = Path(path), threading.Event()
-        self.handles = {}
+        self.handles, self._chrome, self._chrome_looked = {}, None, 0.0
         for name, process in procs.items():
             handle = psutil.Process(process.pid)
             # A virtual-environment python.exe on Windows is a launcher; measure the interpreter it starts.
             kids = [kid for kid in handle.children() if (kid.name() or "").lower().startswith("python")]
             self.handles[name] = kids[0] if kids else handle
 
+    # Reading every process's command line can take seconds on a busy Windows PC; look for new Chrome processes this often.
+    CHROME_LOOKUP_S = 5.0
+
     def chrome(self):
+        now = time.monotonic()
+        if self._chrome is None or now - self._chrome_looked >= self.CHROME_LOOKUP_S:
+            self._chrome, self._chrome_looked = self.find_chrome(), now
+        return self._chrome
+
+    def find_chrome(self):
         psutil, groups = self.psutil, {}
         for process in psutil.process_iter(["name", "cmdline"]):
             try:
@@ -80,6 +89,7 @@ class Sampler(threading.Thread):
         chrome_last = {}
         with self.path.open("a", encoding="utf-8", newline="\n") as out:
             while not self.stop.wait(1.0):
+                began = time.monotonic()
                 row = dict(t=round(time.time(), 3), procs={}, chrome={}, host_cpu_pct=psutil.cpu_percent(None), ncpu=psutil.cpu_count(),
                            host_mem_avail_gb=round(psutil.virtual_memory().available / 2**30, 2))
                 for name, handle in self.handles.items():
@@ -104,6 +114,7 @@ class Sampler(threading.Thread):
                         except psutil.Error:
                             pass
                     row["chrome"][role] = dict(cpu_pct=round(total, 1), rss_mb=round(rss, 1), n=len(processes))
+                row["sample_s"] = round(time.monotonic() - began, 3)   # how long this sample took (a busy PC makes the sampler late)
                 out.write(json.dumps(row) + "\n")
                 out.flush()
 

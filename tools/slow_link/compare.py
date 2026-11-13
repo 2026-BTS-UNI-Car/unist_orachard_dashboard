@@ -131,8 +131,8 @@ def load_run(path):
         raise InputError(f"느린 통신 시험대의 요약 파일이 아닙니다: {file}")
     name = folder.name if folder is not None else path.stem
     if folder is not None:
-        if "host_pauses" not in summary and (folder / "cpu.jsonl").is_file():
-            summary["host_pauses"] = analyze.host_pauses(analyze.read_jsonl(folder / "cpu.jsonl"))
+        if summary.get("pause_rule") != analyze.PAUSE_RULE and (folder / "cpu.jsonl").is_file():
+            summary.update(analyze.pause_fields(folder))   # judge older summaries with the same pause rule (nothing is written)
         after = g(summary, "live", "after_stall")
         if after and any("fresh_after_ms" not in item for item in after.values()) and (folder / "RAW.json").is_file():
             raw = analyze.read_json(folder / "RAW.json")
@@ -187,7 +187,7 @@ def unusable(summary):
     if summary.get("error"):
         reasons.append("브라우저 쪽이 끝까지 돌지 못했다")
     if summary.get("host_pauses"):
-        reasons.append("실행 중에 PC가 멈췄다(초마다 쓰는 표본에 공백)")
+        reasons.append("실행 중에 PC가 멈췄다(host_pauses: 스택 프로세스의 깨어남 탐침 절반 이상이 3초 넘게 멈춤, 탐침이 없는 옛 실행은 CPU 표본의 공백)")
     if summary.get("lost_tabs"):
         reasons.append("시험 탭을 잃었다")
     if not summary.get("live") and not summary.get("load"):

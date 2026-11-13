@@ -439,9 +439,65 @@ def summarize_cpu(rows, t_from, t_to):
     return out
 
 
-def host_pauses(rows, limit_s=3.0):
-    """Gaps in the once-per-second CPU samples: the whole PC stopped (sleep, suspend). A run with one is not used."""
+PAUSE_RULE = "wake_probes_v2"
+
+
+def sampler_gaps(rows, limit_s=3.0):
+    """Gaps in the once-per-second CPU samples. The sampler is a thread of the bench process that reads every process's
+    command line, so a gap means the sampler was late (a busy PC) or the whole PC stopped. Reported, not used to judge a run
+    when the wake probes are there (see host_pauses)."""
     return [[round(a["t"], 1), round(b["t"] - a["t"], 1)] for a, b in zip(rows, rows[1:]) if b["t"] - a["t"] > limit_s]
+
+
+def _probe_stops(rows, limit_s):
+    """Stretches [start, end] (s) when one wake probe did not run: a row late by limit_s or more, or no row for longer."""
+    out = []
+    for row in rows:
+        late = (row.get("max_ms") or 0) / 1000.0
+        if late >= limit_s:
+            out.append([row["t"] - late, row["t"]])
+    for a, b in zip(rows, rows[1:]):
+        if b["t"] - a["t"] > limit_s + 1.0:     # a row comes about once a second; a longer silence is a stop as well
+            out.append([a["t"], b["t"]])
+    return out
+
+
+def host_pauses(cpu_rows, probe_logs=None, limit_s=3.0):
+    """Times the whole PC stopped (sleep, suspend, a frozen host): a run with one is not used.
+
+    probe_logs: {name: rows of stall_<name>.jsonl}, one row a second from every stack process (shim wake probe: sleeps 20 ms
+    and writes how late it woke). The PC stopped where at least half of the probes did not run for limit_s or more at the same
+    time. A busy PC that only made the sampler late is not a pause (the sampler's own gaps are kept as sampler_gaps).
+    Without probe logs (runs made before the probes) the gaps in the CPU samples are used, as before."""
+    logs = {name: rows for name, rows in (probe_logs or {}).items() if rows}
+    if not logs:
+        return sampler_gaps(cpu_rows, limit_s)
+    need = (len(logs) + 1) // 2
+    events = []
+    for name, rows in logs.items():
+        for start, end in _probe_stops(sorted(rows, key=lambda r: r["t"]), limit_s):
+            events += [(start, 1, name), (end, -1, name)]
+    events.sort(key=lambda e: (e[0], -e[1]))
+    active, out, began = {}, [], None
+    for t, step, name in events:
+        active[name] = active.get(name, 0) + step
+        stopped = sum(1 for n in active.values() if n > 0)
+        if began is None and stopped >= need:
+            began = t
+        elif began is not None and stopped < need:
+            if t - began >= limit_s:
+                out.append([round(began, 1), round(t - began, 1)])
+            began = None
+    return out
+
+
+def probe_logs(folder):
+    return {path.stem[6:]: read_jsonl(path) for path in sorted(Path(folder).glob("stall_*.jsonl"))}
+
+
+def pause_fields(folder):
+    cpu = read_jsonl(Path(folder) / "cpu.jsonl")
+    return dict(host_pauses=host_pauses(cpu, probe_logs(folder)), sampler_gaps=sampler_gaps(cpu), pause_rule=PAUSE_RULE)
 
 
 def summarize_process_stalls(folder, t_from, t_to):
@@ -461,13 +517,13 @@ def analyze(folder):
     run = read_json(folder / "run.json", {})
     if raw is None:
         return dict(schema="ubts.slow_link.summary", version=1, run=run, error="RAW.json is missing (the browser part did not finish)",
-                    host_pauses=host_pauses(read_jsonl(folder / "cpu.jsonl")))
+                    **pause_fields(folder))
     marks = {m["mark"].split(":")[0]: m["t"] for m in raw.get("phase_marks", [])}
     route = raw["config"].get("route", "/rover-control")
     clients = raw.get("clients", [])
     summary = dict(schema="ubts.slow_link.summary", version=1, run=run, chrome=raw.get("chrome"), clock_check=raw.get("clock"),
                    error=raw.get("error"), notes=raw.get("notes"), lost_tabs=raw.get("lost_tabs") or [],
-                   host_pauses=host_pauses(read_jsonl(folder / "cpu.jsonl")))
+                   **pause_fields(folder))
     link_stats = read_json(folder / "link.json")
     link = (link_stats or {}).get("links", [None])[0]
     summary["load"] = {name: summarize_load(load, route) for name, load in (clients[0]["loads"].items() if clients else [])}
