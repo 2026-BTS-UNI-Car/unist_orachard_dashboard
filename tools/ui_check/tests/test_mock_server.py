@@ -130,7 +130,7 @@ class ServerTest(unittest.TestCase):
             status, content_type, body = self.get(route)
             self.assertEqual((status, body), (200, index), route)
             self.assertTrue(content_type.startswith("text/html"), route)
-        self.assertEqual(len(mock_server.APP_ROUTES), 10)
+        self.assertEqual(len(mock_server.APP_ROUTES), 17)
 
     def test_static_files_and_types(self):
         status, content_type, body = self.get("/static/app.js")

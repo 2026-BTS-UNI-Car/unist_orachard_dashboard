@@ -35,19 +35,18 @@ FAKE_LONGITUDE = 0.000200
 # 웹소켓과 지도 묶음을 흉내 내지 않아 자료 없이 남는 패널. 실행 결과 JSON에 그대로 적는다.
 PANELS_WITHOUT_DATA = {
     "empty": [
-        "LiDAR 극좌표(/connection, /rover-control): 웹소켓은 연결만 받고 자료를 보내지 않음(스캔 대기 화면)",
-        "카메라 실시간(/connection, /rover-control): 영상 프레임 없음",
+        "LiDAR 극좌표(/sensors, /rover-control): 웹소켓은 연결만 받고 자료를 보내지 않음(스캔 대기 화면)",
+        "카메라 실시간(/sensors, /rover-control): 영상 프레임 없음",
         "IMU 자세(/rover-control): 표본 없음",
         "GPS 수치와 지도(/rover-control): 표본 없음, 오프라인 지도 묶음 없음",
         "실시간 점유 격자 지도(/rover-control): 유휴 상태, 셀 없음",
         "기록 목록과 재생 패널(/rover-control): 기록 0개",
         "컨테이너 목록·상세·로그(/docker): Docker 사용 불가 응답",
         "문서 목록과 본문(/docs): 문서 0개",
-        "수행계획(/research): 항목 0개",
-    ],
+            ],
     "stress": [
-        "LiDAR 극좌표(/connection, /rover-control): 스캔을 보내지 않음(스캔 대기 화면). 장치 경로 같은 글자 칸은 채워짐",
-        "카메라 실시간(/connection, /rover-control): 이진 프레임 규약을 흉내 내지 않아 영상 없음",
+        "LiDAR 극좌표(/sensors, /rover-control): 스캔을 보내지 않음(스캔 대기 화면). 장치 경로 같은 글자 칸은 채워짐",
+        "카메라 실시간(/sensors, /rover-control): 이진 프레임 규약을 흉내 내지 않아 영상 없음",
         "GPS 지도(/rover-control): 오프라인 지도 묶음(/maps/*)이 없어 지도 타일 없음. 수치는 채워짐",
         "실시간 점유 격자 지도(/rover-control): 유휴 상태, 셀 없음",
         "기록 재생 패널(/rover-control): 기록을 고르지 않아 재생 LiDAR·영상·기록 지도·IMU·GPS·모터 표 비어 있음",
