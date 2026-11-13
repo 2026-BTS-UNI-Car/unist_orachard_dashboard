@@ -143,8 +143,8 @@
 <label class="field" for="autoRowLen">열 길이 m (비워도 됨)<input class="input" id="autoRowLen" inputmode="decimal" max="300" min="1" step="0.1" type="number"/></label>
 <div class="sim-map-actions"><button class="action-button primary" disabled="" id="autoPrimary" type="button">확인 중</button><button class="action-button secondary" disabled="" id="autoEnd" type="button">run 끝내기</button></div>
 <div class="test-result" hidden="" id="autoNotice"></div>
-<dl class="detail-list" id="autoDetails"></dl>
 <p class="help-text">한 번 누르면 열 끝까지 간다. 출발 뒤에는 이 화면을 열어 두어야 하고, 탭을 숨기거나 다른 화면으로 가면 곧 차가 선다. STOP(위, 상태 막대, Esc)은 자율 run도 멈춘다.</p>
+<details id="autoMore"><summary>실행기 상태 자세히</summary><dl class="detail-list" id="autoDetails"></dl></details>
 </section>
 </article>
 <article class="panel rover-live-panel rover-camera-panel">
@@ -425,6 +425,11 @@
 </div>
 <div class="chart-readout" id="roverImuStats"></div>
 <p class="help-text">센서가 보낸 자세 그대로입니다. 소프트웨어 회전이나 영점 보정을 하지 않습니다.</p>
+</article>
+<article class="panel" data-vehicle="front_steer" id="steerPotPanel">
+<div class="panel-head"><h2>조향 가변저항</h2><span class="status-chip" id="steerPotState">확인 중</span></div>
+<dl class="detail-list" id="steerPotDetails"></dl>
+<p class="help-text">조향 브리지가 보낸 가변저항 값(앞바퀴 각도)이다. 보정 없음·잡음·끊김은 결함 줄에 보인다.</p>
 </article>
 <article class="panel wide">
 <div class="panel-head">

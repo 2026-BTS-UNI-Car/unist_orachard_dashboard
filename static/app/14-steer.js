@@ -4,7 +4,7 @@
 // the drive route opens, so the first load of the differential dashboard does not grow. renderRoute() announces every
 // route with "ubts:route".
 const STEER_VEHICLE = document.documentElement.dataset.vehicleKind === "front_steer";
-const steerScreens = { drive: null, auto: null, tuning: null, grid: null };
+const steerScreens = { drive: null, auto: null, tuning: null, grid: null, pot: null };
 
 function steerPageApi() {
   // controlRequest: the one transport for driving requests (NET-05): high priority, never queued, with a time limit.
@@ -25,6 +25,7 @@ function loadSteerScreens(route = currentRoute()) {
     loadSteerScreen("drive", "/static/steer/steer-drive.mjs", "initSteerDrive");
     loadSteerScreen("auto", "/static/steer/auto-panel.mjs", "initAutoPanel");
   }
+  if (STEER_VEHICLE && (route === "/sensors" || steerScreens.pot)) loadSteerScreen("pot", "/static/steer/steer-sensor.mjs", "initSteerSensor");
   // The tuning screen (UI-12) is a route of every dashboard; without an executor it says so.
   if (route === "/tuning" || steerScreens.tuning) loadSteerScreen("tuning", "/static/steer/tuning-page.mjs", "initTuningPage");
   // The executor's local grid layer of the map screen (UI-09): shown only when the executor sends one.
