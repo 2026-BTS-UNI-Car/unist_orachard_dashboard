@@ -223,7 +223,7 @@ class RulesFileTest(unittest.TestCase):
 
         def failing_rule_ids(name):
             run = json.loads((TOOL_DIR / name / "ui_check.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(run["pages"]), 90, name)
+            self.assertEqual(len(run["pages"]), {"accepted": 110, "baseline": 90}[name], name)   # 11 or 9 routes x 5 sizes x 2 data sets
             self.assertFalse(Path(run["static_dir"]).is_absolute(), f"{name}: static_dir must not be a local absolute path")
             rows = rules_engine.evaluate_fixed_rules(run["pages"], rules) + rules_engine.load_error_violations(run["pages"], rules)
             return sorted({row.get("rule_id", row["kind"]) for row in rows if row["mode"] == "fail"})
