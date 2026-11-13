@@ -519,13 +519,19 @@ def _local_grid() -> dict:
     for i, j in occupied:
         index = i * nj + j
         bits[index // 8] |= 0x80 >> (index % 8)     # numpy.packbits order: big end first
-    axis = 0.10472
+    axis, u0, v0, cell = 0.10472, -4.0, -4.9, 0.1
+
+    def odometry(u, v):                                # grid frame -> run odometry
+        return [round(u * math.cos(axis) - v * math.sin(axis), 3), round(u * math.sin(axis) + v * math.cos(axis), 3)]
+
+    left, right = v0 + 67 * cell, v0 + 33 * cell       # the row lines on the trunk cells (j 66-67 and 32-33)
     return {"schema": "ubts.row_executor.local_grid.v1", "frame": "run_odometry", "updates": 98765, "axis_rad": axis,
-            "origin_uv": [-4.0, -4.9], "occupied": len(occupied), "encoding": "bitmap", "age_s": 0.12, "cell_m": 0.1,
+            "origin_uv": [u0, v0], "occupied": len(occupied), "encoding": "bitmap", "age_s": 0.12, "cell_m": cell,
             "shape": [ni, nj], "bits": base64.b64encode(bytes(bits)).decode("ascii"), "truncated": False,
-            "lines": {"left": [[-1.751, 1.66], [12.216, 2.633]], "right": [[-1.505, -1.872], [12.462, -0.899]],
-                      "centre": [[-1.628, -0.106], [12.339, 0.867]], "quality": 1.0, "stamp": 5.9},
-            "base_pose": [2.4, 0.3, 0.09]}
+            "lines": {"left": [odometry(-1.5, left), odometry(12.5, left)], "right": [odometry(-1.5, right), odometry(12.5, right)],
+                      "centre": [odometry(-1.5, (left + right) / 2), odometry(12.5, (left + right) / 2)], "quality": 0.93,
+                      "stamp": 5.9},
+            "base_pose": odometry(2.5, 0.15) + [round(axis + 0.03, 4)]}
 
 
 def _tuning_log(dataset: str, now: float) -> dict:
