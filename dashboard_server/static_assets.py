@@ -135,7 +135,11 @@ class StaticAssets:
 
     def _entry(self, rel: str, stack: tuple) -> _Entry | None:
         asked = rel.lstrip("/")
-        path = self.resolve(asked)
+        if not asked or "\x00" in asked:
+            return None
+        with self._lock:
+            remembered = self._resolved.get(asked)
+        path = remembered if remembered is not None else self._resolve_now(asked)
         if path is None:
             return None
         rel = self._relative(path)
@@ -145,8 +149,9 @@ class StaticAssets:
             info = None
         with self._lock:
             cached = self._entries.get(rel)
-        if info is None or cached is None or cached.stat != (info.st_mtime_ns, info.st_size):
-            # New, changed or gone: resolve the path again instead of trusting the remembered one.
+        if remembered is not None and (info is None or cached is None or cached.stat != (info.st_mtime_ns, info.st_size)):
+            # A remembered path whose file is new to the cache, changed or gone: resolve it again instead of trusting it
+            # (a path resolved just now is not resolved twice).
             fresh = self._resolve_now(asked)
             if fresh is None:
                 return None
@@ -158,6 +163,8 @@ class StaticAssets:
                 info = path.stat()
             except OSError:
                 return None
+        if info is None:
+            return None
         stat = (info.st_mtime_ns, info.st_size)
         if cached is not None and cached.stat == stat and self._deps_current(cached.deps, stack + (rel,)):
             return cached
