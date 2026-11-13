@@ -110,11 +110,10 @@
 }
 
 /* Name, value and detail cells in a grid (device probe, container details,
-   GPS read-outs, plan): quiet tiles, not bordered boxes. */
+   GPS read-outs): quiet tiles, not bordered boxes. */
 .probe-card,
 .container-detail-grid article,
-.gps-readouts > div,
-.milestone {
+.gps-readouts > div {
   display: grid;
   align-content: start;
   gap: 2px;
@@ -1197,8 +1196,7 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
 
 /* A list that was filled with nothing says so, like .empty-state (the page
    script leaves the box empty, so the icon and the line are drawn here). */
-.panel > .status-list[data-render-key]:empty,
-.timeline:empty {
+.panel > .status-list[data-render-key]:empty {
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   gap: var(--space-2);
@@ -1207,8 +1205,7 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   text-align: center;
 }
 
-.panel > .status-list[data-render-key]:empty::before,
-.timeline:empty::before {
+.panel > .status-list[data-render-key]:empty::before {
   width: 28px;
   height: 28px;
   margin: 0;
@@ -1219,8 +1216,7 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   content: "";
 }
 
-.panel > .status-list[data-render-key]:empty::after,
-.timeline:empty::after {
+.panel > .status-list[data-render-key]:empty::after {
   width: auto;
   height: auto;
   margin: 0;
@@ -1373,41 +1369,6 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   color: var(--color-text);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-
-/* ---- Plan -------------------------------------------------------------- */
-.timeline {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.milestone p {
-  margin-top: var(--space-1);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
-
-/* State of a step, as a badge. */
-.milestone small {
-  justify-self: start;
-  margin-top: var(--space-2);
-  padding: 2px 10px;
-  border-radius: var(--radius-pill);
-  background: var(--color-fill-strong);
-  color: var(--color-text-secondary);
-  font-weight: var(--weight-medium);
-}
-
-.milestone small.done {
-  background: var(--color-ok-soft);
-  color: var(--color-ok-text);
-}
-
-.milestone small.in_progress {
-  background: var(--color-accent-soft);
-  color: var(--color-accent-text);
 }
 
 /* ---- Documents --------------------------------------------------------- */
@@ -2048,7 +2009,6 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   .rover-layout,
   .resource-grid,
   .docs-layout,
-  .timeline,
   .core-grid,
   .core-chart-grid,
   .probe-grid,
