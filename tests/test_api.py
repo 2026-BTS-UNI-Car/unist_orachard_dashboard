@@ -1011,6 +1011,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("docs-index", slugs)
         self.assertIn("fan-control", slugs)
         self.assertIn("jetson-offline-access", slugs)
+        self.assertIn("wifi-ap-checklist", slugs)     # the field check list of the car's Wi-Fi AP (NET-12)
 
 
 if __name__ == "__main__":

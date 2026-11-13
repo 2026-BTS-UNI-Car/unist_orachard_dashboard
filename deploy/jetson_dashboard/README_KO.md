@@ -98,6 +98,29 @@ python3 rollback_dashboard.py --apply    # 되돌리기
 - 다시 빌드해야 하는 변경은 이 방식으로 설치하지 않는다: `requirements.txt` 가 다르면 새 파이썬 패키지가 필요하고, `dashboard_server/native_raster.cc` 가 다르면 컴파일된 `_native_raster.so` 가 맞지 않는다. 설치기가 둘을 비교해 다르면 거절한다. 레포 `Dockerfile` 이 기준판과 다르면 `make_bundle.py` 가 묶음을 만들지 않는다.
 - `Dockerfile.ros2` 점검(todo D-06): 이 묶음을 만든 커밋 기준으로 브리지 스크립트가 import 하지만 이미지에 복사하지 않는 파일이 `notes.dockerfile_ros2_imports.missing_imports` 에 적힌다. ROS 이미지를 레포에서 다시 빌드하면 그 브리지가 시작하지 못한다. 이 묶음은 ROS 이미지를 다시 빌드하지 않으므로 지금 설치에는 영향이 없다.
 
+### 4-1. 느린 통신 작업(NET-03 ~ NET-11)과 화면 개편: 무엇이 이 묶음만으로 현장에 가나
+
+기준판(`baseline-installed-20261025`) 이후의 변경을 다시 설치할 컨테이너로 나눴다(NET-12). 측정과 근거는 [`docs/slow_link.md`](../../docs/slow_link.md) 10~12절.
+
+| 변경 | 어디 | 이 묶음(대시보드 컨테이너)만으로 |
+| --- | --- | --- |
+| 화면 6개, 조향 수동·자율·조정 화면, 실행기 중계(`/api/executor/*`) | `static/`, `dashboard_server/` | 된다. 조향 화면은 `DASHBOARD_VEHICLE=front_steer` 와 조향 브리지·실행기가 있어야 쓸모가 있다(아래) |
+| 첫 화면 무게 줄이기, 정적 파일 해시 주소와 긴 캐시(NET-03, NET-04) | `static/`, `dashboard_server/static_assets.py` | 된다 |
+| 연결 유지와 조종 우선(NET-05), 상태 요청 묶음·ETag(NET-06) | `dashboard_server/app.py`, `static/app/01-format-http.js` | 된다 |
+| 카메라: 자동일 때 1080 원본 미리보기 안 씀, 화면 밖 패널 멈춤, 등급별 크기·화질(NET-08, NET-10) | `static/` | 된다. 카메라 브리지는 기준판 이후 바뀌지 않았다(브리지가 이미 받는 크기·화질만 고른다) |
+| 연결 등급과 한 곳의 자동 조절, 현장 연결 기록(NET-10) | `static/app/04-link-grade.js`, `/api/ping`, `/api/link-log` | 된다 |
+| 세션 연장, 다시 잇기 엇갈림, 끊김 뒤 처리(NET-11) | `dashboard_server/app.py`, `static/` | 된다 |
+| 실시간 지도 경로를 늘어난 만큼만 보내기(NET-09 첫 부분) | `dashboard_server/`, `static/live-map*.js` | 된다 |
+| LiDAR 이진 형식 polar-v2, 응답 창 2, 새 스캔 바로 보냄(NET-07) | `scripts/lidar_ws_bridge.py` → `ros2-lidar-bridge` | **안 된다.** 옛 브리지는 polar-v1(JSON)으로 답하고 새 화면은 그것을 그대로 그린다(LiDAR 갱신 수는 옛 수준) |
+| IMU 표시 메시지 한 번에 하나(display-ack, NET-07) | `scripts/imu_ws_bridge.py` → `ros2-imu-bridge` | **안 된다.** 옛 브리지는 옛 흐름으로 보낸다(멈춤 뒤 밀린 IMU 가 남는다) |
+| GPS 브리지 응답 기한 2 → 30 초(NET-11) | `scripts/gps_ws_bridge.py` → `ros2-gps-bridge` | **안 된다.** 옛 브리지는 2 초 넘는 멈춤에서 연결을 닫고, 화면이 다시 연다 |
+| 조향 브리지 V3(새 서비스, compose 프로필 `steer`) | `scripts/steer_rover_bridge.py` 등 | **안 된다.** 조향 펌웨어 V3 와 함께 따로 설치한다(조향 차량이 될 때) |
+
+- 브리지 쪽 변경은 ROS 이미지(`Dockerfile.ros2`)를 다시 만들어야 한다. 그 설치·되돌리기 절차는 아직 없다(이 묶음의 범위 밖). 만들 때도 compose 로 서비스를 한꺼번에 다시 만들지 않는다(1절).
+- 그래서 이 묶음만 설치한 차에서는 화면 쪽 개선(첫 화면, 캐시, 조종 우선, 카메라 계획, 연결 등급)이 가고, LiDAR·IMU·GPS 스트림은 옛 형식으로 돈다. 섞여도 동작하게 만들었다(시험 `tests/test_lidar_polar_v2.py`·`.js` 의 polar-v1, 화면 코드의 옛 흐름 처리). 시험대의 수치(slow_link.md 12절)는 새 브리지까지 쓴 값이라, 브리지를 바꾸기 전의 LiDAR·IMU 수치는 그보다 나쁘다.
+- 되돌리기: 대시보드는 3-5 절. 브리지를 바꾸지 않았으므로 브리지 쪽 되돌리기는 없다.
+- 차의 무선 AP 설정은 이 묶음과 상관없다. 현장 점검표: [`docs/WIFI_AP_CHECKLIST_KO.md`](../../docs/WIFI_AP_CHECKLIST_KO.md).
+
 ## 5. 묶음 만들기 (PC)
 
 레포 작업 트리에서:

@@ -246,10 +246,18 @@ stateDiagram-v2
 
 ## 9. 차동 판과의 공존
 
-- D-14 결정 전까지 옛 경로는 그대로 둔다: 차동 패드와 `left`/`right` 명령, 옛 감독기 `/api/autonomy/*`, 관찰 패널, 현장 준비 점검표.
+**결정(todo 결정 나5, D-14): 차동(좌우 PWM) 전제 자율·관찰 코드는 조향 펌웨어가 차에 올라가 조향 실행기로 바뀔 때까지 둔다.**
+까닭: 차에 조향 펌웨어 V3가 올라가기 전까지는 지금 차(차동 펌웨어 V2)로 수동 주행이 되어야 하고, Jetson에 설치된 native 관찰 이미지의 원본이 이 코드다.
+바뀌면 태그에 보존한 뒤 내린다. 이 결정은 2026-11-13 묶음 S6에서 다시 확인했다(코드는 그대로 둠).
+
+- 그때까지 그대로 두는 것: 차동 패드와 `left`/`right` 명령, 옛 감독기 `/api/autonomy/*`, 관찰 패널, 현장 준비 점검표. 이력 경로이며 조향 차량(`front_steer`)에서는 쓰지 않는다.
 - `DASHBOARD_VEHICLE=differential`(기본)에서 화면과 서버 동작은 이 사양 전과 같다. 새 자율·조정 화면은 실행기 설정이 없으면 "설정 없음"만 보인다.
 - `front_steer`에서는 차동 패드와 옛 자율 자리 패널을 숨기고 조향 패널을 보인다. 옛 경로 자체는 남는다.
-- 차동 경로를 내리는 조건(모두): (1) Jetson에 V3 펌웨어와 조향 브리지(`scripts.steer_rover_bridge`, serial)가 설치되어 상태에 `steering` 블록이 나온다, (2) 사용자가 현장에서 조향 수동 조종을 확인했다, (3) 조향 실행기가 Jetson에 설치되어 자율 시작·정지를 확인했다, (4) D-14에서 사용자가 내림을 정했다. 내릴 때는 태그로 보존하고 app.py import·경로·시험을 함께 바꾼다.
+- 내리는 조건(모두): (1) Jetson에 V3 펌웨어와 조향 브리지(`scripts.steer_rover_bridge`, serial)가 설치되어 상태에 `steering` 블록이 나온다, (2) 사용자가 현장에서 조향 수동 조종을 확인했다, (3) 조향 실행기가 Jetson에 설치되어 자율 시작·정지를 확인했다. 셋이 채워지면 나5에 따라 내린다.
+- 내릴 묶음(세 묶음을 같이 내린다): 서버 `dashboard_server/` 의 `autonomy_settings`, `autonomy_observation`, `record_based_autonomy`, `native_autonomy_application`, `native_autonomy_supervisor`, `native_observation_client`, `native_owner_lifecycle`, `field10_shadow`, `field10_shadow_preflight`, `field_preflight`, `encoderless_drive_preview`, `_field10/`;
+  화면 `static/field-preparation.js`, `static/native-accepted-map.mjs`, `index.html` 의 옛 자율·관찰 패널; `deploy/native_sensor_stream/`, `deploy/native_sensor_shadow/`, `tools/native_overlay_v2/`, `tools/cartographer_incremental_capture/`, `tools/gnss_receiver_utc/`, `docs/C0_SOURCE_*`.
+  `body_feedback` 은 실시간 지도(`source_live_mapping`)도 쓰므로 남긴다. 내리기 전에 import 그래프를 다시 뽑아 끊긴 참조가 없는지 본다.
+- 내리는 방법: 태그(예: `archive-differential-<날짜>`)로 보존 → app.py 의 import·경로·`DashboardServer` 인자와 관련 시험을 함께 바꿈 → 전체 시험과 화면 점검 → 설치 묶음. Jetson의 native 관찰 이미지는 그 태그에서 다시 빌드할 수 있어야 한다.
 
 ## 10. 미정 값
 

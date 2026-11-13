@@ -25,7 +25,9 @@
 | [camera_ack_window_v2.md](camera_ack_window_v2.md) | 카메라 전송창 V2 적용과 검증(2026-10-25 설치) | 현재 |
 | [CAMERA_ORIGINAL1080_PREVIEW.md](CAMERA_ORIGINAL1080_PREVIEW.md) | 원본 1080 JPEG 실시간 표시(2026-10-25 설치), 끄는 주소 옵션 | 현재 |
 | [grid_cell_transport.md](grid_cell_transport.md) | 격자 지도를 셀 숫자로 보내고 브라우저가 그리는 형식 | 현재 |
-| [slow_link.md](slow_link.md) | 느린 2.4 GHz 연결의 기준 측정, 원인, 목표 | 현재(작업 중) |
+| [slow_link.md](slow_link.md) | 느린 2.4 GHz 연결: 시험대, 기준 측정, 원인, 목표 32개, 고친 뒤와 최종 측정(12절) | 현재 |
+| [WIFI_AP_CHECKLIST_KO.md](WIFI_AP_CHECKLIST_KO.md) | 차의 무선 AP 현장 점검표(채널·대역·출력·안테나·거리), 현장 연결 기록(`?link_log=1`)과 등급 경계 다시 맞추기 | 현재 |
+| [SCREENS_KO.md](SCREENS_KO.md) | 화면 6개(주행·지도·센서·기록·조정·시스템)와 옛 주소, 기능 대조표 | 현재 |
 
 ## 조종 (차동 V2)
 
@@ -45,7 +47,7 @@
 
 | 문서 | 내용 | 상태 |
 | --- | --- | --- |
-| [../deploy/jetson_dashboard/README_KO.md](../deploy/jetson_dashboard/README_KO.md) | Jetson 대시보드 설치 묶음: 점검, 설치, 확인, 되돌리기 | 현재 |
+| [../deploy/jetson_dashboard/README_KO.md](../deploy/jetson_dashboard/README_KO.md) | Jetson 대시보드 설치 묶음: 점검, 설치, 확인, 되돌리기. 4-1절: 이 묶음만으로 현장에 가는 변경과 브리지를 바꿔야 하는 변경 | 현재 |
 
 ## 접속과 운영
 
@@ -56,6 +58,10 @@
 | [fan_control.md](fan_control.md) | Jetson 팬 자동/수동 PWM | 확인하지 않음(2026-06 작성) |
 
 ## 차동 시절 관찰 묶음 (조향 실행기로 바뀔 때까지 둠)
+
+결정 나5(D-14): 조향 펌웨어가 차에 올라가 조향 실행기로 바뀔 때까지 둔다. 그때까지 지금 차(차동 V2)의 수동 주행과 설치된 native 관찰 이미지가 이 코드에 기댄다. 내리는 조건과 내릴 파일 목록은 [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 9절.
+
+결정 나5(D-14): 조향 펌웨어가 차에 올라가 조향 실행기로 바뀔 때까지 둔다. 그때까지 지금 차(차동 V2)의 수동 주행과 설치된 native 관찰 이미지가 이 코드에 기댄다. 내리는 조건과 내릴 파일 목록은 [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 9절.
 
 | 위치 | 내용 |
 | --- | --- |
@@ -70,8 +76,8 @@
 | 위치 | 내용 |
 | --- | --- |
 | [../README.md](../README.md) | 레포 소개와 빠른 실행 |
-| [../tools/ui_check/README_KO.md](../tools/ui_check/README_KO.md) | 화면 점검 도구(9경로 × 5화면 × 자료 2종 = 90쪽) |
-| [../tools/slow_link/README_KO.md](../tools/slow_link/README_KO.md) | 느린 통신 시험대(속도 제한 중계기, 센서 재생원, 측정기) |
+| [../tools/ui_check/README_KO.md](../tools/ui_check/README_KO.md) | 화면 점검 도구(11경로 × 5화면 × 자료 2종 = 110쪽) |
+| [../tools/slow_link/README_KO.md](../tools/slow_link/README_KO.md) | 느린 통신 시험대(속도 제한 중계기, 센서 재생원, 측정기, 받아들인 값과 견주기). 현장 연결 기록 보고 `link_log_report.py` |
 | [../deploy/offline_ap/README.md](../deploy/offline_ap/README.md) | 오프라인 AP 설정 파일과 회귀 검사 |
 | `../deploy/systemd/` | systemd 단위 파일(cloudflared 터널, 대시보드 직접 실행). Jetson 에서 지금 쓰는지는 확인하지 않았다 |
 | `../tools/fonts/` | 화면 글꼴(UBTS Sans)을 다시 만드는 스크립트 |
