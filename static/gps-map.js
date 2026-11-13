@@ -269,7 +269,7 @@ function gpsReconnectDelay(attempt, random = Math.random) {
   const base = Math.min(30000, 1500 * 2 ** Math.max(0, Math.min(10, Number(attempt) || 0)));
   return Math.round(Math.min(30000, base * (0.8 + 0.4 * random())));
 }
-const active = () => location.pathname.replace(/\/$/, '') === '/rover-control' && !document.hidden;
+const active = () => location.pathname.replace(/\/$/, '') === '/map' && !document.hidden;   // the GPS map is on the map screen
 function closeSocket() {
   clearTimeout(reconnect); reconnect = null;
   const current = socket; socket = null;

@@ -7,7 +7,7 @@ class MetricMap{constructor(){this.snapshot={};this.tileEpoch=null;}set(v){this.
 let reply;
 const context=vm.createContext({MetricMap,ArchiveMapBuffer:class{},ArchiveSegmentGallery:class{reset(){}update(){}},decodeArchiveWindow:async v=>v,renderJobs(){},
   LIVE_MAP_TIMEOUT_MS:3000,livePollDelay:()=>1000,livePathQuery:()=>({}),acceptLiveResponse:()=>true,
-  AbortController,AbortSignal,URLSearchParams,location:{pathname:'/rover-control'},
+  AbortController,AbortSignal,URLSearchParams,location:{pathname:'/records'},
   document:{hidden:false,getElementById:element,querySelectorAll:()=>[],addEventListener(){}},
   window:{addEventListener(){}},performance,Date,setInterval(){},clearTimeout(){},console,
   setTimeout:(callback,delay)=>{timers.push({callback,delay});return timers.length;},

@@ -203,10 +203,6 @@ function serviceRows(services) {
   }));
 }
 
-function renderSensors(sensors) {
-  renderStatusRows("sensorList", sensorRows(sensors));
-}
-
 function sensorRows(sensors) {
   return Object.entries(sensors).map(([key, item]) => ({
     title: sensorLabel(key),
@@ -442,7 +438,7 @@ function renderContainers(docker) {
     state.containerDetail = null;
     state.containerLogs = null;
   }
-  if (!state.selectedContainerId && currentRoute() === "/docker") state.selectedContainerId = ids[0] || null;
+  if (!state.selectedContainerId && currentRoute() === "/system" && systemTab() === "docker") state.selectedContainerId = ids[0] || null;
   syncItems("containerList", containers, (container) => container.id || container.name, createContainerRow, updateContainerRow);
 }
 
@@ -500,7 +496,7 @@ function selectContainer(containerId) {
 }
 
 function maybeRefreshContainerDetail(force = false) {
-  if (currentRoute() !== "/docker" || !state.selectedContainerId) return;
+  if (currentRoute() !== "/system" || systemTab() !== "docker" || !state.selectedContainerId) return;
   const now = Date.now();
   if (!force && state.containerLogsUpdatedAt && now - state.containerLogsUpdatedAt < 2500) return;
   if (state.containerRequestInFlight || state.containerLogInFlight) return;

@@ -214,9 +214,6 @@ function renderLiveSensorLinks() {
   if (state.telemetry?.connection?.sensors) {
     renderStatusRows("connectionSensors", sensorRows(state.telemetry.connection.sensors));
   }
-  if (state.telemetry?.sensors) {
-    renderSensors(state.telemetry.sensors);
-  }
 }
 
 function lidarSourceLabel(source) {

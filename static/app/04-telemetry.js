@@ -1,10 +1,5 @@
 
 
-async function loadPlan() {
-  state.plan = await getJson("/api/plan");
-  renderPlan(state.plan);
-}
-
 async function loadDocs() {
   const payload = await getJson("/api/docs");
   state.docs = payload.documents || [];
@@ -46,9 +41,12 @@ async function tick() {
 }
 
 // The drive screen asks only for its own status (NET-06): sensors, services and
-// the rover, about a third of the full answer. Every other screen gets the full one.
+// the rover, about a third of the full answer. The map, records and tuning screens
+// (parts of the old drive page, docs/SCREENS_KO.md) use the same; the sensors and
+// system screens get the full one.
+const DRIVE_BUNDLE_ROUTES = ["/rover-control", "/map", "/records", "/tuning"];
 function telemetryPath(route = currentRoute()) {
-  return route === "/rover-control" ? "/api/telemetry?bundle=drive" : "/api/telemetry";
+  return DRIVE_BUNDLE_ROUTES.includes(route) ? "/api/telemetry?bundle=drive" : "/api/telemetry";
 }
 
 function telemetryIntervalMs(profile = liveNetworkProfile()) {
@@ -181,14 +179,11 @@ function renderTelemetry(data) {
   text("dockerMemChartValue", fmtPercent(dockerMemPercent));
   text("dockerMemText", `${fmtBytes(docker.summary?.memory_usage)} / ${fmtBytes(docker.summary?.memory_limit)}`);
 
-  text("roverState", data.rover?.state || "연결 전");
-  text("experimentState", data.experiment?.state || "연결 전");
   renderFan(fan);
 
   renderServices(services);
   renderConnection(connection);
   renderRoverControl(data);
-  renderSensors(data.sensors || {});
   renderCores(sys.cpu?.cores || []);
   renderCoreCharts(sys.cpu?.cores || []);
   renderDisks(sys.disks || []);

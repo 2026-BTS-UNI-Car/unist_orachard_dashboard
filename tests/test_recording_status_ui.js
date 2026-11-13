@@ -27,7 +27,7 @@ const context = {
   performance: {now: () => now}, AbortController,
   setTimeout: callback => {timers.set(++timerId, callback); return timerId;},
   clearTimeout: id => timers.delete(id),
-  fmtClock: seconds => `elapsed:${seconds}`, currentRoute: () => '/rover-control',
+  fmtClock: seconds => `elapsed:${seconds}`, currentRoute: () => '/records',
   debugLog() {}, getJson: () => {getCalls++; return new Promise(resolve => {resolveGet = resolve;});},
   postJson: async path => ({status: live(path.endsWith('/start'))}), loadRecordings: async () => {},
 };
@@ -117,7 +117,7 @@ function testSecondaryRecorderRow() {
     $: id => elements.get(id), text: (id, value) => {node(id).textContent = value;},
     performance: {now: () => clock}, document: {createElement: () => new Node(), querySelectorAll: () => []},
     escapeHtml: value => String(value), renderRoverMotionReadout() {}, renderImuLiveState() {},
-    fmtClock: seconds => `elapsed:${seconds}`, currentRoute: () => '/rover-control',
+    fmtClock: seconds => `elapsed:${seconds}`, currentRoute: () => '/records',
     routeSupportsCameraLive: () => false,
     setInterval: (callback, ms) => {assert.equal(ms, 1000); localTick = callback;},
     getJson: () => {throw Error('Freshness rendering must not require network progress');},
@@ -169,7 +169,7 @@ async function testRecurringRecorderPolling() {
   const detail = Object.fromEntries(['.status-dot','small','b'].map(key => [key, {textContent:'',className:''}]));
   ui.roverRecorderDetail = {querySelector: key => detail[key]};
   let steady = 0, wall = 1800000000000, mode = 'idle', activeSince = 0, interval;
-  let route = '/rover-control', nextTimeout = 0;
+  let route = '/records', nextTimeout = 0;
   const deadlines = new Map(), requests = [], pending = [];
   const c = {
     state:{recordings:{kind:'both',includeImu:true,includeGps:true,status:null}},
@@ -230,7 +230,7 @@ async function testRecurringRecorderPolling() {
   assert.equal(ui.roverRecorderState.textContent,'ready','old aborted response cannot undo recovery');
   for(let i=0;i<9;i++){await step();assert.equal(ui.roverRecorderState.textContent,'ready');}
   const beforeAway=requests.length;route='/docs';for(let i=0;i<6;i++)await step();
-  assert.equal(requests.length,beforeAway,'polling is scoped to the visible control route');
-  route='/rover-control';await step();assert.equal(ui.roverRecorderState.textContent,'ready');
+  assert.equal(requests.length,beforeAway,'polling is scoped to the visible records screen');
+  route='/records';await step();assert.equal(ui.roverRecorderState.textContent,'ready');
   assert.ok(steady>=40000&&requests.length>=10);
 }
