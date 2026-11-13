@@ -60,6 +60,34 @@ export function primaryAction(reply, nowMs = Date.now()) {
   }
 }
 
+// "준비" in one press (contract v0): start, then Arm when the executor says the run is ready. The start reply is not
+// enough to decide: the status it carries can come from before the start, and a status poll already in flight when
+// the start was sent can answer with the old state. So: read the status again after the start reply until it says
+// ready (MOTOR: send arm) or armed (SHADOW: start arms by itself), at most waitMs. Only a run state that the start
+// itself makes (ready, armed) counts; idle or ended means "not yet". Returns { ok, step, runState }.
+export const PREPARE_WAIT_MS = 3000;
+export const PREPARE_STEP_MS = 150;
+export async function prepareRun({ send, readStatus, sleep, rowLen = null, waitMs = PREPARE_WAIT_MS, stepMs = PREPARE_STEP_MS,
+                                   now = () => Date.now() }) {
+  const started = await send('start', { row_len_m: rowLen });
+  if (!started.ok) return { ok: false, step: 'start', runState: null };
+  const t0 = now();
+  let status = started.reply && typeof started.reply.status === 'object' ? started.reply.status : null;
+  for (;;) {
+    const runState = status ? status.run_state : null;
+    if (runState === 'armed') return { ok: true, step: 'armed', runState };
+    if (runState === 'ready') {
+      const armed = await send('arm', {});
+      return { ok: armed.ok, step: 'arm', runState };
+    }
+    if (runState === 'latched') return { ok: false, step: 'latched', runState };
+    if (now() - t0 >= waitMs) return { ok: false, step: 'wait', runState };
+    await sleep(stepMs);
+    const fresh = await readStatus();
+    status = fresh && fresh.ok && fresh.status ? fresh.status : null;
+  }
+}
+
 export function stale(reply, nowMs = Date.now()) {
   const at = reply && num(reply.received_at);
   return at === null || nowMs - at * 1000 > STALE_MS;
