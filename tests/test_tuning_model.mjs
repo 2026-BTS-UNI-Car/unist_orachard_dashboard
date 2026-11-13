@@ -1,49 +1,90 @@
-// The tuning screen's model (static/steer/tuning-model.mjs, UI-12): groups, the state line, the checks before a change
-// is sent (range, locked, unchanged, not a number) and the change log rows. No browser. Run: node tests/test_tuning_model.mjs
+// The tuning screen's model (static/steer/tuning-model.mjs, UI-12): groups, the state line, why it can not change,
+// the checks before a change is sent (the executor's ranges, locked, unchanged, not a number), preset names, reply
+// words and the change log rows. The view is built from the real executor status sample
+// (tests/fixtures/executor_status_front_steer.json) the way dashboard_server/steer_tuning.py builds it.
+// No browser. Run: node tests/test_tuning_model.mjs
 import assert from 'node:assert/strict';
-import { check, clock, describeChanges, fmt, groups, logRows, screenState } from '../static/steer/tuning-model.mjs';
+import fs from 'node:fs';
+import { check, clock, describeChanges, fmt, groups, logRows, presetLine, presetNameOk, replyText, screenState, whyNot,
+         withUnit } from '../static/steer/tuning-model.mjs';
 
-const param = (name, group, value, extra = {}) => ({ name, group, label: name, unit: 'm', min: 1, max: 4, step: 0.1, value,
-  default: 2, source: '자리값', editable: group === 'basic', editable_when_stopped: group === 'basic', ...extra });
-const view = { configured: true, reachable: true, applicable: true, run_state: 'idle', tuning: { revision: 3 },
-  params: [param('lookahead_m', 'basic', 2), param('lateral_gain', 'basic', null), param('corridor_lost_s', 'advanced', 1.5),
-           param('operator_timeout_s', 'safety', 0.5)] };
+const sample = JSON.parse(fs.readFileSync(new URL('./fixtures/executor_status_front_steer.json', import.meta.url), 'utf8'));
+const t = sample.tuning;
+const view = {
+  configured: true, reachable: true, available: true, applicable: true, why_not: null, run_state: 'idle',
+  tuning: { preset: t.preset, revision: t.revision, modified: t.modified, presets: t.presets, writable: t.writable, unsaved: t.unsaved },
+  params: [
+    ...t.basic.map((row) => ({ name: row.name, group: 'basic', label: row.name, unit: row.unit, min: row.low, max: row.high,
+                               step: 0.01, value: row.value, editable: true, editable_when_stopped: true })),
+    ...['advanced', 'locked'].flatMap((group) => Object.entries(t.values[group]).map(([name, value]) => ({
+      name, group, label: name, unit: '', min: null, max: null, step: null, value, editable: false, editable_when_stopped: false }))),
+  ],
+};
 
-assert.deepEqual(groups(view).map((g) => [g.group, g.params.length]), [['basic', 2], ['advanced', 1], ['safety', 1]]);
+assert.deepEqual(groups(view).map((g) => [g.group, g.params.length]),
+                 [['basic', 8], ['advanced', Object.keys(t.values.advanced).length], ['locked', Object.keys(t.values.locked).length]]);
 assert.deepEqual(groups(null).map((g) => g.params.length), [0, 0, 0]);
 
-assert.deepEqual(screenState(view), ['ok', '적용 가능']);
-assert.deepEqual(screenState({ ...view, applicable: false, run_state: 'running' }), ['warn', '적용 불가 · running']);
+assert.deepEqual(screenState(view), ['ok', '바꿀 수 있음']);
+assert.deepEqual(screenState({ ...view, applicable: false }), ['warn', '지금은 바꿀 수 없음']);
+assert.deepEqual(screenState({ ...view, available: false, applicable: false }), ['warn', '조정 묶음 없음']);
 assert.deepEqual(screenState({ configured: false }), ['', '실행기 설정 없음']);
 assert.deepEqual(screenState({ configured: true, reachable: false }), ['bad', '실행기 연결 안 됨']);
+assert.equal(whyNot(view), '');
+assert.match(whyNot({ ...view, applicable: false, why_not: 'tuning_locked_while_armed', run_state: 'armed' }), /^구동 권한\(Arm\)을 쥐고 있어 바꿀 수 없다\. .*armed\.$/);
+assert.match(whyNot({ ...view, applicable: false, why_not: 'tuning_locked_vehicle_moving' }), /차가 움직이고 있어/);
+assert.match(whyNot({ ...view, applicable: false, why_not: 'something_new' }), /^something_new\./, 'an unknown reason is shown as sent');
+assert.equal(presetLine(view), '프리셋 default · 판 0');
+assert.equal(presetLine({ ...view, tuning: { ...view.tuning, preset: 'default*', revision: 2, unsaved: true } }), '프리셋 default* · 판 2 · 파일에 저장 안 함');
+assert.equal(presetLine({ available: false }), '판 --');
 
 // Empty inputs keep the value; an equal value is no change; out of range and not-a-number are refused with a reason.
-assert.deepEqual(check(view, { lookahead_m: '', lateral_gain: '  ' }), { changes: {}, problems: [] });
-assert.deepEqual(check(view, { lookahead_m: '2.0' }).changes, {}, 'same as now');
-assert.deepEqual(check(view, { lookahead_m: '2.5', lateral_gain: '1' }).changes, { lookahead_m: 2.5, lateral_gain: 1 });
-let result = check(view, { lookahead_m: '9', lateral_gain: 'abc' });
+assert.deepEqual(check(view, { k_d: '', target_speed_m_s: '  ' }), { changes: {}, problems: [] });
+assert.deepEqual(check(view, { target_speed_m_s: '0.40' }).changes, {}, 'same as now');
+assert.deepEqual(check(view, { target_speed_m_s: '0.35', k_psi: '1.2' }).changes, { target_speed_m_s: 0.35, k_psi: 1.2 });
+let result = check(view, { target_speed_m_s: '0.6', k_d: 'abc' });
 assert.deepEqual(result.changes, {});
-assert.deepEqual(result.problems.map((p) => [p.name, p.text]), [['lookahead_m', '범위 밖(1.0 ~ 4.0 m)'], ['lateral_gain', '수가 아님']]);
-result = check(view, { operator_timeout_s: '1.0' });
-assert.deepEqual(result.problems.map((p) => p.text), ['바꿀 수 없는 값'], 'locked safety value');
-result = check({ ...view, params: view.params.map((p) => ({ ...p, editable: false })) }, { lookahead_m: '3' });
-assert.equal(result.problems.length, 1, 'not editable while moving');
+assert.deepEqual(result.problems.map((p) => [p.name, p.text]), [['target_speed_m_s', '범위 밖(0.20 ~ 0.50 m/s)'], ['k_d', '수가 아님']]);
+assert.deepEqual(check(view, { k_d: '3.5' }).problems.map((p) => p.text), ['범위 밖(0.00 ~ 3.00)'], 'no unit: no trailing space');
+result = check(view, { max_speed_m_s: '0.3' });
+assert.deepEqual(result.problems.map((p) => p.text), ['바꿀 수 없는 값'], 'locked value');
+result = check({ ...view, params: view.params.map((p) => ({ ...p, editable: false })) }, { k_d: '2' });
+assert.equal(result.problems.length, 1, 'not editable while the executor says no');
 
-assert.deepEqual(describeChanges(view, { lookahead_m: 2.5 }), ['lookahead_m 2.0 → 2.5 m']);
+assert.deepEqual(describeChanges(view, { target_speed_m_s: 0.35 }), ['target_speed_m_s 0.40 → 0.35 m/s']);
+assert.deepEqual(describeChanges(view, { k_d: 1.2 }), ['k_d 1.00 → 1.20']);
 assert.equal(fmt(null, 0.1), '--');
 assert.equal(fmt(24, 1), '24');
 assert.equal(fmt(0.4, 0.05), '0.40');
+assert.equal(fmt(t.values.advanced.speed_table), '25→0.239, 80→0.709, 90→0.715, 100→0.899');
+assert.equal(fmt(70), '70', 'an integer value without a step');
+assert.equal(withUnit('--', 'm'), '--');
+
+assert.ok(presetNameOk('wet_0.3') && presetNameOk('A-b'));
+for (const bad of ['', 'default', 'has space', 'x'.repeat(41), '젖음']) assert.equal(presetNameOk(bad), false, bad);
+
+assert.deepEqual(replyText(view, 200, { ok: true, action: 'set', changes: [{ key: 'k_d', old: 1, new: 1.2 }], tuning: { revision: 2 } }),
+                 ['ok', '값 바꿈: 판 2 · k_d 1.00 → 1.20']);
+assert.deepEqual(replyText(view, 200, { ok: true, action: 'load_preset', changes: [], tuning: { revision: 3 } }), ['ok', '프리셋 불러옴: 판 3']);
+assert.deepEqual(replyText(view, 400, { ok: false, error: 'invalid_params', problems: ['k_d: breaks a rule', 'x'] }),
+                 ['bad', '거절: 실행기가 값을 받지 않았다 · k_d: breaks a rule / x']);
+assert.deepEqual(replyText(view, 409, { ok: false, error: 'tuning_locked_while_running' }), ['bad', '거절: 주행(run)이 열려 있어 바꿀 수 없다']);
+assert.deepEqual(replyText(view, 502, null), ['bad', '거절: HTTP 502']);
 
 const at = new Date(2026, 10, 13, 5, 20, 25).getTime() / 1000;
 assert.equal(clock(new Date(at * 1000)), '11-13 05:20:25');
 const rows = logRows([
-  { at, by: 'abcd1234', ok: true, changes: { lookahead_m: [2, 2.5] }, revision_before: 3, revision_after: 4 },
-  { at, by: 'abcd1234', ok: false, error: 'out_of_range', changes: { lookahead_m: [2, 9] }, revision_before: 4, revision_after: 4 },
+  { at, by: 'abcd1234', action: 'set', ok: true, changes: { k_d: [1, 1.2] }, revision_before: 3, revision_after: 4 },
+  { at, by: 'abcd1234', action: 'set', ok: false, error: 'out_of_range', changes: { k_d: [1, 9] }, revision_before: 4, revision_after: 4 },
+  { at, by: 'abcd1234', action: 'load_preset', target: 'slow_030', ok: true, changes: { target_speed_m_s: [0.4, 0.3] }, revision_before: 4, revision_after: 5 },
+  { at, by: 'abcd1234', action: 'save', ok: false, error: 'tuning_not_writable', changes: {}, revision_before: 5, revision_after: 5 },
   { at: null, changes: {} },
 ], view);
-assert.deepEqual(rows[0], ['11-13 05:20:25', 'lookahead_m 2.0 → 2.5', '적용', '3 → 4', 'abcd1234']);
+assert.deepEqual(rows[0], ['11-13 05:20:25', 'k_d 1.00 → 1.20', '적용', '3 → 4', 'abcd1234']);
 assert.equal(rows[1][2], '거절 · 범위 밖');
-assert.deepEqual(rows[2], ['--', '--', '거절 · --', '-- → --', '--']);
+assert.equal(rows[2][1], '프리셋 불러옴 slow_030, target_speed_m_s 0.40 → 0.30');
+assert.deepEqual(rows[3].slice(1, 3), ['파일에 저장', '거절 · 실행기가 기본 파일을 쓰고 있어 저장할 수 없다']);
+assert.deepEqual(rows[4], ['--', '--', '거절 · --', '-- → --', '--']);
 assert.deepEqual(logRows(null, view), []);
 
-console.log('PASS: tuning groups, state line, change checks and the change log rows');
+console.log('PASS: tuning bundle from the executor sample, state line, checks, presets, replies and the change log rows');

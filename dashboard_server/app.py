@@ -30,7 +30,10 @@ STATIC_ROOT = ROOT / "static"
 DOCS_ROOT = ROOT / "docs"
 # Content-hash addresses, long caching and kept gzip results for /static/ and the page (NET-04).
 STATIC_ASSETS = StaticAssets(STATIC_ROOT)
-APP_ROUTES = {"/", "/connection", "/system", "/network", "/docker", "/fan", "/research", "/rover-control", "/tuning", "/docs"}
+# The six screens and the docs (docs/SCREENS_KO.md), the system tabs, and the old addresses that the page rewrites.
+APP_ROUTES = {"/rover-control", "/map", "/sensors", "/records", "/tuning", "/system", "/docs",
+              "/system/resources", "/system/network", "/system/docker", "/system/fan",
+              "/", "/drive", "/connection", "/network", "/docker", "/fan", "/research"}
 SESSION_COOKIE_NAME = "ubts_session"
 SESSION_TTL_S = int(os.environ.get("DASHBOARD_SESSION_TTL_S", "3600"))
 _SESSION_LOCK = threading.Lock()
@@ -311,7 +314,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         name = parsed.path.removeprefix("/api/executor/")
         if not action:
             if name == "status":
-                self._send_json(client.status() if client is not None else proxy.not_configured_status())
+                grid = parse_qs(parsed.query).get("grid") == ["1"]          # the map screen's local grid layer
+                self._send_json(client.status(grid) if client is not None else proxy.not_configured_status())
             elif name == "tuning":
                 self._send_json(steer_tuning.view(client.status() if client is not None else proxy.not_configured_status()))
             elif name == "tuning/log":

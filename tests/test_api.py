@@ -679,12 +679,14 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("2D LiDAR", payload["research_topic"])
         self.assertEqual(payload["team"], "유니주행차")
 
-    def test_site_map_contains_connection_after_overview(self):
+    def test_site_map_lists_the_six_screens_and_the_aliases(self):
         payload = self.get_json("/api/site-map")
         paths = [item["path"] for item in payload["routes"]]
-        self.assertEqual(paths[:3], ["/", "/connection", "/system"])
-        self.assertIn("/fan", paths)
-        self.assertIn("/docs", paths)
+        self.assertEqual(paths, ["/rover-control", "/map", "/sensors", "/records", "/tuning", "/system", "/docs"])
+        self.assertEqual(payload["aliases"]["/connection"], "/sensors")
+        self.assertEqual(payload["aliases"]["/fan"], "/system/fan")
+        for path in paths + list(payload["aliases"]) + ["/system/docker"]:
+            self.assertIn("UBTS Dashboard", self.get_text(path), path)
 
     def test_docs_api_and_route(self):
         index = self.get_json("/api/docs")

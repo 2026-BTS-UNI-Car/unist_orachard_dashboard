@@ -72,7 +72,7 @@ import {mergeLivePath,livePathQuery,livePollDelay,acceptLiveResponse,LIVE_MAP_TI
   const context=vm.createContext({MetricMap,mergeLivePath,livePathQuery,livePollDelay,acceptLiveResponse,LIVE_MAP_TIMEOUT_MS,
     ArchiveMapBuffer:class{},ArchiveSegmentGallery:class{reset(){}},decodeArchiveWindow:async v=>v,renderJobs(){},AbortController,
     AbortSignal:{timeout:signalTimeout,any:signals=>signals[0]},URLSearchParams,
-    location:{pathname:'/rover-control'},document:{hidden:false,getElementById:element,querySelectorAll:()=>[],addEventListener(){},activeElement:null},
+    location:{pathname:'/map'},document:{hidden:false,getElementById:element,querySelectorAll:()=>[],addEventListener(){},activeElement:null},
     window:{addEventListener(){},RoverLink:{profile:()=>'balanced'}},performance,Date,setInterval(){},clearTimeout(){},console,
     // request() keeps its deadline with setTimeout (no AbortSignal.timeout in older browsers):
     // record every delay, but keep only the poll loop's own timers in `timers`.
