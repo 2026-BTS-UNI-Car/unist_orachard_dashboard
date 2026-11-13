@@ -135,17 +135,21 @@ flowchart LR
 | `POST /api/executor/ack` | `{}` | `POST /api/ack` | LATCHED 해제(다시 Arm 안 함) |
 | `POST /api/executor/end` | `{}` | `POST /api/end` | run 정상 종료 |
 | `GET /api/executor/tuning` | — | `GET /api/status`의 `tuning` | 7절 |
-| `POST /api/executor/params` | 기본 묶음 칸만 | `POST /api/params` | 7절 |
+| `POST /api/executor/params` | 기본 묶음 칸, 프리셋, 저장 | `POST /api/params` | 7절 |
 | `GET /api/executor/tuning/log` | — | (대시보드 기록) | 7절 |
 
 - `session`: 화면이 열릴 때 만드는 무작위 16진수 24자(규약 개정 2: 4 ~ 64자, 대시보드는 영숫자·`_`·`-`만 받고 나머지는 400).
 - 대시보드 → 실행기: `Host`는 실행기 주소 그대로, `Origin: http://<실행기 주소>`, `X-Row-Token: <토큰 파일 내용>`, JSON 본문. 토큰 파일은 바뀌면 다시 읽는다(실행기는 시작할 때마다 새 토큰을 만든다). 제한 시간: heartbeat 0.8 s, stop 2.5 s, 그 밖 2.0 s [자리값].
-- 대시보드 응답: 실행기 응답 본문과 상태 코드를 그대로 돌려준다. 실행기에 닿지 못하면 502 `{"ok": false, "error": "executor_unreachable"}`, 설정이 없으면 503 `{"ok": false, "error": "executor_not_configured"}`. 실행기 403(토큰)은 502 `executor_token_rejected`.
+- 대시보드 응답: 실행기 응답 본문과 상태 코드를 그대로 돌려준다. 응답에 `status`가 있으면(start 응답) 아래와 같은 칸만 남긴다. 실행기에 닿지 못하면 502 `{"ok": false, "error": "executor_unreachable"}`, 설정이 없으면 503 `{"ok": false, "error": "executor_not_configured"}`. 실행기 403(토큰)은 502 `executor_token_rejected`.
 - `GET /api/executor/status`는 언제나 200이다: `{ok, configured, reachable, error?, received_at, status: {...}}`. `status`에 넘기는 칸(그 밖은 버린다. GNSS 좌표는 넘기지 않는다):
-  `run_state`, `start_mode`, `operator_link {fresh, age_s, timeout_s}`, `stop_reason`, `stop_detail`, `go_ready`, `go_blockers`, `speed {target_mps, limit_mps, limit_reason}`, `tuning {preset, revision, editable, values, editable_names, limits}`,
+  `run_state`, `start_mode`, `operator_link {fresh, age_s, timeout_s}`, `stop_reason`, `stop_detail`, `go_ready`, `go_blockers`, `speed {target_mps, limit_mps, limit_reason}`,
+  `tuning {preset, revision, editable, not_editable_because, modified, presets, writable, unsaved, basic [{name, value, low, high, unit}], values {basic, advanced, locked}}`(파일 경로·digest는 넘기지 않는다),
   `mode`(SHADOW/MOTOR), `state`, `reason`, `end_reason`, `controller_mode`, `profile`, `vehicle_control`, `lidar_age`, `imu_age`,
   `single_row {phase, lateral_error_m, heading_error_deg, distance_m, speed_m_s, target_speed_m_s, stop_reason, stop_category, confidence.level}`,
   `gnss {state, fix, age_s, h_acc_m, used}`, `bridge_detail {state, latch_reason}`.
+- `GET /api/executor/status?grid=1`(지도 화면)만 실행기의 국소 격자 `local_grid_map`(스키마 `ubts.row_executor.local_grid.v1`, 시뮬레이션 레포 `docs/steering/LOCAL_GRID_KO.md`)을 더 넘긴다:
+  `schema, frame, updates, axis_rad, origin_uv, occupied, encoding, age_s, cell_m, shape, bits(24 KiB 이하), cells(2,000개 이하), truncated, lines {left, right, centre, quality, stamp}, base_pose`.
+  run 주행 거리 좌표이고 GNSS가 아니다. 실행기가 내지 않으면 칸이 없고 지도 화면은 그 층을 숨긴다.
 
 상태 전이(실행기가 정한다. 화면은 받은 `run_state`만 보여 준다):
 
@@ -183,50 +187,43 @@ stateDiagram-v2
 
 ## 7. 조정 값 API
 
-결정 나16: 기본 묶음과 고급 묶음으로 나누고, 안전 한계는 화면에서 못 바꾸게 잠근다. 정지 상태에서만 적용한다.
+실행기의 현장 조정 파일이 기준이다(시뮬레이션 레포 `tools/row_executor/field_tuning.py`, `docs/steering/FIELD_TUNING_KO.md`, `OPERATOR_API_KO.md` 6절). 대시보드는 범위를 따로 두지 않고 실행기 상태의 `tuning` 묶음(이름·값·범위·단위·잠금)을 받아 그린다. 결정 나16대로 기본 묶음만 화면에서 바꾸고 고급·잠금 값은 파일에서 바꾼다. 바꿀 수 있는지는 실행기가 정한다(`tuning.editable`, `not_editable_because`).
 
-묶음 형식(`GET /api/executor/tuning` 응답, 스키마 `ubts.executor_tuning.v0`):
+묶음 형식(`GET /api/executor/tuning` 응답, 스키마 `ubts.executor_tuning.v1`):
 
 ```json
-{"ok": true, "schema": "ubts.executor_tuning.v0", "configured": true, "reachable": true,
- "run_state": "idle", "applicable": true,
- "tuning": {"preset": "field_default", "revision": 3, "editable": true},
+{"ok": true, "schema": "ubts.executor_tuning.v1", "configured": true, "reachable": true,
+ "run_state": "idle", "available": true, "applicable": true, "why_not": null,
+ "tuning": {"preset": "default", "revision": 0, "modified": false, "presets": ["default", "slow_030", "soft_ground"],
+            "writable": false, "unsaved": false},
  "params": [
    {"name": "target_speed_m_s", "group": "basic", "label": "목표 속도", "unit": "m/s",
-    "min": 0.2, "max": 0.5, "step": 0.05, "default": 0.4, "value": 0.4,
-    "source": "자리값: 결정 나10", "editable": true}
+    "min": 0.2, "max": 0.5, "step": 0.01, "value": 0.4, "editable": true, "editable_when_stopped": true},
+   {"name": "speed_table", "group": "advanced", "label": "duty→속도 표", "unit": "[duty %, m/s]",
+    "min": null, "max": null, "step": null, "value": [[25.0, 0.239], [80.0, 0.709]], "editable": false, "editable_when_stopped": false}
  ]}
 ```
 
 | 칸 | 뜻 |
 | --- | --- |
-| `group` | `basic`(기본, 화면에서 바꿈), `advanced`(고급, 실행기가 받는다고 알릴 때만 바꿈), `safety`(안전 한계, 언제나 잠금) |
-| `min`, `max`, `step` | 화면과 대시보드가 먼저 거르는 범위. 실행기가 최종 판정(범위 밖 400) |
-| `value` | 실행기 `GET /api/status`의 `tuning.values`에 있으면 그 값, 없으면 `null`("값 모름") |
-| `source` | 값의 출처: `측정`, `자리값: <근거>`, `현장 조정` |
-| `editable` | `group`과 실행기의 `tuning.editable`, 정지 상태를 함께 본 결과 |
-| `applicable` | `run_state` ∈ {idle, ready, ended}이고 실행기에 닿을 때만 참 |
+| `group` | `basic`(기본, 화면에서 바꿈), `advanced`(고급, 파일만), `locked`(잠금, 파일만·실행기를 다시 시작해야 바뀜) |
+| `name`, `value` | 실행기 `tuning.basic`(기본)과 `tuning.values.advanced`·`locked`의 이름과 값 그대로. 실행기가 새 키를 더하면 이름 그대로 보인다 |
+| `min`, `max`, `unit` | 기본 묶음은 실행기의 `low`·`high`·`unit`. 고급·잠금의 단위는 이름 끝(`_m_s` → m/s 등)으로 읽는다(실행기 상태가 단위를 주지 않음) |
+| `label` | 대시보드의 한국어 이름표(모르는 키는 이름 그대로) |
+| `available` | 실행기 상태에 `tuning`이 있음(현장 조정 파일을 읽은 front_steer 실행기) |
+| `applicable`, `why_not` | 실행기의 `tuning.editable`과 `not_editable_because`(`tuning_locked_while_running`, `tuning_locked_while_armed`, `tuning_locked_vehicle_moving`) |
 
-기본 묶음(이름은 실행기 S1의 PW-07·PC-13 결과에 맞춰 바꾼다):
+`POST /api/executor/params` 본문(실행기 형식 그대로, 하나만):
 
-| 이름 | 이름표 | 단위 | 범위 | 기본 | 출처 |
-| --- | --- | --- | --- | --- | --- |
-| `speed_table_scale` | 속도 표 배율 | 배 | 0.80 ~ 1.20 | 1.00 | 자리값: PWM-속도 표(PW-07) 대기 |
-| `target_speed_m_s` | 목표 속도 | m/s | 0.20 ~ 0.50 | 0.40 | 자리값: 결정 나10 |
-| `lookahead_m` | 주시거리 | m | 1.0 ~ 4.0 | 2.0 | 자리값: PREREG_STEER_FOLLOW(2.0 m) |
-| `lateral_gain` | 횡 이득 | rad/m | 0.1 ~ 1.5 | 0.4 | 자리값: StraightHold k_d |
-| `heading_gain` | 방향 이득 | rad/rad | 0.1 ~ 3.0 | 0.9 | 자리값: StraightHold k_psi, CONTROLLER_OVERRIDE_LIMITS |
-| `steer_rate_limit_deg_s` | 조향 속도 제한 | °/s | 4 ~ 30 | 24 | 자리값: config.py(0.8 × B5) |
-
-고급 묶음(보기만, 실행기가 받는다고 알릴 때 바꿈): `steer_rate_limit_standstill_deg_s`(°/s, 4 ~ 20, 12), `min_speed_m_s`(m/s, 0.10 ~ 0.40, 0.20), `approach_speed_m_s`(m/s, 0.10 ~ 0.40, 0.20), `corridor_lost_s`(s, 0.5 ~ 5.0).
-안전 한계(잠금): `operator_timeout_s`(s, 0.5, 규약 개정 1 범위 0.5 ~ 3.0), `max_speed_m_s`(m/s, 0.5), `steer_limit_left_mrad`·`steer_limit_right_mrad`(409), `steer_status_max_age_s`(0.3).
-
-적용:
-
-- `POST /api/executor/params`: 본문은 기본 묶음 이름 → 수. 모르는 이름 400 `unknown_parameter`, 수가 아니거나 범위 밖 400 `out_of_range`(어느 칸인지 `field`), 정지 상태가 아니면 409 `not_stopped`, 잠긴 묶음 400 `locked_parameter`. 통과한 것만 실행기 `POST /api/params`로 넘긴다.
-- 변경 기록: 대시보드가 시도마다 한 줄을 `runtime/executor_tuning_log.jsonl`에 더한다(최근 500줄만 둔다). 줄: `{at, by(세션 앞 8자), changes {이름: [이전, 새 값]}, ok, error, revision_before, revision_after}`.
-  `GET /api/executor/tuning/log`는 최근 50줄을 새 것부터 준다.
-- 되돌리기·내보내기·가져오기(UI-12 완료 기준)는 실행기의 판(revision) 관리가 정해진 뒤 한다. 지금은 기록을 보고 이전 값을 다시 넣는 방식이다.
+- `{"target_speed_m_s": 0.3, "k_d": 1.2}`: 기본 묶음 키만. 대시보드가 먼저 실행기 범위로 거른다: 모르는 키 400 `unknown_parameter`, 고급·잠금 키 400 `locked_parameter`, 수가 아니거나 범위 밖 400 `out_of_range`(`field`).
+- `{"preset": "slow_030"}`: 프리셋 불러오기(혼자만, 아니면 400 `preset_alone`, 목록에 없으면 400 `unknown_preset`).
+- `{"save": true}`, `{"save_preset": "이름", "note": "메모"}`: 지금 값을 실행기 파일에 쓴다. 실행기가 `writable`이 아니면 409 `tuning_not_writable`(패키지 기본 파일), 이름은 영문·숫자·`_ - .` 1 ~ 40자이고 `default`가 아니어야 한다(400 `bad_preset_name`).
+- 실행기가 바꿀 수 없다고 하면 409와 그 이유(`tuning_locked_while_running` 등). 대시보드 검사를 지나도 실행기가 거절하면(값 사이 규칙 등) 실행기의 400 `invalid_params`와 `problems` 목록을 그대로 돌려준다.
+- 성공 응답: `{ok, action(set/load_preset/save/save_preset), changes [{key, old, new}], tuning {preset, revision}}`(파일 경로·digest는 뺀다).
+- 변경 기록: 대시보드가 시도마다 한 줄을 `runtime/executor_tuning_log.jsonl`에 더한다(최근 500줄만 둔다). 줄: `{at, by(세션 앞 8자), action, target(프리셋 이름), changes {이름: [이전, 새 값]}, ok, error, problems(5개까지), revision_before, revision_after}`.
+  `GET /api/executor/tuning/log`는 최근 50줄을 새 것부터 준다. 실행기 기록(JSONL)에도 `tuning_change`·`tuning_save` 사건이 남는다.
+- 되돌리기는 프리셋 불러오기(`default`는 기본값)와 변경 기록으로 한다. 고급 묶음의 화면 편집은 실행기 쪽에도 없다(FIELD_TUNING_KO.md 6절).
+- 차동 실행기의 현장 키 3개(`base_duty_pct` 등)는 이 화면에서 다루지 않는다(실행기 상태에 `tuning`이 없으면 "조정 묶음 없음").
 
 ## 8. 오류와 정지 규칙
 

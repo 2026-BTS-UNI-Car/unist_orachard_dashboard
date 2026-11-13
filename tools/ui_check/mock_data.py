@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import base64
 import math
 import time
 
@@ -457,7 +458,9 @@ def _executor_status(dataset: str, now: float) -> dict:
                                            "corridor_not_acquired", "mock_new_blocker_with_a_long_identifier"],
         "operator_link": {"fresh": False, "age_s": 12345.678, "timeout_s": 0.5},
         "speed": {"target_mps": 0.4, "limit_mps": 0.123, "limit_reason": "mock_limit_reason_with_a_long_identifier"},
-        "tuning": {"preset": "mock_preset_with_a_long_name", "revision": 12345, "editable": False},
+        "tuning": {"preset": "mock_preset_with_a_long_name*", "revision": 12345, "editable": False,
+                   "not_editable_because": "tuning_locked_while_running", "presets": ["default"], "writable": False},
+        "local_grid_map": _local_grid(),
         "single_row": {"phase": "WAIT", "lateral_error_m": -0.1234, "heading_error_deg": 12.345, "distance_m": 98765.4,
                        "speed_m_s": 0.0, "target_speed_m_s": 0.4, "stop_category": "OPERATOR_OR_BACKSTOP",
                        "confidence": {"level": "LOW"}},
@@ -467,30 +470,62 @@ def _executor_status(dataset: str, now: float) -> dict:
 
 
 def _tuning_view(dataset: str) -> dict:
-    """GET /api/executor/tuning (docs/STEERING_SERVER_KO.md 7). empty: no executor; stress: every group, long values."""
-    rows = [("speed_table_scale", "basic", "속도 표 배율", "배", 0.8, 1.2, 0.01, 1.0),
-            ("target_speed_m_s", "basic", "목표 속도", "m/s", 0.2, 0.5, 0.05, 0.4),
-            ("lookahead_m", "basic", "주시거리", "m", 1.0, 4.0, 0.1, 2.0),
-            ("lateral_gain", "basic", "횡 이득", "rad/m", 0.1, 1.5, 0.05, 0.4),
-            ("heading_gain", "basic", "방향 이득", "rad/rad", 0.1, 3.0, 0.05, 0.9),
-            ("steer_rate_limit_deg_s", "basic", "조향 속도 제한", "°/s", 4.0, 30.0, 1.0, 24.0),
-            ("min_speed_m_s", "advanced", "최저 목표 속도", "m/s", 0.1, 0.4, 0.05, 0.2),
-            ("corridor_lost_s", "advanced", "통로 잃음 판정", "s", 0.5, 5.0, 0.1, None),
-            ("operator_timeout_s", "safety", "화면 연결 끊김 정지", "s", 0.5, 3.0, 0.1, 0.5),
-            ("steer_limit_left_mrad", "safety", "왼쪽 조향 한계", "mrad", 0, 409, 1, 409)]
-    stress = dataset == "stress"
-    source = "자리값: 점검용으로 지어낸 아주 긴 출처 설명 · 문서 이름과 절 번호가 이어진다" if stress else "자리값"
-    params = [{"name": name, "group": group, "label": label, "unit": unit, "min": low, "max": high, "step": step,
-               "default": default, "value": (default if default is not None else 1.234) if stress else None, "source": source,
-               "editable": stress and group != "safety", "editable_when_stopped": group == "basic" or (stress and group == "advanced")}
-              for name, group, label, unit, low, high, step, default in rows]
-    if not stress:
-        return {"ok": True, "schema": "ubts.executor_tuning.v0", "configured": False, "reachable": False,
-                "error": "executor_not_configured", "run_state": None, "applicable": False, "tuning": {}, "params": params}
-    return {"ok": True, "schema": "ubts.executor_tuning.v0", "configured": True, "reachable": True, "error": None,
-            "run_state": "idle", "applicable": True,
-            "tuning": {"preset": "mock_preset_with_a_long_name_for_layout_check", "revision": 12345, "editable": True},
+    """GET /api/executor/tuning (docs/STEERING_SERVER_KO.md 7, the executor's field tuning bundle).
+    empty: no executor; stress: every group, a speed table, an unknown long key, long preset names."""
+    if dataset == "empty":
+        return {"ok": True, "schema": "ubts.executor_tuning.v1", "configured": False, "reachable": False,
+                "error": "executor_not_configured", "run_state": None, "available": False, "applicable": False,
+                "why_not": "executor_not_configured", "tuning": {}, "params": []}
+    basic = [("speed_scale", "속도 배율(k_field)", "", 0.5, 1.3, 1.0), ("target_speed_m_s", "목표 속도", "m/s", 0.2, 0.5, 0.4),
+             ("lookahead_base_m", "주시거리 바닥", "m", 0.8, 3.0, 1.5), ("lookahead_per_speed_s", "속도당 주시거리", "s", 0.0, 3.0, 1.25),
+             ("lookahead_max_m", "주시거리 상한", "m", 1.0, 5.0, 3.0), ("k_d", "횡오차 이득(k_d)", "", 0.0, 3.0, 1.0),
+             ("k_psi", "방향 이득(k_psi)", "", 0.0, 3.0, 1.0), ("steer_rate_fraction", "조향 변화 속도 비율", "", 0.2, 1.0, 0.75),
+             ("mock_new_basic_key_with_a_long_name", "mock_new_basic_key_with_a_long_name", "rad/(m·s)", 0, 12345, 6789)]
+    params = [{"name": name, "group": "basic", "label": label, "unit": unit, "min": low, "max": high,
+               "step": 1 if high - low > 20 else 0.01, "value": value, "editable": True, "editable_when_stopped": True}
+              for name, label, unit, low, high, value in basic]
+    fixed = [("speed_table", "advanced", "duty→속도 표", "[duty %, m/s]",
+              [[25.0, 0.239], [40.0, 0.41], [55.0, 0.55], [70.0, 0.66], [80.0, 0.709], [90.0, 0.715], [100.0, 0.899]]),
+             ("speed_kp_pct_s_per_m", "advanced", "속도 PI 비례 이득", "%/(m/s)", 30.0),
+             ("lateral_accel_max_m_s2", "advanced", "횡가속도 상한", "m/s²", 0.3),
+             ("trim_gain_rad_per_m_s", "advanced", "조향 trim 이득", "rad/(m·s)", 0.05),
+             ("mock_unknown_advanced_key_with_a_long_name_and_no_label", "advanced",
+              "mock_unknown_advanced_key_with_a_long_name_and_no_label", "", 12345.678),
+             ("max_speed_m_s", "locked", "최고 속도", "m/s", 0.5), ("duty_cap_pct", "locked", "출력 가드 duty 상한", "%", 75),
+             ("operator_timeout_s", "locked", "화면 연결 끊김 정지", "s", 0.5), ("guard_heading_deg", "locked", "방향 가드", "°", 25.0)]
+    params += [{"name": name, "group": group, "label": label, "unit": unit, "min": None, "max": None, "step": None, "value": value,
+                "editable": False, "editable_when_stopped": False} for name, group, label, unit, value in fixed]
+    return {"ok": True, "schema": "ubts.executor_tuning.v1", "configured": True, "reachable": True, "error": None,
+            "run_state": "idle", "available": True, "applicable": True, "why_not": None,
+            "tuning": {"preset": "mock_preset_with_a_long_name_for_layout_check*", "revision": 12345, "modified": True,
+                       "presets": ["default", "slow_030", "soft_ground", "mock_preset_with_a_long_name_for_layout_check"],
+                       "writable": True, "unsaved": True},
             "params": params}
+
+
+def _local_grid() -> dict:
+    """status.local_grid_map of the executor (ubts.row_executor.local_grid.v1, LOCAL_GRID_KO.md): two tree rows along the
+    grid axis, 200 x 100 cells of 0.1 m, a bitmap. Synthetic, run odometry frame (not a map, no GNSS)."""
+    ni, nj = 200, 100
+    occupied = set()
+    for i in range(4, ni - 4, 25):                    # trunks every 2.5 m, rows 3.4 m apart
+        for di in (0, 1):
+            for j in (32, 33, 66, 67):
+                occupied.add((i + di, j))
+    for i in range(0, ni, 7):                          # leaves and branches beside the rows
+        occupied.add((i, 30 + i % 3))
+        occupied.add((i, 69 - i % 3))
+    bits = bytearray((ni * nj + 7) // 8)
+    for i, j in occupied:
+        index = i * nj + j
+        bits[index // 8] |= 0x80 >> (index % 8)     # numpy.packbits order: big end first
+    axis = 0.10472
+    return {"schema": "ubts.row_executor.local_grid.v1", "frame": "run_odometry", "updates": 98765, "axis_rad": axis,
+            "origin_uv": [-4.0, -4.9], "occupied": len(occupied), "encoding": "bitmap", "age_s": 0.12, "cell_m": 0.1,
+            "shape": [ni, nj], "bits": base64.b64encode(bytes(bits)).decode("ascii"), "truncated": False,
+            "lines": {"left": [[-1.751, 1.66], [12.216, 2.633]], "right": [[-1.505, -1.872], [12.462, -0.899]],
+                      "centre": [[-1.628, -0.106], [12.339, 0.867]], "quality": 1.0, "stamp": 5.9},
+            "base_pose": [2.4, 0.3, 0.09]}
 
 
 def _tuning_log(dataset: str, now: float) -> dict:
@@ -499,7 +534,8 @@ def _tuning_log(dataset: str, now: float) -> dict:
     return {"ok": True, "entries": [
         {"at": now - index * 60, "by": "abcdefgh", "ok": index % 3 != 0,
          "error": None if index % 3 else "out_of_range_mock_reason_with_a_long_identifier",
-         "changes": {"target_speed_m_s": [0.4, 0.35], "lookahead_m": [2.0, 2.5], "mock_unknown_parameter_with_a_long_name": [1, 2]},
+         "action": "set" if index % 4 else "load_preset", "target": None if index % 4 else "mock_preset_with_a_long_name",
+         "changes": {"target_speed_m_s": [0.4, 0.35], "lookahead_base_m": [1.5, 2.5], "mock_unknown_parameter_with_a_long_name": [1, 2]},
          "revision_before": 12345 - index, "revision_after": 12346 - index}
         for index in range(50)]}
 

@@ -314,7 +314,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         name = parsed.path.removeprefix("/api/executor/")
         if not action:
             if name == "status":
-                self._send_json(client.status() if client is not None else proxy.not_configured_status())
+                grid = parse_qs(parsed.query).get("grid") == ["1"]          # the map screen's local grid layer
+                self._send_json(client.status(grid) if client is not None else proxy.not_configured_status())
             elif name == "tuning":
                 self._send_json(steer_tuning.view(client.status() if client is not None else proxy.not_configured_status()))
             elif name == "tuning/log":

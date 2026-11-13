@@ -1,9 +1,12 @@
 """The dashboard's relay of the row executor's operator API (dashboard_server/executor_proxy.py, UI-08,
 docs/STEERING_SERVER_KO.md 6). A fake executor checks the operator HTTP rules (exact Host, same Origin, X-Row-Token,
 JSON body <= 4 KiB) and keeps a small run state of contract v0 (start, arm, go, heartbeat, stop, ack, end).
-No vehicle, no executor process: temporary folders only."""
+The executor status sample (tests/fixtures/executor_status_front_steer.json) is a real ExecutorLoop status of the
+simulation repository (front_steer, one_press, SHADOW, field tuning and local grid; the tuning file path cut to its
+name). No vehicle, no executor process: temporary folders only."""
 from __future__ import annotations
 
+import copy
 import http.cookiejar
 import json
 import os
@@ -20,6 +23,9 @@ from unittest import mock
 from dashboard_server import executor_proxy as proxy
 from dashboard_server.executor_proxy import ExecutorClient, ExecutorError, page_status, parse_action_body
 
+SAMPLE = json.loads((Path(__file__).resolve().parent / "fixtures" / "executor_status_front_steer.json").read_text(encoding="utf-8"))
+LOCKS = {"running": "tuning_locked_while_running", "paused": "tuning_locked_while_running", "armed": "tuning_locked_while_armed"}
+
 
 class FakeExecutor(ThreadingHTTPServer):
     daemon_threads = True
@@ -30,8 +36,60 @@ class FakeExecutor(ThreadingHTTPServer):
         self.host_header = "127.0.0.1:%d" % self.server_address[1]
         self.calls = []
         self.state = {"run_state": "idle", "mode": "MOTOR", "session": None}
-        self.tuning = {"preset": "field", "revision": 1, "editable": True, "values": {"target_speed_m_s": 0.4, "lookahead_m": 2.0}}
+        self.tuning = copy.deepcopy(SAMPLE["tuning"])           # the executor's field tuning (field_tuning.State.status)
+        self.tuning["revision"] = 1
+        self.reject_over = None            # a rule only the executor knows (its cross checks): refuse values above this
         self.extra_status = {}
+
+    def status_body(self):
+        state = self.state
+        lock = LOCKS.get(state["run_state"])
+        tuning = dict(self.tuning, editable=lock is None, not_editable_because=lock, file="/home/x/field_tuning.json")
+        return {"run_state": state["run_state"], "mode": state["mode"], "go_ready": state["run_state"] == "armed",
+                "operator_link": {"fresh": state["session"] is not None, "age_s": 0.05, "timeout_s": 0.5},
+                "gnss": {"state": "fix", "lat": 35.1, "lon": 129.1, "h_acc_m": 4.2},
+                "log": {"path": "/home/x/run.jsonl"}, "tuning": tuning, "local_grid_map": SAMPLE["local_grid_map"],
+                **self.extra_status}
+
+    def params(self, body):
+        """POST /api/params of the executor's field tuning: (HTTP status, reply) (OPERATOR_API_KO.md 6)."""
+        lock = LOCKS.get(self.state["run_state"])
+        if lock:
+            return 409, {"ok": False, "error": lock}
+        tuning = self.tuning
+        brief = {"preset": tuning["preset"], "revision": tuning["revision"], "digest": "d", "file": "/home/x/field_tuning.json",
+                 "file_sha256": "s"}
+        if "preset" in body:
+            if body["preset"] not in tuning["presets"]:
+                return 400, {"ok": False, "error": "invalid_params", "problems": ["preset %r: unknown" % body["preset"]]}
+            tuning["preset"], tuning["modified"] = body["preset"], False
+            tuning["revision"] += 1
+            return 200, {"ok": True, "action": "load_preset", "changes": [], "tuning": dict(brief, preset=body["preset"]),
+                         "config_digest": "c"}
+        if "save" in body or "save_preset" in body:
+            if not tuning["writable"]:
+                return 400, {"ok": False, "error": "invalid_params",
+                             "problems": ["save: the package default file is read only (configure tuning_file)"]}
+            tuning["unsaved"] = False
+            return 200, {"ok": True, "action": "save_preset" if "save_preset" in body else "save", "tuning": brief}
+        basic = {row["name"]: row for row in tuning["basic"]}
+        problems = ["%s: not a tuning key" % key for key in body if key not in basic]
+        problems += ["%s: %r outside %s..%s" % (key, value, basic[key]["low"], basic[key]["high"]) for key, value in body.items()
+                     if key in basic and not basic[key]["low"] <= value <= basic[key]["high"]]
+        if self.reject_over is not None:
+            problems += ["%s: %r breaks a controller rule" % (key, value) for key, value in body.items() if value > self.reject_over]
+        if problems:
+            return 400, {"ok": False, "error": "invalid_params", "problems": problems}
+        changes = []
+        for key, value in sorted(body.items()):
+            if basic[key]["value"] != value:
+                changes.append({"key": key, "old": basic[key]["value"], "new": value})
+                basic[key]["value"] = tuning["values"]["basic"][key] = value
+        tuning["revision"] += 1
+        tuning["preset"] = tuning["preset"].rstrip("*") + "*"
+        tuning["modified"] = tuning["unsaved"] = True
+        return 200, {"ok": True, "action": "set", "changes": changes, "tuning": dict(brief, revision=tuning["revision"], preset=tuning["preset"]),
+                     "config_digest": "c"}
 
 
 class FakeHandler(BaseHTTPRequestHandler):
@@ -57,11 +115,7 @@ class FakeHandler(BaseHTTPRequestHandler):
         if not self.checked():
             return
         self.server.calls.append(("GET", self.path, None))
-        state = self.server.state
-        self.reply(200, {"run_state": state["run_state"], "mode": state["mode"], "go_ready": state["run_state"] == "armed",
-                         "operator_link": {"fresh": state["session"] is not None, "age_s": 0.05, "timeout_s": 0.5},
-                         "gnss": {"state": "fix", "lat": 35.1, "lon": 129.1, "h_acc_m": 4.2},
-                         "log": {"path": "/home/x/run.jsonl"}, "tuning": self.server.tuning, **self.server.extra_status})
+        self.reply(200, self.server.status_body())
 
     def do_POST(self):
         if not self.checked():
@@ -77,6 +131,7 @@ class FakeHandler(BaseHTTPRequestHandler):
         route = self.path
         if route == "/api/start":
             state["run_state"] = "ready" if state["mode"] == "MOTOR" else "armed"
+            return self.reply(200, {"ok": True, "run_state": state["run_state"], "status": self.server.status_body()})
         elif route == "/api/arm" and state["run_state"] == "ready":
             state["run_state"] = "armed"
         elif route == "/api/go":
@@ -93,13 +148,7 @@ class FakeHandler(BaseHTTPRequestHandler):
         elif route == "/api/end":
             state["run_state"] = "ended"
         elif route == "/api/params":
-            if state["run_state"] not in ("idle", "ready", "ended"):
-                return self.reply(409, {"ok": False, "error": "not_stopped"})
-            if set(body) - {"speed_table_scale", "target_speed_m_s", "lookahead_m", "lateral_gain", "heading_gain",
-                            "steer_rate_limit_deg_s"}:
-                return self.reply(400, {"ok": False, "error": "unknown_parameter"})
-            self.server.tuning["values"].update(body)
-            self.server.tuning["revision"] += 1
+            return self.reply(*self.server.params(body))
         else:
             return self.reply(409, {"ok": False, "error": "refused"})
         self.reply(200, {"ok": True, "run_state": state["run_state"]})
@@ -110,7 +159,10 @@ class RelayUnitTest(unittest.TestCase):
         raw = {"run_state": "running", "go_blockers": ["a", 3, "b"], "stop_detail": "x" * 500, "lidar_age": float("nan"),
                "gnss": {"state": "fix", "lat": 35.0, "lon": 129.0, "h_acc_m": 3.0}, "log": {"path": "/secret"},
                "single_row": {"phase": "FOLLOW", "confidence": {"level": "OK", "x": 1}, "geometry": [[1, 2]]},
-               "tuning": {"revision": 4, "values": {"target_speed_m_s": 0.4}, "secret": 1}, "token": "t"}
+               "tuning": {"revision": 4, "file": "/secret/field_tuning.json", "digest": "d", "secret": 1,
+                          "basic": [{"name": "k_d", "value": 1.0, "low": 0.0, "high": 3.0, "unit": ""}, {"value": 2}, "x"],
+                          "values": {"basic": {"k_d": 1.0}, "advanced": {"speed_table": [[25, 0.24], [80, "x"]]}, "other": {}}},
+               "local_grid_map": {"schema": "ubts.row_executor.local_grid.v1", "bits": "AA=="}, "token": "t"}
         out = page_status(raw)
         self.assertEqual(out["run_state"], "running")
         self.assertEqual(out["go_blockers"], ["a", "b"])
@@ -118,10 +170,40 @@ class RelayUnitTest(unittest.TestCase):
         self.assertIsNone(out["lidar_age"])
         self.assertEqual(out["gnss"], {"state": "fix", "h_acc_m": 3.0}, "no GNSS coordinates")
         self.assertEqual(out["single_row"], {"phase": "FOLLOW", "confidence": {"level": "OK"}})
-        self.assertEqual(out["tuning"], {"revision": 4, "values": {"target_speed_m_s": 0.4}})
+        self.assertEqual(out["tuning"], {"revision": 4, "basic": [{"name": "k_d", "value": 1.0, "low": 0.0, "high": 3.0, "unit": ""}],
+                                         "values": {"basic": {"k_d": 1.0}, "advanced": {"speed_table": [[25, 0.24]]}}})
+        self.assertNotIn("local_grid_map", out, "the grid only for the map screen")
+        self.assertEqual(page_status(raw, grid=True)["local_grid_map"], {"schema": "ubts.row_executor.local_grid.v1", "bits": "AA=="})
         for name in ("log", "token"):
             self.assertNotIn(name, out)
         self.assertEqual(page_status(None), {})
+
+    def test_real_executor_status_sample(self):
+        out = page_status(SAMPLE, grid=True)
+        self.assertEqual((out["run_state"], out["start_mode"], out["mode"]), ("idle", "one_press", "SHADOW"))
+        tuning = out["tuning"]
+        self.assertEqual([row["name"] for row in tuning["basic"]],
+                         ["speed_scale", "target_speed_m_s", "lookahead_base_m", "lookahead_per_speed_s", "lookahead_max_m",
+                          "k_d", "k_psi", "steer_rate_fraction"], "field_tuning basic group, executor order")
+        self.assertEqual(tuning["basic"][1], {"name": "target_speed_m_s", "value": 0.4, "low": 0.2, "high": 0.5, "unit": "m/s"})
+        self.assertEqual(sorted(tuning["values"]), ["advanced", "basic", "locked"])
+        self.assertEqual(tuning["values"]["advanced"]["speed_table"], SAMPLE["tuning"]["values"]["advanced"]["speed_table"])
+        self.assertEqual(tuning["values"]["locked"], SAMPLE["tuning"]["values"]["locked"])
+        self.assertEqual((tuning["presets"], tuning["writable"], tuning["editable"]), (["default", "slow_030", "soft_ground"], False, True))
+        grid = out["local_grid_map"]
+        self.assertEqual((grid["shape"], grid["cell_m"], grid["encoding"], grid["bits"]),
+                         ([200, 100], 0.1, "bitmap", SAMPLE["local_grid_map"]["bits"]))
+        self.assertEqual(sorted(grid["lines"]), ["centre", "left", "quality", "right", "stamp"])
+        text = json.dumps(out)
+        for secret in ("field_tuning.default.json", "file_sha256", "digest", "native_navigation"):
+            self.assertNotIn(secret, text)
+        broken = dict(SAMPLE["local_grid_map"], schema="other")
+        self.assertNotIn("local_grid_map", page_status(dict(SAMPLE, local_grid_map=broken), grid=True))
+        big = dict(SAMPLE["local_grid_map"], bits="A" * (proxy.MAX_GRID_BITS + 4), cells=[[1, 2]] * 3000, shape=[1, "x"])
+        trimmed = page_status(dict(SAMPLE, local_grid_map=big), grid=True)["local_grid_map"]
+        self.assertNotIn("bits", trimmed)
+        self.assertNotIn("shape", trimmed)
+        self.assertEqual(len(trimmed["cells"]), proxy.MAX_GRID_CELLS)
 
     def test_action_bodies(self):
         self.assertEqual(parse_action_body("start", {"row_len_m": None, "other": 1}), {"row_len_m": None})
@@ -172,7 +254,13 @@ class RelayHttpTest(FakeExecutorCase):
         self.assertEqual((reply["ok"], reply["status"]["run_state"]), (True, "idle"))
         self.assertNotIn("lat", reply["status"]["gnss"])
         self.assertNotIn("log", reply["status"])
-        self.assertEqual(self.client.action("start", {"row_len_m": None})[0], 200)
+        self.assertNotIn("local_grid_map", reply["status"])
+        self.assertEqual(self.client.status(grid=True)["status"]["local_grid_map"]["shape"], [200, 100])
+        code, started = self.client.action("start", {"row_len_m": None})
+        self.assertEqual(code, 200)
+        self.assertNotIn("log", started["status"], "a start reply's status passes the same filter")
+        self.assertNotIn("file", started["status"]["tuning"])
+        self.assertNotIn("local_grid_map", started["status"])
         self.assertEqual(self.client.action("arm", {})[0], 200)
         code, body = self.client.action("go", {"session": "s3ss10n"})
         self.assertEqual((code, body["run_state"]), (200, "running"))
@@ -260,6 +348,9 @@ class DashboardRouteTest(FakeExecutorCase):
         status, reply = self.call(page, base + "/api/executor/status")       # also gives the session cookie
         self.assertEqual((status, reply["configured"], reply["status"]["run_state"]), (200, True, "idle"))
         self.assertNotIn("token", json.dumps(reply))
+        self.assertNotIn("local_grid_map", reply["status"])
+        status, reply = self.call(page, base + "/api/executor/status?grid=1")
+        self.assertEqual((status, reply["status"]["local_grid_map"]["encoding"]), (200, "bitmap"))
         stranger = urllib.request.build_opener()
         self.assertEqual(self.call(stranger, base + "/api/executor/stop", {})[0], 403, "no session")
         self.assertEqual(self.call(page, base + "/api/executor/stop", {}, origin="http://evil.example")[0], 403)

@@ -559,7 +559,7 @@
 <header class="page-head">
 <h1>조정</h1>
 <span class="status-chip" id="tuneState">확인 중</span>
-<p class="page-note">자율주행 실행기의 값 · 차가 정지했을 때만 적용 · 안전 한계는 잠금</p>
+<p class="page-note">실행기 현장 조정 묶음 · 차가 정지했을 때만 바꾼다 · 고급·잠금 값은 파일에서</p>
 </header>
 <form class="dashboard-grid" id="tuneForm" novalidate="">
 <article class="panel">
@@ -567,13 +567,19 @@
 <div class="test-result" hidden="" id="tuneNotice"></div>
 <div class="tune-fields" id="tuneBasic"></div>
 <div class="sim-map-actions"><button class="action-button primary" disabled="" id="tuneApply" type="submit">적용</button><button class="action-button secondary" id="tuneClear" type="button">입력 지우기</button></div>
-<p class="help-text">빈 칸은 지금 값을 그대로 둔다. 범위 밖이나 주행 중에는 적용하지 않는다. 실행기가 마지막으로 판정한다.</p>
+<p class="help-text">빈 칸은 지금 값을 그대로 둔다. 이름·범위·단위는 실행기가 알려 준 것이고 실행기가 마지막으로 판정한다.</p>
+<div class="panel-head mini"><h3>프리셋 · 저장</h3></div>
+<div class="tune-fields">
+<label class="field">프리셋<select class="select" id="tunePreset"></select></label>
+<label class="field">새 프리셋 이름<input autocomplete="off" class="input" id="tuneSaveName" maxlength="40" placeholder="영문·숫자·_ - ." type="text"></label>
+</div>
+<div class="sim-map-actions"><button class="action-button secondary" disabled="" id="tuneLoadPreset" type="button">프리셋 불러오기</button><button class="action-button secondary" disabled="" id="tuneSave" type="button">파일에 저장</button><button class="action-button secondary" disabled="" id="tuneSavePreset" type="button">새 프리셋으로 저장</button></div>
 </article>
 <article class="panel tune-stack">
-<div class="panel-head"><h2>고급 묶음</h2><small>실행기가 받는다고 알릴 때만 바꾼다</small></div>
+<div class="panel-head"><h2>고급 묶음</h2><small>파일에서만 바꾼다</small></div>
 <div id="tuneAdvanced"></div>
-<div class="panel-head mini"><h3>안전 한계</h3><span class="status-chip">잠금</span></div>
-<div id="tuneSafety"></div>
+<div class="panel-head mini"><h3>잠금 값</h3><span class="status-chip">잠금</span></div>
+<div id="tuneLocked"></div>
 </article>
 <article class="panel wide">
 <div class="panel-head"><h2>변경 기록</h2><small>새 것부터</small><button class="action-button secondary" hidden="" id="tuneLogMore" type="button">전체 보기</button></div>

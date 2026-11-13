@@ -1,0 +1,443 @@
+{
+ "L": 0,
+ "R": 0,
+ "S": null,
+ "T": 0,
+ "bridge": null,
+ "bridge_detail": null,
+ "calib": null,
+ "calib_allowed": false,
+ "calib_options": null,
+ "config_digest": "5c952a9f39c153fa305a126d1bbdf425347274252cf2305b6b2462871f147618",
+ "controller_mode": "single_row",
+ "corridor": null,
+ "corridor_reason": null,
+ "counts": {
+  "bridge_errors": 0,
+  "emergency_stops": 0,
+  "hold_edges_split": 0,
+  "imu_bad": 0,
+  "imu_fed": 0,
+  "loop_exceptions": 0,
+  "missed_ticks": 0,
+  "requests": 0,
+  "runner_resets": 0,
+  "scan_bad": 0,
+  "scans_dropped": 0,
+  "scans_processed": 0,
+  "sends": 0,
+  "watchdog_drives": 0,
+  "watchdog_fires": 0
+ },
+ "ctl": [
+  null,
+  null
+ ],
+ "dist": null,
+ "end": null,
+ "end_note": null,
+ "end_reason": null,
+ "feasibility": {
+  "problems": [],
+  "status": "unknown",
+  "unknown": [
+   "breakaway_duty_pct unknown (C2)",
+   "steer_range_measured false (B2 / B3: measured steering range in the calibration record)",
+   "steer_rate_limit_deg_s: measured steering rate unknown (B5)",
+   "steer_rate_limit_standstill_deg_s: measured steering rate unknown (B5 / F5 at standstill)",
+   "steer_wheel_soft_margin_deg unknown (per-wheel soft limit against the mechanical limit, B2 / B3)",
+   "steer_min_pwm_pct unknown (B4: steering motor start PWM)",
+   "steer_zero_offset_deg unknown (F1)",
+   "steer_servo_deadband_deg unknown (MCU record)",
+   "steer_polarity_checked false (B0 polarity check)",
+   "steer_cal_id unknown (the calibration set id the bridge must report)",
+   "v_measured_m_s unknown (C3)",
+   "measured_stop_distance_m unknown (C7: executor 0/0 stop, calibration run kind stop)"
+  ]
+ },
+ "front": null,
+ "go_blockers": [
+  "operator_link_not_fresh",
+  "no_run"
+ ],
+ "go_ready": false,
+ "head": null,
+ "hold": false,
+ "hold_server": {
+  "active": false,
+  "beat_age_s": null,
+  "beats": 0,
+  "conflicts": 0,
+  "expiries": 0,
+  "ignored": 0,
+  "presses": 0,
+  "releases": 0,
+  "serial": 0
+ },
+ "imu_age": null,
+ "k": "tick",
+ "lat": null,
+ "lidar_age": null,
+ "local_grid_map": {
+  "age_s": 0.1,
+  "axis_rad": 0.10472,
+  "base_pose": [
+   2.3471,
+   0.3967,
+   0.1047
+  ],
+  "bits": "AAAAAcAAAAAQAAAAAAAAAAAAAAABwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAABgAAAABAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgAAAAAAAAAAAAAAAOAAAAAIAAAAAAAAAAAAAAAA4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAA4AAAAAgAAAAAAAAAAAAAAADgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAYAAAAAgAAAAAAAAADAAAAAGAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAABAAAAAGAAAAAAAAAAMAAAAAQAAAAAAAAAAAAAAABwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAAAAAAAEAAAAAYAAAAAAAAAAwAAAABAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAAAAAAAAAgAAAABgAAAAAAAAACAAAAAMAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgAAAAAAAAAAAAAAACAAAAAOAAAAAAAAAAAAAAAAoAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOAAAAAAAAAAAAAAAAIAAAAA4AAAAAAAAAAAAAAACgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAABAAAAADAAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAAAAAAAEAAAAAcAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAAAQAAAABgAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgAAAAAAAAAAAAAAACAAAAAGAAAAAAAAAAAAAAAA4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOAAAAAAAAAAAAAAAAIAAAAA4AAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4AAAAAAAAAAAAAAAAgAAAADAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAAAAAEAAAAAMAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAAAQAAAABgAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+  "cell_m": 0.1,
+  "encoding": "bitmap",
+  "frame": "run_odometry",
+  "lines": {
+   "centre": [
+    [
+     -1.628,
+     -0.106
+    ],
+    [
+     12.339,
+     0.867
+    ]
+   ],
+   "left": [
+    [
+     -1.751,
+     1.66
+    ],
+    [
+     12.216,
+     2.633
+    ]
+   ],
+   "quality": 1.0,
+   "right": [
+    [
+     -1.505,
+     -1.872
+    ],
+    [
+     12.462,
+     -0.899
+    ]
+   ],
+   "stamp": 5.9
+  },
+  "occupied": 160,
+  "origin_uv": [
+   -4.0,
+   -4.9
+  ],
+  "schema": "ubts.row_executor.local_grid.v1",
+  "shape": [
+   200,
+   100
+  ],
+  "truncated": false,
+  "updates": 30
+ },
+ "log": {
+  "bytes": 0,
+  "dropped": 0,
+  "failing_since": null,
+  "file": null,
+  "last_error": null,
+  "lines": 4,
+  "pending": 0,
+  "recoveries": 0,
+  "state": "ok",
+  "ticks_suppressed": 0,
+  "write_errors": 0,
+  "writer_alive": true
+ },
+ "log_dropped": 0,
+ "loop_error": null,
+ "loop_exceptions": 0,
+ "loop_ms": 0.08,
+ "mode": "SHADOW",
+ "native_navigation": {
+  "allow_motion": false,
+  "reason": "NOT_EVALUATED",
+  "required": false,
+  "state": "WAIT"
+ },
+ "onsite_limits": {
+  "base_duty_pct": [
+   30,
+   70
+  ],
+  "max_differential_pct": [
+   0,
+   25
+  ],
+  "reduce_duty_pct": [
+   30,
+   70
+  ]
+ },
+ "operator_link": {
+  "age_s": null,
+  "beats": 0,
+  "bindings": 0,
+  "cancels": 0,
+  "conflicts": 0,
+  "fresh": false,
+  "go_active": false,
+  "go_serial": 0,
+  "gos": 0,
+  "invalid": 0,
+  "last_cancel": null,
+  "link_lost": 0,
+  "session": null,
+  "timeout_s": 0.5
+ },
+ "params": {
+  "base_duty_pct": 55,
+  "max_differential_pct": 20,
+  "reduce_duty_pct": 55
+ },
+ "pauses": 0,
+ "profile": "field",
+ "reason": "no_run",
+ "row_motor": false,
+ "run": 0,
+ "run_kind": null,
+ "run_state": "idle",
+ "scan": {
+  "buffer": {
+   "human": 0,
+   "imu": 0,
+   "imu_overflow": 0,
+   "scan_overflow": 0,
+   "scans": 0
+  },
+  "human": null,
+  "human_age_s": null,
+  "imu": 0,
+  "received": 0
+ },
+ "sent": null,
+ "shadow_auto": false,
+ "sideL": null,
+ "sideR": null,
+ "single_row": null,
+ "single_row_geometry": null,
+ "single_row_settings": {
+  "approach_speed_m_s": 0.2,
+  "base_range_pct": [
+   45,
+   55
+  ],
+  "end_stop_offset_m": 0.61,
+  "localisation": "SENSOR_ONLY_SINGLE_ROW",
+  "max_row_length_m": 120.0,
+  "target_speed_m_s": 0.4
+ },
+ "source_digest": null,
+ "speed": {
+  "caps": null,
+  "limit_mps": null,
+  "limit_reason": "not_running",
+  "target_mps": 0.4
+ },
+ "stale_events": 0,
+ "stamper": {
+  "capped": 0,
+  "header_missing": 0,
+  "last_offset_s": null,
+  "median_offset_s": null,
+  "mode": "header_offset",
+  "resets": 0,
+  "stamped": 0
+ },
+ "start_mode": "one_press",
+ "state": "IDLE",
+ "steer": {
+  "age": null,
+  "arm": null,
+  "fault": null,
+  "faults": null,
+  "meas": null,
+  "req": false,
+  "sat": 0.0,
+  "stop": null
+ },
+ "steer_limits_mrad": [
+  409,
+  409
+ ],
+ "steering": {
+  "authority_saturated_s": 0.0,
+  "available": false,
+  "command_mrad": null,
+  "fed": 0,
+  "required": false
+ },
+ "still": null,
+ "stop_button": "ends_shadow_run_only",
+ "stop_detail": null,
+ "stop_reason": null,
+ "t": 99165.2572,
+ "t_wall": 1794529172.319,
+ "tuning": {
+  "basic": [
+   {
+    "high": 1.3,
+    "low": 0.5,
+    "name": "speed_scale",
+    "unit": "",
+    "value": 1.0
+   },
+   {
+    "high": 0.5,
+    "low": 0.2,
+    "name": "target_speed_m_s",
+    "unit": "m/s",
+    "value": 0.4
+   },
+   {
+    "high": 3.0,
+    "low": 0.8,
+    "name": "lookahead_base_m",
+    "unit": "m",
+    "value": 1.5
+   },
+   {
+    "high": 3.0,
+    "low": 0.0,
+    "name": "lookahead_per_speed_s",
+    "unit": "s",
+    "value": 1.25
+   },
+   {
+    "high": 5.0,
+    "low": 1.0,
+    "name": "lookahead_max_m",
+    "unit": "m",
+    "value": 3.0
+   },
+   {
+    "high": 3.0,
+    "low": 0.0,
+    "name": "k_d",
+    "unit": "",
+    "value": 1.0
+   },
+   {
+    "high": 3.0,
+    "low": 0.0,
+    "name": "k_psi",
+    "unit": "",
+    "value": 1.0
+   },
+   {
+    "high": 1.0,
+    "low": 0.2,
+    "name": "steer_rate_fraction",
+    "unit": "",
+    "value": 0.75
+   }
+  ],
+  "digest": "5dfb070ef10638dd8462674dd266ed85a76a4e3f7975450d93a5cbcd6a06b8b9",
+  "editable": true,
+  "file": "field_tuning.default.json",
+  "file_sha256": "f60e265060312f708092f911c6ac42d624addca127baa72f3e81b2d37a51cede",
+  "modified": false,
+  "not_editable_because": null,
+  "preset": "default",
+  "presets": [
+   "default",
+   "slow_030",
+   "soft_ground"
+  ],
+  "revision": 0,
+  "unsaved": false,
+  "values": {
+   "advanced": {
+    "approach_speed_m_s": 0.2,
+    "approach_window_m": 1.5,
+    "battery_scale": 1.0,
+    "corridor_weak_age_s": 0.6,
+    "d_blind_m": 0.15,
+    "d_scan_m": 0.05,
+    "duty_fall_pct_s": 15.0,
+    "duty_max_pct": 70,
+    "duty_rise_pct_s": 5.0,
+    "end_stop_offset_m": 0.61,
+    "fresh_slow_age_s": 0.3,
+    "k_r": 0.0,
+    "lateral_accel_max_m_s2": 0.3,
+    "lateral_slow_full_m": 0.4,
+    "lateral_slow_start_m": 0.15,
+    "loop_fixed_s": 0.24,
+    "min_speed_m_s": 0.2,
+    "speed_integral_limit_pct": 15.0,
+    "speed_ki_pct_per_m": 15.0,
+    "speed_kp_pct_s_per_m": 30.0,
+    "speed_table": [
+     [
+      25.0,
+      0.239
+     ],
+     [
+      80.0,
+      0.709
+     ],
+     [
+      90.0,
+      0.715
+     ],
+     [
+      100.0,
+      0.899
+     ]
+    ],
+    "steer_filter_s": 0.25,
+    "steer_follow_limit_deg": 12.0,
+    "steer_slow_start": 0.8,
+    "surface_scale": 1.0,
+    "trim_gain_rad_per_m_s": 0.05,
+    "trim_limit_deg": 3.0
+   },
+   "basic": {
+    "k_d": 1.0,
+    "k_psi": 1.0,
+    "lookahead_base_m": 1.5,
+    "lookahead_max_m": 3.0,
+    "lookahead_per_speed_s": 1.25,
+    "speed_scale": 1.0,
+    "steer_rate_fraction": 0.75,
+    "target_speed_m_s": 0.4
+   },
+   "locked": {
+    "duty_cap_pct": 75,
+    "front_margin_m": 0.35,
+    "guard_heading_deg": 25.0,
+    "imu_max_age_s": 0.4,
+    "lidar_max_age_s": 0.45,
+    "max_speed_m_s": 0.5,
+    "operator_timeout_s": 0.5,
+    "overspeed_margin_m_s": 0.05,
+    "overspeed_s": 1.0,
+    "prior_predict_max_m": 0.5,
+    "prior_predict_max_s": 1.0,
+    "stall_guard_s": 0.35,
+    "steer_status_max_age_s": 0.3
+   }
+  },
+  "writable": false
+ },
+ "turn_observe_available": false,
+ "turn_output_allowed": false,
+ "v": null,
+ "vehicle_control": "none",
+ "vehicle_profile": "front_steer",
+ "vib": null,
+ "width": null,
+ "yaw": null,
+ "yaw_params": {
+  "max_yaw_rate_deg_s": 3.6,
+  "measured_yaw_at_max_diff_deg_s": null
+ }
+}
