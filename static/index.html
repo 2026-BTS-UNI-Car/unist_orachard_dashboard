@@ -304,6 +304,25 @@
 </article>
 </div>
 </article>
+<article class="panel rover-live-panel rover-imu-panel">
+<div class="panel-head">
+<h2>IMU</h2>
+<div class="panel-actions">
+<button class="action-button secondary" id="roverImuToggle" type="button">IMU 시작</button>
+</div>
+</div>
+<div class="imu-attitude-stage">
+<canvas class="imu-attitude-canvas" height="280" id="roverImuCanvas" width="520"></canvas>
+<span id="roverImuCaption">/imu/data_raw 대기</span>
+</div>
+<div class="imu-heading-row">
+<span>방위각</span>
+<strong id="roverImuHeading">--°</strong>
+<span class="tag" id="roverImuProcessingState">원본 그대로</span>
+</div>
+<div class="chart-readout" id="roverImuStats"></div>
+<p class="help-text">센서가 보낸 자세 그대로입니다. 소프트웨어 회전이나 영점 보정을 하지 않습니다.</p>
+</article>
 <article class="panel wide">
 <div class="panel-head">
 <div class="panel-title"><h2>2D LiDAR 지도</h2><small class="panel-sub">/scan</small></div>
@@ -401,41 +420,22 @@
 </div>
 <div class="status-list" id="connectionServices"></div>
 </article>
+<article class="panel">
+<div class="panel-head">
+<h2>연동 상태</h2>
+</div>
+<div class="status-list" id="roverControlDetails"></div>
+</article>
 <article class="panel wide">
 <div class="panel-head">
 <h2>ROS 2 센서 연결</h2>
 </div>
 <div class="status-list" id="connectionSensors"></div>
 </article>
-<article class="panel rover-live-panel rover-imu-panel">
-<div class="panel-head">
-<h2>IMU</h2>
-<div class="panel-actions">
-<button class="action-button secondary" id="roverImuToggle" type="button">IMU 시작</button>
-</div>
-</div>
-<div class="imu-attitude-stage">
-<canvas class="imu-attitude-canvas" height="280" id="roverImuCanvas" width="520"></canvas>
-<span id="roverImuCaption">/imu/data_raw 대기</span>
-</div>
-<div class="imu-heading-row">
-<span>방위각</span>
-<strong id="roverImuHeading">--°</strong>
-<span class="tag" id="roverImuProcessingState">원본 그대로</span>
-</div>
-<div class="chart-readout" id="roverImuStats"></div>
-<p class="help-text">센서가 보낸 자세 그대로입니다. 소프트웨어 회전이나 영점 보정을 하지 않습니다.</p>
-</article>
 <article class="panel" data-vehicle="front_steer" id="steerPotPanel">
 <div class="panel-head"><h2>조향 가변저항</h2><span class="status-chip" id="steerPotState">확인 중</span></div>
 <dl class="detail-list" id="steerPotDetails"></dl>
 <p class="help-text">조향 브리지가 보낸 가변저항 값(앞바퀴 각도)이다. 보정 없음·잡음·끊김은 결함 줄에 보인다.</p>
-</article>
-<article class="panel wide">
-<div class="panel-head">
-<h2>연동 상태</h2>
-</div>
-<div class="status-list" id="roverControlDetails"></div>
 </article>
 </section>
 </section>
