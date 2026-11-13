@@ -113,6 +113,8 @@ class Client {
     await this.cmd('Emulation.setDeviceMetricsOverride', {width: s.width ?? 1366, height: s.height ?? 900, deviceScaleFactor: s.mobile ? 2 : 1, mobile: s.mobile ?? false});
     if (s.mobile) await this.cmd('Emulation.setTouchEmulationEnabled', {enabled: true, maxTouchPoints: 5});
     if (s.network_profile) await this.cmd('Page.addScriptToEvaluateOnNewDocument', {source: `try{localStorage.setItem('ubts-live-network-profile',${JSON.stringify(s.network_profile)})}catch(e){}`});
+    // The driving screen's big view (static/app/02-shell.js, DRIVE_VIEW_KEY): "camera" (the page's default) or "lidar".
+    if (s.drive_view) await this.cmd('Page.addScriptToEvaluateOnNewDocument', {source: `try{localStorage.setItem('ubts-drive-view-v1',${JSON.stringify(s.drive_view)})}catch(e){}`});
   }
   cmd(method, params = {}) { return send(method, params, this.session); }
   checkAlive() { const lost = lostSessions.get(this.session); if (lost) throw Error(`tab ${this.index} lost: ${lost.reason}`); }

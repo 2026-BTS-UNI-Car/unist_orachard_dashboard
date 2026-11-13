@@ -47,8 +47,14 @@ class ProfilesTest(unittest.TestCase):
 
 class ScenariosTest(unittest.TestCase):
     def test_named_scenarios(self):
-        self.assertEqual(sorted(run_bench.SCENARIOS), ["drive", "drive_map", "hidden", "load", "quick", "session_expiry"])
+        self.assertEqual(sorted(run_bench.SCENARIOS), ["drive", "drive_lidar", "drive_map", "hidden", "load", "map", "quick", "sensors", "session_expiry"])
         self.assertEqual(run_bench.SCENARIOS["drive"]["live_s"], 120)
+        # drive_lidar is drive with the LiDAR as the driving screen's big view (the six screens show one of camera and LiDAR)
+        self.assertEqual({k: v for k, v in run_bench.SCENARIOS["drive_lidar"].items() if k != "drive_view"}, run_bench.SCENARIOS["drive"])
+        self.assertEqual(run_bench.SCENARIOS["drive_lidar"]["drive_view"], "lidar")
+        # the screens of the six-screen layout that show what the driving screen no longer shows
+        self.assertEqual((run_bench.SCENARIOS["sensors"]["route"], run_bench.SCENARIOS["map"]["route"]), ("/sensors", "/map"))
+        self.assertTrue(run_bench.SCENARIOS["map"]["start_live_map"] and "drive" not in run_bench.SCENARIOS["map"])
         self.assertEqual(run_bench.SCENARIOS["drive_map"]["live_s"], 600)
         self.assertTrue(run_bench.SCENARIOS["drive"]["cold_load"] and run_bench.SCENARIOS["drive"]["warm_load"])
 

@@ -345,6 +345,9 @@ class CompareCommandTest(unittest.TestCase):
         self.assertEqual(accepted["cells"]["drive/normal"]["metrics"]["command_rt_p95"], 198.5)
         self.assertEqual(accepted["commits"], ["aaaaaaa", "ccccccc"])
         self.assertEqual(accepted["tolerances"]["command_rt_p95"]["rel"], 0.33)
+        self.assertEqual(accepted["history"], [dict(cell="drive/normal", run="20261112T000000Z_drive_normal_aaaaaaa", short="aaaaaaa",
+                                                    measured_utc=accepted["history"][0]["measured_utc"],
+                                                    replaced_by="20261201T000000Z_drive_normal_ccccccc")])
         first = self.accepted.read_bytes()
         self.assertEqual(run_main("--accept", newer, "--accepted", self.accepted)[0], 0)
         self.assertEqual(self.accepted.read_bytes(), first)       # the same runs give the same file
@@ -352,6 +355,8 @@ class CompareCommandTest(unittest.TestCase):
         accepted = json.loads(self.accepted.read_text(encoding="utf-8"))
         self.assertEqual(list(accepted["cells"]), ["drive/normal"])
         self.assertEqual(accepted["tolerances"]["command_rt_p95"]["rel"], compare.METRICS["command_rt_p95"]["rel"])
+        self.assertEqual([(item["cell"], item["replaced_by"]) for item in accepted["history"]],
+                         [("drive/normal", "20261201T000000Z_drive_normal_ccccccc"), ("drive/good", None), ("drive/bad", None), ("drive/very_bad", None)])
 
     def test_two_runs_for_one_cell_are_refused(self):
         again = write_run(self.root / "later", "again", make_summary())

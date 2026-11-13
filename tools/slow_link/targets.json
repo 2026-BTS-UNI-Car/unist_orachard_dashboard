@@ -301,7 +301,7 @@
   {
    "id": "라-3",
    "what_ko": "지도 응답 크기: 10분째 ÷ 첫 1분",
-   "scenario": "drive_map",
+   "scenario": "map",
    "profile": "bad",
    "metric": "map_growth_ratio",
    "op": "<=",
@@ -311,12 +311,12 @@
    "tasks": [
     "NET-09"
    ],
-   "note_ko": "초안의 '시간이 지나도 늘지 않음'을 숫자로 정함(흔들림 20 % 허용)"
+   "note_ko": "초안의 '시간이 지나도 늘지 않음'을 숫자로 정함(흔들림 20 % 허용) 2026-11-13(NET-12): 실시간 지도가 지도 화면으로 옮겨 가서 지도 화면 10분(map, 조종 연습 없음)에서 잰다. '지금'은 옛 주행 화면에서 지도를 켠 값이다"
   },
   {
    "id": "라-4",
    "what_ko": "지도 요청이 쓰는 양(10분 평균)",
-   "scenario": "drive_map",
+   "scenario": "map",
    "profile": "bad",
    "metric": "map_kB_s",
    "op": "<=",
@@ -326,7 +326,7 @@
    "tasks": [
     "NET-09"
    ],
-   "note_ko": "새로 넣음. NET-09의 완료 기준에 있는 값"
+   "note_ko": "새로 넣음. NET-09의 완료 기준에 있는 값 2026-11-13(NET-12): 실시간 지도가 지도 화면으로 옮겨 가서 지도 화면 10분(map, 조종 연습 없음)에서 잰다. '지금'은 옛 주행 화면에서 지도를 켠 값이다"
   },
   {
    "id": "라-5",
@@ -347,7 +347,7 @@
   {
    "id": "마-1",
    "what_ko": "LiDAR 그림 지연 p95",
-   "scenario": "drive",
+   "scenario": "drive_lidar",
    "profile": "normal",
    "metric": "lidar_delay_p95",
    "op": "<=",
@@ -357,12 +357,12 @@
    "tasks": [
     "NET-07"
    ],
-   "note_ko": "초안 그대로. 이미 만족"
+   "note_ko": "초안 그대로. 이미 만족 2026-11-13(NET-12): 화면 6개 뒤 주행 화면은 카메라와 LiDAR 중 하나만 크게 보인다(기본 카메라). 그래서 LiDAR 큰 보기의 주행(drive_lidar)에서 잰다. '지금'은 옛 주행 화면(모든 센서)의 값이다"
   },
   {
    "id": "마-2",
    "what_ko": "LiDAR를 다시 그리는 수",
-   "scenario": "drive",
+   "scenario": "drive_lidar",
    "profile": "normal",
    "metric": "lidar_hz",
    "op": ">=",
@@ -373,12 +373,12 @@
     "NET-07",
     "NET-08"
    ],
-   "note_ko": "새로 넣음. 지연만 보면 초당 2번으로도 통과한다. NET-07의 10 Hz에 여유 10 %를 둔 값(재생 원본이 10.01 Hz라 10 Hz에 딱 맞추면 흔들림에 걸린다)"
+   "note_ko": "새로 넣음. 지연만 보면 초당 2번으로도 통과한다. NET-07의 10 Hz에 여유 10 %를 둔 값(재생 원본이 10.01 Hz라 10 Hz에 딱 맞추면 흔들림에 걸린다) 2026-11-13(NET-12): 화면 6개 뒤 주행 화면은 카메라와 LiDAR 중 하나만 크게 보인다(기본 카메라). 그래서 LiDAR 큰 보기의 주행(drive_lidar)에서 잰다. '지금'은 옛 주행 화면(모든 센서)의 값이다"
   },
   {
    "id": "마-3",
    "what_ko": "LiDAR를 다시 그리는 수",
-   "scenario": "drive",
+   "scenario": "drive_lidar",
    "profile": "bad",
    "metric": "lidar_hz",
    "op": ">=",
@@ -389,7 +389,7 @@
     "NET-07",
     "NET-08"
    ],
-   "note_ko": "새로 넣음. NET-07의 완료 기준에 있는 값"
+   "note_ko": "새로 넣음. NET-07의 완료 기준에 있는 값 2026-11-13(NET-12): 화면 6개 뒤 주행 화면은 카메라와 LiDAR 중 하나만 크게 보인다(기본 카메라). 그래서 LiDAR 큰 보기의 주행(drive_lidar)에서 잰다. '지금'은 옛 주행 화면(모든 센서)의 값이다"
   },
   {
    "id": "마-4",
@@ -439,7 +439,7 @@
   {
    "id": "바-1",
    "what_ko": "멈춤 뒤 새 자료가 닿기까지: LiDAR·IMU·GPS 중 가장 늦은 것",
-   "scenario": "drive",
+   "scenario": "drive_lidar",
    "profile": "bad",
    "metric": "stall_sensor_fresh_max_ms",
    "op": "<=",
@@ -449,7 +449,7 @@
    "tasks": [
     "NET-11"
    ],
-   "note_ko": "초안 그대로(3초). '최신 자료'를 멈춤이 끝난 뒤에 만들어진 메시지로 정했다. 이미 만족"
+   "note_ko": "초안 그대로(3초). '최신 자료'를 멈춤이 끝난 뒤에 만들어진 메시지로 정했다. 이미 만족 2026-11-13(NET-12): 화면 6개 뒤 주행 화면은 카메라와 LiDAR 중 하나만 크게 보인다(기본 카메라). 그래서 LiDAR 큰 보기의 주행(drive_lidar)에서 잰다. '지금'은 옛 주행 화면(모든 센서)의 값이다"
   },
   {
    "id": "바-2",
@@ -470,7 +470,7 @@
   {
    "id": "바-3",
    "what_ko": "멈춤 뒤 새 자료가 닿기까지: LiDAR·IMU·GPS 중 가장 늦은 것",
-   "scenario": "drive",
+   "scenario": "drive_lidar",
    "profile": "very_bad",
    "metric": "stall_sensor_fresh_max_ms",
    "op": "<=",
@@ -481,7 +481,7 @@
     "NET-11",
     "NET-08"
    ],
-   "note_ko": "초안 그대로. 지금은 2초 멈춤 뒤에 LiDAR·GPS 연결이 닫혔다 다시 열리고(3.5절) 밀린 IMU가 먼저 지나간다"
+   "note_ko": "초안 그대로. 지금은 2초 멈춤 뒤에 LiDAR·GPS 연결이 닫혔다 다시 열리고(3.5절) 밀린 IMU가 먼저 지나간다 2026-11-13(NET-12): 화면 6개 뒤 주행 화면은 카메라와 LiDAR 중 하나만 크게 보인다(기본 카메라). 그래서 LiDAR 큰 보기의 주행(drive_lidar)에서 잰다. '지금'은 옛 주행 화면(모든 센서)의 값이다"
   },
   {
    "id": "바-4",

@@ -31,6 +31,14 @@ DRIVE_CYCLE = dict(hold_s=5, idle_s=1, after_stop_s=2, arm_timeout_s=8)
 SCENARIOS = {
     # first open + open again + 2 minutes on the driving screen with the manual-drive exercise
     "drive": dict(cold_load=True, warm_load=True, live_s=120, sample_every_s=5, drive=DRIVE_CYCLE),
+    # the same with the LiDAR as the driving screen's big view (since the six screens the driving screen shows one of
+    # camera and LiDAR, the camera by default; IMU and GPS are on the sensors and map screens)
+    "drive_lidar": dict(cold_load=True, warm_load=True, live_s=120, sample_every_s=5, drive=DRIVE_CYCLE, drive_view="lidar"),
+    # the sensors screen for 2 minutes (LiDAR, camera, IMU), no driving (the drive controls are on the driving screen)
+    "sensors": dict(cold_load=True, warm_load=False, live_s=120, sample_every_s=5, route="/sensors"),
+    # the map screen with the live map drawing, for 10 minutes, no driving (since the six screens the live map and GPS are
+    # on the map screen; drive_map keeps the 10-minute drive on the driving screen, where no map is drawn any more)
+    "map": dict(cold_load=True, warm_load=False, live_s=600, sample_every_s=10, start_live_map=True, map_publish_mark=True, route="/map"),
     # the same with the live map drawing, for 10 minutes: does anything grow with time?
     "drive_map": dict(cold_load=True, warm_load=False, live_s=600, sample_every_s=10, drive=DRIVE_CYCLE, start_live_map=True, map_publish_mark=True),
     # first open and open again only
@@ -174,14 +182,17 @@ def run_once(args, scenario_name, profile_name, source, inputs, out_root, work):
         bench.start()
         run["ports"] = ports
         run["listeners"] = {str(port): name for port, name in bench.listeners.items()}
-        phases = {key: value for key, value in scenario.items() if key not in ("env", "map_publish_mark", "hidden_after_s")}
+        phases = {key: value for key, value in scenario.items() if key not in ("env", "map_publish_mark", "hidden_after_s", "drive_view", "route")}
         clients = [dict(origin=origin, width=args.width, height=args.height, mobile=args.mobile) for origin in bench.client_origins()]
         if scenario.get("hidden_after_s") is not None:
             clients[0]["hidden_after_s"] = scenario["hidden_after_s"]
         if args.network_profile:
             for client in clients:
                 client["network_profile"] = args.network_profile
-        cfg = dict(label=out.name, out=str(out), route="/rover-control", clock_url=f"http://127.0.0.1:{ports['recorder']}/clock",
+        if scenario.get("drive_view"):
+            for client in clients:
+                client["drive_view"] = scenario["drive_view"]
+        cfg = dict(label=out.name, out=str(out), route=scenario.get("route", "/rover-control"), clock_url=f"http://127.0.0.1:{ports['recorder']}/clock",
                    screenshot=True, clients=clients, phases=phases, chrome_args=list(args.chrome_arg))
         write_json(out / "cfg.json", cfg)
         write_json(out / "run.json", run)

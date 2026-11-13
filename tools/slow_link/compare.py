@@ -34,27 +34,30 @@ TARGETS_SCHEMA = "ubts.slow_link.targets"
 SENSOR_STREAMS = ("/ws/lidar", "/ws/imu", "/ws/gps")
 ALL_STREAMS = SENSOR_STREAMS + ("/ws/camera",)
 
-LIVE = ("drive", "quick")
-LONG = ("drive", "quick", "drive_map")
+LIVE = ("drive", "drive_lidar", "quick")
+LONG = ("drive", "drive_lidar", "quick", "drive_map")
+OPEN = ("drive", "drive_lidar", "load")
+VIEW = LIVE + ("sensors",)          # sensor pictures: the driving screen shows camera or LiDAR, the sensors screen both and the IMU
+SCREEN = LONG + ("sensors", "map")  # what any screen uses (status polling, link, streams)
 # key, Korean label, unit, which direction is better, tolerance (rel, abs), tolerance on a profile with stalls (rel, abs), scenarios.
 # The allowed change of a metric is max(abs, rel x accepted value). All tolerances are provisional: one run per cell so far.
 # Counts of rare events (input expiry, lost control) allow 2: one of three runs of the same code on "normal" had two.
 # The backlog count allows 150 %: two runs of the same data path on "very_bad" gave 29 and 59.
 METRIC_ROWS = [
-    ("camera_fps", "카메라 fps", "fps", "higher", (0.10, 0.05), (0.25, 0.05), LIVE),
-    ("camera_delay_p50", "카메라 지연 p50", "ms", "lower", (0.10, 20), (0.20, 100), LIVE),
-    ("camera_delay_p95", "카메라 지연 p95", "ms", "lower", (0.15, 30), (0.30, 200), LIVE),
-    ("lidar_hz", "LiDAR 다시 그리는 수", "Hz", "higher", (0.10, 0.1), (0.15, 0.1), LIVE),
-    ("lidar_delay_p50", "LiDAR 지연 p50", "ms", "lower", (0.10, 20), (0.20, 50), LIVE),
-    ("lidar_delay_p95", "LiDAR 지연 p95", "ms", "lower", (0.15, 30), (0.50, 150), LIVE),
-    ("imu_delay_p50", "IMU 지연 p50", "ms", "lower", (0.10, 20), (0.25, 50), LIVE),
-    ("imu_delay_p95", "IMU 지연 p95", "ms", "lower", (0.15, 30), (0.50, 150), LIVE),
-    ("gps_delay_p50", "GPS 표시 지연 p50", "ms", "lower", (0.20, 50), (0.30, 100), LIVE),
-    ("gps_delay_p95", "GPS 표시 지연 p95", "ms", "lower", (0.60, 150), (0.80, 300), LIVE),
-    ("status_kB_s", "상태 요청이 쓰는 양", "kB/s", "lower", (0.10, 0.15), (0.15, 0.2), LONG),
-    ("map_kB_s", "지도 요청이 쓰는 양", "kB/s", "lower", (0.10, 0.15), (0.15, 0.2), LONG),
-    ("link_share_pct", "내려받는 양 ÷ 연결 속도", "%", "lower", (0.0, 3.0), (0.0, 5.0), LONG),
-    ("stream_closes", "닫힌 스트림 연결 수", "개", "lower", (0.0, 0), (0.25, 2), LONG + ("hidden", "session_expiry")),
+    ("camera_fps", "카메라 fps", "fps", "higher", (0.10, 0.05), (0.25, 0.05), VIEW),
+    ("camera_delay_p50", "카메라 지연 p50", "ms", "lower", (0.10, 20), (0.20, 100), VIEW),
+    ("camera_delay_p95", "카메라 지연 p95", "ms", "lower", (0.15, 30), (0.30, 200), VIEW),
+    ("lidar_hz", "LiDAR 다시 그리는 수", "Hz", "higher", (0.10, 0.1), (0.15, 0.1), VIEW),
+    ("lidar_delay_p50", "LiDAR 지연 p50", "ms", "lower", (0.10, 20), (0.20, 50), VIEW),
+    ("lidar_delay_p95", "LiDAR 지연 p95", "ms", "lower", (0.15, 30), (0.50, 150), VIEW),
+    ("imu_delay_p50", "IMU 지연 p50", "ms", "lower", (0.10, 20), (0.25, 50), VIEW),
+    ("imu_delay_p95", "IMU 지연 p95", "ms", "lower", (0.15, 30), (0.50, 150), VIEW),
+    ("gps_delay_p50", "GPS 표시 지연 p50", "ms", "lower", (0.20, 50), (0.30, 100), LIVE + ("map",)),
+    ("gps_delay_p95", "GPS 표시 지연 p95", "ms", "lower", (0.60, 150), (0.80, 300), LIVE + ("map",)),
+    ("status_kB_s", "상태 요청이 쓰는 양", "kB/s", "lower", (0.10, 0.15), (0.15, 0.2), SCREEN),
+    ("map_kB_s", "지도 요청이 쓰는 양", "kB/s", "lower", (0.10, 0.15), (0.15, 0.2), LONG + ("map",)),
+    ("link_share_pct", "내려받는 양 ÷ 연결 속도", "%", "lower", (0.0, 3.0), (0.0, 5.0), SCREEN),
+    ("stream_closes", "닫힌 스트림 연결 수", "개", "lower", (0.0, 0), (0.25, 2), SCREEN + ("hidden", "session_expiry")),
     ("command_rt_p50", "조종 명령 왕복 p50", "ms", "lower", (0.10, 10), (0.15, 30), LONG),
     ("command_rt_p95", "조종 명령 왕복 p95", "ms", "lower", (0.10, 15), (0.25, 50), LIVE),
     ("command_presend_p95", "명령이 브라우저를 떠나기 전 기다림 p95", "ms", "lower", (0.0, 10), (0.0, 10), LIVE),
@@ -66,21 +69,21 @@ METRIC_ROWS = [
     ("stop_endpoint_p50", "STOP 버튼→제어 끝점 p50", "ms", "lower", (0.10, 8), (0.10, 15), LONG),
     ("stop_answer_p50", "STOP 답 p50", "ms", "lower", (0.10, 15), (0.25, 50), LIVE),
     ("stop_answer_p95", "STOP 답 p95", "ms", "lower", (0.15, 20), (0.50, 100), LIVE),
-    ("cold_kB", "처음 열기 받는 양", "kB", "lower", (0.02, 5), (0.03, 5), ("drive", "load")),
-    ("cold_page_files", "처음 열기 페이지 파일 요청 수", "개", "lower", (0.0, 0), (0.0, 0), ("drive", "load")),
-    ("cold_over_100kB", "처음 열기 100 kB 넘는 파일 수", "개", "lower", (0.0, 0), (0.0, 0), ("drive", "load")),
-    ("cold_usable_s", "처음 열기 쓸 수 있기까지", "s", "lower", (0.20, 0.3), (0.25, 0.5), ("drive", "load")),
-    ("cold_load_event_s", "처음 열기 load 사건", "s", "lower", (0.20, 0.5), (0.25, 1.0), ("drive", "load")),
-    ("warm_page_files_on_network", "다시 열기 연결에 나간 페이지 파일 요청 수", "개", "lower", (0.0, 0), (0.0, 2), ("drive", "load")),
-    ("warm_page_file_body_B", "다시 열기 다시 받은 페이지 파일 본문", "B", "lower", (0.10, 500), (0.25, 500), ("drive", "load")),
-    ("warm_usable_s", "다시 열기 쓸 수 있기까지", "s", "lower", (0.30, 0.2), (0.40, 0.5), ("drive", "load")),
-    ("stall_sensor_fresh_max_ms", "멈춤 뒤 새 자료가 닿기까지 (LiDAR·IMU·GPS 중 가장 늦은 것)", "ms", "lower", (0.50, 500), (0.50, 500), ("drive",)),
-    ("stall_camera_fresh_max_ms", "멈춤 뒤 새 카메라 그림이 닿기까지 (가장 늦은 것)", "ms", "lower", (0.30, 1000), (0.30, 1000), ("drive",)),
-    ("stall_backlog_max", "멈춤 뒤에 닿은 밀린 메시지 수 (통로 중 최대)", "개", "lower", (1.5, 3), (1.5, 3), ("drive",)),
-    ("map_growth_ratio", "지도 응답 크기: 마지막 1분 ÷ 첫 1분", "배", "lower", (0.15, 0.1), (0.15, 0.1), ("drive_map",)),
-    ("map_last_minute_kB", "지도 응답 하나의 크기 (마지막 1분)", "kB", "lower", (0.15, 2), (0.15, 2), ("drive_map",)),
-    ("map_versions_per_s", "지도 새 판이 그려진 수", "번/s", "higher", (0.15, 0.03), (0.20, 0.03), ("drive_map",)),
-    ("map_drawn_delay_p50", "지도 발행→그림 p50", "ms", "lower", (0.20, 200), (0.25, 300), ("drive_map",)),
+    ("cold_kB", "처음 열기 받는 양", "kB", "lower", (0.02, 5), (0.03, 5), OPEN),
+    ("cold_page_files", "처음 열기 페이지 파일 요청 수", "개", "lower", (0.0, 0), (0.0, 0), OPEN),
+    ("cold_over_100kB", "처음 열기 100 kB 넘는 파일 수", "개", "lower", (0.0, 0), (0.0, 0), OPEN),
+    ("cold_usable_s", "처음 열기 쓸 수 있기까지", "s", "lower", (0.20, 0.3), (0.25, 0.5), OPEN),
+    ("cold_load_event_s", "처음 열기 load 사건", "s", "lower", (0.20, 0.5), (0.25, 1.0), OPEN),
+    ("warm_page_files_on_network", "다시 열기 연결에 나간 페이지 파일 요청 수", "개", "lower", (0.0, 0), (0.0, 2), OPEN),
+    ("warm_page_file_body_B", "다시 열기 다시 받은 페이지 파일 본문", "B", "lower", (0.10, 500), (0.25, 500), OPEN),
+    ("warm_usable_s", "다시 열기 쓸 수 있기까지", "s", "lower", (0.30, 0.2), (0.40, 0.5), OPEN),
+    ("stall_sensor_fresh_max_ms", "멈춤 뒤 새 자료가 닿기까지 (LiDAR·IMU·GPS 중 가장 늦은 것)", "ms", "lower", (0.50, 500), (0.50, 500), ("drive", "drive_lidar", "sensors")),
+    ("stall_camera_fresh_max_ms", "멈춤 뒤 새 카메라 그림이 닿기까지 (가장 늦은 것)", "ms", "lower", (0.30, 1000), (0.30, 1000), ("drive", "drive_lidar", "sensors")),
+    ("stall_backlog_max", "멈춤 뒤에 닿은 밀린 메시지 수 (통로 중 최대)", "개", "lower", (1.5, 3), (1.5, 3), ("drive", "drive_lidar", "sensors")),
+    ("map_growth_ratio", "지도 응답 크기: 마지막 1분 ÷ 첫 1분", "배", "lower", (0.15, 0.1), (0.15, 0.1), ("drive_map", "map")),
+    ("map_last_minute_kB", "지도 응답 하나의 크기 (마지막 1분)", "kB", "lower", (0.15, 2), (0.15, 2), ("drive_map", "map")),
+    ("map_versions_per_s", "지도 새 판이 그려진 수", "번/s", "higher", (0.15, 0.03), (0.20, 0.03), ("drive_map", "map")),
+    ("map_drawn_delay_p50", "지도 발행→그림 p50", "ms", "lower", (0.20, 200), (0.25, 300), ("drive_map", "map")),
     ("hidden_stream_kB_s", "숨긴 탭이 받는 스트림 양", "kB/s", "lower", (0.10, 1), (0.10, 1), ("hidden",)),
     ("hidden_status_kB_s", "숨긴 탭의 상태 요청 양", "kB/s", "lower", (0.20, 0.1), (0.20, 0.1), ("hidden",)),
     ("session_longest_gap_ms", "세션 만료 때 화면이 다시 그려지기까지 가장 긴 간격", "ms", "lower", (0.30, 300), (0.30, 300), ("session_expiry",)),
@@ -89,7 +92,7 @@ METRICS = {row[0]: dict(key=row[0], label_ko=row[1], unit=row[2], better=row[3],
                         stall_rel=row[5][0], stall_abs=row[5][1], scenarios=row[6]) for row in METRIC_ROWS}
 # Reported but not counted as a failure (unless --strict): a rare long wait that one run shows and the next does not.
 REPORT_ONLY = ("control_presend_max",)
-SCENARIO_ORDER = ["drive", "drive_map", "hidden", "session_expiry", "load", "quick"]
+SCENARIO_ORDER = ["drive", "drive_lidar", "sensors", "map", "drive_map", "hidden", "session_expiry", "load", "quick"]
 PROFILE_ORDER = ["good", "normal", "bad", "very_bad", "none"]
 VERDICT_KO = dict(better="좋아짐", same="같음", worse="나빠짐", missing="없음(이번 실행에 수치가 없다)", new="새 수치(받아들인 값 없음)")
 
@@ -333,14 +336,24 @@ def accept(run_paths, accepted_path, replace_all=False, reset_tolerances=False):
         tolerances.update({key: value for key, value in (previous.get("tolerances") or {}).items() if key in tolerances})
     cells = {key: cells[key] for key in sorted(cells, key=cell_sort_key)}
     commits = sorted({cell["short"] for cell in cells.values() if cell.get("short")})
+    # Earlier accepted runs stay listed (their numbers are in the git history of this file).
+    history = list((previous or {}).get("history") or [])
+    for key, old in ((previous or {}).get("cells") or {}).items():
+        new = cells.get(key)
+        if new is None or new.get("run") != old.get("run"):
+            record = dict(cell=key, run=old.get("run"), short=old.get("short"), measured_utc=old.get("measured_utc"),
+                          replaced_by=new.get("run") if new else None)
+            if record not in history:
+                history.append(record)
     accepted = dict(
         schema=ACCEPTED_SCHEMA, version=1,
         note_ko="느린 통신 시험대의 받아들인 값. compare.py --accept 로 만든다(손으로 고치지 않는다; tolerances만 손으로 고칠 수 있다). "
-                "x86 PC 한 대에서 연결을 흉내 내어 잰 값이고 칸마다 실행 한 번뿐이라 허용 폭은 잠정이다.",
+                "x86 PC 한 대에서 연결을 흉내 내어 잰 값이고 칸마다 실행 한 번뿐이라 허용 폭은 잠정이다. "
+                "history 는 바뀌기 전에 받아들였던 실행(칸, 실행 이름, 커밋)이고, 그 수치는 이 파일의 git 이력에 있다.",
         provisional=True, commits=commits, measured_date=max((cell.get("measured_utc") or "")[:10] for cell in cells.values()),
         tolerance_rule="허용 폭 = max(abs, rel x 받아들인 값). 멈춤이 있는 프로필(bad, very_bad)은 stall_rel, stall_abs를 쓴다. 이보다 더 나빠지면 '나빠짐'. "
                        "mode가 report인 수치는 알리기만 하고 실패로 세지 않는다(--strict면 센다)",
-        tolerances=tolerances, cells=cells)
+        tolerances=tolerances, cells=cells, history=history)
     write_json(accepted_path, accepted)
     return lines
 

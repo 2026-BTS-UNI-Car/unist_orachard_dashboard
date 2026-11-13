@@ -48,7 +48,9 @@ class TargetsTest(unittest.TestCase):
             self.assertEqual(target["today"], cell["metrics"].get(target["metric"]), target["id"])
             checked += 1
         if self.accepted["commits"] == [self.document["baseline"]["short"]]:
-            self.assertEqual(checked, len(self.targets))
+            # every target whose cell has accepted values (a target moved to a newer scenario has none until it is accepted)
+            self.assertEqual(checked, sum(1 for t in self.targets if f"{t['scenario']}/{t['profile']}" in self.accepted["cells"]))
+            self.assertGreaterEqual(checked, len(self.targets) - 7)
 
     def test_a_kept_target_is_met_today_and_most_others_are_not(self):
         for target in self.targets:
