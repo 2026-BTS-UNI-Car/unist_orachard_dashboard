@@ -840,10 +840,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # D-12: read through the class (a function stored on the class would bind to the instance); no work when it is
         # the filter already in use.
         STATIC_ASSETS.set_page_filter(type(self).page_filter)
+        started = time.monotonic()
         try:
             served = STATIC_ASSETS.serve(rel, requested_version, accept_gzip)
         except OSError:
             served = None
+        took_ms = (time.monotonic() - started) * 1000
+        if took_ms > 500:
+            dashboard_log("static.slow", path=rel, ms=round(took_ms))
         if served is None:
             self.send_error(404, "Not found")
             return
@@ -1702,7 +1706,15 @@ def main():
     args = parser.parse_args()
     server = create_server(args.host, args.port, args.config)
     # Prepare the page's versioned files now rather than on the first visitor's request (static_assets.warm).
-    threading.Thread(target=STATIC_ASSETS.warm, args=(DashboardHandler.page_filter,), name="static-assets-warm", daemon=True).start()
+    def warm_static():
+        started = time.monotonic()
+        try:
+            version = STATIC_ASSETS.warm(DashboardHandler.page_filter)
+        except Exception as exc:  # the first request does the same work
+            dashboard_log("static.warm_failed", error=type(exc).__name__)
+            return
+        dashboard_log("static.warm", ms=round((time.monotonic() - started) * 1000), page_version=version)
+    threading.Thread(target=warm_static, name="static-assets-warm", daemon=True).start()
     dashboard_log("server.listen", url=f"http://{args.host}:{args.port}")
     try:
         server.serve_forever()
