@@ -127,6 +127,28 @@ class SmallTreeTest(unittest.TestCase):
             assets.serve(rel, None, True)
         self.assertLessEqual(assets._gzip_bytes, 200)
 
+    def test_a_page_request_resolves_paths_only_once(self):
+        # Path.resolve() is slow on a busy Windows PC; unchanged files must not be resolved again on every page request.
+        self.assets.serve("index.html", None, True)
+        calls = []
+        original = self.assets._resolve_now
+        self.assets._resolve_now = lambda rel: calls.append(rel) or original(rel)
+        for _ in range(3):
+            self.assertIsNotNone(self.assets.serve("index.html", None, True))
+        self.assertEqual(calls, [])
+
+    def test_a_remembered_path_follows_a_changed_or_removed_file(self):
+        before = self.body("live.js")
+        path = write(self.root, "sub/c.mjs", "export const c = 3;\n")
+        touch_later(path)
+        self.assertNotEqual(self.body("live.js"), before, "a changed deep module still changes the page's versions")
+        self.assertEqual(self.body("sub/c.mjs"), "export const c = 3;\n")
+        (self.root / "side.mjs").unlink()
+        self.assertIsNone(self.assets.serve("side.mjs", None, False))
+        self.assertNotIn("./side.mjs?v=", self.body("live.js"), "a removed file is no longer named with a version")
+        write(self.root, "side.mjs", "globalThis.side = 2;\n")
+        self.assertEqual(self.body("side.mjs"), "globalThis.side = 2;\n")
+
     def test_paths_outside_the_root_are_refused(self):
         outside = Path(self.tmp.name).parent / "outside-static-test.txt"
         for rel in ("../outside-static-test.txt", "..", "", "/", "css/../../x", "nothing.js", "css"):
