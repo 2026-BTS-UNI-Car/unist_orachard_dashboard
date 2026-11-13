@@ -215,6 +215,9 @@ HDOP를 미터로 환산해서 정확도를 만들어내지 않습니다. NavSat
 
 공식 [PMTiles CLI](https://docs.protomaps.com/pmtiles/cli)를 설치한 뒤:
 
+> **주의(2026-11-13):** 차(Jetson)에서는 대시보드 컨테이너를 `docker compose`로 다시 만들지 않는다. Jetson의 compose 파일은 옛 이미지를 가리켜서
+> 옛 대시보드로 돌아간다. 대시보드는 [설치 묶음](../deploy/jetson_dashboard/README_KO.md)으로 바꾼다. 아래 명령의 `dashboard` 는 빼고, 대시보드는 설치 묶음으로 바꾼다.
+
 ```sh
 python3 scripts/install_offline_maps.py --pmtiles /path/to/pmtiles
 docker compose build ros2-gps-driver ros2-gps-bridge ros2-data-recorder dashboard

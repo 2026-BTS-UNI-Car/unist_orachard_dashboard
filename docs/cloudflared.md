@@ -6,6 +6,9 @@ Cloudflare Tunnel을 쓰면 Jetson Orin Nano Super가 공인 IP를 갖지 않아
 
 대시보드 서버를 먼저 실행합니다.
 
+> **주의(2026-11-13):** 차(Jetson)에서는 대시보드 컨테이너를 `docker compose`로 다시 만들지 않는다. Jetson의 compose 파일은 옛 이미지를 가리켜서
+> 옛 대시보드로 돌아간다. 대시보드는 [설치 묶음](../deploy/jetson_dashboard/README_KO.md)으로 바꾼다. 아래 명령은 그 전의 기록이다.
+
 ```bash
 cd /home/unist/workspace/unist_orachard_dashboard
 docker compose up -d --build

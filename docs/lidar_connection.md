@@ -121,6 +121,9 @@ ros2 run tf2_ros tf2_echo base_link laser
 
 Docker Compose bridge:
 
+> **주의(2026-11-13):** 차(Jetson)에서는 대시보드 컨테이너를 `docker compose`로 다시 만들지 않는다. Jetson의 compose 파일은 옛 이미지를 가리켜서
+> 옛 대시보드로 돌아간다. 대시보드는 [설치 묶음](../deploy/jetson_dashboard/README_KO.md)으로 바꾼다. 아래 명령처럼 서비스 이름 없이 `up --build` 하면 대시보드도 다시 만들어진다. 브리지만 다룰 때는 서비스 이름을 준다.
+
 ```bash
 cd /home/unist/workspace/unist_orachard_dashboard
 docker-compose up -d --build
