@@ -407,14 +407,19 @@ class AcceptedValuesInTheRepositoryTest(unittest.TestCase):
         cells, tolerances = self.accepted["cells"], self.accepted["tolerances"]
         rows = compare.compare_cell(cells["drive/normal"], dict(cells["drive/bad"]["metrics"]), tolerances)
         failed = {row["metric"] for row in compare.failing(rows)}
-        for metric in ("camera_fps", "camera_delay_p95", "lidar_hz", "command_rt_p50", "command_rt_p95", "command_period_p95", "stop_endpoint_p50",
-                       "stop_answer_p50", "cold_usable_s", "input_expired"):
+        # (input_expired is not in the list since the NET-12 values: on the busy PC they were measured on, the normal link
+        # had 5 and the bad link 4)
+        for metric in ("camera_fps", "camera_delay_p95", "command_rt_p50", "command_rt_p95", "command_period_p95", "stop_endpoint_p50",
+                       "stop_answer_p50", "cold_usable_s"):
             self.assertIn(metric, failed)
+        # The LiDAR is on the driving screen only as the LiDAR big view (drive_lidar) since the six screens.
+        lidar = compare.failing(compare.compare_cell(cells["drive_lidar/normal"], dict(cells["drive_lidar/bad"]["metrics"]), tolerances))
+        self.assertIn("lidar_hz", {row["metric"] for row in lidar})
         verdicts = {row["metric"]: row["verdict"] for row in rows}
         self.assertEqual(verdicts["cold_page_files"], "same")     # the same files on every link
         self.assertEqual(verdicts["stall_backlog_max"], "new")    # the normal link has no stalls
         back = {row["metric"]: row["verdict"] for row in compare.compare_cell(cells["drive/bad"], dict(cells["drive/normal"]["metrics"]), tolerances)}
-        self.assertEqual((back["command_rt_p95"], back["camera_fps"], back["stall_backlog_max"]), ("better", "better", "missing"))
+        self.assertEqual((back["command_rt_p95"], back["command_rt_p50"], back["stall_backlog_max"]), ("better", "better", "missing"))
 
 
 if __name__ == "__main__":

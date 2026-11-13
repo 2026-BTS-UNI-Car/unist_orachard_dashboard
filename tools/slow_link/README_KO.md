@@ -105,13 +105,20 @@ python -B tools/slow_link/compare.py --targets-table
 
 **받아들이기(`--accept`).** 준 실행들의 수치로 그 칸만 바꿔 쓴다. 다른 칸과 허용 폭은 그대로 둔다. 칸마다 실행 하나만 줄 수 있고, 실패했거나 PC가 멈춘 실행은 받지 않는다.
 `--replace-all`을 주면 준 실행에 없는 칸은 지운다. 파일에는 실행 폴더의 이름, 커밋, 잰 시각, 잰 조건, 수치만 들어가고 폴더의 경로는 들어가지 않는다.
-받아들인 값을 바꾸는 커밋에는 왜 바뀌었는지(어느 변경의 결과인지) 적는다. 지금 파일은 다음 명령으로 만들었다(`<r>`은 2026-11-12 측정의 결과 폴더).
+받아들인 값을 바꾸는 커밋에는 왜 바뀌었는지(어느 변경의 결과인지) 적는다. 바뀐 칸의 이전 실행(칸, 실행 이름, 커밋)은 파일의 `history`에 남고, 그 수치는 이 파일의 git 이력에 있다.
+지금 파일은 NET-12의 최종 측정(24535ce, 2026-11-13, `docs/slow_link.md` 12절)으로 다음 명령으로 만들었다(`<r>`은 그 측정의 결과 폴더).
 
 ```
-python -B tools/slow_link/compare.py --replace-all --accept <r>/20261112T042334Z_drive_good_d962013 <r>/20261112T042607Z_drive_normal_d962013 \
-    <r>/20261112T042849Z_drive_bad_d962013 <r>/20261112T043211Z_drive_very_bad_d962013 <r>/20261112T045534Z_drive_map_bad_d962013 \
-    <r>/20261112T050929Z_hidden_normal_d962013 <r>/20261112T054908Z_session_expiry_normal_d962013_rerun <r>/20261112T051208Z_quick_none_d962013_unshaped
+python -B tools/slow_link/compare.py --replace-all --accept <r>/20261113T031005Z_drive_good_24535ce_final2 \
+    <r>/20261113T031253Z_drive_normal_24535ce_final2 <r>/20261113T031536Z_drive_bad_24535ce_final2 <r>/20261113T031827Z_drive_very_bad_24535ce_final2 \
+    <r>/20261113T035316Z_drive_lidar_normal_24535ce_final3 <r>/20261113T035700Z_drive_lidar_bad_24535ce_final3 <r>/20261113T035952Z_drive_lidar_very_bad_24535ce_final3 \
+    <r>/20261113T040254Z_sensors_normal_24535ce_final3 <r>/20261113T040553Z_sensors_bad_24535ce_final3 <r>/20261113T040844Z_map_bad_24535ce_final3 \
+    <r>/20261113T033153Z_drive_map_bad_24535ce_final2 <r>/20261113T032131Z_hidden_normal_24535ce_final2 \
+    <r>/20261113T032358Z_session_expiry_normal_24535ce_final2 <r>/20261113T032723Z_quick_none_24535ce_final2
 ```
+
+이 실행들은 같은 PC에서 다른 무거운 일(Gazebo 스택, 다른 작업의 시뮬레이션 행렬)이 돌 때 잰 것이다(호스트 CPU 평균 49~70 %). 조용한 PC에서 다시 재면
+여러 수치가 "좋아짐"으로 나올 수 있고, 그 실행으로 다시 받아들인다. 처음 파일(2026-11-12, d962013)의 명령은 git 이력에 있다.
 
 **목표(`--targets`).** `targets.json`의 목표마다 이번 값과 만족 여부를 찍는다. 목표의 `kind`가 `keep`(이미 만족하는 지킬 값)인데 깨졌거나 수치가 없으면 1로 끝난다.
 `reach`(뒤 과제가 닿을 값)는 못 미쳐도 0이다. `--strict`를 주면 못 미친 목표가 하나라도 있을 때 1이다(모든 최적화가 끝난 뒤의 확인용).

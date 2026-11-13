@@ -1,12 +1,12 @@
 {
  "schema": "ubts.slow_link.accepted",
  "version": 1,
- "note_ko": "느린 통신 시험대의 받아들인 값. compare.py --accept 로 만든다(손으로 고치지 않는다; tolerances만 손으로 고칠 수 있다). x86 PC 한 대에서 연결을 흉내 내어 잰 값이고 칸마다 실행 한 번뿐이라 허용 폭은 잠정이다.",
+ "note_ko": "느린 통신 시험대의 받아들인 값. compare.py --accept 로 만든다(손으로 고치지 않는다; tolerances만 손으로 고칠 수 있다). x86 PC 한 대에서 연결을 흉내 내어 잰 값이고 칸마다 실행 한 번뿐이라 허용 폭은 잠정이다. history 는 바뀌기 전에 받아들였던 실행(칸, 실행 이름, 커밋)이고, 그 수치는 이 파일의 git 이력에 있다.",
  "provisional": true,
  "commits": [
-  "d962013"
+  "24535ce"
  ],
- "measured_date": "2026-11-12",
+ "measured_date": "2026-11-13",
  "tolerance_rule": "허용 폭 = max(abs, rel x 받아들인 값). 멈춤이 있는 프로필(bad, very_bad)은 stall_rel, stall_abs를 쓴다. 이보다 더 나빠지면 '나빠짐'. mode가 report인 수치는 알리기만 하고 실패로 세지 않는다(--strict면 센다)",
  "tolerances": {
   "camera_fps": {
@@ -271,11 +271,11 @@
  },
  "cells": {
   "drive/good": {
-   "run": "20261112T042334Z_drive_good_d962013",
-   "commit": "d9620130a9003e2c9f7ad68f3df215bf3a3aed49",
-   "short": "d962013",
-   "measured_utc": "2026-11-12T04:23:34+00:00",
-   "tool_commit": "3b92c7d",
+   "run": "20261113T031005Z_drive_good_24535ce_final2",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:10:05+00:00",
+   "tool_commit": "007f02c",
    "conditions": {
     "profile_settings": {
      "rate_kbps": 10000,
@@ -299,47 +299,40 @@
     "clients": 1
    },
    "metrics": {
-    "camera_fps": 10.72,
-    "camera_delay_p50": 242.5,
-    "camera_delay_p95": 266.9,
-    "lidar_hz": 2.12,
-    "lidar_delay_p50": 229.4,
-    "lidar_delay_p95": 297.5,
-    "imu_delay_p50": 191.9,
-    "imu_delay_p95": 239.8,
-    "gps_delay_p50": 342.9,
-    "gps_delay_p95": 750.9,
-    "status_kB_s": 2.944,
-    "map_kB_s": 1.421,
-    "link_share_pct": 100.6,
+    "camera_fps": 5.72,
+    "camera_delay_p50": 122.4,
+    "camera_delay_p95": 320.2,
+    "status_kB_s": 2.34,
+    "map_kB_s": 0.0,
+    "link_share_pct": 51.8,
     "stream_closes": 0,
-    "command_rt_p50": 222.0,
-    "command_rt_p95": 265.3,
-    "command_presend_p95": 2.8,
-    "control_presend_max": 4.9,
-    "command_period_p50": 279.9,
-    "command_period_p95": 291.5,
-    "input_expired": 0,
-    "control_lost_cycles": 0,
-    "stop_endpoint_p50": 33.6,
-    "stop_answer_p50": 218.1,
-    "stop_answer_p95": 255.5,
-    "cold_kB": 1501.3,
-    "cold_page_files": 52,
-    "cold_over_100kB": 5,
-    "cold_usable_s": 0.82,
-    "cold_load_event_s": 1.57,
-    "warm_page_files_on_network": 49,
-    "warm_page_file_body_B": 629,
-    "warm_usable_s": 0.39
+    "command_rt_p50": 81.4,
+    "command_rt_p95": 256.2,
+    "command_presend_p95": 2.6,
+    "control_presend_max": 323.5,
+    "command_period_p50": 140.6,
+    "command_period_p95": 325.7,
+    "input_expired": 3,
+    "control_lost_cycles": 3,
+    "stop_endpoint_p50": 21.8,
+    "stop_answer_p50": 38.1,
+    "stop_answer_p95": 204.7,
+    "cold_kB": 293.6,
+    "cold_page_files": 40,
+    "cold_over_100kB": 0,
+    "cold_usable_s": 0.68,
+    "cold_load_event_s": 0.8,
+    "warm_page_files_on_network": 1,
+    "warm_page_file_body_B": 0,
+    "warm_usable_s": 0.17
    }
   },
   "drive/normal": {
-   "run": "20261112T042607Z_drive_normal_d962013",
-   "commit": "d9620130a9003e2c9f7ad68f3df215bf3a3aed49",
-   "short": "d962013",
-   "measured_utc": "2026-11-12T04:26:07+00:00",
-   "tool_commit": "b3fe77a",
+   "run": "20261113T031253Z_drive_normal_24535ce_final2",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:12:53+00:00",
+   "tool_commit": "007f02c",
    "conditions": {
     "profile_settings": {
      "rate_kbps": 2000,
@@ -363,47 +356,40 @@
     "clients": 1
    },
    "metrics": {
-    "camera_fps": 2.0,
-    "camera_delay_p50": 1252.5,
-    "camera_delay_p95": 1305.4,
-    "lidar_hz": 2.13,
-    "lidar_delay_p50": 373.3,
-    "lidar_delay_p95": 418.1,
-    "imu_delay_p50": 310.0,
-    "imu_delay_p95": 328.0,
-    "gps_delay_p50": 461.3,
-    "gps_delay_p95": 929.0,
-    "status_kB_s": 2.858,
-    "map_kB_s": 1.419,
-    "link_share_pct": 99.9,
+    "camera_fps": 4.64,
+    "camera_delay_p50": 128.6,
+    "camera_delay_p95": 358.3,
+    "status_kB_s": 1.806,
+    "map_kB_s": 0.0,
+    "link_share_pct": 38.7,
     "stream_closes": 0,
-    "command_rt_p50": 382.1,
-    "command_rt_p95": 397.4,
-    "command_presend_p95": 3,
-    "control_presend_max": 14,
-    "command_period_p50": 419.7,
-    "command_period_p95": 432.6,
-    "input_expired": 0,
-    "control_lost_cycles": 0,
-    "stop_endpoint_p50": 79.8,
-    "stop_answer_p50": 369.6,
-    "stop_answer_p95": 376.7,
-    "cold_kB": 1501.3,
-    "cold_page_files": 52,
-    "cold_over_100kB": 5,
-    "cold_usable_s": 1.74,
-    "cold_load_event_s": 4.54,
-    "warm_page_files_on_network": 49,
-    "warm_page_file_body_B": 629,
-    "warm_usable_s": 0.59
+    "command_rt_p50": 83.7,
+    "command_rt_p95": 238.1,
+    "command_presend_p95": 3.6,
+    "control_presend_max": 418.4,
+    "command_period_p50": 142.2,
+    "command_period_p95": 337.3,
+    "input_expired": 5,
+    "control_lost_cycles": 5,
+    "stop_endpoint_p50": 82.0,
+    "stop_answer_p50": 133.9,
+    "stop_answer_p95": 543.3,
+    "cold_kB": 293.6,
+    "cold_page_files": 40,
+    "cold_over_100kB": 0,
+    "cold_usable_s": 1.62,
+    "cold_load_event_s": 1.87,
+    "warm_page_files_on_network": 1,
+    "warm_page_file_body_B": 0,
+    "warm_usable_s": 0.2
    }
   },
   "drive/bad": {
-   "run": "20261112T042849Z_drive_bad_d962013",
-   "commit": "d9620130a9003e2c9f7ad68f3df215bf3a3aed49",
-   "short": "d962013",
-   "measured_utc": "2026-11-12T04:28:49+00:00",
-   "tool_commit": "b3fe77a",
+   "run": "20261113T031536Z_drive_bad_24535ce_final2",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:15:36+00:00",
+   "tool_commit": "007f02c",
    "conditions": {
     "profile_settings": {
      "rate_kbps": 500,
@@ -428,50 +414,42 @@
     "clients": 1
    },
    "metrics": {
-    "camera_fps": 0.32,
-    "camera_delay_p50": 7096.5,
-    "camera_delay_p95": 8295.4,
-    "lidar_hz": 0.98,
-    "lidar_delay_p50": 473.3,
-    "lidar_delay_p95": 532.0,
-    "imu_delay_p50": 392.0,
-    "imu_delay_p95": 847.8,
-    "gps_delay_p50": 523.8,
-    "gps_delay_p95": 761.0,
-    "status_kB_s": 2.947,
-    "map_kB_s": 1.37,
-    "link_share_pct": 88.3,
-    "stream_closes": 6,
-    "command_rt_p50": 643.2,
-    "command_rt_p95": 729.5,
-    "command_presend_p95": 3,
-    "control_presend_max": 5.4,
-    "command_period_p50": 698.4,
-    "command_period_p95": 839.2,
-    "input_expired": 7,
-    "control_lost_cycles": 7,
-    "stop_endpoint_p50": 252.5,
-    "stop_answer_p50": 630.4,
-    "stop_answer_p95": 653.6,
-    "cold_kB": 1516.3,
-    "cold_page_files": 52,
-    "cold_over_100kB": 5,
-    "cold_usable_s": 6.39,
-    "cold_load_event_s": 18.67,
-    "warm_page_files_on_network": 49,
-    "warm_page_file_body_B": 629,
-    "warm_usable_s": 1.69,
-    "stall_sensor_fresh_max_ms": 1496.0,
-    "stall_camera_fresh_max_ms": 10205.0,
-    "stall_backlog_max": 11
+    "camera_fps": 3.96,
+    "camera_delay_p50": 234.2,
+    "camera_delay_p95": 553.8,
+    "status_kB_s": 1.5,
+    "map_kB_s": 0.0,
+    "link_share_pct": 50.1,
+    "stream_closes": 1,
+    "command_rt_p50": 227.5,
+    "command_rt_p95": 457.7,
+    "command_presend_p95": 2.8,
+    "control_presend_max": 573.1,
+    "command_period_p50": 283.2,
+    "command_period_p95": 580.1,
+    "input_expired": 4,
+    "control_lost_cycles": 4,
+    "stop_endpoint_p50": 111.4,
+    "stop_answer_p50": 298.4,
+    "stop_answer_p95": 922.1,
+    "cold_kB": 294.2,
+    "cold_page_files": 40,
+    "cold_over_100kB": 0,
+    "cold_usable_s": 5.77,
+    "cold_load_event_s": 8.66,
+    "warm_page_files_on_network": 1,
+    "warm_page_file_body_B": 0,
+    "warm_usable_s": 0.61,
+    "stall_camera_fresh_max_ms": 600.0,
+    "stall_backlog_max": 2
    }
   },
   "drive/very_bad": {
-   "run": "20261112T043211Z_drive_very_bad_d962013",
-   "commit": "d9620130a9003e2c9f7ad68f3df215bf3a3aed49",
-   "short": "d962013",
-   "measured_utc": "2026-11-12T04:32:11+00:00",
-   "tool_commit": "b3fe77a",
+   "run": "20261113T031827Z_drive_very_bad_24535ce_final2",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:18:27+00:00",
+   "tool_commit": "007f02c",
    "conditions": {
     "profile_settings": {
      "rate_kbps": 150,
@@ -496,47 +474,332 @@
     "clients": 1
    },
    "metrics": {
-    "camera_fps": 0.04,
-    "camera_delay_p50": 17055.3,
-    "camera_delay_p95": 24746.0,
-    "lidar_hz": 0.63,
-    "lidar_delay_p50": 1114.8,
-    "lidar_delay_p95": 2295.2,
-    "imu_delay_p50": 1109.4,
-    "imu_delay_p95": 7729.5,
-    "gps_delay_p50": 1128,
-    "gps_delay_p95": 3130.2,
-    "status_kB_s": 2.186,
-    "map_kB_s": 0.805,
-    "link_share_pct": 89.8,
-    "stream_closes": 16,
-    "command_rt_p50": 1310.2,
-    "command_rt_p95": 1604.2,
-    "command_presend_p95": 3.3,
-    "control_presend_max": 5.1,
-    "command_period_p50": 1399.1,
-    "command_period_p95": 1778.3,
+    "camera_fps": 1.02,
+    "camera_delay_p50": 359.6,
+    "camera_delay_p95": 929.7,
+    "status_kB_s": 0.975,
+    "map_kB_s": 0.0,
+    "link_share_pct": 23.4,
+    "stream_closes": 0,
+    "command_rt_p50": 417.0,
+    "command_rt_p95": 667.4,
+    "command_presend_p95": 4.2,
+    "control_presend_max": 13.7,
+    "command_period_p50": 512.7,
+    "command_period_p95": 705.1,
+    "input_expired": 3,
+    "control_lost_cycles": 3,
+    "stop_endpoint_p50": 233.1,
+    "stop_answer_p50": 429.8,
+    "stop_answer_p95": 840.6,
+    "cold_kB": 297.2,
+    "cold_page_files": 40,
+    "cold_over_100kB": 0,
+    "cold_usable_s": 12.46,
+    "cold_load_event_s": 21.88,
+    "warm_page_files_on_network": 1,
+    "warm_page_file_body_B": 0,
+    "warm_usable_s": 2.1,
+    "stall_camera_fresh_max_ms": 1286.0,
+    "stall_backlog_max": 1
+   }
+  },
+  "drive_lidar/normal": {
+   "run": "20261113T035316Z_drive_lidar_normal_24535ce_final3",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:53:16+00:00",
+   "tool_commit": "4dd32ff",
+   "conditions": {
+    "profile_settings": {
+     "rate_kbps": 2000,
+     "rtt_ms": 40,
+     "queue_bytes": 65536,
+     "stall_every_s": 0,
+     "stall_ms": 0
+    },
+    "scenario_settings": {
+     "cold_load": true,
+     "warm_load": true,
+     "live_s": 120,
+     "sample_every_s": 5,
+     "drive": {
+      "hold_s": 5,
+      "idle_s": 1,
+      "after_stop_s": 2,
+      "arm_timeout_s": 8
+     },
+     "drive_view": "lidar"
+    },
+    "clients": 1
+   },
+   "metrics": {
+    "lidar_hz": 9.16,
+    "lidar_delay_p50": 102.8,
+    "lidar_delay_p95": 255.1,
+    "status_kB_s": 1.813,
+    "map_kB_s": 0.0,
+    "link_share_pct": 8.3,
+    "stream_closes": 0,
+    "command_rt_p50": 66.7,
+    "command_rt_p95": 275.8,
+    "command_presend_p95": 5.1,
+    "control_presend_max": 745.8,
+    "command_period_p50": 141.1,
+    "command_period_p95": 390.3,
+    "input_expired": 4,
+    "control_lost_cycles": 3,
+    "stop_endpoint_p50": 41.2,
+    "stop_answer_p50": 73.4,
+    "stop_answer_p95": 542.1,
+    "cold_kB": 294.2,
+    "cold_page_files": 40,
+    "cold_over_100kB": 0,
+    "cold_usable_s": 16.88,
+    "cold_load_event_s": 19.73,
+    "warm_page_files_on_network": 1,
+    "warm_page_file_body_B": 0,
+    "warm_usable_s": 0.28
+   }
+  },
+  "drive_lidar/bad": {
+   "run": "20261113T035700Z_drive_lidar_bad_24535ce_final3",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:57:00+00:00",
+   "tool_commit": "042c6d2",
+   "conditions": {
+    "profile_settings": {
+     "rate_kbps": 500,
+     "rtt_ms": 150,
+     "queue_bytes": 16384,
+     "stall_every_s": 20,
+     "stall_ms": 1000,
+     "stall_first_s": 10
+    },
+    "scenario_settings": {
+     "cold_load": true,
+     "warm_load": true,
+     "live_s": 120,
+     "sample_every_s": 5,
+     "drive": {
+      "hold_s": 5,
+      "idle_s": 1,
+      "after_stop_s": 2,
+      "arm_timeout_s": 8
+     },
+     "drive_view": "lidar"
+    },
+    "clients": 1
+   },
+   "metrics": {
+    "lidar_hz": 4.58,
+    "lidar_delay_p50": 178.9,
+    "lidar_delay_p95": 501.9,
+    "status_kB_s": 1.464,
+    "map_kB_s": 0.0,
+    "link_share_pct": 10.6,
+    "stream_closes": 0,
+    "command_rt_p50": 201.3,
+    "command_rt_p95": 567.5,
+    "command_presend_p95": 24.5,
+    "control_presend_max": 424.7,
+    "command_period_p50": 283.4,
+    "command_period_p95": 722.8,
     "input_expired": 6,
-    "control_lost_cycles": 9,
-    "stop_endpoint_p50": 504.4,
-    "stop_answer_p50": 1301.4,
-    "stop_answer_p95": 3600.7,
-    "cold_usable_s": 21.26,
-    "cold_load_event_s": 82.22,
-    "warm_page_files_on_network": 52,
-    "warm_page_file_body_B": 183073,
-    "warm_usable_s": 3.56,
-    "stall_sensor_fresh_max_ms": 5292.0,
-    "stall_camera_fresh_max_ms": 15000.0,
-    "stall_backlog_max": 29
+    "control_lost_cycles": 6,
+    "stop_endpoint_p50": 148.1,
+    "stop_answer_p50": 319.7,
+    "stop_answer_p95": 757.8,
+    "cold_kB": 293.9,
+    "cold_page_files": 40,
+    "cold_over_100kB": 0,
+    "cold_usable_s": 4.11,
+    "cold_load_event_s": 6.55,
+    "warm_page_files_on_network": 1,
+    "warm_page_file_body_B": 0,
+    "warm_usable_s": 0.32,
+    "stall_sensor_fresh_max_ms": 629.0,
+    "stall_backlog_max": 2
+   }
+  },
+  "drive_lidar/very_bad": {
+   "run": "20261113T035952Z_drive_lidar_very_bad_24535ce_final3",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:59:52+00:00",
+   "tool_commit": "042c6d2",
+   "conditions": {
+    "profile_settings": {
+     "rate_kbps": 150,
+     "rtt_ms": 300,
+     "queue_bytes": 8192,
+     "stall_every_s": 20,
+     "stall_ms": 2000,
+     "stall_first_s": 10
+    },
+    "scenario_settings": {
+     "cold_load": true,
+     "warm_load": true,
+     "live_s": 120,
+     "sample_every_s": 5,
+     "drive": {
+      "hold_s": 5,
+      "idle_s": 1,
+      "after_stop_s": 2,
+      "arm_timeout_s": 8
+     },
+     "drive_view": "lidar"
+    },
+    "clients": 1
+   },
+   "metrics": {
+    "lidar_hz": 2.67,
+    "lidar_delay_p50": 289.3,
+    "lidar_delay_p95": 747.4,
+    "status_kB_s": 0.916,
+    "map_kB_s": 0.0,
+    "link_share_pct": 18.6,
+    "stream_closes": 0,
+    "command_rt_p50": 422.4,
+    "command_rt_p95": 667.3,
+    "command_presend_p95": 4.7,
+    "control_presend_max": 1239.9,
+    "command_period_p50": 491.2,
+    "command_period_p95": 908.1,
+    "input_expired": 6,
+    "control_lost_cycles": 6,
+    "stop_endpoint_p50": 364.9,
+    "stop_answer_p50": 669.2,
+    "stop_answer_p95": 1754.5,
+    "cold_kB": 294.4,
+    "cold_page_files": 40,
+    "cold_over_100kB": 0,
+    "cold_usable_s": 12.53,
+    "cold_load_event_s": 19.15,
+    "warm_page_files_on_network": 1,
+    "warm_page_file_body_B": 0,
+    "warm_usable_s": 0.95,
+    "stall_sensor_fresh_max_ms": 767.0,
+    "stall_backlog_max": 2
+   }
+  },
+  "sensors/normal": {
+   "run": "20261113T040254Z_sensors_normal_24535ce_final3",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T04:02:54+00:00",
+   "tool_commit": "042c6d2",
+   "conditions": {
+    "profile_settings": {
+     "rate_kbps": 2000,
+     "rtt_ms": 40,
+     "queue_bytes": 65536,
+     "stall_every_s": 0,
+     "stall_ms": 0
+    },
+    "scenario_settings": {
+     "cold_load": true,
+     "warm_load": false,
+     "live_s": 120,
+     "sample_every_s": 5,
+     "route": "/sensors"
+    },
+    "clients": 1
+   },
+   "metrics": {
+    "lidar_hz": 9.0,
+    "lidar_delay_p50": 115.0,
+    "lidar_delay_p95": 246.3,
+    "imu_delay_p50": 48.0,
+    "imu_delay_p95": 156.7,
+    "status_kB_s": 2.272,
+    "link_share_pct": 9.4,
+    "stream_closes": 0
+   }
+  },
+  "sensors/bad": {
+   "run": "20261113T040553Z_sensors_bad_24535ce_final3",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T04:05:53+00:00",
+   "tool_commit": "042c6d2",
+   "conditions": {
+    "profile_settings": {
+     "rate_kbps": 500,
+     "rtt_ms": 150,
+     "queue_bytes": 16384,
+     "stall_every_s": 20,
+     "stall_ms": 1000,
+     "stall_first_s": 10
+    },
+    "scenario_settings": {
+     "cold_load": true,
+     "warm_load": false,
+     "live_s": 120,
+     "sample_every_s": 5,
+     "route": "/sensors"
+    },
+    "clients": 1
+   },
+   "metrics": {
+    "lidar_hz": 4.46,
+    "lidar_delay_p50": 184.7,
+    "lidar_delay_p95": 447.8,
+    "imu_delay_p50": 118.0,
+    "imu_delay_p95": 597.1,
+    "status_kB_s": 1.773,
+    "link_share_pct": 11.5,
+    "stream_closes": 2,
+    "stall_sensor_fresh_max_ms": 357.0,
+    "stall_backlog_max": 2
+   }
+  },
+  "map/bad": {
+   "run": "20261113T040844Z_map_bad_24535ce_final3",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T04:08:44+00:00",
+   "tool_commit": "3330801",
+   "conditions": {
+    "profile_settings": {
+     "rate_kbps": 500,
+     "rtt_ms": 150,
+     "queue_bytes": 16384,
+     "stall_every_s": 20,
+     "stall_ms": 1000,
+     "stall_first_s": 10
+    },
+    "scenario_settings": {
+     "cold_load": true,
+     "warm_load": false,
+     "live_s": 600,
+     "sample_every_s": 10,
+     "start_live_map": true,
+     "map_publish_mark": true,
+     "route": "/map"
+    },
+    "clients": 1
+   },
+   "metrics": {
+    "gps_delay_p50": 485.6,
+    "gps_delay_p95": 1218.2,
+    "status_kB_s": 1.345,
+    "map_kB_s": 5.329,
+    "link_share_pct": 11.9,
+    "stream_closes": 0,
+    "map_growth_ratio": 0.16,
+    "map_last_minute_kB": 2.3,
+    "map_versions_per_s": 1.44,
+    "map_drawn_delay_p50": 210.9
    }
   },
   "drive_map/bad": {
-   "run": "20261112T045534Z_drive_map_bad_d962013",
-   "commit": "d9620130a9003e2c9f7ad68f3df215bf3a3aed49",
-   "short": "d962013",
-   "measured_utc": "2026-11-12T04:55:34+00:00",
-   "tool_commit": "b3fe77a",
+   "run": "20261113T033153Z_drive_map_bad_24535ce_final2",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:31:53+00:00",
+   "tool_commit": "dfbee12",
    "conditions": {
     "profile_settings": {
      "rate_kbps": 500,
@@ -563,26 +826,22 @@
     "clients": 1
    },
    "metrics": {
-    "status_kB_s": 2.778,
-    "map_kB_s": 22.755,
-    "link_share_pct": 93.8,
-    "stream_closes": 40,
-    "command_rt_p50": 662.7,
-    "control_presend_max": 258.6,
-    "input_expired": 56,
-    "stop_endpoint_p50": 251.5,
-    "map_growth_ratio": 8.65,
-    "map_last_minute_kB": 213.5,
-    "map_versions_per_s": 0.25,
-    "map_drawn_delay_p50": 3035.3
+    "status_kB_s": 1.485,
+    "map_kB_s": 0.0,
+    "link_share_pct": 51.1,
+    "stream_closes": 0,
+    "command_rt_p50": 259.9,
+    "control_presend_max": 185.2,
+    "input_expired": 31,
+    "stop_endpoint_p50": 110.0
    }
   },
   "hidden/normal": {
-   "run": "20261112T050929Z_hidden_normal_d962013",
-   "commit": "d9620130a9003e2c9f7ad68f3df215bf3a3aed49",
-   "short": "d962013",
-   "measured_utc": "2026-11-12T05:09:29+00:00",
-   "tool_commit": "b3fe77a",
+   "run": "20261113T032131Z_hidden_normal_24535ce_final2",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:21:31+00:00",
+   "tool_commit": "007f02c",
    "conditions": {
     "profile_settings": {
      "rate_kbps": 2000,
@@ -602,16 +861,16 @@
    },
    "metrics": {
     "stream_closes": 1,
-    "hidden_stream_kB_s": 250.22,
-    "hidden_status_kB_s": 0.151
+    "hidden_stream_kB_s": 0,
+    "hidden_status_kB_s": 0.0
    }
   },
   "session_expiry/normal": {
-   "run": "20261112T054908Z_session_expiry_normal_d962013_rerun",
-   "commit": "d9620130a9003e2c9f7ad68f3df215bf3a3aed49",
-   "short": "d962013",
-   "measured_utc": "2026-11-12T05:49:08+00:00",
-   "tool_commit": "b3fe77a",
+   "run": "20261113T032358Z_session_expiry_normal_24535ce_final2",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:23:58+00:00",
+   "tool_commit": "007f02c",
    "conditions": {
     "profile_settings": {
      "rate_kbps": 2000,
@@ -632,16 +891,16 @@
     "clients": 1
    },
    "metrics": {
-    "stream_closes": 12,
-    "session_longest_gap_ms": 2600
+    "stream_closes": 0,
+    "session_longest_gap_ms": 1139
    }
   },
   "quick/none": {
-   "run": "20261112T051208Z_quick_none_d962013_unshaped",
-   "commit": "d9620130a9003e2c9f7ad68f3df215bf3a3aed49",
-   "short": "d962013",
-   "measured_utc": "2026-11-12T05:12:08+00:00",
-   "tool_commit": "b3fe77a",
+   "run": "20261113T032723Z_quick_none_24535ce_final2",
+   "commit": "24535ce1cac32404675f0c066a9118a150eeb6c3",
+   "short": "24535ce",
+   "measured_utc": "2026-11-13T03:27:23+00:00",
+   "tool_commit": "007f02c",
    "conditions": {
     "profile_settings": null,
     "scenario_settings": {
@@ -660,31 +919,82 @@
     "clients": 1
    },
    "metrics": {
-    "camera_fps": 29.97,
-    "camera_delay_p50": 23.9,
-    "camera_delay_p95": 41.5,
-    "lidar_hz": 4.57,
-    "lidar_delay_p50": 73.8,
-    "lidar_delay_p95": 118.0,
-    "imu_delay_p50": 23.6,
-    "imu_delay_p95": 40.5,
-    "gps_delay_p50": 175.9,
-    "gps_delay_p95": 588.5,
-    "status_kB_s": 2.936,
-    "map_kB_s": 1.419,
+    "camera_fps": 26.36,
+    "camera_delay_p50": 18.9,
+    "camera_delay_p95": 28.6,
+    "status_kB_s": 2.352,
+    "map_kB_s": 0.0,
     "stream_closes": 0,
-    "command_rt_p50": 34.7,
-    "command_rt_p95": 52.5,
-    "command_presend_p95": 6.6,
-    "control_presend_max": 13.1,
-    "command_period_p50": 140.2,
-    "command_period_p95": 155.3,
+    "command_rt_p50": 22.9,
+    "command_rt_p95": 201.4,
+    "command_presend_p95": 9,
+    "control_presend_max": 106.9,
+    "command_period_p50": 139.8,
+    "command_period_p95": 271.2,
     "input_expired": 0,
     "control_lost_cycles": 0,
-    "stop_endpoint_p50": 24.2,
-    "stop_answer_p50": 30.3,
-    "stop_answer_p95": 40.9
+    "stop_endpoint_p50": 16.4,
+    "stop_answer_p50": 22.6,
+    "stop_answer_p95": 27.0
    }
   }
- }
+ },
+ "history": [
+  {
+   "cell": "drive/good",
+   "run": "20261112T042334Z_drive_good_d962013",
+   "short": "d962013",
+   "measured_utc": "2026-11-12T04:23:34+00:00",
+   "replaced_by": "20261113T031005Z_drive_good_24535ce_final2"
+  },
+  {
+   "cell": "drive/normal",
+   "run": "20261112T042607Z_drive_normal_d962013",
+   "short": "d962013",
+   "measured_utc": "2026-11-12T04:26:07+00:00",
+   "replaced_by": "20261113T031253Z_drive_normal_24535ce_final2"
+  },
+  {
+   "cell": "drive/bad",
+   "run": "20261112T042849Z_drive_bad_d962013",
+   "short": "d962013",
+   "measured_utc": "2026-11-12T04:28:49+00:00",
+   "replaced_by": "20261113T031536Z_drive_bad_24535ce_final2"
+  },
+  {
+   "cell": "drive/very_bad",
+   "run": "20261112T043211Z_drive_very_bad_d962013",
+   "short": "d962013",
+   "measured_utc": "2026-11-12T04:32:11+00:00",
+   "replaced_by": "20261113T031827Z_drive_very_bad_24535ce_final2"
+  },
+  {
+   "cell": "drive_map/bad",
+   "run": "20261112T045534Z_drive_map_bad_d962013",
+   "short": "d962013",
+   "measured_utc": "2026-11-12T04:55:34+00:00",
+   "replaced_by": "20261113T033153Z_drive_map_bad_24535ce_final2"
+  },
+  {
+   "cell": "hidden/normal",
+   "run": "20261112T050929Z_hidden_normal_d962013",
+   "short": "d962013",
+   "measured_utc": "2026-11-12T05:09:29+00:00",
+   "replaced_by": "20261113T032131Z_hidden_normal_24535ce_final2"
+  },
+  {
+   "cell": "session_expiry/normal",
+   "run": "20261112T054908Z_session_expiry_normal_d962013_rerun",
+   "short": "d962013",
+   "measured_utc": "2026-11-12T05:49:08+00:00",
+   "replaced_by": "20261113T032358Z_session_expiry_normal_24535ce_final2"
+  },
+  {
+   "cell": "quick/none",
+   "run": "20261112T051208Z_quick_none_d962013_unshaped",
+   "short": "d962013",
+   "measured_utc": "2026-11-12T05:12:08+00:00",
+   "replaced_by": "20261113T032723Z_quick_none_24535ce_final2"
+  }
+ ]
 }
