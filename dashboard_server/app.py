@@ -1376,7 +1376,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     )
                     if not ok:
                         return
-                    time.sleep(min(2.0, max(0.1, current_deadline() - time.time())))
+                    # Wait for the next try, but notice a browser that leaves meanwhile (close frame or EOF):
+                    # otherwise the socket stays CLOSING until the session deadline.
+                    if self._ws_client_left(min(2.0, max(0.1, current_deadline() - time.time()))):
+                        self._ws_send_close(self.connection)
+                        return
                     continue
                 try:
                     self._relay_websocket(upstream, initial_upstream, current_deadline)
@@ -1511,6 +1515,67 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _ws_send_json(self, sock: socket.socket, payload: dict) -> bool:
         return self._ws_send_frame(sock, 0x1, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+    def _ws_client_left(self, wait_s: float) -> bool:
+        """Wait up to wait_s for the browser while no bridge is connected; True when it sent a close frame or closed.
+
+        Whole frames are read (header, extended length, mask, payload) so a later relay starts on a frame boundary;
+        other frames from the browser during the wait are dropped (there is no bridge to give them to)."""
+        sock = self.connection
+        end = time.monotonic() + max(0.0, wait_s)
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                return False
+            try:
+                readable, _, _ = select.select([sock], [], [], left)
+            except (OSError, ValueError):
+                return True
+            if not readable:
+                return False
+            frame = self._ws_read_client_frame(sock)
+            if frame is None or frame == 0x8:
+                return True
+
+    @staticmethod
+    def _ws_read_client_frame(sock: socket.socket, limit: int = 1 << 20):
+        """Read one client frame and return its opcode; None on EOF, error or an oversized frame."""
+        def exact(n):
+            data = b""
+            while len(data) < n:
+                try:
+                    chunk = sock.recv(n - len(data))
+                except OSError:
+                    return None
+                if not chunk:
+                    return None
+                data += chunk
+            return data
+        previous = sock.gettimeout()
+        sock.settimeout(2.0)
+        try:
+            head = exact(2)
+            if head is None:
+                return None
+            opcode, length = head[0] & 0x0F, head[1] & 0x7F
+            if length == 126:
+                ext = exact(2)
+                length = None if ext is None else int.from_bytes(ext, "big")
+            elif length == 127:
+                ext = exact(8)
+                length = None if ext is None else int.from_bytes(ext, "big")
+            if length is None or length > limit:
+                return None
+            if head[1] & 0x80 and exact(4) is None:
+                return None
+            if length and exact(length) is None:
+                return None
+            return opcode
+        finally:
+            try:
+                sock.settimeout(previous)
+            except OSError:
+                pass
 
     def _ws_send_close(self, sock: socket.socket):
         self._ws_send_frame(sock, 0x8, b"\x03\xe8")
