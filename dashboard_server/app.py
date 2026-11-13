@@ -1701,6 +1701,8 @@ def main():
     parser.add_argument("--config", default=os.environ.get("DASHBOARD_CONFIG"))
     args = parser.parse_args()
     server = create_server(args.host, args.port, args.config)
+    # Prepare the page's versioned files now rather than on the first visitor's request (static_assets.warm).
+    threading.Thread(target=STATIC_ASSETS.warm, args=(DashboardHandler.page_filter,), name="static-assets-warm", daemon=True).start()
     dashboard_log("server.listen", url=f"http://{args.host}:{args.port}")
     try:
         server.serve_forever()

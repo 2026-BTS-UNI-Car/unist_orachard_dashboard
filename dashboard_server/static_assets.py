@@ -86,6 +86,15 @@ class StaticAssets:
             self._gzip.clear()
             self._gzip_bytes = 0
 
+    def warm(self, page_filter=None) -> str | None:
+        """Version the page and everything it names once, before the first visitor (app.main runs this in a thread).
+
+        Otherwise the first browser after a start waits while the server reads, rewrites and hashes every file the
+        page names (on the bench's freshly written files 0.3-2.5 s, which is most of the spread of the first open on
+        the bad link). Uses the same page filter as the requests will, so their first request finds it done."""
+        self.set_page_filter(page_filter)
+        return self.version("index.html")
+
     # --- paths -------------------------------------------------------------------------------------------------
     def resolve(self, rel: str) -> Path | None:
         """The file for a path below /static/, or None if it is outside the root or not a file.

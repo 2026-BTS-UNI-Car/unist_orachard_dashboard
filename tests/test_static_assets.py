@@ -127,6 +127,20 @@ class SmallTreeTest(unittest.TestCase):
             assets.serve(rel, None, True)
         self.assertLessEqual(assets._gzip_bytes, 200)
 
+    def test_warming_prepares_the_page_for_the_first_visitor(self):
+        def page_filter(text):
+            return text.replace("<link", '<link data-kind="x"', 1)
+        version = self.assets.warm(page_filter)
+        hashed = self.assets.stats["hashed"]
+        self.assertEqual(hashed, 11)                      # the page and the ten files it names (directly or not)
+        served = self.assets.serve("index.html", None, False)
+        self.assertEqual(served.version, version)
+        self.assertIn('data-kind="x"', served.body.decode("utf-8"))
+        self.assertEqual(self.assets.stats["hashed"], hashed, "the first request after warming hashes nothing")
+        self.assets.set_page_filter(page_filter)          # the same filter again (as every request does): nothing dropped
+        self.assets.serve("index.html", None, False)
+        self.assertEqual(self.assets.stats["hashed"], hashed)
+
     def test_a_page_request_resolves_paths_only_once(self):
         # Path.resolve() is slow on a busy Windows PC; unchanged files must not be resolved again on every page request.
         self.assets.serve("index.html", None, True)
