@@ -146,7 +146,7 @@ flowchart LR
   `tuning {preset, revision, editable, not_editable_because, modified, presets, writable, unsaved, basic [{name, value, low, high, unit}], values {basic, advanced, locked}}`(파일 경로·digest는 넘기지 않는다),
   `mode`(SHADOW/MOTOR), `state`, `reason`, `end_reason`, `controller_mode`, `profile`, `vehicle_control`, `lidar_age`, `imu_age`,
   `single_row {phase, lateral_error_m, heading_error_deg, distance_m, speed_m_s, target_speed_m_s, stop_reason, stop_category, confidence.level}`,
-  `gnss {state, fix, age_s, h_acc_m, used}`, `bridge_detail {state, latch_reason}`.
+  `gnss {state, fix, age_s, h_acc_m, used}`, `bridge_detail {state, latch_reason}`, `lease_lost {where, error, bridge_reason, bridge_latches, steering_fault}`(규약 개정 3, 없으면 칸 없음).
 - `GET /api/executor/status?grid=1`(지도 화면)만 실행기의 국소 격자 `local_grid_map`(스키마 `ubts.row_executor.local_grid.v1`, 시뮬레이션 레포 `docs/steering/LOCAL_GRID_KO.md`)을 더 넘긴다:
   `schema, frame, updates, axis_rad, origin_uv, occupied, encoding, age_s, cell_m, shape, bits(24 KiB 이하), cells(2,000개 이하), truncated, lines {left, right, centre, quality, stamp}, base_pose`.
   run 주행 거리 좌표이고 GNSS가 아니다. 실행기가 내지 않으면 칸이 없고 지도 화면은 그 층을 숨긴다.
@@ -177,6 +177,7 @@ stateDiagram-v2
 | --- | --- |
 | 주 버튼 | idle·ended "준비"(start, MOTOR면 이어서 arm) → ready "Arm" → armed "자율 주행 시작"(go) → running "주행 중"(꺼짐) → paused "다시 출발"(새 go) → latched "래치 확인"(ack). go 버튼은 `go_ready`일 때만 켜고, 아니면 `go_blockers`를 한국어로 보인다(규약 개정 2) |
 | heartbeat | `run_state`가 armed·running·paused이고 상태가 새것인 동안, 주행 화면이 보이고 탭이 보일 때만 100 ms마다(규약 개정 1, 늦어도 250 ms). go 전 armed부터 보내므로 go 때 운영자 연결이 이미 새것이다(`operator_link_not_fresh` 막음 없음). 탭을 숨기거나 화면을 떠나면 멈춘다 → 실행기가 `operator_link.timeout_s` 뒤 선다(규약 개정 1: 기본 0.5 s, 범위 0.5 ~ 3.0, 화면에서 못 바꿈. 화면은 상태의 값을 보인다) |
+| lease 잃음(규약 개정 3) | Arm 뒤 첫 go 전에 브리지가 lease를 거두면 run은 열린 채 `ready`, `go_blockers`에 `lease_lost`·`arm_first`. 주 버튼은 "Arm 다시 (브리지가 권한을 거둠)", 안내 "브리지가 권한을 거뒀다: Arm을 다시 누른다" |
 | heartbeat 409 | `session_conflict`: 다른 화면이 출발 권한을 가짐. 화면은 오류 줄에 보인다(자동으로 빼앗지 않는다) |
 | 상태 읽기 | 주행 화면이 보일 때 500 ms, 숨김이면 멈춤 [자리값] |
 | STOP | 주행 패널 STOP, 상태 막대 STOP, Esc(주행 화면): 기존 브리지 stop(한 번) 그대로에 더해, run이 있거나 실행기 상태를 모르면 실행기 stop도 보낸다. 자율 칸에 따로 STOP 버튼을 두지 않는다(같은 패널 위에 STOP이 있다) |
@@ -184,6 +185,7 @@ stateDiagram-v2
 
 정지 이유 이름표(`stop_reason`, `single_row.stop_category`): `ROW_END` 정상 열 끝, `OBSTACLE` 열 안 장애물, `END_STRUCTURE` 열 끝 구조물, `PERCEPTION_OR_LOCALISATION` 센서·위치 추정 부족,
 `CONTROL_AUTHORITY` 조향·구동 권한 부족, `OPERATOR_OR_BACKSTOP` 운영자·한도 정지, `OPERATOR_LINK_LOST` 화면 연결 끊김, `SYSTEM_FAULT` 시스템 오류, `UNCLASSIFIED` 분류 안 됨. 모르는 값은 그대로 보인다.
+`stop_detail`: `operator_stop` 운영자 STOP(규약 개정 3: STOP으로 끝난 run은 언제나 `OPERATOR_OR_BACKSTOP`·`operator_stop`), `operator_link_lost` 화면 연결 끊김, `row_end` 열 끝, `lease_lost` 브리지가 권한을 거둠. 모르는 값은 그대로 보인다.
 
 ## 7. 조정 값 API
 
@@ -267,8 +269,8 @@ stateDiagram-v2
 
 규약 v0에 없어서 화면이 "값 모름"으로 보이는 것들이다. 대시보드는 없어도 깨지지 않는다.
 
-1. `GET /api/status`의 `tuning`에 `values {이름: 값}`(지금 적용된 값)과, 바꿀 수 있는 이름 목록 `editable_names`.
-2. 묶음별 범위를 실행기가 알리면(`tuning.limits {이름: [min, max]}`) 대시보드는 그 값을 우선한다.
+1. (해결: field_tuning) 조정 값·범위·잠금은 실행기의 `tuning` 묶음을 그대로 쓴다(7절).
+2. 고급·잠금 묶음의 단위와 범위도 상태에 있으면 좋다(`field_tuning.describe()`의 표). 지금은 대시보드가 이름 끝에서 단위만 읽는다.
 3. GNSS 약한 층(S1b)의 상태를 `gnss {state, fix, age_s, h_acc_m, used}`로. 좌표는 내보내지 않아도 된다.
 4. `speed.limit_reason` 값의 목록(화면 이름표용). 화면은 모르는 값을 "기타(값)"로 보인다.
 5. heartbeat를 go 전 armed부터 받아 주기(go 때 `operator_link_not_fresh`가 없게). 다른 세션의 heartbeat가 오면 409 `session_conflict`.
@@ -279,9 +281,11 @@ stateDiagram-v2
 | --- | --- | --- |
 | 확장 지점(2절, D-12) | `dashboard_server/extensions.py`, `GET /api/dashboard/config`, 화면 표시 `data-vehicle-kind` | 시뮬레이션 쪽 모듈을 이 지점에 꽂기(D-13, 묶음 S5) |
 | 조향 호스트 코드(D-11) | `scripts/esp_motor_v3.py` 등 4개와 시험 7개, compose 프로필 `steer`(기록: `STEERING_HOST_PORT_KO.md`) | 실기 ESP·USB·Jetson 확인(사용자) |
-| 수동 조향(3·4절, UI-07) | `static/steer/steer-control-rules.js`, `steer-drive.mjs`. `front_steer`에서만 보임 | 큰 보기 하나(카메라·지도·LiDAR 고름), 한 화면에 다 보이는 배치는 화면 재구성(라3)에서 |
-| 자율 시작·정지(6절, UI-08) | `dashboard_server/executor_proxy.py`, `static/steer/auto-model.mjs`, `auto-panel.mjs` | 중심선이 겹친 지도, 지도 갱신 지연, 센서 상태 묶음은 지도 화면(라4)과 같이. 실행기(S1) 실제 연결 확인 |
-| 조정(7절, UI-12) | `/tuning`, `dashboard_server/steer_tuning.py`, `static/steer/tuning-model.mjs`, `tuning-page.mjs`, 변경 기록 | PWM-속도 표 그래프, 판 되돌리기·내보내기·가져오기(실행기 판 관리가 정해진 뒤) |
+| 수동 조향(3·4절, UI-07) | `static/steer/steer-control-rules.js`, `steer-drive.mjs`. `front_steer`에서만 보임. 주행 화면의 큰 보기(카메라·LiDAR 하나, `docs/SCREENS_KO.md`) | 실기 확인(사용자) |
+| 자율 시작·정지(6절, UI-08) | `dashboard_server/executor_proxy.py`, `static/steer/auto-model.mjs`(준비 = start 뒤 새 상태를 읽고 ready면 Arm), `auto-panel.mjs` | 실행기(S1) 실제 연결 확인 |
+| 지도의 국소 격자(6절, UI-09) | `GET /api/executor/status?grid=1`, `static/steer/local-grid.mjs`(점유 셀·열 선·중심선·차, 실행기가 낼 때만) | 지도 갱신 지연 측정, 실시간 점유 격자와 겹쳐 그리기 |
+| 조정(7절, UI-12) | `/tuning`, `dashboard_server/steer_tuning.py`(실행기 field_tuning 묶음), `static/steer/tuning-model.mjs`, `tuning-page.mjs`, 프리셋 불러오기·저장, 변경 기록 | PWM-속도 표 그래프, 고급 묶음 화면 편집(실행기에도 없음) |
+| 조향 가변저항(UI-11) | 센서 화면 카드 `static/steer/steer-sensor.mjs`(읽기만) | 실기 값 확인 |
 | 조향 기록(5절) | 바꾸지 않음 | 녹화기 토픽·사이드카(P9) |
 | 조종 WebSocket(3절) | 없음(HTTP) | NET-05(S4a) 측정 뒤 결정 |
 

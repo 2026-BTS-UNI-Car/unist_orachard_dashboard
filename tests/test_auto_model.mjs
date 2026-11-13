@@ -56,7 +56,7 @@ assert.equal(view.stale, false);
 assert.match(view.notice[1], new RegExp(GO_BLOCKER.operator_link_not_fresh));
 assert.match(view.notice[1], /기타\(something_new\)/);
 const rows = Object.fromEntries(view.rows);
-assert.equal(rows['정지 이유'], `${STOP_REASON.OPERATOR_LINK_LOST} · operator_link_lost`);
+assert.equal(rows['정지 이유'], `${STOP_REASON.OPERATOR_LINK_LOST} · 화면 연결 끊김`);
 assert.equal(rows['횡 · 방향 오차'], '-0.12 m · 3.2°');
 assert.equal(rows['속도 제한'], '0.20 m/s · 열 끝 감속');
 assert.equal(rows['GNSS'], '미확정 · ±6.2 m');
@@ -70,6 +70,22 @@ assert.equal(view.stale, true, 'values are dimmed');
 assert.match(autoView({ ok: false, configured: false }, now).notice[1], /설정 없음/);
 assert.match(autoView({ ok: false, configured: true, error: 'executor_unreachable' }, now).notice[1], /연결 안 됨/);
 assert.equal(autoView(reply({ run_state: 'idle' }), now).rows.find(([name]) => name === 'GNSS')[1], '정보 없음');
+
+// Contract revision 3: an operator STOP ends the run as OPERATOR_OR_BACKSTOP / operator_stop.
+view = autoView(reply({ run_state: 'latched', stop_reason: 'OPERATOR_OR_BACKSTOP', stop_detail: 'operator_stop' }), now);
+assert.equal(Object.fromEntries(view.rows)['정지 이유'], '운영자·한도 정지 · 운영자 STOP');
+assert.equal(Object.fromEntries(autoView(reply({ run_state: 'ended', stop_reason: 'ROW_END', stop_detail: 'new_detail_x' }), now).rows)['정지 이유'],
+             '정상 열 끝 · new_detail_x', 'an unknown detail is shown as sent');
+// Revision 3: the bridge took the lease back while armed and waiting -> ready, lease_lost + arm_first; Arm again.
+const lost = { run_state: 'ready', mode: 'MOTOR', go_ready: false, go_blockers: ['lease_lost', 'arm_first'], stop_reason: 'CONTROL_AUTHORITY',
+               stop_detail: 'lease_lost', lease_lost: { where: 'armed_wait', bridge_reason: 'steering_status_stale' } };
+assert.deepEqual(primaryAction(reply(lost), now), { text: 'Arm 다시 (브리지가 권한을 거둠)', action: 'arm', enabled: true });
+view = autoView(reply(lost), now);
+assert.deepEqual(view.notice, ['warn', '브리지가 권한을 거뒀다: Arm을 다시 누른다. 조향 브리지 연결이 끊겨 다시 Arm이 필요함.']);
+assert.equal(Object.fromEntries(view.rows)['정지 이유'], '조향·구동 권한 부족 · 브리지가 권한을 거둠');
+assert.equal(GO_BLOCKER.lease_lost, '조향 브리지 연결이 끊겨 다시 Arm이 필요함');
+assert.equal(primaryAction(reply({ ...lost, lease_lost: undefined }), now).action, 'arm', 'the blocker alone is enough');
+assert.equal(primaryAction(reply({ run_state: 'ready', mode: 'MOTOR' }), now).text, 'Arm (모터 권한)', 'a plain ready run');
 
 // Session ids: 24 hex characters (contract: 4 to 64), different every time.
 const a = newSession(), b = newSession();

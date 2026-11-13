@@ -173,6 +173,12 @@ class RelayUnitTest(unittest.TestCase):
         self.assertEqual(out["tuning"], {"revision": 4, "basic": [{"name": "k_d", "value": 1.0, "low": 0.0, "high": 3.0, "unit": ""}],
                                          "values": {"basic": {"k_d": 1.0}, "advanced": {"speed_table": [[25, 0.24]]}}})
         self.assertNotIn("local_grid_map", out, "the grid only for the map screen")
+        lost = page_status({"run_state": "ready", "go_blockers": ["lease_lost", "arm_first"], "lease_lost": {
+            "t": 3.1, "where": "armed_wait", "error": "lease_lost", "bridge_reason": "steering_status_stale",
+            "bridge_latches": ["status_seq_gap"], "steering_fault": None, "run_id": 7, "client_latch": "x"}})
+        self.assertEqual(lost["lease_lost"], {"where": "armed_wait", "error": "lease_lost", "bridge_reason": "steering_status_stale",
+                                              "bridge_latches": ["status_seq_gap"], "steering_fault": None})
+        self.assertNotIn("lease_lost", page_status({"run_state": "ready", "lease_lost": None}))
         self.assertEqual(page_status(raw, grid=True)["local_grid_map"], {"schema": "ubts.row_executor.local_grid.v1", "bits": "AA=="})
         for name in ("log", "token"):
             self.assertNotIn(name, out)

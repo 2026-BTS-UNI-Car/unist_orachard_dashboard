@@ -39,6 +39,8 @@ STATUS_FIELDS = {
                    "stop_reason", "stop_category", "confidence"),
     "gnss": ("state", "fix", "age_s", "h_acc_m", "used"),
     "bridge_detail": ("state", "latch_reason"),
+    # contract revision 3: the bridge took the lease back before the first go (the run stays open, run_state ready)
+    "lease_lost": ("where", "error", "bridge_reason", "bridge_latches", "steering_fault"),
 }
 NESTED = {("single_row", "confidence"): ("level",)}
 # tools/row_executor/field_tuning.py State.status() (OPERATOR_API_KO.md 6). The file path and digests stay here.
