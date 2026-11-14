@@ -52,8 +52,8 @@ class ScenariosTest(unittest.TestCase):
         # drive_lidar is drive with the LiDAR as the driving screen's big view (the six screens show one of camera and LiDAR)
         self.assertEqual({k: v for k, v in run_bench.SCENARIOS["drive_lidar"].items() if k != "drive_view"}, run_bench.SCENARIOS["drive"])
         self.assertEqual(run_bench.SCENARIOS["drive_lidar"]["drive_view"], "lidar")
-        # the screens of the six-screen layout that show what the driving screen no longer shows
-        self.assertEqual((run_bench.SCENARIOS["sensors"]["route"], run_bench.SCENARIOS["map"]["route"]), ("/sensors", "/map"))
+        # the sensor page (Connection) and the /map alias of Rover Control that scrolls to the live map (UI-16)
+        self.assertEqual((run_bench.SCENARIOS["sensors"]["route"], run_bench.SCENARIOS["map"]["route"]), ("/connection", "/map"))
         self.assertTrue(run_bench.SCENARIOS["map"]["start_live_map"] and "drive" not in run_bench.SCENARIOS["map"])
         self.assertEqual(run_bench.SCENARIOS["drive_map"]["live_s"], 600)
         self.assertTrue(run_bench.SCENARIOS["drive"]["cold_load"] and run_bench.SCENARIOS["drive"]["warm_load"])

@@ -29,15 +29,17 @@ import bench_inputs  # noqa: E402
 REPO = TOOL_DIR.parents[1]
 DRIVE_CYCLE = dict(hold_s=5, idle_s=1, after_stop_s=2, arm_timeout_s=8)
 SCENARIOS = {
-    # first open + open again + 2 minutes on the driving screen with the manual-drive exercise
+    # first open + open again + 2 minutes on Rover Control with the manual-drive exercise. Since the menu of before the
+    # redesign is back (UI-16) Rover Control holds all panels again; a stream is open only while its panel is on screen,
+    # so in the first screen of 1366x900 the LiDAR and the camera are open, the IMU, GPS and the live map are not.
     "drive": dict(cold_load=True, warm_load=True, live_s=120, sample_every_s=5, drive=DRIVE_CYCLE),
-    # the same with the LiDAR as the driving screen's big view (since the six screens the driving screen shows one of
-    # camera and LiDAR, the camera by default; IMU and GPS are on the sensors and map screens)
+    # the six-screen layout (2026-11-13) only: the LiDAR as the driving screen's big view. On the restored layout the
+    # stored choice does nothing and this is the same as "drive".
     "drive_lidar": dict(cold_load=True, warm_load=True, live_s=120, sample_every_s=5, drive=DRIVE_CYCLE, drive_view="lidar"),
-    # the sensors screen for 2 minutes (LiDAR, camera, IMU), no driving (the drive controls are on the driving screen)
-    "sensors": dict(cold_load=True, warm_load=False, live_s=120, sample_every_s=5, route="/sensors"),
-    # the map screen with the live map drawing, for 10 minutes, no driving (since the six screens the live map and GPS are
-    # on the map screen; drive_map keeps the 10-minute drive on the driving screen, where no map is drawn any more)
+    # the sensor page for 2 minutes, no driving: Connection (LiDAR map and camera; /sensors of the six-screen layout is its alias)
+    "sensors": dict(cold_load=True, warm_load=False, live_s=120, sample_every_s=5, route="/connection"),
+    # the live map drawing for 10 minutes, no driving. "/map" is an alias of Rover Control that scrolls to the live map
+    # part (UI-16; on the six-screen layout it was the map screen).
     "map": dict(cold_load=True, warm_load=False, live_s=600, sample_every_s=10, start_live_map=True, map_publish_mark=True, route="/map"),
     # the same with the live map drawing, for 10 minutes: does anything grow with time?
     "drive_map": dict(cold_load=True, warm_load=False, live_s=600, sample_every_s=10, drive=DRIVE_CYCLE, start_live_map=True, map_publish_mark=True),
