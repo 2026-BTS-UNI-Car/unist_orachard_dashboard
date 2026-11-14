@@ -775,6 +775,17 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   color: var(--color-text-disabled);
 }
 
+/* Online-scale question after a run (PW-10): the question over its two buttons. */
+.scale-offer {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.scale-offer > p {
+  margin: 0;
+}
+
 /* ---- IMU --------------------------------------------------------------- */
 .imu-attitude-stage {
   position: relative;

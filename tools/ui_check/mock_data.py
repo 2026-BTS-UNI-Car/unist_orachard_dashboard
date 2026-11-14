@@ -467,6 +467,12 @@ def _executor_status(dataset: str, now: float) -> dict:
                        "confidence": {"level": "LOW"}},
         "gnss": {"state": "no_fix", "fix": False, "age_s": 3.2, "h_acc_m": 123.4, "used": False},
         "bridge_detail": {"state": "LATCHED", "latch_reason": "mock_latch_reason_with_a_long_identifier"},
+        # PW-10 (contract revision 6): the online scale line; the offer is asked only after a run (run_state not paused)
+        "online_scale": {"enabled": True, "run_id": 12345, "value": 0.8512, "window_s": 19.9, "target_s": 20.0, "min_s": 10.0,
+                         "frozen": True, "hold": "mock_hold_reason_with_a_long_identifier", "age_s": 12345.6, "mismatch": True,
+                         "speed_scale": 1.0, "prior_scale": 1.0,
+                         "offer": {"run_id": 12344, "value": 0.8512, "window_s": 20.0, "end_reason": "row_end",
+                                   "speed_scale_now": 1.0, "speed_scale_new": 0.851, "ok": True, "why_not": None}},
     }}
 
 

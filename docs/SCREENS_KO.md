@@ -8,7 +8,7 @@
 - 기준: 수정 전은 `becfc6d`(태그 `main-before-ui-20261112` 뒤에 1차 버그 수정만 들어간 판)의 `static/index.html`이다.
   `tests/test_menu_restore.js`가 메뉴(이름·순서·주소)와 페이지마다의 패널 제목(순서 포함)을 이 판과 견준다(`tests/fixtures/menu_before_redesign_becfc6d.json`).
 - 그대로 둔 것: 새 디자인(색·글꼴·부품, 아이콘), 모든 페이지 위의 상태 막대와 STOP, 느린 연결 최적화(필요할 때 받는 라이브러리, 보이는 패널만 스트림,
-  상태 묶음, 연결 등급), 조종·STOP 코드(`static/app/10-rover-control.js`, `controlRequest()`, `static/steer/steer-drive.mjs`, `steer-control-rules.js`, `auto-panel.mjs`는 글자 그대로).
+  상태 묶음, 연결 등급), 조종·STOP 코드(`static/app/10-rover-control.js`, `controlRequest()`, `static/steer/steer-drive.mjs`, `steer-control-rules.js`, `auto-panel.mjs`는 글자 그대로. `auto-panel.mjs`에는 PW-10의 온라인 배율 줄과 주행 뒤 저장 묻기만 더했고 조종·STOP·heartbeat 줄은 그대로).
 - 2026-11-13의 화면 6개 구성(UI-06)은 이 문서의 git 이력(`a92cfec`)에 있다. 화면 점검의 그때 기록은 `tools/ui_check/accepted/six_screens_20261113.json`.
 
 ## 1. 메뉴와 주소
@@ -49,6 +49,7 @@
 | 앞바퀴 조향 수동 조종(구동 W/S, 조향 A/D·가운데, 계기) (UI-07) | 주행 제어 패널, 차동 부분(자율 순항속도 줄, 활성화, 속도, 패드) 다음 | `steerDrive` |
 | 조향 가변저항(측정 각도·원값·보정·결함) | 주행 제어 패널, 조향 조종 바로 아래 | `steerPotPanel` |
 | 한 번 눌러 자율 시작, STOP, heartbeat (UI-08) | 주행 제어 패널 맨 아래 '자율주행 · 열 따라가기' | `autoPanel` |
+| 온라인 배율(LiDAR 속도 ÷ 표 속도, 최근 주행 20 s)과 주행 뒤 전체 배율 저장 묻기 (PW-10) | 자율 칸 안, 버튼·안내 줄 아래(실행기가 보낼 때만, 묻기는 run이 끝난 뒤만) | 줄 `autoScale`, 묻기 `autoScaleOffer`(`autoScaleAccept`, `autoScaleDismiss`) |
 | 현장 조정 값(기본·고급·잠금 묶음, 프리셋, 변경 기록) (UI-12) | 주행 제어 다음의 '현장 조정 값' 패널, 접힌 칸 | `tuningPanel`, 접힘 `tuningDetails`, 폼 `tuneForm` |
 | 실행기 국소 격자와 열 선·중심선 (UI-09) | LiDAR 패널 안 실시간 점유 격자 지도 바로 아래(격자가 올 때만 보임) | `localGridPanel`, 지도 칸 `liveMapPanel` |
 
@@ -68,6 +69,7 @@ Rover Control에 패널이 다시 모였으므로, 느린 연결에서 페이지
   모의 서버에서 Rover Control 첫 열기의 정적 파일은 39개로 화면 6개 판(a92cfec)의 주행 화면과 같다(고치기 전 42개, 느린 연결 측정: `docs/slow_link.md` 13절).
 - **자율 heartbeat는 스크롤과 무관하다.** 자율 run 중에는 Rover Control이 열려 있고 탭이 보이면 heartbeat가 계속 나간다. 지도를 보려고 스크롤해도 차가 서지 않는다.
   다른 페이지로 가거나 탭을 숨기면 전처럼 멈춘다(차가 실행기 기한 뒤 선다).
+- 온라인 배율과 주행 뒤 저장 묻기(PW-10)는 자율 칸이 이미 읽는 실행기 상태에 실려 온다. 새 주기 요청은 없다.
 - 상태 요청은 Rover Control만 주행 묶음(`/api/telemetry?bundle=drive`, NET-06)을 쓰고 다른 페이지는 전체를 쓴다.
 - Connection 페이지에는 LiDAR 지도와 카메라 보기가 따로 있다(수정 전과 같음). IMU 그림은 Rover Control에만 있어서 IMU 소켓은 Rover Control에서만 연다.
 

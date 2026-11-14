@@ -2,7 +2,8 @@
 // heartbeat goes, the "끊김" rule and the Korean labels. No browser. Run: node tests/test_auto_model.mjs
 import assert from 'node:assert/strict';
 import {
-  HEARTBEAT_MS, STALE_MS, GO_BLOCKER, STOP_REASON, autoView, heartbeatWanted, newSession, prepareRun, primaryAction, runActive,
+  HEARTBEAT_MS, STALE_MS, GO_BLOCKER, STOP_REASON, SCALE_HOLD, autoView, heartbeatWanted, newSession, prepareRun, primaryAction,
+  runActive, scaleLine, scaleOffer, scaleText,
 } from '../static/steer/auto-model.mjs';
 
 const now = 1_800_000_000_000;
@@ -133,4 +134,33 @@ await (async () => {
   assert.deepEqual([r.result, r.sent], [{ ok: false, step: 'arm', runState: 'ready' }, ['start', 'arm']]);
 })();
 
-console.log('PASS: autonomy button per run state, heartbeat states, stale rule, labels, session ids and the prepare sequence');
+// PW-10 (contract revision 6): the online scale row and the question after a run.
+const scale = (extra = {}) => ({ enabled: true, run_id: 3, value: 0.8512, window_s: 20, target_s: 20, min_s: 10, frozen: false,
+  hold: null, mismatch: false, speed_scale: 1, prior_scale: 1, offer: null, ...extra });
+assert.equal(scaleText(scale()), '0.851 (최근 20/20 s)');
+assert.equal(scaleText(scale({ value: null, window_s: 3.4 })), '모으는 중 3/10 s');
+assert.equal(scaleText(scale({ value: null, window_s: 3.4, hold: 'lidar_unmatched' })), `모으는 중 3/10 s · 멈춤: ${SCALE_HOLD.lidar_unmatched}`);
+assert.equal(scaleText(scale({ frozen: true, hold: 'lidar_stale' })), `0.851 (최근 20/20 s) · 멈춤: ${SCALE_HOLD.lidar_stale}`);
+assert.equal(scaleText(scale({ frozen: true, hold: 'something_new', mismatch: true })), '0.851 (최근 20/20 s) · 멈춤: 기타(something_new) · 표 어긋남');
+assert.equal(scaleText(scale({ enabled: false })), '꺼짐');
+assert.equal(scaleLine(reply({ run_state: 'running', online_scale: scale({ frozen: true, hold: 'lidar_unmatched' }) }), now),
+             `0.851 (최근 20/20 s) · 멈춤: ${SCALE_HOLD.lidar_unmatched}`);
+assert.equal(scaleLine(reply({ run_state: 'idle' }), now), null, 'no block (differential or monitor-less executor): no line');
+assert.equal(scaleLine(reply({ run_state: 'running', online_scale: scale() }), now + STALE_MS + 1), null, 'stale: hidden');
+assert.equal(scaleLine({ ok: false, configured: false }, now), null);
+assert.ok(!Object.fromEntries(autoView(reply({ run_state: 'running', online_scale: scale() }), now).rows)['온라인 배율'],
+          'the line is outside the folded details, not a details row');
+
+const offer = { run_id: 3, value: 0.8512, window_s: 20, end_reason: 'row_end', speed_scale_now: 1, speed_scale_new: 0.851, ok: true, why_not: null };
+let ask = scaleOffer(reply({ run_state: 'ended', online_scale: scale({ offer }) }));
+assert.deepEqual([ask.runId, ask.canAccept, ask.from, ask.to], [3, true, 1, 0.851]);
+assert.match(ask.text, /run 3 끝: 온라인 배율 0\.851 \(최근 20 s\)\. 전체 배율\(k_field\)을 1\.000 → 0\.851로 저장할까요\?/);
+ask = scaleOffer(reply({ run_state: 'idle', online_scale: scale({ offer: { ...offer, value: null, ok: false, why_not: 'no_scale' } }) }));
+assert.equal(ask.canAccept, false);
+assert.match(ask.text, /온라인 배율 없음\. 전체 배율로 저장할 수 없다: 배율이 아직 없다/);
+assert.equal(scaleOffer(reply({ run_state: 'running', online_scale: scale({ offer }) })), null, 'never while a run drives');
+assert.equal(scaleOffer(reply({ run_state: 'ended', online_scale: scale() })), null);
+assert.equal(scaleOffer(reply({ run_state: 'ended' })), null);
+assert.equal(scaleOffer(null), null);
+
+console.log('PASS: autonomy button per run state, heartbeat states, stale rule, labels, session ids, the prepare sequence, the online scale row and its question');

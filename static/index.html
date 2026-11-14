@@ -675,6 +675,8 @@
 <label class="field" for="autoRowLen">열 길이 m (비워도 됨)<input class="input" id="autoRowLen" inputmode="decimal" max="300" min="1" step="0.1" type="number"/></label>
 <div class="sim-map-actions"><button class="action-button primary" disabled="" id="autoPrimary" type="button">확인 중</button><button class="action-button secondary" disabled="" id="autoEnd" type="button">run 끝내기</button></div>
 <div class="test-result" hidden="" id="autoNotice"></div>
+<dl class="detail-list" hidden="" id="autoScale"><div><dt title="LiDAR 속도 ÷ 표 속도, 최근 주행 약 20초">온라인 배율</dt><dd id="autoScaleValue">--</dd></div></dl>
+<div class="test-result testing" hidden="" id="autoScaleOffer"><div class="scale-offer"><p id="autoScaleText"></p><div class="sim-map-actions"><button class="action-button primary" id="autoScaleAccept" type="button">배율 저장</button><button class="action-button secondary" id="autoScaleDismiss" type="button">저장 안 함</button></div></div></div>
 <p class="help-text">한 번 누르면 열 끝까지 간다. 출발 뒤에는 이 화면을 열어 두어야 하고, 탭을 숨기거나 다른 화면으로 가면 곧 차가 선다. STOP(위, 상태 막대, Esc)은 자율 run도 멈춘다.</p>
 <details id="autoMore"><summary>실행기 상태 자세히</summary><dl class="detail-list" id="autoDetails"></dl></details>
 </section>
