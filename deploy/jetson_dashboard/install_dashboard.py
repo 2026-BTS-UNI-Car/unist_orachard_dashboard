@@ -562,6 +562,21 @@ def running_state(inspect):
     return bool(state.get('Running')) and not state.get('Paused') and not state.get('Restarting')
 
 
+def line_endings_only(docker, cid, bundle, blockers):
+    """Rebuild-source blockers whose installed file equals the bundle file once CRLF is read as LF.
+
+    Such a file needs no rebuild: the source text is the same (e.g. an image built from a Windows checkout
+    with CRLF line endings). Each file is read whole from the container; anything unreadable stays blocked."""
+    out = []
+    for rel, code in sorted(REBUILD_SOURCES.items()):
+        if code not in blockers or rel not in bundle.data:
+            continue
+        cur = docker.read_file(cid, APP_ROOT + '/' + rel)
+        if cur is not None and cur.replace(b'\r\n', b'\n') == bundle.data[rel].replace(b'\r\n', b'\n'):
+            out.append(code)
+    return out
+
+
 def read_current(docker, cid, bundle):
     current = {}
     for root, kind in bundle.roots:
@@ -652,6 +667,10 @@ def idle_check(http, base, *, recorder_unavailable_ok=False, bridge_status=None)
         out['rover'] = 'disarmed_stopped'
     elif rover.get('ok') is False and rover.get('connected') is False and rover.get('state') == 'unavailable':
         out['rover'] = 'bridge_unavailable_no_control_path'
+    elif (rover.get('ok') is False and rover.get('connected') is False and rover.get('armed') is False
+          and rover.get('moving') is False):
+        # The bridge runs but the ESP is not connected (e.g. 'fault' with 'ESP disconnected'): no motor path.
+        out['rover'] = 'esp_disconnected_no_control_path:%s' % rover.get('state')
     else:
         raise KitError('not_idle', 'rover status unknown')
     rec = get_json(http, base + '/api/recordings/status')
@@ -926,6 +945,10 @@ class Installer:
         self.log('대상 컨테이너 %s (%s), 이미지 %s, 주소 %s' % (name, x['Id'][:12], x['Image'][7:19], base))
         current = read_current(self.docker, x['Id'], b)
         plan = compute_plan(b, current, self.allow())
+        same_text = line_endings_only(self.docker, x['Id'], b, plan['blockers'])
+        if same_text:
+            plan['blockers'] = [c for c in plan['blockers'] if c not in same_text]
+            plan['warnings'] = plan['warnings'] + ['line_endings_only:' + c for c in same_text]
         idle = None
         idle_error = None
         try:

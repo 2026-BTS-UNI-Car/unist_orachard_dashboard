@@ -599,6 +599,46 @@ class Apply(KitCase):
         self.assertEqual(self.run_kit(), 2)
         self.assertIn('native_raster_source_changed', self.out.getvalue())
 
+    def test_line_endings_only_rebuild_sources_are_not_blocked(self):
+        # The installed image was built from a CRLF checkout: the same source text with other bytes.
+        crlf = dict(OLD_FILES)
+        for rel in ('requirements.txt', 'dashboard_server/native_raster.cc'):
+            crlf[rel] = OLD_FILES[rel].replace(b'\n', b'\r\n')
+        self.docker, self.http, self.old, self.other = jetson(self.clock, old_files=crlf)
+        self.assertEqual(self.run_kit(), 0, self.out.getvalue())
+        text = self.out.getvalue()
+        self.assertIn('line_endings_only:requirements_changed', text)
+        self.assertIn('line_endings_only:native_raster_source_changed', text)
+        self.assertEqual(self.run_kit('--apply'), 0, self.out.getvalue())
+        self.assertEqual(self.receipt()['result'], 'installed')
+
+    def test_line_endings_plus_text_change_is_still_blocked(self):
+        crlf = dict(OLD_FILES, **{'dashboard_server/native_raster.cc': b'// raster\r\n'})
+        files = dict(NEW_FILES, **{'dashboard_server/native_raster.cc': b'// new raster\n'})
+        self.kit_dir = build_kit(self.tmp / 'kit-raster-crlf', files)
+        self.docker, self.http, self.old, self.other = jetson(self.clock, old_files=crlf)
+        self.assertEqual(self.run_kit(), 2)
+        self.assertIn('native_raster_source_changed', self.out.getvalue())
+        self.assertEqual(self.run_kit('--apply'), 1)
+        self.assertEqual(self.docker.mutations(), [])
+
+    def test_esp_disconnected_fault_is_idle(self):
+        self.http.rover = dict(ok=False, connected=False, state='fault', armed=False, moving=False,
+                               reason='hardware_fault', last_error='ESP disconnected')
+        self.assertEqual(self.run_kit(), 0, self.out.getvalue())
+
+    def test_disconnected_but_armed_moving_or_unknown_is_not_idle(self):
+        cases = (dict(ok=False, connected=False, state='fault', armed=True, moving=False),
+                 dict(ok=False, connected=False, state='fault', armed=False, moving=True),
+                 dict(ok=False, connected=False, state='fault'),
+                 dict(ok=False, connected=True, state='fault', armed=False, moving=False))
+        for rover in cases:
+            with self.subTest(rover=rover):
+                self.http.rover = rover
+                self.assertEqual(self.run_kit(), 2, self.out.getvalue())
+                self.assertEqual(self.run_kit('--apply'), 1)
+                self.assertEqual(self.docker.mutations(), [])
+
     def test_tampered_bundle_is_refused(self):
         payload = self.kit_dir / 'payload.tar'
         data = bytearray(payload.read_bytes())
