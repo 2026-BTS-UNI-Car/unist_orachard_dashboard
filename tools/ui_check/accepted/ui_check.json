@@ -2,16 +2,16 @@
  "schema": "ubts.ui_check.run",
  "schema_version": 1,
  "tool_version": "1.0.0",
- "created_at": "2026-11-14T14:14:33+09:00",
- "duration_s": 168.2,
+ "created_at": "2026-11-14T14:31:28+09:00",
+ "duration_s": 158.0,
  "label": "menu and pages of before the redesign (UI-16): eight menu pages, new parts inside Rover Control; light theme = the default",
  "static_dir": "static",
  "static_fingerprint": {
   "files": 73,
-  "bytes": 4105832,
-  "sha256": "813d02daf8a11b43f21f67580bef18a740c3fb3dd57f8f8b079f0ce880db67c9"
+  "bytes": 4105854,
+  "sha256": "5decca5afa87c96292d8e75272ceb4180688505bab643a0c49b82d22b3dd5dd2"
  },
- "static_git_head": "0ca8eb48163e33a2c61b55ec5dcba7d7944262dd",
+ "static_git_head": "6825a7bfb6e2c3fb50723bcc4487f9f0e2c093c0",
  "browser": {
   "name": "chromium",
   "channel": "chrome",
@@ -141,44 +141,44 @@
   "requests": {
    "empty": {
     "api": {
-     "/api/autonomy": 1,
-     "/api/autonomy/observe": 15,
+     "/api/autonomy": 5,
+     "/api/autonomy/observe": 22,
      "/api/docs": 41,
-     "/api/executor/status": 3,
+     "/api/executor/status": 2,
      "/api/live/map": 5,
-     "/api/ping": 242,
+     "/api/ping": 235,
      "/api/recordings": 5,
-     "/api/recordings/status": 5,
-     "/api/telemetry": 107
+     "/api/recordings/status": 12,
+     "/api/telemetry": 103
     },
     "unmocked": {},
     "writes": {},
     "websocket": {
-     "camera": 10,
-     "lidar": 19
+     "camera": 9,
+     "lidar": 17
     },
     "missing_static": {}
    },
    "stress": {
     "api": {
-     "/api/autonomy": 7,
-     "/api/autonomy/observe": 25,
-     "/api/docker/container/mock0000": 6,
-     "/api/docker/container/mock0000/logs": 6,
+     "/api/autonomy": 1,
+     "/api/autonomy/observe": 15,
+     "/api/docker/container/mock0000": 5,
+     "/api/docker/container/mock0000/logs": 5,
      "/api/docs": 40,
      "/api/docs/mock-document-01": 5,
-     "/api/executor/status": 7,
-     "/api/live/map": 4,
-     "/api/ping": 249,
+     "/api/executor/status": 5,
+     "/api/live/map": 3,
+     "/api/ping": 241,
      "/api/recordings": 5,
-     "/api/recordings/status": 14,
-     "/api/telemetry": 102
+     "/api/recordings/status": 5,
+     "/api/telemetry": 103
     },
     "unmocked": {},
     "writes": {},
     "websocket": {
      "camera": 10,
-     "lidar": 18
+     "lidar": 17
     },
     "missing_static": {}
    }
@@ -432,9 +432,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 610,
+   "load_ms": 511,
    "settled": true,
-   "settle_ms": 1577,
+   "settle_ms": 1600,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -727,9 +727,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 576,
+   "load_ms": 506,
    "settled": true,
-   "settle_ms": 1612,
+   "settle_ms": 1595,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -1023,9 +1023,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 641,
+   "load_ms": 538,
    "settled": true,
-   "settle_ms": 1595,
+   "settle_ms": 1574,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -1319,9 +1319,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 815,
+   "load_ms": 742,
    "settled": true,
-   "settle_ms": 1580,
+   "settle_ms": 1631,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -1615,9 +1615,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 673,
+   "load_ms": 769,
    "settled": true,
-   "settle_ms": 1582,
+   "settle_ms": 1630,
    "pointer_coarse": false,
    "final_path": "/",
    "screenshots": {
@@ -2000,9 +2000,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 689,
+   "load_ms": 763,
    "settled": true,
-   "settle_ms": 1583,
+   "settle_ms": 1613,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2264,9 +2264,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 1014,
+   "load_ms": 838,
    "settled": true,
-   "settle_ms": 1616,
+   "settle_ms": 1575,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2529,9 +2529,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 846,
+   "load_ms": 813,
    "settled": true,
-   "settle_ms": 1616,
+   "settle_ms": 1605,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2794,9 +2794,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 764,
+   "load_ms": 842,
    "settled": true,
-   "settle_ms": 1605,
+   "settle_ms": 1578,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -3059,9 +3059,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 825,
+   "load_ms": 1102,
    "settled": true,
-   "settle_ms": 1657,
+   "settle_ms": 1615,
    "pointer_coarse": false,
    "final_path": "/connection",
    "screenshots": {
@@ -3533,9 +3533,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 697,
+   "load_ms": 722,
    "settled": true,
-   "settle_ms": 1628,
+   "settle_ms": 1594,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -3922,9 +3922,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 427,
+   "load_ms": 711,
    "settled": true,
-   "settle_ms": 1598,
+   "settle_ms": 1615,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -4311,9 +4311,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 911,
+   "load_ms": 828,
    "settled": true,
-   "settle_ms": 1637,
+   "settle_ms": 1583,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -4700,9 +4700,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 644,
+   "load_ms": 527,
    "settled": true,
-   "settle_ms": 1623,
+   "settle_ms": 1595,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -5089,9 +5089,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 581,
+   "load_ms": 500,
    "settled": true,
-   "settle_ms": 1610,
+   "settle_ms": 1575,
    "pointer_coarse": false,
    "final_path": "/system",
    "screenshots": {
@@ -5567,9 +5567,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 912,
+   "load_ms": 830,
    "settled": true,
-   "settle_ms": 1602,
+   "settle_ms": 1627,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -5832,9 +5832,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 717,
+   "load_ms": 590,
    "settled": true,
-   "settle_ms": 1606,
+   "settle_ms": 1633,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -6097,9 +6097,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 564,
+   "load_ms": 533,
    "settled": true,
-   "settle_ms": 1603,
+   "settle_ms": 1589,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -6362,9 +6362,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 2347,
+   "load_ms": 607,
    "settled": true,
-   "settle_ms": 1525,
+   "settle_ms": 1643,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -6627,9 +6627,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 2493,
+   "load_ms": 636,
    "settled": true,
-   "settle_ms": 1558,
+   "settle_ms": 1596,
    "pointer_coarse": false,
    "final_path": "/network",
    "screenshots": {
@@ -6981,9 +6981,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 1073,
+   "load_ms": 368,
    "settled": true,
-   "settle_ms": 1526,
+   "settle_ms": 1577,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7277,9 +7277,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 2034,
+   "load_ms": 1013,
    "settled": true,
-   "settle_ms": 1576,
+   "settle_ms": 1617,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7573,9 +7573,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 1559,
+   "load_ms": 800,
    "settled": true,
-   "settle_ms": 1753,
+   "settle_ms": 1585,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7869,9 +7869,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 1201,
+   "load_ms": 677,
    "settled": true,
-   "settle_ms": 1639,
+   "settle_ms": 1592,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -8165,9 +8165,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 2261,
+   "load_ms": 607,
    "settled": true,
-   "settle_ms": 1726,
+   "settle_ms": 1630,
    "pointer_coarse": false,
    "final_path": "/docker",
    "screenshots": {
@@ -8542,9 +8542,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 1735,
+   "load_ms": 622,
    "settled": true,
-   "settle_ms": 1511,
+   "settle_ms": 1583,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -8807,9 +8807,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 967,
+   "load_ms": 599,
    "settled": true,
-   "settle_ms": 1606,
+   "settle_ms": 1572,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -9072,9 +9072,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 1394,
+   "load_ms": 1120,
    "settled": true,
-   "settle_ms": 1636,
+   "settle_ms": 1615,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -9337,9 +9337,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 1419,
+   "load_ms": 702,
    "settled": true,
-   "settle_ms": 1685,
+   "settle_ms": 1587,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -9602,9 +9602,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 410,
+   "load_ms": 712,
    "settled": true,
-   "settle_ms": 1597,
+   "settle_ms": 1570,
    "pointer_coarse": false,
    "final_path": "/fan",
    "screenshots": {
@@ -9972,9 +9972,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 565,
+   "load_ms": 898,
    "settled": true,
-   "settle_ms": 1634,
+   "settle_ms": 1659,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -10361,9 +10361,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 587,
+   "load_ms": 825,
    "settled": true,
-   "settle_ms": 1651,
+   "settle_ms": 1685,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -10750,9 +10750,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 547,
+   "load_ms": 797,
    "settled": true,
-   "settle_ms": 1596,
+   "settle_ms": 1624,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -11139,9 +11139,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 719,
+   "load_ms": 4793,
    "settled": true,
-   "settle_ms": 1720,
+   "settle_ms": 2644,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -11187,7 +11187,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 9,
+    "style_text_colors": 8,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -11444,7 +11444,7 @@
       "hit_test": null,
       "disabled": false,
       "x": 1004.8,
-      "y": 999,
+      "y": 981,
       "w": 61.1,
       "h": 56
      }
@@ -11505,8 +11505,8 @@
      },
      "text_elements": 205,
      "heavy_text_elements": 0,
-     "text_colors": 9,
-     "background_colors": 18,
+     "text_colors": 8,
+     "background_colors": 17,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -11528,9 +11528,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 599,
+   "load_ms": 5761,
    "settled": true,
-   "settle_ms": 1624,
+   "settle_ms": 2322,
    "pointer_coarse": false,
    "final_path": "/rover-control",
    "screenshots": {
@@ -11576,7 +11576,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 9,
+    "style_text_colors": 8,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -12343,8 +12343,8 @@
      },
      "text_elements": 205,
      "heavy_text_elements": 0,
-     "text_colors": 9,
-     "background_colors": 18,
+     "text_colors": 8,
+     "background_colors": 17,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -12366,9 +12366,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 528,
+   "load_ms": 3428,
    "settled": true,
-   "settle_ms": 1605,
+   "settle_ms": 2234,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -12592,9 +12592,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 652,
+   "load_ms": 1366,
    "settled": true,
-   "settle_ms": 1616,
+   "settle_ms": 1706,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -12818,9 +12818,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 537,
+   "load_ms": 1165,
    "settled": true,
-   "settle_ms": 1610,
+   "settle_ms": 1807,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -13044,9 +13044,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 353,
+   "load_ms": 920,
    "settled": true,
-   "settle_ms": 1630,
+   "settle_ms": 1686,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -13270,7 +13270,7 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 1267,
+   "load_ms": 1268,
    "settled": true,
    "settle_ms": 1715,
    "pointer_coarse": false,
@@ -13569,9 +13569,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 495,
+   "load_ms": 792,
    "settled": true,
-   "settle_ms": 1582,
+   "settle_ms": 1571,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -13864,9 +13864,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 448,
+   "load_ms": 1167,
    "settled": true,
-   "settle_ms": 1592,
+   "settle_ms": 1552,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -14160,9 +14160,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 394,
+   "load_ms": 1712,
    "settled": true,
-   "settle_ms": 1598,
+   "settle_ms": 1697,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -14456,9 +14456,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 502,
+   "load_ms": 1409,
    "settled": true,
-   "settle_ms": 1664,
+   "settle_ms": 1766,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -14752,9 +14752,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 491,
+   "load_ms": 626,
    "settled": true,
-   "settle_ms": 1606,
+   "settle_ms": 1898,
    "pointer_coarse": false,
    "final_path": "/",
    "screenshots": {
@@ -15137,9 +15137,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 852,
+   "load_ms": 1005,
    "settled": true,
-   "settle_ms": 1622,
+   "settle_ms": 1593,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -15401,9 +15401,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 540,
+   "load_ms": 2026,
    "settled": true,
-   "settle_ms": 1602,
+   "settle_ms": 1793,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -15449,7 +15449,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 7,
+    "style_text_colors": 8,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -15643,8 +15643,8 @@
      },
      "text_elements": 139,
      "heavy_text_elements": 0,
-     "text_colors": 7,
-     "background_colors": 15,
+     "text_colors": 8,
+     "background_colors": 16,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -15666,9 +15666,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 582,
+   "load_ms": 1325,
    "settled": true,
-   "settle_ms": 1595,
+   "settle_ms": 1531,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -15931,9 +15931,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 560,
+   "load_ms": 903,
    "settled": true,
-   "settle_ms": 1584,
+   "settle_ms": 1656,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -16196,9 +16196,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 675,
+   "load_ms": 786,
    "settled": true,
-   "settle_ms": 1615,
+   "settle_ms": 1663,
    "pointer_coarse": false,
    "final_path": "/connection",
    "screenshots": {
@@ -16670,9 +16670,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 443,
+   "load_ms": 256,
    "settled": true,
-   "settle_ms": 1588,
+   "settle_ms": 1582,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -17059,9 +17059,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 452,
+   "load_ms": 293,
    "settled": true,
-   "settle_ms": 1581,
+   "settle_ms": 1620,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -17448,9 +17448,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 491,
+   "load_ms": 470,
    "settled": true,
-   "settle_ms": 1591,
+   "settle_ms": 1643,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -17837,9 +17837,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 389,
+   "load_ms": 361,
    "settled": true,
-   "settle_ms": 1598,
+   "settle_ms": 1597,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -18226,9 +18226,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 429,
+   "load_ms": 356,
    "settled": true,
-   "settle_ms": 1583,
+   "settle_ms": 1636,
    "pointer_coarse": false,
    "final_path": "/system",
    "screenshots": {
@@ -18704,9 +18704,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 634,
+   "load_ms": 452,
    "settled": true,
-   "settle_ms": 1601,
+   "settle_ms": 1623,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -18969,9 +18969,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 464,
+   "load_ms": 391,
    "settled": true,
-   "settle_ms": 1696,
+   "settle_ms": 1709,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -19234,9 +19234,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 398,
+   "load_ms": 366,
    "settled": true,
-   "settle_ms": 1579,
+   "settle_ms": 1619,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -19499,9 +19499,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 474,
+   "load_ms": 598,
    "settled": true,
-   "settle_ms": 1670,
+   "settle_ms": 1579,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -19764,9 +19764,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 418,
+   "load_ms": 397,
    "settled": true,
-   "settle_ms": 1615,
+   "settle_ms": 1547,
    "pointer_coarse": false,
    "final_path": "/network",
    "screenshots": {
@@ -20118,9 +20118,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 433,
+   "load_ms": 742,
    "settled": true,
-   "settle_ms": 1583,
+   "settle_ms": 1689,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -20414,9 +20414,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 514,
+   "load_ms": 478,
    "settled": true,
-   "settle_ms": 1639,
+   "settle_ms": 1603,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -20710,9 +20710,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 489,
+   "load_ms": 415,
    "settled": true,
-   "settle_ms": 1730,
+   "settle_ms": 1683,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -21006,9 +21006,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 562,
+   "load_ms": 298,
    "settled": true,
-   "settle_ms": 1738,
+   "settle_ms": 1673,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -21302,9 +21302,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 969,
+   "load_ms": 446,
    "settled": true,
-   "settle_ms": 1655,
+   "settle_ms": 1657,
    "pointer_coarse": false,
    "final_path": "/docker",
    "screenshots": {
@@ -21703,9 +21703,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 348,
+   "load_ms": 330,
    "settled": true,
-   "settle_ms": 1589,
+   "settle_ms": 1656,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -21968,9 +21968,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 333,
+   "load_ms": 371,
    "settled": true,
-   "settle_ms": 1597,
+   "settle_ms": 1641,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -22233,9 +22233,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 362,
+   "load_ms": 730,
    "settled": true,
-   "settle_ms": 1543,
+   "settle_ms": 1656,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -22498,9 +22498,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 790,
+   "load_ms": 575,
    "settled": true,
-   "settle_ms": 1619,
+   "settle_ms": 1696,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -22763,9 +22763,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 552,
+   "load_ms": 333,
    "settled": true,
-   "settle_ms": 1514,
+   "settle_ms": 1571,
    "pointer_coarse": false,
    "final_path": "/fan",
    "screenshots": {
@@ -23133,9 +23133,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 806,
+   "load_ms": 965,
    "settled": true,
-   "settle_ms": 1622,
+   "settle_ms": 1547,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -23522,9 +23522,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 3805,
+   "load_ms": 787,
    "settled": true,
-   "settle_ms": 2576,
+   "settle_ms": 1593,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -23911,9 +23911,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 3734,
+   "load_ms": 765,
    "settled": true,
-   "settle_ms": 2600,
+   "settle_ms": 1628,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -24331,9 +24331,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 2490,
+   "load_ms": 747,
    "settled": true,
-   "settle_ms": 1648,
+   "settle_ms": 1626,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -24720,9 +24720,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 2337,
+   "load_ms": 912,
    "settled": true,
-   "settle_ms": 1874,
+   "settle_ms": 1641,
    "pointer_coarse": false,
    "final_path": "/rover-control",
    "screenshots": {
@@ -25558,9 +25558,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 1706,
+   "load_ms": 493,
    "settled": true,
-   "settle_ms": 1531,
+   "settle_ms": 1598,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -25804,9 +25804,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 1928,
+   "load_ms": 536,
    "settled": true,
-   "settle_ms": 2301,
+   "settle_ms": 1627,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -26050,9 +26050,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 1313,
+   "load_ms": 447,
    "settled": true,
-   "settle_ms": 1844,
+   "settle_ms": 1674,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -26296,9 +26296,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 995,
+   "load_ms": 676,
    "settled": true,
-   "settle_ms": 1666,
+   "settle_ms": 1600,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -26522,7 +26522,7 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 631,
+   "load_ms": 461,
    "settled": true,
    "settle_ms": 1590,
    "pointer_coarse": false,
