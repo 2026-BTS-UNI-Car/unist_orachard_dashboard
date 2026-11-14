@@ -104,7 +104,7 @@ python3 rollback_dashboard.py --apply    # 되돌리기
 
 | 변경 | 어디 | 이 묶음(대시보드 컨테이너)만으로 |
 | --- | --- | --- |
-| 화면 6개, 조향 수동·자율·조정 화면, 실행기 중계(`/api/executor/*`) | `static/`, `dashboard_server/` | 된다. 조향 화면은 `DASHBOARD_VEHICLE=front_steer` 와 조향 브리지·실행기가 있어야 쓸모가 있다(아래) |
+| 메뉴 8쪽(수정 전 구성, UI-16), Rover Control 안의 조향 수동·자율·조정 값·국소 격자, 실행기 중계(`/api/executor/*`) | `static/`, `dashboard_server/` | 된다. 조향 칸은 `DASHBOARD_VEHICLE=front_steer` 와 조향 브리지·실행기가 있어야 쓸모가 있다(아래) |
 | 첫 화면 무게 줄이기, 정적 파일 해시 주소와 긴 캐시(NET-03, NET-04) | `static/`, `dashboard_server/static_assets.py` | 된다 |
 | 연결 유지와 조종 우선(NET-05), 상태 요청 묶음·ETag(NET-06) | `dashboard_server/app.py`, `static/app/01-format-http.js` | 된다 |
 | 카메라: 자동일 때 1080 원본 미리보기 안 씀, 화면 밖 패널 멈춤, 등급별 크기·화질(NET-08, NET-10) | `static/` | 된다. 카메라 브리지는 기준판 이후 바뀌지 않았다(브리지가 이미 받는 크기·화질만 고른다) |

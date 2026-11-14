@@ -5,60 +5,66 @@ UNIST BTS 과수원 로버의 웹 대시보드입니다. 차에 실린 Jetson에
 조종과 STOP이 먼저 지나가게 만들었습니다.
 
 > **English summary.** Web dashboard of a small orchard rover (a converted ride-on toy car). It runs on the rover's
-> Jetson Orin Nano and is opened from a phone or laptop over the rover's own 2.4 GHz Wi-Fi access point. Six screens:
-> drive (manual control with a STOP that always goes first, camera or LiDAR view, autonomy start/stop), map (live
-> occupancy grid, GNSS position), sensors (2D LiDAR RPLIDAR S2, BNO085 IMU, USB camera, link status), records (recording
-> and synchronized playback), tuning
-> (the row executor's field tuning set) and system (Jetson resources, network, Docker, fan). The server is plain Python
+> Jetson Orin Nano and is opened from a phone or laptop over the rover's own 2.4 GHz Wi-Fi access point. Eight menu
+> pages, as before the redesign: Overview, Connection (2D LiDAR RPLIDAR S2, USB camera, link status), System (Jetson
+> resources), Network, Docker, Fan Control, Rover Control (LiDAR with the live occupancy grid map, camera, GNSS position,
+> BNO085 IMU, manual control with a STOP that always goes first, autonomy start/stop, the row executor's field tuning
+> set, recording and synchronized playback) and Docs. A STOP is in the status bar of every page. The server is plain Python
 > (standard library HTTP server, no web framework); sensors come from ROS 2 bridge containers over WebSocket, manual
 > control goes to the motor bridge over a Unix socket, autonomy goes through the row executor's operator API. The vehicle
 > is being refitted from differential (left/right PWM) to front-wheel steering; both control panels exist. The slow-link
 > work was measured on a PC link emulator, not yet on the rover's real Wi-Fi. The documents are in Korean.
 
-| 주행 화면 (노트북 1440 px) | 휴대폰 (390 px) |
+| Rover Control (노트북 1440 px) | 휴대폰 (390 px) |
 |---|---|
-| ![주행 화면, 노트북](docs/assets/screens/drive_1440.png) | ![주행 화면, 휴대폰](docs/assets/screens/drive_390.png) |
+| ![Rover Control, 노트북](docs/assets/screens/rover_control_1440.png) | ![Rover Control, 휴대폰](docs/assets/screens/rover_control_390.png) |
 
-[화면 · 모의 자료] 2026-11-13 화면 6개 판. 화면 점검 도구의 모의 서버(`tools/ui_check`)가 내는 예시 자료로 찍었다(실제 센서 값이 아니다).
-왼쪽은 LiDAR 큰 보기와 차동 차량의 주행 제어, 오른쪽은 같은 화면의 휴대폰 첫 화면이다. STOP은 모든 화면의 상태 막대와 주행 제어에 있다.
+[화면 · 모의 자료] 2026-11-14 판(메뉴를 수정 전 구성으로 되돌림). 화면 점검 도구의 모의 서버(`tools/ui_check`)가 내는 예시 자료로 찍었다(실제 센서 값이 아니다).
+왼쪽은 Rover Control의 첫 화면(LiDAR, 카메라, 차동 차량의 주행 제어), 오른쪽은 같은 페이지의 휴대폰 첫 화면이다. STOP은 모든 페이지의 상태 막대와 주행 제어에 있다.
 
 > **지금 상태.** 화면과 서버는 가짜 센서·가짜 MCU·가짜 실행기와 느린 연결 시험대로 확인했다. 조향 차량(앞바퀴 조향, 조향 펌웨어 V3)은
 > 아직 차에 없어서 조향 화면은 실차에서 확인하지 않았다. 이 판은 Jetson에 아직 설치하지 않았다(설치 묶음은 준비됨). 자세한 것은 [현재 한계](#현재-한계).
 
 ## 주요 기능
 
-**화면 6개.** 휴대폰과 노트북 모두에서 쓰도록 다시 나눴다([`docs/SCREENS_KO.md`](docs/SCREENS_KO.md)). 메뉴는 한글이다.
+**메뉴 8쪽.** 메뉴와 페이지 구성은 화면 개편 전과 같다(2026-11-14 사용자 지시로 되돌림, [`docs/SCREENS_KO.md`](docs/SCREENS_KO.md)).
+디자인(색·글꼴·부품)과 상태 막대의 STOP, 느린 연결 최적화는 새 판 그대로다. 그때 없던 기능은 Rover Control 안에 있다.
 
-| 화면 | 주소 | 하는 일 |
+| 메뉴 | 주소 | 하는 일 |
 | --- | --- | --- |
-| 주행 | `/rover-control` | 조종 활성화와 STOP, 차동 패드(W/A/S/D) 또는 조향 패널, 속도 상한, 카메라·LiDAR 중 하나를 크게, 자율 시작·정지 |
-| 지도 | `/map` | 실시간 점유 격자 지도(LiDAR·IMU), 실행기의 국소 격자와 추정 열 선·중심선, GPS 위치(오프라인 지도) |
-| 센서 | `/sensors` | LiDAR·카메라·IMU·GPS 상태와 보기, 브리지·ESP USB·ROS·녹화기 연동 상태, 조향 가변저항 |
-| 기록 | `/records` | 녹화 시작·멈춤, 기록 목록, 센서·영상 동기 재생, 기록 지도, 내려받기 |
-| 조정 | `/tuning` | 자율 실행기의 현장 조정 묶음(기본 값 바꾸기, 프리셋, 변경 기록). 차가 섰을 때만 바뀐다 |
-| 시스템 | `/system` | Jetson CPU·메모리·디스크·온도, 네트워크와 Wi-Fi/AP 전환, Docker 컨테이너, 팬 |
+| Overview | `/` | CPU·메모리·외부 IP·Docker 요약, CPU / Memory와 Network RX / TX 그래프, ROS2 / Rover 연결, Jetson 정보 |
+| Connection | `/connection` | LiDAR·카메라 연결 상태, RPLIDAR 상태 확인, 2D LiDAR 지도(내려받기), 카메라 실시간 화면, 서비스 연결, ROS2 센서 링크 |
+| System | `/system` | Jetson CPU(코어별)·메모리·Swap·네트워크·전력 그래프, 디스크 |
+| Network | `/network` | 외부·내부 주소, 오프라인 AP / 저장된 Wi-Fi 전환, RX / TX, 연결 정보 |
+| Docker | `/docker` | 컨테이너 CPU·메모리, 목록, 상세·로그, 시작·중지·재시작(확인 창) |
+| Fan Control | `/fan` | 온도, 팬 PWM(자동·수동) |
+| Rover Control | `/rover-control` | LiDAR(안에 실시간 점유 격자 지도와 실행기 국소 격자), 카메라, GPS 위치(오프라인 지도), IMU, 주행 제어(차동 패드 또는 조향 패널, 조향 가변저항, 자율 시작·정지), 현장 조정 값(접힘), 기록 제어, 연동 상태, 기록 데이터(동기 재생, 기록 지도, 내려받기) |
+| Docs | `/docs` | 운영 문서 |
+
+화면 6개 판의 주소(`/map`, `/records`, `/tuning`, `/sensors`, `/system/*` 등)는 별칭으로 남아 그 기능이 있는 페이지로 간다.
 
 **센서 실시간.** LiDAR(RPLIDAR S2 `/scan`), 카메라(UVC, 녹화는 원본 1080p), IMU(BNO085 원본, 소프트웨어 보정 없음), GPS(ZED-F9P)를
 ROS 2 브리지 컨테이너가 WebSocket으로 보내고 대시보드 서버가 중계한다. 화면이 받은 것을 확인한 뒤에만 다음 것을 보내서 느린 연결에서 밀리지 않는다.
-화면에 보이지 않는 패널과 숨긴 탭은 받지 않는다.
+화면에 보이지 않는 패널과 숨긴 탭은 받지 않는다(Rover Control처럼 패널이 많은 페이지에서도 화면에 들어온 패널의 스트림만 연다).
 
 **조종과 STOP.** 조종 활성화 뒤 키보드(W/A/S/D, Q/E로 속도)나 화면 버튼으로 몬다. 손을 떼면 감속하고, 입력이 0.75초 끊기면 차가 스스로 선다.
 STOP·Esc·창 이탈은 즉시 정지와 조종 해제다. 조종 요청은 다른 요청과 따로, 가장 먼저 보낸다(`controlRequest`, NET-05).
 PWM 값은 요청한 출력이지 실제 바퀴 속도가 아니다(차에 휠 엔코더가 없다).
 
-**조향 차량(수동·자율·조정).** 차가 앞바퀴 조향으로 바뀌는 중이다. `DASHBOARD_VEHICLE=front_steer`면 조향 패널(구동 W/S, 조향 A/D·가운데,
-목표·측정 조향각)이 보이고, 자율 칸에서 "준비 → Arm → 자율 주행 시작"을 누르면 실행기가 열 끝까지 간다(시뮬레이션에서 확인, 실차 전).
-화면을 떠나거나 탭을 숨기면 0.5초 뒤 차가 서고, 다시 출발은 사람이 누른다. 서버 사양: [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md).
+**조향 차량(수동·자율·조정).** 차가 앞바퀴 조향으로 바뀌는 중이다. `DASHBOARD_VEHICLE=front_steer`면 Rover Control의 주행 제어 패널에
+조향 패널(구동 W/S, 조향 A/D·가운데, 목표·측정 조향각)과 조향 가변저항 값이 보이고, 그 아래 자율 칸에서 "준비 → Arm → 자율 주행 시작"을 누르면
+실행기가 열 끝까지 간다(시뮬레이션에서 확인, 실차 전). Rover Control을 떠나거나 탭을 숨기면 0.5초 뒤 차가 서고(페이지 안에서 스크롤하는 것은 괜찮다),
+다시 출발은 사람이 누른다. 현장 조정 값은 같은 페이지의 접힌 칸에 있다. 서버 사양: [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md).
 
 | 조향 수동 조종 (휴대폰) | 자율 주행 칸 (실행기 상태 자세히) |
 |---|---|
 | ![조향 패널](docs/assets/screens/steer_drive_390.png) | ![자율 칸](docs/assets/screens/steer_autonomy_1440.png) |
 
-| 조정 화면 | 지도: 실행기 국소 격자 |
+| 현장 조정 값(펼친 칸) | 실시간 지도 아래 실행기 국소 격자 |
 |---|---|
 | ![조정 화면](docs/assets/screens/tuning_1440.png) | ![국소 격자](docs/assets/screens/map_local_grid_1440.png) |
 
-[화면 · 모의 자료] 위 네 장은 `front_steer`(조향 차량) 화면을 모의 서버의 예시 자료로 찍은 것이다. 실행기 상태·조정 값·격자는 가짜 실행기의 값이고
+[화면 · 모의 자료] 위 네 장은 `front_steer`(조향 차량)의 Rover Control을 모의 서버의 예시 자료로 찍은 것이다(그 부분으로 스크롤한 화면). 실행기 상태·조정 값·격자는 가짜 실행기의 값이고
 현장 값이 아니다. 조정 묶음의 이름·범위·단위는 실행기가 알려 준 것을 그대로 보인다.
 
 **느린 연결 최적화.** PC에서 2.4 GHz 연결을 흉내 내는 시험대(`tools/slow_link`)로 재며 고쳤다. 아래는 그 측정의 일부다(주행 화면 2분, LiDAR는 주행 화면의
@@ -88,7 +94,7 @@ LiDAR 큰 보기, 지도는 지도 화면 10분. 기준은 화면 개편 전의 
 ```mermaid
 flowchart LR
   subgraph PHONE["휴대폰 · 노트북"]
-    B["브라우저<br/>화면 6개"]
+    B["브라우저<br/>메뉴 8쪽"]
   end
   subgraph JET["Jetson (차)"]
     D["대시보드 서버<br/>dashboard_server<br/>HTTP :8080"]
@@ -166,7 +172,7 @@ scripts/run_local.sh            # = python3 -m dashboard_server --host 127.0.0.1
 | 위치 | 내용 |
 | --- | --- |
 | `dashboard_server/` | 대시보드 서버(Python 표준 라이브러리 HTTP 서버): 화면·정적 파일, 상태 API, WebSocket 중계, 조종 중계(`rover_api.py`), 실행기 중계(`executor_proxy.py`), 조정(`steer_tuning.py`), 기록·지도, 확장 지점(`extensions.py`) |
-| `static/` | 화면: `index.html`, `app/`(화면 스크립트 17개), `steer/`(조향·자율·조정 화면), `css/`, `vendor/`(지도·영상 라이브러리, 글꼴) |
+| `static/` | 화면: `index.html`, `app/`(화면 스크립트 17개), `steer/`(Rover Control의 조향·자율·조정 값·국소 격자), `css/`, `vendor/`(지도·영상 라이브러리, 글꼴) |
 | `scripts/` | Jetson에서 도는 ROS 2 드라이버·브리지(`*_ros2_driver.py`, `*_ws_bridge.py`), 조종 브리지(차동 `rover_control_bridge.py`, 조향 V3 `steer_rover_bridge.py`), 녹화기, 기록 후처리 |
 | `deploy/` | `jetson_dashboard/`(설치 묶음), `offline_ap/`(무선 AP 전환), `systemd/`, `native_sensor_stream/`·`native_sensor_shadow/`(차동 시절 관찰 서비스) |
 | `tools/` | `ui_check/`(화면 점검), `slow_link/`(느린 통신 시험대, 현장 연결 기록 보고), `fonts/`(화면 글꼴 분할), 차동 시절 관찰 도구 |
@@ -181,7 +187,7 @@ scripts/run_local.sh            # = python3 -m dashboard_server --host 127.0.0.1
 
 | 문서 | 내용 |
 | --- | --- |
-| [`docs/SCREENS_KO.md`](docs/SCREENS_KO.md) | 화면 6개, 옛 주소, 기능 대조표 |
+| [`docs/SCREENS_KO.md`](docs/SCREENS_KO.md) | 메뉴 8쪽(수정 전 구성), Rover Control 안의 새 기능 자리, 화면 6개 주소의 별칭 |
 | [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) | 조향 차량 서버 사양: 조종 API, 조향 상태, 자율 시작·정지 중계, 조정 값, 정지 규칙, 차동 판과의 공존 |
 | [`docs/slow_link.md`](docs/slow_link.md) | 느린 연결: 시험대, 기준 측정, 목표 32개, 고친 뒤와 최종 측정 |
 | [`docs/WIFI_AP_CHECKLIST_KO.md`](docs/WIFI_AP_CHECKLIST_KO.md) | 차의 무선 AP 현장 점검표, 연결 기록(`?link_log=1`) |
@@ -203,7 +209,7 @@ python3 -m unittest discover -s tests
 node tests/test_control_path_regression.js && node tests/test_rover_browser.js && node tests/test_rover_pad_touch.js
 python3 -m unittest tests.test_control_deadman_regression
 
-# 화면 점검: 11경로 × 5화면 크기 × 자료 2종 = 110쪽, 받아들인 기록과 비교 (Playwright, 깔린 Chrome)
+# 화면 점검: 메뉴 8쪽 × 5화면 크기 × 자료 2종 = 80쪽, 받아들인 기록과 비교 (Playwright, 깔린 Chrome)
 python tools/ui_check/run_checks.py --static static --out <결과 폴더>
 python tools/ui_check/compare.py --run <결과 폴더>/ui_check.json --baseline tools/ui_check/accepted/ui_check.json
 
@@ -215,7 +221,7 @@ CI(`.github/workflows/smoke.yml`)는 컴파일과 Python 시험을 돌린다. RO
 
 ## 현재 한계
 
-- **실차 확인 전.** 이 판(화면 6개, 느린 연결 최적화, 조향 화면)은 PC에서 가짜 센서·MCU·실행기로만 확인했고 Jetson에 아직 설치하지 않았다.
+- **실차 확인 전.** 이 판(메뉴 8쪽, 느린 연결 최적화, 조향 칸)은 PC에서 가짜 센서·MCU·실행기로만 확인했고 Jetson에 아직 설치하지 않았다.
 - **조향 차량은 아직 없다.** 조향 펌웨어 V3·조향 브리지·실행기가 차에 올라가기 전까지 실제 차는 차동(좌우 PWM) 펌웨어 V2로 수동 주행한다.
   그래서 차동 시절 자율·관찰 코드는 조향 실행기로 바뀔 때까지 남겨 둔다(결정 나5, [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) 9절).
 - **느린 연결 값은 흉내 낸 값.** 연결 프로필(좋음 10 Mbit/s ~ 아주 나쁨 150 kbit/s)과 연결 등급 경계(25 / 90 / 220 ms)는 가정이다.

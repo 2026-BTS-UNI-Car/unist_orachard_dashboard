@@ -13,7 +13,7 @@
 
 ```mermaid
 flowchart LR
-  B["브라우저<br/>(주행·조정 화면)"] -->|"HTTP /api/rover/*<br/>(수동 조종)"| D["대시보드 서버<br/>(dashboard_server)"]
+  B["브라우저<br/>(Rover Control)"] -->|"HTTP /api/rover/*<br/>(수동 조종)"| D["대시보드 서버<br/>(dashboard_server)"]
   B -->|"HTTP /api/executor/*<br/>(자율 시작·정지·조정)"| D
   D -->|"Unix 소켓 JSON 한 줄<br/>/run/ubts-rover/control.sock"| BR["조향 브리지 V3<br/>(scripts.steer_rover_bridge)"]
   D -->|"HTTP + 토큰<br/>(운영자 API)"| EX["자율 실행기<br/>(row_executor)"]
@@ -34,7 +34,7 @@ flowchart LR
 | `DASHBOARD_PROVIDER` | `패키지.모듈:클래스` | 없음 | 상태 제공자(`TelemetryProvider` 대신). 시뮬레이션 전용 |
 | `DASHBOARD_EXTRA_STATIC` | 폴더 경로 | 없음 | `/ext-static/` 아래로 내보내는 추가 정적 폴더. 시뮬레이션 전용 |
 | `DASHBOARD_EXTENSION` | `패키지.모듈` | 없음 | 추가 경로 표(`ROUTES`). 시뮬레이션 전용 |
-| `UBTS_EXECUTOR_URL` | `http://호스트:포트` | 없음 | 자율 실행기 운영자 HTTP. 없으면 자율·조정 화면은 "실행기 설정 없음" |
+| `UBTS_EXECUTOR_URL` | `http://호스트:포트` | 없음 | 자율 실행기 운영자 HTTP. 없으면 Rover Control의 자율·조정 칸은 "실행기 설정 없음" |
 | `UBTS_EXECUTOR_TOKEN_FILE` | 파일 경로 | 없음 | 실행기가 시작할 때 쓰는 토큰 파일(`operator_token.txt`) |
 
 - 화면은 `GET /api/dashboard/config`로 `{runtime_mode, vehicle_kind, executor_configured, extension}`을 받는다. 비밀 값(토큰, 경로)은 넣지 않는다.
@@ -147,9 +147,9 @@ flowchart LR
   `mode`(SHADOW/MOTOR), `state`, `reason`, `end_reason`, `controller_mode`, `profile`, `vehicle_control`, `lidar_age`, `imu_age`,
   `single_row {phase, lateral_error_m, heading_error_deg, distance_m, speed_m_s, target_speed_m_s, stop_reason, stop_category, confidence.level}`,
   `gnss {state, fix, age_s, h_acc_m, used}`, `bridge_detail {state, latch_reason}`, `lease_lost {where, error, bridge_reason, bridge_latches, steering_fault}`(규약 개정 3, 없으면 칸 없음).
-- `GET /api/executor/status?grid=1`(지도 화면)만 실행기의 국소 격자 `local_grid_map`(스키마 `ubts.row_executor.local_grid.v1`, 시뮬레이션 레포 `docs/steering/LOCAL_GRID_KO.md`)을 더 넘긴다:
+- `GET /api/executor/status?grid=1`(Rover Control의 실시간 지도 칸이 화면에 있을 때)만 실행기의 국소 격자 `local_grid_map`(스키마 `ubts.row_executor.local_grid.v1`, 시뮬레이션 레포 `docs/steering/LOCAL_GRID_KO.md`)을 더 넘긴다:
   `schema, frame, updates, axis_rad, origin_uv, occupied, encoding, age_s, cell_m, shape, bits(24 KiB 이하), cells(2,000개 이하), truncated, lines {left, right, centre, quality, stamp}, base_pose`.
-  run 주행 거리 좌표이고 GNSS가 아니다. 실행기가 내지 않으면 칸이 없고 지도 화면은 그 층을 숨긴다.
+  run 주행 거리 좌표이고 GNSS가 아니다. 실행기가 내지 않으면 칸이 없고 화면은 그 층을 숨긴다.
 
 상태 전이(실행기가 정한다. 화면은 받은 `run_state`만 보여 준다):
 
@@ -176,11 +176,11 @@ stateDiagram-v2
 | 항목 | 값 |
 | --- | --- |
 | 주 버튼 | idle·ended "준비"(start, MOTOR면 이어서 arm) → ready "Arm" → armed "자율 주행 시작"(go) → running "주행 중"(꺼짐) → paused "다시 출발"(새 go) → latched "래치 확인"(ack). go 버튼은 `go_ready`일 때만 켜고, 아니면 `go_blockers`를 한국어로 보인다(규약 개정 2) |
-| heartbeat | `run_state`가 armed·running·paused이고 상태가 새것인 동안, 주행 화면이 보이고 탭이 보일 때만 100 ms마다(규약 개정 1, 늦어도 250 ms). go 전 armed부터 보내므로 go 때 운영자 연결이 이미 새것이다(`operator_link_not_fresh` 막음 없음). 탭을 숨기거나 화면을 떠나면 멈춘다 → 실행기가 `operator_link.timeout_s` 뒤 선다(규약 개정 1: 기본 0.5 s, 범위 0.5 ~ 3.0, 화면에서 못 바꿈. 화면은 상태의 값을 보인다) |
+| heartbeat | `run_state`가 armed·running·paused이고 상태가 새것인 동안, Rover Control이 열려 있고 탭이 보일 때만(스크롤 위치와 무관) 100 ms마다(규약 개정 1, 늦어도 250 ms). go 전 armed부터 보내므로 go 때 운영자 연결이 이미 새것이다(`operator_link_not_fresh` 막음 없음). 탭을 숨기거나 화면을 떠나면 멈춘다 → 실행기가 `operator_link.timeout_s` 뒤 선다(규약 개정 1: 기본 0.5 s, 범위 0.5 ~ 3.0, 화면에서 못 바꿈. 화면은 상태의 값을 보인다) |
 | lease 잃음(규약 개정 3) | Arm 뒤 첫 go 전에 브리지가 lease를 거두면 run은 열린 채 `ready`, `go_blockers`에 `lease_lost`·`arm_first`. 주 버튼은 "Arm 다시 (브리지가 권한을 거둠)", 안내 "브리지가 권한을 거뒀다: Arm을 다시 누른다" |
 | heartbeat 409 | `session_conflict`: 다른 화면이 출발 권한을 가짐. 화면은 오류 줄에 보인다(자동으로 빼앗지 않는다) |
-| 상태 읽기 | 주행 화면이 보일 때 500 ms, 숨김이면 멈춤 [자리값] |
-| STOP | 주행 패널 STOP, 상태 막대 STOP, Esc(주행 화면): 기존 브리지 stop(한 번) 그대로에 더해, run이 있거나 실행기 상태를 모르면 실행기 stop도 보낸다. 자율 칸에 따로 STOP 버튼을 두지 않는다(같은 패널 위에 STOP이 있다) |
+| 상태 읽기 | Rover Control이 보일 때 500 ms, 숨김이면 멈춤 [자리값] |
+| STOP | 주행 패널 STOP, 상태 막대 STOP, Esc(Rover Control): 기존 브리지 stop(한 번) 그대로에 더해, run이 있거나 실행기 상태를 모르면 실행기 stop도 보낸다. 자율 칸에 따로 STOP 버튼을 두지 않는다(같은 패널 위에 STOP이 있다) |
 | 실행기 없음 | 설정 없음 → "실행기 설정 없음", 응답 없음 → "실행기 연결 안 됨". 버튼 꺼짐, STOP은 브리지 stop으로 계속 동작 |
 
 정지 이유 이름표(`stop_reason`, `single_row.stop_category`): `ROW_END` 정상 열 끝, `OBSTACLE` 열 안 장애물, `END_STRUCTURE` 열 끝 구조물, `PERCEPTION_OR_LOCALISATION` 센서·위치 추정 부족,
@@ -251,7 +251,7 @@ stateDiagram-v2
 바뀌면 태그에 보존한 뒤 내린다. 이 결정은 2026-11-13 묶음 S6에서 다시 확인했다(코드는 그대로 둠).
 
 - 그때까지 그대로 두는 것: 차동 패드와 `left`/`right` 명령, 옛 감독기 `/api/autonomy/*`, 관찰 패널, 현장 준비 점검표. 이력 경로이며 조향 차량(`front_steer`)에서는 쓰지 않는다.
-- `DASHBOARD_VEHICLE=differential`(기본)에서 화면과 서버 동작은 이 사양 전과 같다. 새 자율·조정 화면은 실행기 설정이 없으면 "설정 없음"만 보인다.
+- `DASHBOARD_VEHICLE=differential`(기본)에서 화면과 서버 동작은 이 사양 전과 같다. 새 자율·조정 칸은 실행기 설정이 없으면 "설정 없음"만 보인다.
 - `front_steer`에서는 차동 패드와 옛 자율 자리 패널을 숨기고 조향 패널을 보인다. 옛 경로 자체는 남는다.
 - 내리는 조건(모두): (1) Jetson에 V3 펌웨어와 조향 브리지(`scripts.steer_rover_bridge`, serial)가 설치되어 상태에 `steering` 블록이 나온다, (2) 사용자가 현장에서 조향 수동 조종을 확인했다, (3) 조향 실행기가 Jetson에 설치되어 자율 시작·정지를 확인했다. 셋이 채워지면 나5에 따라 내린다.
 - 내릴 묶음(세 묶음을 같이 내린다): 서버 `dashboard_server/` 의 `autonomy_settings`, `autonomy_observation`, `record_based_autonomy`, `native_autonomy_application`, `native_autonomy_supervisor`, `native_observation_client`, `native_owner_lifecycle`, `field10_shadow`, `field10_shadow_preflight`, `field_preflight`, `encoderless_drive_preview`, `_field10/`;
@@ -289,11 +289,11 @@ stateDiagram-v2
 | --- | --- | --- |
 | 확장 지점(2절, D-12) | `dashboard_server/extensions.py`, `GET /api/dashboard/config`, 화면 표시 `data-vehicle-kind` | 시뮬레이션 쪽 모듈을 이 지점에 꽂기(D-13, 묶음 S5) |
 | 조향 호스트 코드(D-11) | `scripts/esp_motor_v3.py` 등 4개와 시험 7개, compose 프로필 `steer`(기록: `STEERING_HOST_PORT_KO.md`) | 실기 ESP·USB·Jetson 확인(사용자) |
-| 수동 조향(3·4절, UI-07) | `static/steer/steer-control-rules.js`, `steer-drive.mjs`. `front_steer`에서만 보임. 주행 화면의 큰 보기(카메라·LiDAR 하나, `docs/SCREENS_KO.md`) | 실기 확인(사용자) |
+| 수동 조향(3·4절, UI-07) | `static/steer/steer-control-rules.js`, `steer-drive.mjs`. `front_steer`에서만 보임. Rover Control의 주행 제어 패널(`docs/SCREENS_KO.md`) | 실기 확인(사용자) |
 | 자율 시작·정지(6절, UI-08) | `dashboard_server/executor_proxy.py`, `static/steer/auto-model.mjs`(준비 = start 뒤 새 상태를 읽고 ready면 Arm), `auto-panel.mjs` | 실행기(S1) 실제 연결 확인 |
 | 지도의 국소 격자(6절, UI-09) | `GET /api/executor/status?grid=1`, `static/steer/local-grid.mjs`(점유 셀·열 선·중심선·차, 실행기가 낼 때만) | 지도 갱신 지연 측정, 실시간 점유 격자와 겹쳐 그리기 |
-| 조정(7절, UI-12) | `/tuning`, `dashboard_server/steer_tuning.py`(실행기 field_tuning 묶음), `static/steer/tuning-model.mjs`, `tuning-page.mjs`, 프리셋 불러오기·저장, 변경 기록 | PWM-속도 표 그래프, 고급 묶음 화면 편집(실행기에도 없음) |
-| 조향 가변저항(UI-11) | 센서 화면 카드 `static/steer/steer-sensor.mjs`(읽기만) | 실기 값 확인 |
+| 조정(7절, UI-12) | Rover Control의 접힌 '현장 조정 값' 칸(`/tuning`은 별칭), `dashboard_server/steer_tuning.py`(실행기 field_tuning 묶음), `static/steer/tuning-model.mjs`, `tuning-page.mjs`, 프리셋 불러오기·저장, 변경 기록 | PWM-속도 표 그래프, 고급 묶음 화면 편집(실행기에도 없음) |
+| 조향 가변저항(UI-11) | Rover Control 주행 제어 패널의 줄 `static/steer/steer-sensor.mjs`(읽기만, 조향 패널의 상태 답을 같이 씀) | 실기 값 확인 |
 | 조향 기록(5절) | 바꾸지 않음 | 녹화기 토픽·사이드카(P9) |
 | 조종 WebSocket(3절) | 없음(HTTP) | NET-05(S4a) 측정 뒤 결정 |
 

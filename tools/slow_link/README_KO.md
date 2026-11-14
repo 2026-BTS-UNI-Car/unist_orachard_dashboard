@@ -140,16 +140,18 @@ python -B tools/slow_link/compare.py --replace-all --accept <r>/20261113T053845Z
 
 ## 시나리오
 
-`sensors`와 `map`을 뺀 모두 주행 화면(`/rover-control`)에서 잰다. 화면 6개(2026-11-13) 뒤 주행 화면은 카메라와 LiDAR 중 하나만 크게 보이고(기본 카메라),
-IMU는 센서 화면, 실시간 지도와 GPS는 지도 화면에 있다. 그래서 `drive`에는 LiDAR·IMU·GPS 수치가 없고, 그 수치는 `drive_lidar`·`sensors`·`map`에서 잰다.
+`sensors`를 뺀 모두 Rover Control(`/rover-control`)에서 잰다. 메뉴를 수정 전 구성으로 되돌린 뒤(UI-16, 2026-11-14) Rover Control에는
+LiDAR·카메라·GPS·IMU·조종·조정 값·기록 패널이 다시 모여 있고, 스트림과 지도 요청은 그 패널이 화면에 있을 때만 열린다(`docs/SCREENS_KO.md` 3절).
+그래서 `drive`(1366x900 첫 화면)에서는 LiDAR와 카메라가 열리고 IMU·GPS·실시간 지도는 열리지 않는다. 화면 6개(2026-11-13) 판에서는 주행 화면이
+카메라와 LiDAR 중 하나만 크게 보였다(`drive_lidar`는 그 판을 잴 때 쓴다).
 
 | 이름 | 하는 일 |
 | --- | --- |
 | `drive` | 처음 열기(빈 캐시) → 다시 열기(같은 탭) → 2분 실시간. 실시간 동안 조종 연습을 되풀이한다. 큰 보기는 카메라 |
-| `drive_lidar` | `drive`와 같고 주행 화면의 큰 보기만 LiDAR(화면의 `ubts-drive-view-v1` 값을 미리 넣는다) |
-| `sensors` | 센서 화면(`/sensors`) 처음 열기 → 2분 실시간(LiDAR, 카메라, IMU). 조종 연습 없음 |
-| `map` | 지도 화면(`/map`) 처음 열기 → 10분 실시간, 실시간 격자 지도 그리기 켬(GPS 포함). 조종 연습 없음 |
-| `drive_map` | 처음 열기 → 10분 실시간, 조종 연습. 지도 그리기 켜기를 시도하지만 화면 6개 뒤 주행 화면에는 지도가 없어 지도 수치가 비고, 10분 조종만 남는다 |
+| `drive_lidar` | 화면 6개 판에서 `drive`와 같고 주행 화면의 큰 보기만 LiDAR(화면의 `ubts-drive-view-v1` 값을 미리 넣는다). 되돌린 판에서는 `drive`와 같다 |
+| `sensors` | Connection(`/connection`, 화면 6개 판의 `/sensors`) 처음 열기 → 2분 실시간(LiDAR 지도, 카메라). 조종 연습 없음 |
+| `map` | `/map`(되돌린 판에서는 Rover Control의 별칭, 실시간 지도로 스크롤) 처음 열기 → 10분 실시간, 실시간 격자 지도 그리기 켬. 조종 연습 없음 |
+| `drive_map` | 처음 열기 → 10분 실시간, 조종 연습. 지도 그리기 켜기를 시도한다. 첫 화면에 지도 칸이 없으면 지도 요청이 없어 지도 수치가 빈다 |
 | `load` | 처음 열기와 다시 열기만 |
 | `hidden` | 1분 보이고, 탭을 숨긴 채 1분 |
 | `session_expiry` | 대시보드 세션 만료를 50초로 줄이고 150초 (스트림이 끊기는지) |

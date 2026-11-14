@@ -27,7 +27,7 @@
 | [grid_cell_transport.md](grid_cell_transport.md) | 격자 지도를 셀 숫자로 보내고 브라우저가 그리는 형식 | 현재 |
 | [slow_link.md](slow_link.md) | 느린 2.4 GHz 연결: 시험대, 기준 측정, 원인, 목표 32개, 고친 뒤와 최종 측정(12절) | 현재 |
 | [WIFI_AP_CHECKLIST_KO.md](WIFI_AP_CHECKLIST_KO.md) | 차의 무선 AP 현장 점검표(채널·대역·출력·안테나·거리), 현장 연결 기록(`?link_log=1`)과 등급 경계 다시 맞추기 | 현재 |
-| [SCREENS_KO.md](SCREENS_KO.md) | 화면 6개(주행·지도·센서·기록·조정·시스템)와 옛 주소, 기능 대조표 | 현재 |
+| [SCREENS_KO.md](SCREENS_KO.md) | 메뉴 8쪽(수정 전 구성으로 되돌림, UI-16), Rover Control 안의 새 기능 자리, 화면 6개 주소의 별칭 | 현재 |
 
 ## 조종 (차동 V2)
 

@@ -56,7 +56,7 @@ AP 를 켠 상태에서는 같은 무선 장치로 주변 AP 를 검색하지 �
 대시보드 화면은 0.5 초마다 아주 작은 요청(`/api/ping`)을 보내고, 운전 중에는 조종 요청의 왕복 시간도 함께 재서 연결 등급을 정한다.
 주소 끝에 `?link_log=1` 을 붙여 열면 그 표본을 10 초마다 대시보드 서버로 보내 파일로 남긴다.
 
-1. 휴대폰에서 `http://10.77.0.1/rover-control?link_log=1` 을 연다(다른 화면도 된다: `/sensors?link_log=1`).
+1. 휴대폰에서 `http://10.77.0.1/rover-control?link_log=1` 을 연다(다른 페이지도 된다: `/connection?link_log=1`).
    계속 켜 두려면 브라우저 개발자 도구에서 `localStorage.setItem("ubts-link-log", "1")`, 끄려면 `localStorage.removeItem("ubts-link-log")`.
 2. 녹화를 켜 두면 표본마다 그때의 녹화 ID 가 붙는다. 거리·장소를 바꿀 때마다 시각을 적어 두면 나중에 나눌 수 있다.
 3. 기록은 Jetson 의 대시보드 `runtime/link_log/YYYYMMDD.jsonl`(UTC 날짜, 하루 20 MB 까지)에 쌓인다. compose 기준으로 컨테이너의
