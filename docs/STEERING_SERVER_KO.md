@@ -146,7 +146,8 @@ flowchart LR
   `tuning {preset, revision, editable, not_editable_because, modified, presets, writable, unsaved, basic [{name, value, low, high, unit}], values {basic, advanced, locked}}`(파일 경로·digest는 넘기지 않는다),
   `mode`(SHADOW/MOTOR), `state`, `reason`, `end_reason`, `controller_mode`, `profile`, `vehicle_control`, `lidar_age`, `imu_age`,
   `single_row {phase, lateral_error_m, heading_error_deg, distance_m, speed_m_s, target_speed_m_s, stop_reason, stop_category, confidence.level}`,
-  `gnss {state, fix, age_s, h_acc_m, used}`, `bridge_detail {state, latch_reason}`, `lease_lost {where, error, bridge_reason, bridge_latches, steering_fault}`(규약 개정 3, 없으면 칸 없음).
+  `gnss {state, fix, age_s, h_acc_m, used}`, `bridge_detail {state, latch_reason}`, `lease_lost {where, error, bridge_reason, bridge_latches, steering_fault}`(규약 개정 3, 없으면 칸 없음),
+  `online_scale {enabled, run_id, value, window_s, target_s, min_s, frozen, hold, age_s, mismatch, speed_scale, prior_scale, offer {run_id, value, window_s, end_reason, speed_scale_now, speed_scale_new, ok, why_not}}`(규약 개정 6, PW-10: 온라인 배율 = LiDAR 속도 ÷ 표 속도, 최근 주행 20 s. front_steer 실행기만, 없으면 칸 없음. 뜻은 시뮬레이션 레포 `docs/steering/OPERATOR_API_KO.md` 6.1). 화면에 보이는 자리와 주행 뒤 저장 묻기 화면은 메뉴를 되돌린 뒤 정한다(2026-11-14 조정 쪽 지시, 화면 코드 변경 없음).
 - `GET /api/executor/status?grid=1`(지도 화면)만 실행기의 국소 격자 `local_grid_map`(스키마 `ubts.row_executor.local_grid.v1`, 시뮬레이션 레포 `docs/steering/LOCAL_GRID_KO.md`)을 더 넘긴다:
   `schema, frame, updates, axis_rad, origin_uv, occupied, encoding, age_s, cell_m, shape, bits(24 KiB 이하), cells(2,000개 이하), truncated, lines {left, right, centre, quality, stamp}, base_pose`.
   run 주행 거리 좌표이고 GNSS가 아니다. 실행기가 내지 않으면 칸이 없고 지도 화면은 그 층을 숨긴다.
@@ -214,6 +215,7 @@ stateDiagram-v2
 | `label` | 대시보드의 한국어 이름표(모르는 키는 이름 그대로) |
 | `available` | 실행기 상태에 `tuning`이 있음(현장 조정 파일을 읽은 front_steer 실행기) |
 | `applicable`, `why_not` | 실행기의 `tuning.editable`과 `not_editable_because`(`tuning_locked_while_running`, `tuning_locked_while_armed`, `tuning_locked_vehicle_moving`) |
+| `online_scale_offer` | 상태 `online_scale.offer` 그대로(규약 개정 6, PW-10. 없으면 null). 답 형식을 거를 때 쓴다 |
 
 `POST /api/executor/params` 본문(실행기 형식 그대로, 하나만):
 
@@ -222,6 +224,7 @@ stateDiagram-v2
 - `{"save": true}`, `{"save_preset": "이름", "note": "메모"}`: 지금 값을 실행기 파일에 쓴다. 실행기가 `writable`이 아니면 409 `tuning_not_writable`(패키지 기본 파일), 이름은 영문·숫자·`_ - .` 1 ~ 40자이고 `default`가 아니어야 한다(400 `bad_preset_name`).
 - 실행기가 바꿀 수 없다고 하면 409와 그 이유(`tuning_locked_while_running` 등). 대시보드 검사를 지나도 실행기가 거절하면(값 사이 규칙 등) 실행기의 400 `invalid_params`와 `problems` 목록을 그대로 돌려준다.
 - 성공 응답: `{ok, action(set/load_preset/save/save_preset), changes [{key, old, new}], tuning {preset, revision}}`(파일 경로·digest는 뺀다).
+- `{"online_scale": "accept" | "dismiss", "run_id": N}`(규약 개정 6, PW-10): run 뒤 실행기가 낸 온라인 배율 제안의 답. 대시보드가 먼저 상태의 `online_scale.offer`로 거른다: 다른 키·모르는 답·정수가 아닌 `run_id` 400 `online_scale_form`, 제안 없음 409 `no_online_scale_offer`, 다른 run 409 `online_scale_offer_changed`. accept 는 제안이 `ok` 이고(아니면 409 와 그 `why_not`) 조정 값을 바꿀 수 있을 때만(아니면 409 와 그 이유), dismiss 는 언제나. 실행기가 다시 보고 받으면 accept 는 k_field(`speed_scale`)를 제안 값으로 바꾼다(성공 응답의 `action` `online_scale`, dismiss 는 `online_scale_dismiss`). 기록 줄의 `action`도 같고 `target` 은 `run N`.
 - 변경 기록: 대시보드가 시도마다 한 줄을 `runtime/executor_tuning_log.jsonl`에 더한다(최근 500줄만 둔다). 줄: `{at, by(세션 앞 8자), action, target(프리셋 이름), changes {이름: [이전, 새 값]}, ok, error, problems(5개까지), revision_before, revision_after}`.
   `GET /api/executor/tuning/log`는 최근 50줄을 새 것부터 준다. 실행기 기록(JSONL)에도 `tuning_change`·`tuning_save` 사건이 남는다.
 - 되돌리기는 프리셋 불러오기(`default`는 기본값)와 변경 기록으로 한다. 고급 묶음의 화면 편집은 실행기 쪽에도 없다(FIELD_TUNING_KO.md 6절).

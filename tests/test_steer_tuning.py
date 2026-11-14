@@ -103,6 +103,35 @@ class ViewTest(unittest.TestCase):
             tuning.validate({"k_d": 1.0}, tuning.view(status("armed", editable=False, not_editable_because="tuning_locked_while_armed")))
         self.assertEqual((caught.exception.status, caught.exception.error), (409, "tuning_locked_while_armed"))
 
+    def test_online_scale_answer_form(self):
+        """PW-10: {"online_scale": "accept" | "dismiss", "run_id": N} for the offer the status carries; accept also needs
+        an offer that can be taken and a tuning that may change now; dismiss does not."""
+        def with_offer(run_state="ended", offer=None, **tune):
+            raw = status(run_state, **tune)
+            raw["status"]["online_scale"] = {"enabled": True, "run_id": 3, "value": 0.85, "offer": offer}
+            return tuning.view(raw)
+        offer = {"run_id": 3, "value": 0.8512, "window_s": 20.0, "speed_scale_now": 1.0, "speed_scale_new": 0.851,
+                 "ok": True, "why_not": None}
+        view = with_offer(offer=offer)
+        self.assertEqual(view["online_scale_offer"]["speed_scale_new"], 0.851)
+        self.assertEqual(tuning.validate({"online_scale": "accept", "run_id": 3}, view), {"online_scale": "accept", "run_id": 3})
+        self.assertEqual(tuning.validate({"online_scale": "dismiss", "run_id": 3}, view), {"online_scale": "dismiss", "run_id": 3})
+        locked = with_offer("armed", offer, editable=False, not_editable_because="tuning_locked_while_armed")
+        self.assertEqual(tuning.validate({"online_scale": "dismiss", "run_id": 3}, locked)["online_scale"], "dismiss")
+        cases = [({"online_scale": "accept", "run_id": 4}, view, 409, "online_scale_offer_changed"),
+                 ({"online_scale": "yes", "run_id": 3}, view, 400, "online_scale_form"),
+                 ({"online_scale": "accept", "run_id": "3"}, view, 400, "online_scale_form"),
+                 ({"online_scale": "accept", "run_id": True}, view, 400, "online_scale_form"),
+                 ({"online_scale": "accept", "run_id": 3, "k_d": 1}, view, 400, "online_scale_form"),
+                 ({"online_scale": "accept", "run_id": 3}, with_offer(), 409, "no_online_scale_offer"),
+                 ({"online_scale": "accept", "run_id": 3}, with_offer(offer=dict(offer, ok=False, why_not="no_scale")),
+                  409, "no_scale"),
+                 ({"online_scale": "accept", "run_id": 3}, locked, 409, "tuning_locked_while_armed")]
+        for body, case_view, code, error in cases:
+            with self.subTest(body=body, error=error), self.assertRaises(ExecutorError) as caught:
+                tuning.validate(body, case_view)
+            self.assertEqual((caught.exception.status, caught.exception.error), (code, error))
+
     def test_page_reply_drops_the_file_path(self):
         reply = tuning.page_reply({"ok": True, "action": "set", "changes": [{"key": "k_d", "old": 1.0, "new": 1.2, "x": 1}],
                                    "tuning": {"preset": "default*", "revision": 3, "file": "/home/x/f.json", "digest": "d"},
@@ -139,6 +168,26 @@ class ApplyTest(fake_module.FakeExecutorCase):
             tuning.apply(self.client, {"target_speed_m_s": 9}, log, "sess1234")
         self.assertEqual((log.recent()[0]["ok"], log.recent()[0]["error"]), (False, "out_of_range"))
         self.assertEqual(sum(1 for m, path, _ in self.fake.calls if path == "/api/params"), 1, "refused locally: not sent")
+
+    def test_online_scale_answers_are_logged_like_changes(self):
+        log = tuning.TuningLog(Path(self.tmp.name) / "tuning.jsonl")
+        self.fake.state["run_state"] = "ended"
+        self.fake.scale_offer = {"run_id": 3, "value": 0.8512, "window_s": 20.0, "end_reason": "row_end", "prior_scale": 1.0, "speed_scale_now": 1.0, "surface_scale": 1.0, "battery_scale": 1.0, "speed_scale_new": 0.851, "ok": True, "why_not": None}
+        code, reply = tuning.apply(self.client, {"online_scale": "accept", "run_id": 3}, log, "sess1234")
+        self.assertEqual((code, reply["ok"], reply["action"]), (200, True, "online_scale"))
+        self.assertEqual(reply["changes"], [{"key": "speed_scale", "old": 1.0, "new": 0.851}])
+        entry = log.recent()[0]
+        self.assertEqual((entry["action"], entry["target"], entry["ok"], entry["changes"], entry["revision_before"],
+                          entry["revision_after"]), ("online_scale", "run 3", True, {"speed_scale": [1.0, 0.851]}, 1, 2))
+        self.assertEqual(self.fake.tuning["values"]["basic"]["speed_scale"], 0.851)
+        with self.assertRaises(ExecutorError) as caught:                 # answered once: no offer any more
+            tuning.apply(self.client, {"online_scale": "accept", "run_id": 3}, log, "sess1234")
+        self.assertEqual(caught.exception.error, "no_online_scale_offer")
+        self.fake.scale_offer = dict({"run_id": 3, "value": 0.8512, "window_s": 20.0, "end_reason": "row_end", "prior_scale": 1.0, "speed_scale_now": 1.0, "surface_scale": 1.0, "battery_scale": 1.0, "speed_scale_new": 0.851, "ok": True, "why_not": None}, run_id=4)
+        code, reply = tuning.apply(self.client, {"online_scale": "dismiss", "run_id": 4}, log, "sess1234")
+        self.assertEqual((code, reply["action"], log.recent()[0]["action"], log.recent()[0]["changes"]),
+                         (200, "online_scale_dismiss", "online_scale_dismiss", {}))
+        self.assertEqual(self.fake.tuning["values"]["basic"]["speed_scale"], 0.851)
 
     def test_presets_saves_and_executor_refusals(self):
         log = tuning.TuningLog(Path(self.tmp.name) / "tuning.jsonl")
