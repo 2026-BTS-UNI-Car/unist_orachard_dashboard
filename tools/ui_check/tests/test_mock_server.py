@@ -50,8 +50,9 @@ class RouteKindTest(unittest.TestCase):
         self.assertEqual(mock_server.route_kind("/api/telemetry", routes), "api")
         self.assertEqual(mock_server.route_kind("/ws/lidar", routes), "ws")
         self.assertEqual(mock_server.route_kind("/maps/korea.pmtiles", routes), "other")
-        self.assertEqual(mock_server.route_kind("/drive", routes), "other")
-        self.assertEqual(mock_server.route_kind("/drive", routes + ("/drive",)), "app")
+        self.assertEqual(mock_server.route_kind("/not-a-page", routes), "other")
+        self.assertEqual(mock_server.route_kind("/not-a-page", routes + ("/not-a-page",)), "app")
+        self.assertEqual(mock_server.route_kind("/map", routes), "app")   # an address of the six-screen layout (an alias)
 
 
 class MockDataTest(unittest.TestCase):
@@ -130,7 +131,7 @@ class ServerTest(unittest.TestCase):
             status, content_type, body = self.get(route)
             self.assertEqual((status, body), (200, index), route)
             self.assertTrue(content_type.startswith("text/html"), route)
-        self.assertEqual(len(mock_server.APP_ROUTES), 17)
+        self.assertEqual(len(mock_server.APP_ROUTES), 18)
 
     def test_static_files_and_types(self):
         status, content_type, body = self.get("/static/app.js")

@@ -30,9 +30,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mock_data  # noqa: E402
 
 HOST = "127.0.0.1"
-# The six screens, the system tabs, the docs and the old addresses (docs/SCREENS_KO.md); all answer with index.html.
-APP_ROUTES = ("/rover-control", "/map", "/sensors", "/records", "/tuning", "/system", "/system/resources", "/system/network",
-              "/system/docker", "/system/fan", "/docs", "/", "/connection", "/network", "/docker", "/fan", "/research")
+# The eight menu pages and the addresses of the six-screen layout and of the removed research page, which the page
+# rewrites (docs/SCREENS_KO.md, UI-16); all answer with index.html.
+APP_ROUTES = ("/", "/connection", "/system", "/network", "/docker", "/fan", "/rover-control", "/docs",
+              "/drive", "/map", "/records", "/tuning", "/sensors", "/system/resources", "/system/network", "/system/docker",
+              "/system/fan", "/research")
 VEHICLES = ("differential", "front_steer")
 WS_CHANNELS = {"/ws/lidar": "lidar", "/ws/camera": "camera", "/ws/imu": "imu", "/ws/gps": "gps"}
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"

@@ -27,7 +27,8 @@
 | `rules.json` | 고정 규칙과 기준선 비교 설정 |
 | `tests/` | 단위 시험과, 흠을 일부러 넣은 화면(`tests/fixtures/`) |
 | `baseline/ui_check.json` | UI 개편 **전**의 기록(기준선 브랜치 37181f1에서 잰 값). 개편 앞뒤 비교표의 '앞'이며 바꾸지 않는다. 캡처는 레포에 넣지 않는다 |
-| `accepted/ui_check.json` | **가장 최근에 받아들인 상태**의 기록. 앞으로 화면을 고칠 때 견주는 대상이다(지금은 디자인 2차 뒤: 새 규칙표와 부품, 아이콘, 메뉴 레일과 상태 막대, UBTS Sans 글꼴) |
+| `accepted/ui_check.json` | **가장 최근에 받아들인 상태**의 기록. 앞으로 화면을 고칠 때 견주는 대상이다(지금은 메뉴·페이지 구성을 수정 전으로 되돌린 뒤: 메뉴 8쪽, 새 디자인 그대로) |
+| `accepted/six_screens_20261113.json` | 그 앞에 받아들였던 화면 6개 구성의 기록(110쪽). 견주기용으로 남긴다 |
 
 ## 돌리는 법
 
@@ -35,7 +36,7 @@
 `<out>`은 static 폴더 밖이어야 한다(안쪽이면 거절한다).
 
 ```
-# 1) 재기: 경로 11개 × 화면 5종 × 자료 2종 = 110쪽, 2분쯤 걸린다 (화면 6개·시스템 탭 넷·문서, 2026-11-13)
+# 1) 재기: 경로 8개 × 화면 5종 × 자료 2종 = 80쪽, 3분쯤 걸린다 (메뉴 8쪽, 수정 전 구성으로 되돌림, 2026-11-14)
 python run_checks.py --static <static> --out <out>
 
 # 2) 판정: 고정 규칙 + 받아들인 상태와 비교. 끝내는 값 0 = 통과, 1 = 실패, 2 = 파일·인자 오류
@@ -66,7 +67,7 @@ python mock_server.py --static <static> --dataset stress
 | 인자 | 뜻 |
 | --- | --- |
 | `--dataset empty\|stress\|both` | 모의 자료 묶음. 기본 both |
-| `--route rover-control` | 점검할 경로(여러 번 가능). 기본은 11개 전부(`DEFAULT_ROUTES`). `/` 대신 `overview`라고 적는다 |
+| `--route rover-control` | 점검할 경로(여러 번 가능). 기본은 메뉴 8쪽 전부(`DEFAULT_ROUTES`). `/` 대신 `overview`라고 적는다 |
 | `--vehicle front_steer` | 차량 종류. 실제 서버처럼 화면에 `data-vehicle-kind`를 붙여 조향 패널·자율 칸이 보이는 화면으로 잰다(기본 `differential`) |
 | `--viewport 390x844` | 화면 크기(여러 번 가능). 기본 390x844, 844x390, 820x1180, 1180x820, 1440x900 |
 | `--stop-selector "#id"` | STOP 조작 요소를 찾는 선택자(여러 번 가능, 앞의 것이 우선) |
@@ -210,7 +211,8 @@ LiDAR 스캔을 일부러 보내지 않는다. 스캔이 계속 오면 캔버스
 | `baseline/` | UI 개편 **전**의 상태(기준선 브랜치 37181f1에서 잰 값이고 main 3372139에서 잰 값과 같았다) | 바꾸지 않는다. 개편 앞뒤 비교표의 '앞'이다 |
 | `accepted/` | **가장 최근에 받아들인 상태**. 화면을 고친 뒤 `compare.py --baseline accepted/ui_check.json`으로 견준다 | 화면을 의도해서 바꾸고 확인을 마쳤을 때 |
 
-두 파일은 쪽마다의 수치와 근거 목록만 담는다(`baseline/` 90쪽, `accepted/` 110쪽). `static_dir`는 `static`처럼 상대 경로로 적고, 캡처(`shots/`)는 레포에 넣지 않는다.
+두 파일은 쪽마다의 수치와 근거 목록만 담는다(`baseline/` 90쪽, `accepted/` 80쪽). `static_dir`는 `static`처럼 상대 경로로 적고, 캡처(`shots/`)는 레포에 넣지 않는다.
+바로 앞에 받아들였던 화면 6개 구성의 기록은 견주기용으로 `accepted/six_screens_20261113.json`(110쪽)에 남겨 두었다.
 
 `accepted/`는 저절로 바뀌지 않는다. 화면을 의도해서 바꿔 수치가 달라졌을 때(경로를 합치거나 없앨 때 포함)만 새로 만든다.
 
@@ -221,16 +223,18 @@ LiDAR 스캔을 일부러 보내지 않는다. 스캔이 계속 오면 캔버스
    옛 기록은 git 기록에 남는다. 고친 것이 있으면 `rules.json`의 해당 규칙을 `fail`로 올린다.
    `python -B -m unittest`는 `accepted/`가 `fail` 규칙을 모두 지키는지도 본다.
 
-지금의 `accepted/`는 화면 6개 재구성(묶음 S4b 2단계, `docs/SCREENS_KO.md`) 뒤의 기록이다(라이트 테마, 110쪽 = 경로 11개 × 크기 5 × 자료 2).
-바로 앞의 기록(디자인 2차 뒤, 6a80461)과 견주면 다음과 같다. 모두 의도한 변화다(앞 기록의 설명은 git 기록에 있다).
+지금의 `accepted/`는 메뉴와 페이지 구성을 수정 전으로 되돌린 뒤(UI-16, 2026-11-14 사용자 지시, `docs/SCREENS_KO.md`)의 기록이다
+(라이트 테마, 80쪽 = 경로 8개 × 크기 5 × 자료 2). 바로 앞의 기록(화면 6개, 364bae1)은 `accepted/six_screens_20261113.json`에 있다.
+견주면 다음과 같다. 모두 의도한 변화다.
 
-- 경로: `/`, `/connection`, `/network`, `/docker`, `/fan`, `/research`가 빠지고(앞의 다섯은 새 주소의 별칭으로 남는다. 쪽 60개가 없어짐),
-  `/map`, `/sensors`, `/records`, `/tuning`, `/system/resources`, `/system/network`, `/system/docker`, `/system/fan`이 새로 들어왔다(쪽 80개).
-  같은 경로(`/rover-control`, `/system`, `/docs`) 30쪽에서 `fail` 비교 항목이 나빠진 곳은 없다.
-- 쪽 높이: 주행 화면에 큰 보기(카메라나 LiDAR) 하나만 남아 짧아졌다(stress 390x844 13.5장 → 2.4장, 1440x900 8.3장 → 1.3장).
-  `/system`은 요약 탭만 보여 390x844 4.3장 → 3.1장이다.
-- 44px 미만 누름 영역(마우스 화면 1440x900, `/rover-control`): 56 → 20개. 터치 화면은 문서 본문 속 링크 1개 그대로다.
-- 처음 잴 때 시스템 탭 링크의 폭이 44px 미만이어서(`/system` 터치 화면 3개) `.tab`을 고친 뒤 이 기록을 만들었다.
+- 경로: 메뉴가 수정 전의 8쪽(`/`, `/connection`, `/system`, `/network`, `/docker`, `/fan`, `/rover-control`, `/docs`)으로 돌아왔다.
+  `/map`, `/sensors`, `/records`, `/tuning`, `/system/*`는 옛 쪽의 별칭이라 재지 않는다(쪽 80개 빠짐, 50개 새로).
+  `fail` 규칙은 80쪽 모두 지킨다: 넘침·잘림·겹침·캔버스 불일치·스크립트 오류 0, STOP은 모든 쪽에서 첫 화면 안이고 스크롤해도 화면 안.
+  터치 화면의 44px 미만은 문서 본문 속 링크 1개 그대로다.
+- 쪽 높이(stress, 화면 수): Rover Control에 LiDAR·카메라·GPS·IMU·조종·조정 값·기록 패널이 다시 모여 길어졌다
+  (390x844 2.39 → 13.61장, 1440x900 1.32 → 8.23장. 개편 전 `baseline/`은 14.89장·9.51장). `/system`은 자원 쪽이 다시
+  `/system`이 되어 3.08 → 4.27장이다. 다른 쪽(390x844): `/` 3.03, `/connection` 5.66, `/network` 2.54, `/docker` 12.51, `/fan` 1.02장.
+- 44px 미만 누름 영역(마우스 화면 1440x900, `/rover-control`): 20 → 56개(개편 전 59개). 조작 요소 36px 규칙표대로라 `report`다.
 
 개편 전 `baseline/`과 견준 표가 필요하면 `python compare.py --run accepted/ui_check.json --baseline baseline/ui_check.json`으로 본다
 (기준선이 지키지 못한 규칙은 이번 결과만 판정하므로 통과가 나온다).

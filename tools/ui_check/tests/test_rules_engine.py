@@ -214,8 +214,7 @@ class RulesFileTest(unittest.TestCase):
         # 누름 영역 규칙: 터치 화면 네 가지에서 화면의 조작 요소는 모두 44px 이상. 문서 본문과 마우스 화면은 알리기만 한다.
         touch = by_id["touch-target-44"]
         self.assertEqual((touch["value"], touch["viewports"]), (0, ["390x844", "844x390", "820x1180", "1180x820"]))
-        self.assertEqual(sorted(touch["routes"]), sorted(["/rover-control", "/map", "/sensors", "/records", "/tuning", "/system", "/system/resources",
-                                                  "/system/network", "/system/docker", "/system/fan"]))
+        self.assertEqual(sorted(touch["routes"]), sorted(["/", "/connection", "/system", "/network", "/docker", "/fan", "/rover-control"]))
         self.assertEqual((by_id["touch-target-44-docs"]["mode"], by_id["touch-target-44-mouse"]["mode"]), ("report", "report"))
 
     def test_accepted_record_passes_and_the_record_before_the_overhaul_does_not(self):
@@ -223,7 +222,7 @@ class RulesFileTest(unittest.TestCase):
 
         def failing_rule_ids(name):
             run = json.loads((TOOL_DIR / name / "ui_check.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(run["pages"]), {"accepted": 110, "baseline": 90}[name], name)   # 11 or 9 routes x 5 sizes x 2 data sets
+            self.assertEqual(len(run["pages"]), {"accepted": 80, "baseline": 90}[name], name)   # 8 or 9 routes x 5 sizes x 2 data sets
             self.assertFalse(Path(run["static_dir"]).is_absolute(), f"{name}: static_dir must not be a local absolute path")
             rows = rules_engine.evaluate_fixed_rules(run["pages"], rules) + rules_engine.load_error_violations(run["pages"], rules)
             return sorted({row.get("rule_id", row["kind"]) for row in rows if row["mode"] == "fail"})
