@@ -40,6 +40,7 @@ class FakeExecutor(ThreadingHTTPServer):
         self.tuning["revision"] = 1
         self.reject_over = None            # a rule only the executor knows (its cross checks): refuse values above this
         self.extra_status = {}
+        self.scale_offer = None            # PW-10: the online-scale offer after a run (executor online_scale.py)
 
     def status_body(self):
         state = self.state
@@ -49,6 +50,10 @@ class FakeExecutor(ThreadingHTTPServer):
                 "operator_link": {"fresh": state["session"] is not None, "age_s": 0.05, "timeout_s": 0.5},
                 "gnss": {"state": "fix", "lat": 35.1, "lon": 129.1, "h_acc_m": 4.2},
                 "log": {"path": "/home/x/run.jsonl"}, "tuning": tuning, "local_grid_map": SAMPLE["local_grid_map"],
+                "online_scale": {"enabled": True, "run_id": 3, "value": 0.8512, "window_s": 20.0, "target_s": 20.0,
+                                 "min_s": 10.0, "frozen": True, "hold": "not_driving", "age_s": 4.0, "mismatch": False,
+                                 "speed_scale": tuning["values"]["basic"]["speed_scale"], "prior_scale": 1.0,
+                                 "offer": self.scale_offer},
                 **self.extra_status}
 
     def params(self, body):
@@ -59,6 +64,22 @@ class FakeExecutor(ThreadingHTTPServer):
         tuning = self.tuning
         brief = {"preset": tuning["preset"], "revision": tuning["revision"], "digest": "d", "file": "/home/x/field_tuning.json",
                  "file_sha256": "s"}
+        if "online_scale" in body:          # PW-10 (OPERATOR_API_KO.md 6.1): the answer to the online-scale offer
+            offer = self.scale_offer
+            if offer is None:
+                return 409, {"ok": False, "error": "no_online_scale_offer"}
+            if offer["run_id"] != body.get("run_id"):
+                return 409, {"ok": False, "error": "online_scale_offer_changed", "run_id": offer["run_id"]}
+            self.scale_offer = None
+            if body["online_scale"] == "dismiss":
+                return 200, {"ok": True, "action": "online_scale_dismiss", "run_id": offer["run_id"]}
+            row = next(row for row in tuning["basic"] if row["name"] == "speed_scale")
+            change = {"key": "speed_scale", "old": row["value"], "new": offer["speed_scale_new"]}
+            row["value"] = tuning["values"]["basic"]["speed_scale"] = offer["speed_scale_new"]
+            tuning["revision"] += 1
+            tuning["preset"] = tuning["preset"].rstrip("*") + "*"
+            return 200, {"ok": True, "action": "online_scale", "changes": [change], "run_id": offer["run_id"],
+                         "tuning": dict(brief, revision=tuning["revision"], preset=tuning["preset"]), "config_digest": "c"}
         if "preset" in body:
             if body["preset"] not in tuning["presets"]:
                 return 400, {"ok": False, "error": "invalid_params", "problems": ["preset %r: unknown" % body["preset"]]}
@@ -183,6 +204,23 @@ class RelayUnitTest(unittest.TestCase):
         for name in ("log", "token"):
             self.assertNotIn(name, out)
         self.assertEqual(page_status(None), {})
+
+    def test_online_scale_block_and_its_offer(self):
+        """PW-10 (contract revision 6): the online scale and the offer after a run reach the page; other keys do not."""
+        offer = {"run_id": 3, "value": 0.8512, "window_s": 20.0, "end_reason": "row_end", "prior_scale": 1.0, "speed_scale_now": 1.0, "surface_scale": 1.0, "battery_scale": 1.0, "speed_scale_new": 0.851, "ok": True, "why_not": None}
+        raw = {"run_state": "ended", "online_scale": {"enabled": True, "run_id": 3, "value": 0.8512, "window_s": 20.0,
+                                                      "target_s": 20.0, "min_s": 10.0, "frozen": True, "hold": "not_driving",
+                                                      "age_s": 4.0, "mismatch": False, "speed_scale": 1.0, "prior_scale": 1.0,
+                                                      "secret": "/home/x", "offer": dict(offer, path="/home/x/f.json")}}
+        out = page_status(raw)["online_scale"]
+        self.assertEqual(out["value"], 0.8512)
+        self.assertEqual((out["frozen"], out["hold"], out["window_s"], out["target_s"]), (True, "not_driving", 20.0, 20.0))
+        self.assertNotIn("secret", out)
+        self.assertEqual(out["offer"], {"run_id": 3, "value": 0.8512, "window_s": 20.0, "end_reason": "row_end",
+                                        "speed_scale_now": 1.0, "speed_scale_new": 0.851, "ok": True, "why_not": None})
+        none = page_status({"online_scale": {"enabled": True, "value": None, "offer": None}})["online_scale"]
+        self.assertEqual((none["value"], none["offer"]), (None, None))
+        self.assertNotIn("online_scale", page_status({"run_state": "idle"}))
 
     def test_real_executor_status_sample(self):
         out = page_status(SAMPLE, grid=True)
