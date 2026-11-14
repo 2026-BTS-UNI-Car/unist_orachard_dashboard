@@ -147,6 +147,8 @@ python deploy/jetson_dashboard/make_bundle.py --commit <설치할 커밋> --out 
 | `not_idle: recorder state=...` | 녹화 중이거나 마무리 중, 또는 녹화기 상태를 못 읽음 | 녹화를 끝내고 기다린 뒤 다시. 녹화기 컨테이너가 꺼져 있다면 `--recorder-unavailable-ok` |
 | `not_idle: mapping job active` | 실시간 지도나 기록 재생 지도가 도는 중 | 대시보드에서 지도 작업을 멈춘 뒤 다시 |
 | `blocked: requirements_changed` / `native_raster_source_changed` | 이미지를 다시 빌드해야 하는 변경 | 이 묶음으로는 설치하지 않는다. 조정 쪽에 알림 |
+| 경고 `line_endings_only:<코드>` | 설치된 파일과 묶음 파일이 줄 끝(CRLF/LF)만 다르다(Windows 에서 만든 이미지). 소스 글자는 같아 다시 빌드할 필요가 없다 | 그대로 설치한다. 글자가 하나라도 다르면 위 줄처럼 막는다 |
+| 쉬는 상태 `esp_disconnected_no_control_path:<상태>` | 조종 브리지는 도는데 ESP 가 연결돼 있지 않음(armed·moving 이 false) | 모터 경로가 없으므로 쉬는 상태로 본다. armed·moving 이 true 거나 알 수 없으면 멈춘다 |
 | `bundle_payload_sha256`, `bundle_member_sha256` | 묶음 파일이 깨졌거나 바뀜 | 다시 복사, `sha256sum -c SHA256SUMS` |
 | `docker_socket_permission` | Docker 권한 없음 | 명령 앞에 `sudo` |
 | `target_missing`, `target_not_unique` | 대시보드 컨테이너를 못 찾음 | `docker ps` 로 이름 확인, `--container <이름>` |
