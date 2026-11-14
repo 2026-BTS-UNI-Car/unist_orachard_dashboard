@@ -148,4 +148,12 @@ const NEW_TITLES = {
   const served = app.match(/^APP_ROUTES = \{([\s\S]*?)\}$/m)[1].match(/"[^"]+"/g).map((item) => JSON.parse(item));
   assert.deepEqual([...served].sort(), [...routes, ...Object.keys(aliases)].sort(), 'the server answers the menu addresses and the aliases');
 }
+// ---- The start of the page script calls only functions that are still there (the big view switch went away) ----
+{
+  const app = require('./helpers/app_source').readAppSource();
+  const main = fs.readFileSync(path.join(ROOT, 'static', 'app', '99-main.js'), 'utf8');
+  const calls = [...main.matchAll(/^([A-Za-z_$][\w$]*)\(\)(?:\.catch\([^)]*\))?;$/gm)].map((m) => m[1]);
+  assert.ok(calls.includes('renderRoute') && calls.includes('initRoverControl'));
+  for (const name of calls) assert.match(app, new RegExp(`function ${name}\\(`), `99-main.js calls ${name}()`);
+}
 console.log('PASS: menu and page titles as before the redesign (becfc6d) without Research; new parts inside Rover Control; aliases');
