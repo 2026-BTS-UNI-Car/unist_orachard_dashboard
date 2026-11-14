@@ -1,0 +1,125 @@
+{
+ "source": "becfc6d:static/index.html",
+ "sha256": "7873607031c2e1bda636d88632d28a64d1fde7410a7711eb1d9625da179996f5",
+ "removed": [
+  "/research"
+ ],
+ "menu": [
+  [
+   "/",
+   "/",
+   "Overview"
+  ],
+  [
+   "/connection",
+   "/connection",
+   "Connection"
+  ],
+  [
+   "/system",
+   "/system",
+   "System"
+  ],
+  [
+   "/network",
+   "/network",
+   "Network"
+  ],
+  [
+   "/docker",
+   "/docker",
+   "Docker"
+  ],
+  [
+   "/fan",
+   "/fan",
+   "Fan Control"
+  ],
+  [
+   "/research",
+   "/research",
+   "Research"
+  ],
+  [
+   "/rover-control",
+   "/rover-control",
+   "Rover Control"
+  ],
+  [
+   "/docs",
+   "/docs",
+   "Docs"
+  ]
+ ],
+ "pages": {
+  "/": [
+   "UBTS Dashboard",
+   "CPU / Memory",
+   "Network RX / TX",
+   "ROS2 / Rover",
+   "Jetson 정보"
+  ],
+  "/connection": [
+   "연결 상태",
+   "RPLIDAR 상태 확인",
+   "2D LiDAR 지도",
+   "카메라 실시간 화면",
+   "서비스 연결",
+   "ROS2 센서 링크"
+  ],
+  "/system": [
+   "시스템 리소스",
+   "CPU",
+   "Memory",
+   "Swap",
+   "Network",
+   "Power",
+   "Disk"
+  ],
+  "/network": [
+   "네트워크 상태",
+   "오프라인 AP / 저장된 Wi-Fi",
+   "RX / TX",
+   "연결 정보"
+  ],
+  "/docker": [
+   "컨테이너 대시보드",
+   "Container CPU",
+   "Container Memory",
+   "컨테이너 목록",
+   "컨테이너 상세"
+  ],
+  "/fan": [
+   "Fan Control",
+   "팬 출력",
+   "Fan Temperature"
+  ],
+  "/research": [
+   "연구 연결 상태",
+   "센서 텔레메트리",
+   "실험 데이터",
+   "수행계획 진행도"
+  ],
+  "/rover-control": [
+   "Rover Control",
+   "LiDAR",
+   "실시간 점유 격자 지도",
+   "카메라",
+   "GPS · 로버 위치",
+   "IMU",
+   "주행 제어",
+   "기록 제어",
+   "연동 상태",
+   "기록 데이터",
+   "기록된 점유 격자 지도",
+   "Recorded IMU",
+   "기록된 로버 위치",
+   "기록된 모터 핀 신호"
+  ],
+  "/docs": [
+   "문서",
+   "문서 목록",
+   "문서를 선택하세요"
+  ]
+ }
+}

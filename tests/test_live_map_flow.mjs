@@ -33,7 +33,7 @@ await vm.runInContext("pollArchive('example',archiveEpoch)",context);
 assert.equal(vm.runInContext('archive.snapshot.frame_t_s',context),15);
 assert.ok(calls.some(c=>c.path.includes('t_s=15.000')));
 // A network error on a paused seek retries instead of leaving an empty map.
-fail=true;context.location.pathname='/records';   // the recording map is on the records screen
+fail=true;context.location.pathname='/rover-control';
 vm.runInContext("archiveTime('example',20,false)",context);
 const timer=timers.at(-1);await timer.callback();
 await new Promise(resolve=>setImmediate(resolve));

@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../static/gps-map.js', import.meta.url), 'u
 assert.doesNotMatch(source, /^import[^\n]*maplibre/m, 'gps-map.js has no static import of the map library');
 assert.match(source, /const MAP_LIBRARY_URL = "\/static\/vendor\/maplibre-gl\/maplibre-gl\.mjs";/);
 assert.match(source, /const MAP_WORKER_URL = "\/static\/vendor\/maplibre-gl\/maplibre-gl-worker\.mjs";/);
-assert.match(source, /if \(active\(\)\) \{ live\.initWhenVisible\(\); connect\(\); \}/, 'the live map waits until it is visible');
+assert.match(source, /if \(routeOn\(\)\) \{ watchGpsPanel\(\); live\.initWhenVisible\(\); \}\n  if \(active\(\)\) connect\(\);/, 'the live map waits until it is visible');
 
 // mapLibrary(): one import, the style sheet and pmtiles reader added once, worker address and pmtiles protocol set
 // once, and a failed load can be retried.

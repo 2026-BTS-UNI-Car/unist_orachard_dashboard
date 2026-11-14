@@ -679,13 +679,18 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("2D LiDAR", payload["research_topic"])
         self.assertEqual(payload["team"], "유니주행차")
 
-    def test_site_map_lists_the_six_screens_and_the_aliases(self):
+    def test_site_map_lists_the_eight_menu_pages_and_the_aliases(self):
+        # UI-16: the menu of before the redesign (without Research); the six-screen addresses stay as aliases.
         payload = self.get_json("/api/site-map")
         paths = [item["path"] for item in payload["routes"]]
-        self.assertEqual(paths, ["/rover-control", "/map", "/sensors", "/records", "/tuning", "/system", "/docs"])
-        self.assertEqual(payload["aliases"]["/connection"], "/sensors")
-        self.assertEqual(payload["aliases"]["/fan"], "/system/fan")
-        for path in paths + list(payload["aliases"]) + ["/system/docker"]:
+        self.assertEqual(paths, ["/", "/connection", "/system", "/network", "/docker", "/fan", "/rover-control", "/docs"])
+        self.assertEqual([item["label"] for item in payload["routes"]],
+                         ["Overview", "Connection", "System", "Network", "Docker", "Fan Control", "Rover Control", "Docs"])
+        self.assertEqual(payload["aliases"]["/sensors"], "/connection")
+        self.assertEqual(payload["aliases"]["/system/fan"], "/fan")
+        self.assertEqual(payload["aliases"]["/tuning"], "/rover-control")
+        self.assertEqual(payload["aliases"]["/research"], "/")
+        for path in paths + list(payload["aliases"]):
             self.assertIn("UBTS Dashboard", self.get_text(path), path)
 
     def test_docs_api_and_route(self):

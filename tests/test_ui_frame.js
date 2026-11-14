@@ -17,8 +17,8 @@ const STOP_REQUEST = '/api/rover/stop {"reason":"operator_stop"}';
 const NAV_ITEM = /<a data-route="([^"]+)" href="([^"]+)"><svg aria-hidden="true" class="icon"><use href="#i-([a-z]+)"\/><\/svg><span>([^<]+)<\/span><\/a>/g;
 
 // ---- Markup: one status bar, outside every page, so it is on every route ----
-// The six screens and the docs (docs/SCREENS_KO.md).
-const ROUTES = ['/rover-control', '/map', '/sensors', '/records', '/tuning', '/system', '/docs'];
+// The eight menu pages as before the redesign, without Research (UI-16, docs/SCREENS_KO.md).
+const ROUTES = ['/', '/connection', '/system', '/network', '/docker', '/fan', '/rover-control', '/docs'];
 {
   const bar = html.match(/<header class="statusbar" id="statusBar">[\s\S]*?<\/header>/);
   assert.ok(bar, 'status bar');
@@ -27,7 +27,7 @@ const ROUTES = ['/rover-control', '/map', '/sensors', '/records', '/tuning', '/s
   assert.ok(html.indexOf(bar[0]) < firstPage, 'the status bar is not inside a page');
   // Every route is a page section of this one document (the server sends index.html for all of them).
   assert.deepEqual([...html.matchAll(/<section class="page[^"]*" data-page="([^"]+)">/g)].map(match => match[1]).sort(), [...ROUTES].sort());
-  assert.match(source, /^const ROUTES = \["\/rover-control", "\/map", "\/sensors", "\/records", "\/tuning", "\/system", "\/docs"\];$/m);
+  assert.match(source, /^const ROUTES = \["\/", "\/connection", "\/system", "\/network", "\/docker", "\/fan", "\/rover-control", "\/docs"\];$/m);
   // The status bar holds the state items and, at the right end, STOP.
   const order = ['id="mobileMenuButton"', 'id="connectionState"', 'id="frameDriveState"', 'id="frameRecordState"', 'id="frameClock"', 'id="frameStopButton"'];
   const positions = order.map(marker => bar[0].indexOf(marker));
@@ -38,12 +38,13 @@ const ROUTES = ['/rover-control', '/map', '/sensors', '/records', '/tuning', '/s
   // The drive panel STOP and the pad STOP are still there.
   assert.match(html, /<button class="action-button danger" id="roverStopButton" type="button">STOP<\/button>/);
   assert.match(html, /<button data-rover-drive="stop" type="button">STOP<\/button>/);
-  // Navigation: six screens and the docs (UI-06), drive first, each an icon and a Korean label.
+  // Navigation: the menu of before the redesign (UI-16): same English labels, order and addresses, without
+  // Research (tests/test_menu_restore.js compares it with becfc6d); each item an icon and a label.
   const nav = html.match(/<nav class="nav-list">([\s\S]*?)<\/nav>/)[1];
   const items = [...nav.matchAll(NAV_ITEM)];
   assert.deepEqual(items.map(match => [match[1], match[4]]), [
-    ['/rover-control', '주행'], ['/map', '지도'], ['/sensors', '센서'], ['/records', '기록'], ['/tuning', '조정'], ['/system', '시스템'],
-    ['/docs', '문서']]);
+    ['/', 'Overview'], ['/connection', 'Connection'], ['/system', 'System'], ['/network', 'Network'], ['/docker', 'Docker'],
+    ['/fan', 'Fan Control'], ['/rover-control', 'Rover Control'], ['/docs', 'Docs']]);
   assert.equal((nav.match(/<a /g) || []).length, items.length, 'every menu item is an icon and a label');
   assert.equal(new Set(items.map(match => match[3])).size, items.length, 'every menu item has its own icon');
   assert.ok(items.every(match => match[1] === match[2]));
@@ -191,17 +192,17 @@ function setup(route = '/rover-control') {
   // ---- Recording indicator ----
   {
     const chip = {className: '', textContent: ''};
-    let route = '/records';
+    let route = '/rover-control';
     const context = {state: {telemetry: null, telemetryFailures: 0}, currentRoute: () => route, $: id => id === 'frameRecordState' ? chip : null};
     vm.createContext(context);
     vm.runInContext(between('function renderFrameRecordState(', 'function recordingDurationSeconds('), context);
     const shown = (known, active) => { context.renderFrameRecordState(known, active); return [chip.className, chip.textContent]; };
-    // Records screen: what the recorder panel decided (ordered reads, 5 s freshness gate).
+    // Rover Control: what the recorder panel decided (ordered reads, 5 s freshness gate).
     assert.deepEqual(shown(true, true), ['status-chip recording', '기록 중']);
     assert.deepEqual(shown(true, false), ['status-chip', '기록 대기']);
     assert.deepEqual(shown(false, false), ['status-chip', '기록 미확인']);
     context.state.telemetry = {services: {data_recorder: {ok: true, active: true}}};
-    assert.deepEqual(shown(false, false), ['status-chip', '기록 미확인'], 'telemetry does not replace the recorder panel state on the records screen');
+    assert.deepEqual(shown(false, false), ['status-chip', '기록 미확인'], 'telemetry does not replace the recorder panel state on Rover Control');
     // Other routes: the recorder is not polled there, the telemetry row is used.
     route = '/system';
     assert.deepEqual(shown(false, false), ['status-chip recording', '기록 중']);
@@ -241,9 +242,10 @@ function setup(route = '/rover-control') {
     context.applyTheme('light');
     assert.deepEqual([context.document.documentElement.dataset.theme, stored['ubts-theme'], toggle.attributes['aria-pressed']], ['light', 'light', 'false']);
   }
-  // ---- Page header: one compact row per page, titled like its menu item; no banner ----
+  // ---- Page header: one compact row per page, with the page title of before the redesign (UI-16); no banner ----
   {
-    const labels = Object.fromEntries([...html.matchAll(NAV_ITEM)].map(match => [match[1], match[4]]));
+    const labels = {'/': 'UBTS Dashboard', '/connection': '연결 상태', '/system': '시스템 리소스', '/network': '네트워크 상태',
+      '/docker': '컨테이너 대시보드', '/fan': 'Fan Control', '/rover-control': 'Rover Control', '/docs': '문서'};
     assert.equal(Object.keys(labels).length, ROUTES.length);
     const pages = html.split(/<section class="page[^"]*" data-page="/).slice(1);
     assert.equal(pages.length, ROUTES.length);
@@ -252,21 +254,21 @@ function setup(route = '/rover-control') {
       const heads = [...page.matchAll(/<header class="page-head">([\s\S]*?)<\/header>/g)];
       assert.equal(heads.length, 1, `${route}: one page header`);
       assert.ok(page.indexOf('<header class="page-head">') < 40, `${route}: the header is the first element of the page`);
-      assert.deepEqual([...heads[0][1].matchAll(/<h1>([^<]*)<\/h1>/g)].map(match => match[1]), [labels[route]], `${route}: title is the menu label`);
+      assert.deepEqual([...heads[0][1].matchAll(/<h1>([^<]*)<\/h1>/g)].map(match => match[1]), [labels[route]], `${route}: the old page title`);
       assert.doesNotMatch(heads[0][1], /eyebrow|hero-copy/, `${route}: no banner parts`);
       assert.deepEqual((heads[0][1].match(/<p [^>]*>/g) || []), ['<p class="page-note">'], `${route}: one line of context`);
       assert.ok(heads[0][1].trimEnd().endsWith('</p>'), `${route}: the context line is the last element of the header`);
     }
     assert.doesNotMatch(html, /hero-copy|class="kpi"|kpi-grid|network-focus-grid/, 'banner and card markup is gone');
     assert.match(html, /<span class="status-chip" id="roverModeLabel">실차<\/span>/);
-    // the drive screen's big view switch (camera or LiDAR) comes before the transfer quality
-    assert.match(html, /<div class="page-head-actions"><div aria-label="큰 보기" class="segmented-control" id="driveViewSwitch">.*?<\/div><label class="field-inline">전송 품질 <select aria-label="전송 품질 선택" data-network-profile="">/);
+    assert.match(html, /<div class="page-head-actions"><label class="field-inline">전송 품질 <select aria-label="전송 품질 선택" data-network-profile="">/);
+    assert.doesNotMatch(html, /driveViewSwitch|data-drive-view/, 'Rover Control shows all its panels again, no big view switch');
   }
   // ---- Status strip: name, value, detail; a full row of cells ----
   {
     const strips = [...html.matchAll(/<section class="status-strip( cols-2)?">([\s\S]*?)<\/section>\n/g),
       ...html.matchAll(/<div class="status-strip( cols-1)">(.*)<\/div>\n/g)];
-    assert.equal(strips.length, 6, 'drive, sensors, and on the system screen: overview, network, docker, and the one cell of the fan tab');
+    assert.equal(strips.length, 6, 'overview, connection, network, docker, the one cell of the fan page, and Rover Control');
     for (const strip of strips) {
       const items = [...strip[2].matchAll(/<div class="status-strip-item"><span[^>]*>[^<]+<\/span><strong id="[^"]+">--<\/strong><small[^>]*>[^<]*<\/small>(?:<\/div>)?/g)];
       const expected = strip[1] === ' cols-2' ? 2 : strip[1] === ' cols-1' ? 1 : 4;
@@ -277,7 +279,7 @@ function setup(route = '/rover-control') {
     assert.match(frameCss.slice(frameCss.indexOf('@media (max-width: 639px)')), /\.status-strip,\n  \.status-strip\.cols-2 \{\n    grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/, 'two by two on phones');
     // Values that hold a device path are shortened in the middle; the title keeps the whole value.
     assert.deepEqual([...html.matchAll(/data-shorten="(\d+)" id="([^"]+)"/g)].map(match => `${match[2]}:${match[1]}`),
-      ['roverControlBase:24', 'connectionLidarDevice:24', 'connectionCameraDevice:24']);
+      ['connectionLidarDevice:24', 'connectionCameraDevice:24', 'roverControlBase:24']);
     const element = shorten => ({dataset: shorten ? {shorten} : {}, textContent: '', attributes: {},
       getAttribute(name) { return this.attributes[name] ?? null; }, setAttribute(name, value) { this.attributes[name] = value; }, removeAttribute(name) { delete this.attributes[name]; }});
     const nodes = {path: element('24'), plain: element('')};

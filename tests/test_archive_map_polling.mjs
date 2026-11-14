@@ -25,7 +25,7 @@ vm.runInNewContext(source,sandbox);
 sandbox.paint({active:true,state:'waiting_for_sensors',scan_count:0});
 assert.equal(element('liveMapState').textContent,'센서 동기화 대기');
 assert.equal(element('liveMapStart').disabled,true);assert.equal(element('liveMapStop').disabled,false);
-sandbox.location.pathname='/records';   // the recording map is on the records screen
+sandbox.location.pathname='/rover-control';
 const selected=sandbox.window.LiveMap.selectArchive('recording');
 vm.runInNewContext('windowSupported=false;',sandbox);
 assert.equal(requests.length,1);
