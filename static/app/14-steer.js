@@ -3,7 +3,9 @@
 // the style sheet then hides the differential pad and shows the steering panel, the potentiometer and the autonomy
 // section. Their modules are fetched only on a front-steer dashboard and only when Rover Control opens, so the first
 // load of the differential dashboard does not grow. The field tuning values and the executor's local grid are parts of
-// Rover Control on every dashboard. renderRoute() announces every route with "ubts:route".
+// Rover Control on every dashboard; their modules are fetched when they are wanted the first time: the tuning values
+// when their collapsed part is opened, the local grid when the live map part comes on screen (UI-16: the first open of
+// Rover Control stays as light as the drive page was). renderRoute() announces every route with "ubts:route".
 const STEER_VEHICLE = document.documentElement.dataset.vehicleKind === "front_steer";
 const steerScreens = { drive: null, auto: null, tuning: null, grid: null, pot: null, driveScreen: null };
 
@@ -35,9 +37,26 @@ function loadSteerScreens(route = currentRoute()) {
     loadSteerScreen("pot", "/static/steer/steer-sensor.mjs", "initSteerSensor");
   }
   // The field tuning values (UI-12) are a part of Rover Control on every dashboard; without an executor they say so.
-  if (route === "/rover-control" || steerScreens.tuning) loadSteerScreen("tuning", "/static/steer/tuning-page.mjs", "initTuningPage");
+  if (steerScreens.tuning || (route === "/rover-control" && steerPartWanted.tuning())) loadSteerScreen("tuning", "/static/steer/tuning-page.mjs", "initTuningPage");
   // The executor's local grid on the live occupancy grid map (UI-09): shown only when the executor sends one.
-  if (route === "/rover-control" || steerScreens.grid) loadSteerScreen("grid", "/static/steer/local-grid.mjs", "initLocalGrid");
+  if (steerScreens.grid || (route === "/rover-control" && steerPartWanted.grid())) loadSteerScreen("grid", "/static/steer/local-grid.mjs", "initLocalGrid");
+}
+
+// When the two parts are wanted the first time. Without IntersectionObserver the local grid is wanted at once (as before).
+const steerPartWanted = {
+  tuning: () => Boolean($("tuningDetails")?.open),
+  mapSeen: typeof IntersectionObserver !== "function" || !$("liveMapPanel"),
+  grid: () => steerPartWanted.mapSeen,
+};
+$("tuningDetails")?.addEventListener("toggle", () => loadSteerScreens());
+if (!steerPartWanted.mapSeen) {
+  const mapWatch = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.isIntersecting)) return;
+    steerPartWanted.mapSeen = true;
+    mapWatch.disconnect();
+    loadSteerScreens();
+  });
+  mapWatch.observe($("liveMapPanel"));
 }
 
 window.addEventListener("ubts:route", (event) => loadSteerScreens(event.detail?.route));
