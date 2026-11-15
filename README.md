@@ -30,7 +30,8 @@ STOP은 모든 페이지의 상태 막대와 주행 제어에 있다. 메뉴는 
 > **지금 상태.** 화면과 서버는 가짜 센서·가짜 MCU·가짜 실행기와 느린 연결 시험대로 확인했다. 2026-11-16 차의 보드가 ESP32-S3(BTS7960 3개: 조향,
 > 왼쪽·오른쪽 구동)로 바뀌었고, 같은 날 이 판(대시보드, ESP32-S3 조종 브리지 `ROVER_ESP_KIND=esp32_abs_hold`, Wi-Fi 관리용 호스트 도우미)을
 > Jetson에 설치했다. 설치 뒤 브리지는 보드와 연결된 채 조종 비활성(disarmed)이고, 실제 보드에는 상태 읽기와 정지 명령만 보냈다.
-> 조향·구동은 아직 실차에서 움직여 보지 않았다(첫 시험 순서: [`deploy/jetson_esp32_bridge/README_KO.md`](deploy/jetson_esp32_bridge/README_KO.md) 5절).
+> 자율 실행기도 같은 날 SHADOW(차를 움직일 수 없는 상태)로 설치해 `/scan`·IMU를 받는 것까지 봤다.
+> 조향·구동·자율은 아직 실차에서 움직여 보지 않았다(첫 시험 순서: [`docs/FIELD_STEER_AUTONOMY_TEST_KO.md`](docs/FIELD_STEER_AUTONOMY_TEST_KO.md)).
 > 자세한 것은 [현재 한계](#현재-한계).
 
 ## 주요 기능
@@ -192,7 +193,7 @@ scripts/run_local.sh            # = python3 -m dashboard_server --host 127.0.0.1
 
 | 변수 | 뜻 |
 | --- | --- |
-| `DASHBOARD_VEHICLE` | `differential`(기본, 지금 차) / `front_steer`(조향 차량 화면) |
+| `DASHBOARD_VEHICLE` | `differential`(기본, 옛 차동 차) / `front_steer`(조향 차량 화면). 지금 차는 조향 차량이고, 조종 브리지가 `vehicle_profile: front_steer`를 내면 이 값과 상관없이 조향 화면이 된다 |
 | `UBTS_EXECUTOR_URL`, `UBTS_EXECUTOR_TOKEN_FILE` | 자율 실행기 운영자 API 주소와 토큰 파일 |
 | `UBTS_EXECUTOR_LINK_FILE` | 위 둘이 없을 때 읽는 실행기 연결 파일(기본 `runtime/row_executor/dashboard_link.json`, Jetson 실행기 묶음이 쓴다, 바뀌면 다시 읽음). 셋 다 없으면 자율·조정 칸은 "설정 없음" |
 | `LIDAR_WS_UPSTREAM`, `CAMERA_WS_UPSTREAM`, `IMU_WS_UPSTREAM`, `GPS_WS_UPSTREAM` | 센서 브리지 WebSocket 주소 |
