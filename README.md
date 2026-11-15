@@ -22,8 +22,9 @@ UNIST BTS 과수원 로버의 웹 대시보드입니다. 차에 실린 Jetson에
 [화면 · 모의 자료] 2026-11-14 판(메뉴를 수정 전 구성으로 되돌림). 화면 점검 도구의 모의 서버(`tools/ui_check`)가 내는 예시 자료로 찍었다(실제 센서 값이 아니다).
 왼쪽은 Rover Control의 첫 화면(LiDAR, 카메라, 차동 차량의 주행 제어), 오른쪽은 같은 페이지의 휴대폰 첫 화면이다. STOP은 모든 페이지의 상태 막대와 주행 제어에 있다.
 
-> **지금 상태.** 화면과 서버는 가짜 센서·가짜 MCU·가짜 실행기와 느린 연결 시험대로 확인했다. 조향 차량(앞바퀴 조향, 조향 펌웨어 V3)은
-> 아직 차에 없어서 조향 화면은 실차에서 확인하지 않았다. 이 판은 Jetson에 아직 설치하지 않았다(설치 묶음은 준비됨). 자세한 것은 [현재 한계](#현재-한계).
+> **지금 상태.** 화면과 서버는 가짜 센서·가짜 MCU·가짜 실행기와 느린 연결 시험대로 확인했다. 2026-11-16 차의 보드가 ESP32-S3(BTS7960 3개: 조향,
+> 왼쪽·오른쪽 구동)로 바뀌었고 그 조종 브리지(`ROVER_ESP_KIND=esp32_abs_hold`)는 펌웨어 소스로 만든 가짜 보드로만 확인했다. 조향 화면과 브리지는
+> 실차에서 확인하지 않았고 이 판은 Jetson에 아직 설치하지 않았다(대시보드·브리지 설치 묶음은 준비됨). 자세한 것은 [현재 한계](#현재-한계).
 
 ## 주요 기능
 
@@ -51,8 +52,10 @@ ROS 2 브리지 컨테이너가 WebSocket으로 보내고 대시보드 서버가
 STOP·Esc·창 이탈은 즉시 정지와 조종 해제다. 조종 요청은 다른 요청과 따로, 가장 먼저 보낸다(`controlRequest`, NET-05).
 PWM 값은 요청한 출력이지 실제 바퀴 속도가 아니다(차에 휠 엔코더가 없다).
 
-**조향 차량(수동·자율·조정).** 차가 앞바퀴 조향으로 바뀌는 중이다. `DASHBOARD_VEHICLE=front_steer`면 Rover Control의 주행 제어 패널에
-조향 패널(구동 W/S, 조향 A/D·가운데, 목표·측정 조향각)과 조향 가변저항 값이 보이고, 그 아래 자율 칸에서 "준비 → Arm → 자율 주행 시작"을 누르면
+**조향 차량(수동·자율·조정).** 차는 앞바퀴 조향이다. `DASHBOARD_VEHICLE=front_steer`이거나 조종 브리지가 `vehicle_profile: front_steer`를 내면
+Rover Control의 주행 제어 패널에 조향 패널(구동 W/S, 조향 A/D·가운데, 끌어서 조향 각, 목표·측정 조향각)과 조향 가변저항 값이 보인다.
+ESP32-S3 브리지에서는 A/D를 누르는 동안 왼쪽·오른쪽 끝(±20 명령 도)까지 가고 놓으면 가운데로 오며, 막대를 끌면 그 각으로 가고 놓으면 0°로 돌아온다
+(키와 막대는 먼저 잡은 쪽만 듣고, STOP이 언제나 이긴다). 브리지와 구동 안전: [`docs/esp_rover_control.md`](docs/esp_rover_control.md). 그 아래 자율 칸에서 "준비 → Arm → 자율 주행 시작"을 누르면
 실행기가 열 끝까지 간다(시뮬레이션에서 확인, 실차 전). Rover Control을 떠나거나 탭을 숨기면 0.5초 뒤 차가 서고(페이지 안에서 스크롤하는 것은 괜찮다),
 다시 출발은 사람이 누른다. 현장 조정 값은 같은 페이지의 접힌 칸에 있다. 서버 사양: [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md).
 
@@ -105,10 +108,10 @@ flowchart LR
       SB["센서 브리지<br/>LiDAR · 카메라 · IMU · GPS"]
       REC["녹화기<br/>bag · 1080p 원본"]
     end
-    MB["조종 브리지<br/>차동 V2 또는 조향 V3"]
+    MB["조종 브리지<br/>ESP32-S3 ABS-HOLD<br/>(옛 차동 V2·조향 V3)"]
     EX["자율 실행기<br/>row_executor"]
   end
-  ESP["ESP8266<br/>모터 드라이버"]
+  ESP["ESP32-S3<br/>BTS7960 ×3<br/>조향 · 왼쪽 · 오른쪽 구동"]
   B <-->|"HTTP /api/*<br/>WebSocket /ws/*"| D
   D <-->|"WebSocket 중계"| SB
   DRV --> SB
@@ -117,7 +120,7 @@ flowchart LR
   D <-->|"Unix 소켓<br/>/run/ubts-rover/control.sock"| MB
   D <-->|"HTTP + 토큰<br/>/api/executor/*"| EX
   EX -->|"lease 보유자로 구동"| MB
-  MB <-->|"USB 직렬"| ESP
+  MB <-->|"USB 직렬(네이티브 USB)"| ESP
 ```
 
 [도식] 화면은 상태를 짧은 HTTP 요청으로, 센서는 WebSocket으로 받는다. 조종 요청은 대시보드 서버가 조종 브리지 하나에 전한다(브리지만 직렬 장치를 연다).
@@ -175,8 +178,8 @@ scripts/run_local.sh            # = python3 -m dashboard_server --host 127.0.0.1
 | --- | --- |
 | `dashboard_server/` | 대시보드 서버(Python 표준 라이브러리 HTTP 서버): 화면·정적 파일, 상태 API, WebSocket 중계, 조종 중계(`rover_api.py`), 실행기 중계(`executor_proxy.py`), 조정(`steer_tuning.py`), 기록·지도, 확장 지점(`extensions.py`) |
 | `static/` | 화면: `index.html`, `app/`(화면 스크립트 17개), `steer/`(Rover Control의 조향·자율·조정 값·국소 격자), `css/`, `vendor/`(지도·영상 라이브러리, 글꼴) |
-| `scripts/` | Jetson에서 도는 ROS 2 드라이버·브리지(`*_ros2_driver.py`, `*_ws_bridge.py`), 조종 브리지(차동 `rover_control_bridge.py`, 조향 V3 `steer_rover_bridge.py`), 녹화기, 기록 후처리 |
-| `deploy/` | `jetson_dashboard/`(설치 묶음), `offline_ap/`(무선 AP 전환), `systemd/`, `native_sensor_stream/`·`native_sensor_shadow/`(차동 시절 관찰 서비스) |
+| `scripts/` | Jetson에서 도는 ROS 2 드라이버·브리지(`*_ros2_driver.py`, `*_ws_bridge.py`), 조종 브리지(ESP32-S3 `esp32_steer_bridge.py`·`esp32_abs_hold.py`, 고르기 `esp_rover_bridge.py`, 옛 차동 `rover_control_bridge.py`, 조향 V3 `steer_rover_bridge.py`), 녹화기, 기록 후처리 |
+| `deploy/` | `jetson_dashboard/`(대시보드 설치 묶음), `jetson_esp32_bridge/`(ESP32-S3 조종 브리지 설치 묶음), `offline_ap/`(무선 AP 전환), `systemd/`, `native_sensor_stream/`·`native_sensor_shadow/`(차동 시절 관찰 서비스) |
 | `tools/` | `ui_check/`(화면 점검), `slow_link/`(느린 통신 시험대, 현장 연결 기록 보고), `fonts/`(화면 글꼴 분할), 차동 시절 관찰 도구 |
 | `tests/` | Python 시험(`test_*.py`)과 화면 시험(`test_*.js`, `test_*.mjs`) |
 | `config/` | 대시보드 설정 |
@@ -194,7 +197,8 @@ scripts/run_local.sh            # = python3 -m dashboard_server --host 127.0.0.1
 | [`docs/slow_link.md`](docs/slow_link.md) | 느린 연결: 시험대, 기준 측정, 목표 32개, 고친 뒤와 최종 측정 |
 | [`docs/WIFI_AP_CHECKLIST_KO.md`](docs/WIFI_AP_CHECKLIST_KO.md) | 차의 무선 AP 현장 점검표, 연결 기록(`?link_log=1`) |
 | [`deploy/jetson_dashboard/README_KO.md`](deploy/jetson_dashboard/README_KO.md) | Jetson 설치·되돌리기 |
-| [`docs/esp_rover_control.md`](docs/esp_rover_control.md) | ESP8266 조종(차동 V2): 조종권, 정지, 저속 통신 |
+| [`docs/esp_rover_control.md`](docs/esp_rover_control.md) | ESP32-S3 조종 브리지(BTS7960 3개, 부호, 구동 안전과 남는 위험), 옛 ESP8266 조종(차동 V2) |
+| [`deploy/jetson_esp32_bridge/README_KO.md`](deploy/jetson_esp32_bridge/README_KO.md) | Jetson ESP32-S3 브리지 설치·되돌리기, 현장 첫 시험 순서 |
 | [`docs/stream_latency.md`](docs/stream_latency.md) | 센서 실시간 전송과 확인 방식 |
 | [`docs/HISTORY.md`](docs/HISTORY.md) | 지난 보고 문서와 검증 기록이 있는 곳(보존 태그) |
 
@@ -206,6 +210,10 @@ for f in tests/test_*.js tests/test_*.mjs; do node "$f" >/dev/null 2>&1 || echo 
 
 # Python 시험 (Linux. Windows 에서는 fcntl 을 쓰는 시험이 모이지 않는다)
 python3 -m unittest discover -s tests
+
+# ESP32-S3 브리지 (가짜 보드. pty 끝단 시험은 Linux)
+python3 -m unittest tests.test_esp32_bridge tests.test_esp32_bridge_linux tests.test_jetson_esp32_bridge_kit
+node --test tests/test_steer_drag.mjs
 
 # 조종 회귀 (조종·STOP 경로를 바꿨을 때 꼭)
 node tests/test_control_path_regression.js && node tests/test_rover_browser.js && node tests/test_rover_pad_touch.js
@@ -224,8 +232,11 @@ CI(`.github/workflows/smoke.yml`)는 컴파일과 Python 시험을 돌린다. RO
 ## 현재 한계
 
 - **실차 확인 전.** 이 판(메뉴 8쪽, 느린 연결 최적화, 조향 칸)은 PC에서 가짜 센서·MCU·실행기로만 확인했고 Jetson에 아직 설치하지 않았다.
-- **조향 차량은 아직 없다.** 조향 펌웨어 V3·조향 브리지·실행기가 차에 올라가기 전까지 실제 차는 차동(좌우 PWM) 펌웨어 V2로 수동 주행한다.
-  그래서 차동 시절 자율·관찰 코드는 조향 실행기로 바뀔 때까지 남겨 둔다(결정 나5, [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) 9절).
+- **ESP32-S3 보드는 차에서 확인 전.** 2026-11-16 차에 ESP32-S3(ABS-HOLD 펌웨어)가 달렸다. 브리지는 가짜 보드로만 확인했고, 실제 보드에는 STATUS만 보냈다.
+  구동 방향(모터 2·3 의 F 가 앞인지), 명령 눈금과 실제 바퀴 각도의 관계는 재지 않았다. 펌웨어의 구동 모터에는 시간 제한이 없어서, 브리지 프로세스가
+  죽은 채 보드가 전원을 받으면 마지막 구동이 계속 돈다(남는 위험, [`docs/esp_rover_control.md`](docs/esp_rover_control.md) 1-2절). 물리 비상정지가 마지막 수단이다.
+- **실행기는 아직 ESP32 브리지에 맞추지 않았다.** 요청 형식(`throttle`, `steer_mrad`)은 같지만 실행기의 Arm 전 점검(V3 의 cal_id 등)은 이 브리지 상태를 모른다.
+  차동 시절 자율·관찰 코드는 조향 실행기로 바뀔 때까지 남겨 둔다(결정 나5, [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) 9절).
 - **느린 연결 값은 흉내 낸 값.** 연결 프로필(좋음 10 Mbit/s ~ 아주 나쁨 150 kbit/s)과 연결 등급 경계(25 / 90 / 220 ms)는 가정이다.
   현장에서 `?link_log=1`로 기록을 받아 고친다. 목표 32개 중 못 미친 것과 까닭은 [`docs/slow_link.md`](docs/slow_link.md) 12절.
 - **브리지 쪽 변경은 이 설치 묶음에 없다.** LiDAR 이진 형식, IMU 흐름, GPS 응답 기한은 ROS 브리지 이미지를 다시 만들어야 차에 간다

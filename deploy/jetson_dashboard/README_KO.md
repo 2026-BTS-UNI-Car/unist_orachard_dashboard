@@ -115,6 +115,7 @@ python3 rollback_dashboard.py --apply    # 되돌리기
 | IMU 표시 메시지 한 번에 하나(display-ack, NET-07) | `scripts/imu_ws_bridge.py` → `ros2-imu-bridge` | **안 된다.** 옛 브리지는 옛 흐름으로 보낸다(멈춤 뒤 밀린 IMU 가 남는다) |
 | GPS 브리지 응답 기한 2 → 30 초(NET-11) | `scripts/gps_ws_bridge.py` → `ros2-gps-bridge` | **안 된다.** 옛 브리지는 2 초 넘는 멈춤에서 연결을 닫고, 화면이 다시 연다 |
 | 조향 브리지 V3(새 서비스, compose 프로필 `steer`) | `scripts/steer_rover_bridge.py` 등 | **안 된다.** 조향 펌웨어 V3 와 함께 따로 설치한다(조향 차량이 될 때) |
+| ESP32-S3 조종 브리지(2026-11-16, `ROVER_ESP_KIND=esp32_abs_hold`) | `scripts/esp32_*.py`, `scripts/esp_rover_bridge.py` | **안 된다.** 따로 설치한다: [`../jetson_esp32_bridge/README_KO.md`](../jetson_esp32_bridge/README_KO.md)(옛 브리지 이미지에 파일만 넣은 새 컨테이너). 화면의 조향 패널과 끌기 막대는 이 묶음으로 간다 |
 
 - 브리지 쪽 변경은 ROS 이미지(`Dockerfile.ros2`)를 다시 만들어야 한다. 그 설치·되돌리기 절차는 아직 없다(이 묶음의 범위 밖). 만들 때도 compose 로 서비스를 한꺼번에 다시 만들지 않는다(1절).
 - 그래서 이 묶음만 설치한 차에서는 화면 쪽 개선(첫 화면, 캐시, 조종 우선, 카메라 계획, 연결 등급)이 가고, LiDAR·IMU·GPS 스트림은 옛 형식으로 돈다. 섞여도 동작하게 만들었다(시험 `tests/test_lidar_polar_v2.py`·`.js` 의 polar-v1, 화면 코드의 옛 흐름 처리). 시험대의 수치(slow_link.md 12절)는 새 브리지까지 쓴 값이라, 브리지를 바꾸기 전의 LiDAR·IMU 수치는 그보다 나쁘다.

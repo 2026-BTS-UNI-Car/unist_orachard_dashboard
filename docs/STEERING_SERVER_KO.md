@@ -303,3 +303,21 @@ stateDiagram-v2
 | 조종 WebSocket(3절) | 없음(HTTP) | NET-05(S4a) 측정 뒤 결정 |
 
 모든 확인은 가짜 MCU·가짜 실행기·모의 서버로 했다. 자리값 기반 결과이고 현장 검증이 아니다.
+
+## 13. ESP32-S3 ABS-HOLD 브리지 (2026-11-16)
+
+차의 보드가 ESP32-S3(BTS7960 3개, 펌웨어 `ABS-HOLD-8-REBOUND-LIMITS`)로 바뀌었다. 그 브리지(`scripts/esp32_steer_bridge.py`, `ROVER_ESP_KIND=esp32_abs_hold`,
+[`esp_rover_control.md`](esp_rover_control.md) 1절)는 3절의 수동 조종 API 와 조종권 규칙(`SteerControl`)을 그대로 쓴다. 다른 점:
+
+| 항목 | V3(위 절들) | ESP32-S3 ABS-HOLD |
+| --- | --- | --- |
+| 펌웨어 쪽 조향 | MCU 램프·C 명령·TTL | 절대 목표 `ANGLE`(+ = 오른쪽, 브리지가 부호를 바꿈), 펌웨어가 조용한 펄스로 천천히 맞춤 |
+| 소프트 한계 | 호스트 프로필(409 mrad 자리값) | 349 mrad(20 명령 도, 펌웨어 보정 눈금. 실제 바퀴 각도 미검증) |
+| 상태의 신원 칸 | `protocol`, `boot_id`, `cal_id`, `hw_profile` 등 | 없음. 대신 `esp_kind: esp32_abs_hold`, `firmware`, `firmware_detail`, `steering.cal`(RIGHT/CENTER/LEFT) |
+| 화면 규칙 | 4절·3절 표(경사 제한, 정지 중 5°) | `steer_control.keys: full_limit` → A/D 는 끝까지, 놓으면 0, 끌기 막대([`SCREENS_KO.md`](SCREENS_KO.md) 2절) |
+| 상태 나이 | `age_ms` ≤ 150 ms | 10 Hz STATUS 이라 `steering.age_limit_ms` 300 을 내고 화면이 그 값을 쓴다(150~500 ms 로 묶음) |
+| 구동 | MCU TTL | 펌웨어에 시간 제한 없음 → 호스트 구동 TTL, STOP 확인·재전송, 0 다시 보내기(`esp_rover_control.md` 1-2절) |
+| 결함 이름 | 5.3 MCU 비트와 호스트 래치 | `pot_invalid`, `steer_hold_cancelled`, `steer_stop`, `firmware_mismatch`, `mcu_drive_watchdog` 와 래치 `mcu_reset_detected`, `hardware_fault`, `stop_unconfirmed`, `steering_status_stale` |
+
+- 대시보드는 `DASHBOARD_VEHICLE` 이 없어도 이 브리지가 `vehicle_profile: front_steer` 를 내면 조향 패널을 보인다(텔레메트리의 `services.rover_bridge.vehicle_profile`).
+- 실행기(`row_executor`)의 Arm 전 점검(`steer_arm_precheck`: cal_id, V3 칸)은 이 브리지를 아직 모른다. 요청 형식은 같으므로 실행기 쪽 프로필만 더하면 된다(남은 일).

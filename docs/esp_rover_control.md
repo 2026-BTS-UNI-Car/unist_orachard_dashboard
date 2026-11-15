@@ -1,8 +1,76 @@
-# ESP8266 로버 제어
+# ESP 로버 제어 (ESP32-S3 조종 브리지, 옛 ESP8266 V2)
+
+2026-11-16 차의 보드가 바뀌었다. 옛 ESP8266(차동 V2 펌웨어)을 빼고 ESP32-S3 하나에 BTS7960 모터 드라이버 3개를 달았다.
+1절이 지금 보드, 2절부터는 옛 ESP8266(차동 V2)의 기록이다(코드는 그대로 남아 `ROVER_ESP_KIND=esp8266_v2`, 기본값).
+
+## 1. ESP32-S3 + BTS7960 3개 (2026-11-16 ~)
+
+| 항목 | 값 |
+| --- | --- |
+| 보드 | ESP32-S3, 네이티브 USB(USB Serial/JTAG, 303a:1001). Jetson `/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00` → `/dev/ttyACM1`(2026-11-16) |
+| 드라이버 | BTS7960 3개: 1 = 조향(일반 DC 모터, 가변저항 GPIO6), 2 = 왼쪽 구동, 3 = 오른쪽 구동 |
+| 펌웨어 | `ABS-HOLD-8-REBOUND-LIMITS`(소스 `BTS7960_Serial_Control.ino`, 개발자 제공). 115200, 줄 단위 글자 명령 |
+| 조향 명령 | `ANGLE -20..+20`(명령 눈금 도, **+ = 오른쪽**), 보정 RIGHT=1681 CENTER=1900 LEFT=2180(가변저항 값). ±20 은 명령 눈금이고 실제 바퀴 각도는 재지 않았다 |
+| 구동 명령 | `2 F 100`, `3 R 80`(0~255), `2 S`, `STOP`(세 모터 모두) |
+| 상태 | `STATUS` → `FW: ...`, `CAL: ...`, `STATUS: POT=... COMMAND_EQUIV=±d.dd HOLD=ON/OFF TARGET_POT=... TARGET_COMMAND=...` |
+
+펌웨어에서 호스트가 꼭 알아야 하는 것(소스에서 읽음, 차에서 재지 않음):
+
+- **구동 모터 2·3 에는 시간 제한이 없다.** `2 F 100` 은 STOP, `2 S`, 새 명령, 리셋 전까지 돈다.
+- 조향 수동 명령(`1 F n`)은 1000 ms 뒤 선다. `ANGLE` 유지는 STOP·수동 조향·결함 전까지 이어지고, 한 목표에 보정 구동 1000 ms 한도가 있다.
+  새 목표는 300 ms 조용히 기다린 뒤 50~80 ms 펄스를 준다. 그래서 목표를 0.4 s 보다 자주 바꾸면 바퀴가 움직이지 않는다.
+- USB 포트를 열면 보드가 다시 켜졌다(2026-11-16 한 번 관측). 다시 켜지면 모든 출력이 꺼지고 설정 배너(FW, CAL, STATUS, READY, 안내 세 줄)가 나온다.
+
+### 1-1. 브리지 (`ROVER_ESP_KIND=esp32_abs_hold`)
+
+`python3 -m scripts.esp_rover_bridge`(ROVER_ESP_KIND 로 고름) 또는 `python3 -m scripts.esp32_steer_bridge`. 파일: `scripts/esp32_abs_hold.py`(줄 해석, 명령,
+단위, USB 전송, 모터 어댑터와 안전 층), `scripts/esp32_steer_bridge.py`(제어 소켓, 요청 큐, ROS, 상태 파일).
+
+- 한 프로세스만 포트를 연다: by-id 경로, 열 때마다 udev `ID_SERIAL` 확인, 장치 번호별 flock, TIOCEXCL. 제어 소켓 옆 `bridge.lock` 이 두 번째 브리지를 막는다.
+- 조종 규칙은 조향 차량과 같다(`scripts/steer_control_core.py`, 바꾸지 않음): arm 에 `vehicle_profile: front_steer`, lease·일회용 ticket·seq,
+  deadman, 입력 기한 0.75 s, ticket 1.5 s, 유휴 30 s, 자동 재무장 없음. 대시보드 조향 패널과 실행기의 요청 형식(`throttle`, `steer_mrad`) 그대로다.
+- 부호: 조향 API 의 `steer_mrad` 는 **왼쪽 +**, 펌웨어 `ANGLE` 은 **오른쪽 +** 다. 브리지는 `ANGLE = -(steer_mrad 를 도로 바꾼 값)` 을 보낸다
+  (시험 `tests/test_esp32_bridge.py`: 왼쪽 +349 mrad → `ANGLE -20.0`, 측정 `COMMAND_EQUIV` −도 → `measured_mrad` +). 소프트 한계 349 mrad(20 명령 도).
+- 조향 목표: 1 명령 도 단위, `ANGLE` 사이 0.5 s 이상(가장 새 목표가 이김), 한 목표는 측정각에서 20 도 이내(왼쪽 끝 → 오른쪽 끝은 두 번에.
+  한 번에 보내면 펌웨어의 1000 ms 보정 한도가 중간에 끝난다: 가짜 펌웨어 시험), 펌웨어가 취소한 목표는 요청이 바뀔 때까지 다시 보내지 않는다(강제 재시도 없음).
+  arm 직후 첫 목표가 지금 각도와 같으면(0.5 도 안) 보내지 않는다.
+- 구동: `throttle` → `2 F/R pwm` + `3 F/R pwm`, pwm = (|t| × 255 + 50) // 100, 호스트 상한(`ROVER_ESP32_MAX_DRIVE_PWM`). 앞으로 가는 방향은
+  `ROVER_ESP32_LEFT_FORWARD`, `ROVER_ESP32_RIGHT_FORWARD`(기본 F, **현장 미확인**).
+- 상태: 10 Hz `STATUS`. 상태 응답에 `steering`(측정 mrad, 명령 도, 가변저항 값, 유지 목표, `age_ms`, `age_limit_ms` 300, 결함),
+  `steer_control`(`keys: full_limit` → 화면이 A/D 를 끝까지, 끌기 막대), `drive`(원하는 값, 펌웨어가 확인한 값, TTL), `outputs`(V2 핀 이름 관례 D8/D5/D3/D0 에 확인된 구동 duty).
+
+### 1-2. 구동 안전 (펌웨어에 시간 제한이 없으므로)
+
+| 경우 | 브리지가 하는 것 |
+| --- | --- |
+| 입력 기한(0.75 s) 만료, 조종권 잃음(ticket·seq 오류, 다른 화면), 해제, 화면 STOP·Esc | `STOP`(세 모터) |
+| 구동 TTL(0.75 s, 조종 규칙과 따로) 만료 | `2 S`, `3 S` 즉시 |
+| STOP·`2 S`·`3 S` 의 `OK:` 답이 없음 | 0.15 s 마다 다시. 0.6 s 넘게 없으면 `stop_unconfirmed` 래치, STOP 한 번 더, 포트를 닫고 2 s 뒤 다시 엶 |
+| 정지 중 | 1 s 마다 `2 S`, `3 S` 다시(0 유지) |
+| 구동 값 | 바뀔 때만 쓴다. 같은 값을 다시 쓰지 않는다(스스로 리셋된 보드를 호스트가 다시 돌리지 않게) |
+| 보드 리셋(READY 줄) | `mcu_reset_detected` 래치, 조종권 해제, STOP. 다시 조종하려면 사람이 활성화 |
+| STATUS 0.6 s 없음, 가변저항 무효 | 조종권 해제, STOP |
+| 직렬 오류(쓰기·읽기 실패, 끊김) | `hardware_fault` 래치, 조종권 해제, STOP 시도, 포트 닫고 2 s 뒤 다시 엶(열면 보드가 다시 켜질 수 있다) |
+| 포트를 연 직후 | STOP 먼저(이전 프로세스가 남긴 구동이 있을 수 있음), READY 또는 3 s 뒤 STOP·STATUS 답 확인 |
+| SIGTERM·SIGINT·SIGHUP, atexit | STOP 뒤 포트 닫음(시험: pty 끝단 SIGTERM → 보드 구동 0) |
+
+**남는 위험.** 브리지 프로세스가 SIGKILL·멈춤·Jetson 전원 문제로 죽었는데 보드가 USB 로 계속 전원을 받으면 마지막 구동 명령이 계속 돈다
+(pty 끝단 시험에서 SIGKILL 뒤 1 s 넘게 구동 그대로임을 확인). 포트가 닫힐 때 보드가 리셋되는지는 재지 않았다. 대시보드 STOP 은 물리 전원 차단이 아니다.
+이 틈은 펌웨어의 구동 감시(마지막 구동 명령이나 `HB` 줄 뒤 300 ms 면 2·3 정지)로만 닫힌다. 그 펌웨어가 FW 줄에 `DRIVE_WD=300` 을 내면 브리지는 구동 중
+0.1 s 마다 `HB` 를 보낸다(지금 펌웨어에는 없음. 제안 패치는 조정 쪽 기록 폴더).
+
+### 1-3. 설치와 확인
+
+- Jetson 설치: [`deploy/jetson_esp32_bridge/README_KO.md`](../deploy/jetson_esp32_bridge/README_KO.md)(옛 브리지 컨테이너는 이름을 바꿔 보존, 같은 이미지, 실패 때 자동 되돌림). 아직 설치하지 않았다.
+- compose 의 선택 프로필 `esp32`(서비스 `ros2-esp32-bridge`)는 빈 PC 참고용이다. 차에서는 compose 를 쓰지 않는다.
+- 시험: `tests/fake_esp32.py`(펌웨어 소스로 만든 가짜 보드), `tests/test_esp32_bridge.py`(Windows·Linux), `tests/test_esp32_bridge_linux.py`(pty 끝단, Linux).
+  모두 가짜 보드 결과이고 차에서 잰 값이 아니다.
+
+## 2. 옛 ESP8266 (차동 V2, ~2026-11-16)
 
 `rover_control_test`의 `UBTS_WHEEL_PWM_V2`와 WheelController를 사용한다. 기존 WAVE ROVER UART/HTTP 프록시와 파일 명령 경로는 폐기했다.
 
-## 연결 구조
+### 연결 구조
 
 브라우저 → Dashboard 자동 세션 → `/run/ubts-rover/control.sock` → `ros2-esp-rover-bridge` → 고정 USB ESP → 모터.
 
@@ -12,7 +80,7 @@ ROS에는 `/rover/status`, `/rover/control/requested`, `/rover/control/applied`�
 
 왼쪽 방향 D8/D5, 오른쪽 방향 D3/D0, 전원 D1/D2/D6/D7 매핑을 유지한다. 정상 입력 해제는 MCU 가감속, STOP/Esc/창 이탈/통신 만료는 즉시 정지를 요청한다. MCU의 전원 핀 유지 정책도 기존 펌웨어와 같다. 웹 STOP은 물리 전원 차단 장치가 아니다.
 
-## 사용
+### 사용
 
 1. `/rover-control`에서 **조종 활성화 OFF**를 눌러 ON으로 바꾼다. 별도 조종 암호는 없다. 다시 누르면 정지하며 OFF가 된다.
 2. WASD 또는 방향 버튼을 누르는 동안 이동한다. 한글 입력 모드에서도 물리 WASD 키를 사용한다.
@@ -24,7 +92,7 @@ ROS에는 `/rover/status`, `/rover/control/requested`, `/rover/control/applied`�
 
 대시보드를 연 브라우저에 세션을 자동 생성하며 별도 입력은 필요 없다. 조종권은 한 세션만 소유한다. 연속 입력에는 일회용 티켓과 순번을 적용한다. 입력 0.75초 만료, 티켓 1.5초 만료, 유휴 조종권 30초 만료다. keepalive는 이동 유효 시간을 늘리지 않는다. MCU watchdog 2초가 호스트 정지에 대비한다. 너무 느린 망에서는 정지 후 재활성화가 필요하며 안전 시간을 늘리지 않는다.
 
-## 저속 전송
+### 저속 전송
 
 전송 품질의 자동 모드는 작은 프레임부터 시작해 수신 확인 시간에 따라 조절한다. 카메라와 LiDAR는 각 연결에서 하나의 미확인 프레임만 허용한다. 응답이 없으면 연결을 닫고 오래된 프레임을 쌓지 않는다.
 
@@ -39,7 +107,7 @@ ROS에는 `/rover/status`, `/rover/control/requested`, `/rover/control/applied`�
 
 자동 모드는 극저속에서 시작한다. 극저속에서는 IMU 표시 1 Hz, 전체 텔레메트리 조회 10초 간격을 적용해 영상 외 트래픽도 줄인다. 선택한 프로필은 화면 미리보기에만 적용된다. 64 kbps는 목표 회선 예산이며 가용 대역폭이나 지연 보장은 아니다.
 
-## AP와 설치
+### AP와 설치
 
 관리 AP는 `band=bg`, 채널 6, 절전 비활성화로 유지한다. 현재 인터넷에 연결한 station의 5GHz 사용과 AP의 2.4GHz 설정은 별개다. 프로필 검증은 기존 프로필의 대역도 확인하며 활성 AP를 원격으로 강제 변경하지 않는다. 2.4GHz 자체가 특정 거리를 보장하지 않으며 안테나·장애물·간섭에 따른 현장 시험이 필요하다.
 

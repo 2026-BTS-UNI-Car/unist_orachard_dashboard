@@ -33,7 +33,7 @@
 
 | 문서 | 내용 | 상태 |
 | --- | --- | --- |
-| [esp_rover_control.md](esp_rover_control.md) | ESP8266 연결, 조종권, 정지, 저속 통신 설정 | 현재(차동). 조향 V3 는 아직 없음 |
+| [esp_rover_control.md](esp_rover_control.md) | ESP32-S3(BTS7960 3개) 조종 브리지: 부호, 조향 목표 규칙, 구동 안전과 남는 위험, 설치. 옛 ESP8266 연결, 조종권, 정지, 저속 통신 | 현재(2026-11-16, 가짜 보드로 확인. 차에서 확인 전) |
 | [rover_control_dashboard.md](rover_control_dashboard.md) | 화면의 조종 사용법 요약 | 현재(차동) |
 
 ## 조향 차량 (V3)
