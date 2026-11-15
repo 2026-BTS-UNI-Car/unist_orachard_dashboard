@@ -24,7 +24,8 @@ the kit carries that package byte-exact and the vehicle configuration. What --ap
      Start, Arm and go on the dashboard, and the executor's own GO rules refuse the configuration while a measurement is
      missing. A container of an earlier install is stopped, renamed '<name>-kept-<stamp>' (restart no) and kept.
   5. ready: the container runs, the operator API on 127.0.0.1 answers (the token is read through the Docker API and
-     never printed), run_state idle, the mode is the requested one, /scan and IMU arrive (lidar_age, imu_age < 1 s);
+     never printed), run_state idle, the mode is the requested one, /scan and IMU arrive (the executor's message
+     counters grow by >= 5 Hz scans and >= 15 Hz IMU over 3 s; the sensor ages exist only inside a run);
      then the link file <dashboard runtime>/row_executor/dashboard_link.json is written (the dashboard relay reads it
      when its code has the link-file reader, dashboard_server/executor_proxy.LinkedExecutor)
   Any failure after step 4 began stops the new container (renamed '<name>-failed-<stamp>', restart no, kept), puts
@@ -78,6 +79,8 @@ STOP_GRACE_S = 10
 DOCKER_TIMEOUT_S = 20.0
 PREFLIGHT_TIMEOUT_S = 120.0
 READY_TIMEOUT_S = 60.0
+READY_RATE_WINDOW_S = 3.0      # the sensor message rates are taken over this window (RPLIDAR S2 10 Hz, BNO085 ~33 Hz)
+SCAN_HZ_MIN, IMU_HZ_MIN = 5.0, 15.0
 MARKER = 'UBTS_ROW_EXECUTOR_PREFLIGHT_OK'
 PREFLIGHT_CODE = (
     "import json, os, sys\n"
@@ -579,8 +582,11 @@ class Installer:
         return result
 
     def wait_ready(self, cid, port):
+        """The executor answers on its operator API, idle, in the requested mode, and /scan and IMU arrive: while no run
+        is open the executor reports no sensor ages, so its message counters (counts scans_processed, imu_fed) must grow
+        by at least SCAN_HZ_MIN / IMU_HZ_MIN over READY_RATE_WINDOW_S."""
         deadline = self.clock() + self.options.ready_timeout
-        last = None
+        last, first = None, None
         while self.clock() < deadline:
             info = self.docker.inspect(cid) or {}
             st = info.get('State') or {}
@@ -599,9 +605,19 @@ class Installer:
                 need(status.get('run_state') == 'idle', 'not_idle', str(status.get('run_state')))
                 want = 'MOTOR' if self.options.mode == 'motor' else 'SHADOW'
                 need(status.get('mode') == want, 'mode_mismatch', str(status.get('mode')))
-                ages = (status.get('lidar_age'), status.get('imu_age'))
-                if all(isinstance(a, (int, float)) and 0 <= a < 1.0 for a in ages) or self.options.allow_sensors_absent:
+                counts = status.get('counts') if isinstance(status.get('counts'), dict) else {}
+                sample = (self.clock(), counts.get('scans_processed'), counts.get('imu_fed'))
+                if self.options.allow_sensors_absent:
                     return last
+                if all(isinstance(v, int) for v in sample[1:]):
+                    if first is None:
+                        first = sample
+                    elif sample[0] - first[0] >= READY_RATE_WINDOW_S:
+                        span = sample[0] - first[0]
+                        last['scan_hz'] = round((sample[1] - first[1]) / span, 2)
+                        last['imu_hz'] = round((sample[2] - first[2]) / span, 2)
+                        if last['scan_hz'] >= SCAN_HZ_MIN and last['imu_hz'] >= IMU_HZ_MIN:
+                            return last
             self.sleep(1.0)
         raise KitError('ready_timeout', json.dumps(last, default=str) if last else 'operator API did not answer')
 

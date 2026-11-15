@@ -19,7 +19,7 @@
 실행기는 SHADOW 그대로다(차를 움직이지 않는다). 브리지 쪽 시험 순서는 [`deploy/jetson_esp32_bridge/README_KO.md`](../deploy/jetson_esp32_bridge/README_KO.md) 5절과 같고, 여기서는 실행기가 쓸 값을 함께 잰다.
 
 1. 차를 받침에 올려 네 바퀴를 띄운다. 앞바퀴가 끝까지 돌 공간이 있는지 본다.
-2. 전원을 넣기 전 화면 확인: Rover Control 의 조향 패널이 '조향 장치 연결됨', 조종 꺼짐(disarmed). 자율 칸(실행기 연결 뒤)은 SHADOW, `run_state` idle, LiDAR·IMU 나이가 1 s 미만.
+2. 전원을 넣기 전 화면 확인: Rover Control 의 조향 패널이 '조향 장치 연결됨', 조종 꺼짐(disarmed). 자율 칸(실행기 연결 뒤)은 SHADOW, `run_state` idle(LiDAR·IMU 나이는 run 을 연 뒤에 나온다).
 3. **조정 쪽 요청이 있을 때** 조향 전원을 켠다.
 4. 조종 활성화 → 구동 속도 상한을 10~15 % 로 낮춘다.
 5. 극성(B0): 끌기 막대를 왼쪽 5° 로 끈다 → 앞바퀴가 **차의 왼쪽**(뒤에서 볼 때 왼쪽)으로 도는지 본다. 화면의 측정각도 왼쪽(+)이어야 한다. 반대면 바로 STOP 하고 알린다(그 뒤 시험은 하지 않는다).

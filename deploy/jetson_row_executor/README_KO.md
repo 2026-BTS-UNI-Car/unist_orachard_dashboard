@@ -58,7 +58,7 @@ python3 install_row_executor.py            # 점검만. 마지막 줄 '점검 �
 python3 install_row_executor.py --apply
 ```
 
-순서: 파일 준비 → 사전 점검 컨테이너(network none; 실행기 import, `SHA256SUMS`, vendor, 설정, 루프 생성, rclpy) → 새 컨테이너 → 시작 → 준비 확인(운영자 API가 답하고 `run_state` idle, 모드 SHADOW, `lidar_age`·`imu_age` 1 s 미만) → 연결 파일. 준비 확인에 실패하면 새 컨테이너를 멈춰 남기고 연결 파일을 쓰지 않으며 옛 실행기를 되살린다.
+순서: 파일 준비 → 사전 점검 컨테이너(network none; 실행기 import, `SHA256SUMS`, vendor, 설정, 루프 생성, rclpy) → 새 컨테이너 → 시작 → 준비 확인(운영자 API가 답하고 `run_state` idle, 모드 SHADOW, 3 s 동안 실행기가 받은 `/scan` 5 Hz 이상·IMU 15 Hz 이상; run 이 없을 때는 실행기가 센서 나이를 내지 않아 받은 메시지 수로 본다) → 연결 파일. 준비 확인에 실패하면 새 컨테이너를 멈춰 남기고 연결 파일을 쓰지 않으며 옛 실행기를 되살린다.
 
 설치 뒤 읽기 확인:
 
@@ -68,7 +68,7 @@ docker logs --tail 20 unist-orachard-row-executor        # 'row executor running
 curl -s http://127.0.0.1:8080/api/executor/status | python3 -m json.tool | head -40   # 대시보드가 연결 파일을 읽을 때
 ```
 
-- 대시보드 화면: Rover Control 의 자율 칸에 실행기 상태(`run_state` idle, 센서 나이)가 보인다. 이것은 연결 파일을 읽는 대시보드 판(`dashboard_server/executor_proxy.py`의 `LinkedExecutor`, 2026-11-16 브랜치 `jetson-autonomy-20261116`)이 설치되어 있어야 한다. 그 전 판은 '실행기 설정 없음'을 보인다(실행기는 그래도 SHADOW로 돈다).
+- 대시보드 화면: Rover Control 의 자율 칸에 실행기 상태(`run_state` idle, SHADOW)가 보인다. LiDAR·IMU 나이는 run 을 연 뒤에 나온다. 이것은 연결 파일을 읽는 대시보드 판(`dashboard_server/executor_proxy.py`의 `LinkedExecutor`, 2026-11-16 브랜치 `jetson-autonomy-20261116`)이 설치되어 있어야 한다. 그 전 판은 '실행기 설정 없음'을 보인다(실행기는 그래도 SHADOW로 돈다).
 - SHADOW 에서 화면의 Start 는 그림자 run 을 연다(제안 기록만, 차는 실행기와 상관없이 수동 조종). Arm 은 `motor_output_not_allowed`로 거절된다.
 
 ## 6. 되돌리기 (`--rollback`)

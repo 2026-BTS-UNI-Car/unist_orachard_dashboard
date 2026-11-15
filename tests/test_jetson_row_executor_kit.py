@@ -75,8 +75,10 @@ class FakeHost:
         self.files = {}
         self.dirs = {'/run/ubts-rover'}
         self.port_open = False
-        self.status = {'run_state': 'idle', 'mode': 'SHADOW', 'lidar_age': .08, 'imu_age': .03,
+        self.status = {'run_state': 'idle', 'mode': 'SHADOW', 'lidar_age': None, 'imu_age': None,
                        'vehicle_control': 'none', 'feasibility': {'status': 'unknown'}}
+        self.rates = (10, 33)            # messages per status read (the installer polls once per second)
+        self.counts = [0, 0]
         self.http_calls = []
 
     def home(self):
@@ -107,7 +109,9 @@ class FakeHost:
 
     def http_status(self, port, token, timeout=2.):
         self.http_calls.append((port, token))
-        return (200, dict(self.status)) if token == TOKEN else (403, {})
+        self.counts = [self.counts[0] + self.rates[0], self.counts[1] + self.rates[1]]
+        status = dict(self.status, counts=dict(scans_processed=self.counts[0], imu_fed=self.counts[1]))
+        return (200, status) if token == TOKEN else (403, {})
 
 
 def container(cid, name, image, env=(), mounts=(), running=True, host_config=None):
@@ -293,7 +297,8 @@ class Install(KitCase):
                          b'{"schema": "ubts.field_tuning.v1"}\n')
         receipt = json.dumps(installer.receipt, default=str)
         self.assertNotIn(TOKEN, receipt)
-        self.assertEqual(installer.receipt['ready']['mode'], 'SHADOW')
+        ready = installer.receipt['ready']
+        self.assertEqual((ready['mode'], ready['run_state'], ready['scan_hz'], ready['imu_hz']), ('SHADOW', 'idle', 10., 33.))
         preflight = self.docker.by_name('%s-kit-preflight-%s' % (inst.NAME, installer.stamp))
         self.assertEqual(preflight['HostConfig']['NetworkMode'], 'none')
         self.assertEqual(preflight['State']['Status'], 'exited')   # kept
@@ -304,7 +309,7 @@ class Install(KitCase):
         self.assertEqual(self.host.files['/home/unist/ubts-row-executor/state/field_tuning.json'], b'{"tuned": 1}\n')
 
     def test_link_waits_for_fresh_sensors_and_a_failed_ready_restores(self):
-        self.host.status = dict(self.host.status, lidar_age=None)
+        self.host.rates = (0, 33)                     # no /scan
         code, installer = self.install()
         self.assertEqual(code, 1)
         self.assertEqual(installer.receipt['error']['code'], 'ready_timeout')
