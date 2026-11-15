@@ -35,7 +35,7 @@ UNIST BTS 과수원 로버의 웹 대시보드입니다. 차에 실린 Jetson에
 | Overview | `/` | CPU·메모리·외부 IP·Docker 요약, CPU / Memory와 Network RX / TX 그래프, ROS2 / Rover 연결, Jetson 정보 |
 | Connection | `/connection` | LiDAR·카메라 연결 상태, RPLIDAR 상태 확인, 2D LiDAR 지도(내려받기), 카메라 실시간 화면, 서비스 연결, ROS2 센서 링크 |
 | System | `/system` | Jetson CPU(코어별)·메모리·Swap·네트워크·전력 그래프, 디스크 |
-| Network | `/network` | 외부·내부 주소, 오프라인 AP / 저장된 Wi-Fi 전환, RX / TX, 연결 정보 |
+| Network | `/network` | 외부·내부 주소, 오프라인 AP / 저장된 Wi-Fi 전환, Wi-Fi 관리(주변 검색, 비밀번호로 연결, 자동 연결·우선순위, 자동 되돌림), RX / TX, 연결 정보 |
 | Docker | `/docker` | 컨테이너 CPU·메모리, 목록, 상세·로그, 시작·중지·재시작(확인 창) |
 | Fan Control | `/fan` | 온도, 팬 PWM(자동·수동) |
 | Rover Control | `/rover-control` | LiDAR(안에 실시간 점유 격자 지도와 실행기 국소 격자), 카메라, GPS 위치(오프라인 지도), IMU, 주행 제어(차동 패드 또는 조향 패널, 조향 가변저항, 자율 시작·정지), 현장 조정 값(접힘), 기록 제어, 연동 상태, 기록 데이터(동기 재생, 기록 지도, 내려받기) |
@@ -90,6 +90,21 @@ LiDAR 큰 보기, 지도는 지도 화면 10분. 기준은 화면 개편 전의 
 
 **기록·재생.** 녹화는 ROS bag(LiDAR, 원본 IMU, GPS, 조종 요청·MCU 보고 PWM)과 원본 1080p 카메라를 함께 남긴다. 기록 화면에서 센서와 영상을 같은 시각으로
 되감아 보고, 기록으로 지도를 다시 만들고, 느린 연결용 영상 화질(HLS)을 고른다([`docs/motor_pwm_recording.md`](docs/motor_pwm_recording.md), [`docs/imu_ros2_recording.md`](docs/imu_ros2_recording.md)).
+
+**Wi-Fi 관리 (Network).** Network 쪽의 "오프라인 AP / 저장된 Wi-Fi" 패널에서 AP 전환(이전과 같음)과 함께 Jetson의 Wi-Fi를 고른다.
+주변 검색 목록(신호 dBm·%, 대역·채널, 보안), 비밀번호로 연결, 자동 연결 여부와 우선순위, 저장된 Wi-Fi의 자동 연결·우선순위 바꾸기.
+원격에서 연결을 바꾸면 조작자가 끊길 수 있어서 모든 연결 변경은 시험 연결이다: 새 연결이 45초 안에 주소를 못 받거나 실패하면 곧바로,
+연결된 뒤 150초 안에 화면의 '이 연결 유지'를 누르지 않으면 Jetson이 이전 연결(Wi-Fi 또는 AP)로 스스로 돌아간다. 비밀번호는 Jetson의 root 전용
+NetworkManager 파일에만 들어가고 명령행·로그·응답에는 나오지 않는다. 바꾸는 요청은 세션과 같은 Origin이 있어야 받는다. 권한이 필요한 일은 대시보드가 아니라
+호스트 도우미(`deploy/offline_ap/ubts_network_mode.py`, 정해진 명령만)가 한다. 계약과 한계: [`docs/jetson_offline_access.md`](docs/jetson_offline_access.md) "Wi-Fi 관리",
+도우미 교체: [`deploy/network_helper_update/README_KO.md`](deploy/network_helper_update/README_KO.md).
+
+| 노트북 1440 px: 주변 Wi-Fi에서 고르고 비밀번호 넣기 | 휴대폰 390 px: 시험 연결 중 남은 시간과 확인 |
+|---|---|
+| ![Wi-Fi 관리, 노트북](docs/assets/screens/network_wifi_1440.png) | ![Wi-Fi 시험 연결, 휴대폰](docs/assets/screens/network_wifi_390.png) |
+
+[화면 · 모의 자료] 2026-11-16. 화면 점검 도구의 모의 서버에 지어낸 SSID·주소(문서 예시 대역)를 넣어 찍었다. 실제 Jetson의 Wi-Fi 목록이 아니다.
+이 기능은 가짜 nmcli 시험과 모의 서버로만 확인했고 Jetson에는 아직 설치하지 않았다.
 
 ## 구성
 

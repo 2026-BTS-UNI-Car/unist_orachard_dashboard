@@ -68,9 +68,46 @@ POST /api/network/mode {"action":"wifi","confirm":"leave_ap_and_scan_known_wifi"
 ```
 
 Dashboard 컨테이너는 직접 NetworkManager를 조작하지 않는다. host PID/mount/network
-namespace의 `/usr/local/sbin/ubts-network-mode`에 제한된 세 명령(`status`,
-`request-ap`, `request-wifi`)만 전달한다. controller status가 10초 이상 stale이면
-전환을 거부한다.
+namespace의 `/usr/local/sbin/ubts-network-mode`에 제한된 명령(`status`,
+`request-ap`, `request-wifi`와 아래 Wi-Fi 관리의 `wifi-*` 여섯 개)만 전달한다.
+controller status가 10초 이상 stale이면 전환을 거부한다. 2026-11-16부터 바꾸는
+요청(`/api/network/mode`, `/api/network/wifi/*`)은 이 화면의 세션 쿠키와 같은
+Origin이 있어야 받는다.
+
+## Wi-Fi 관리 (2026-11-16)
+
+Network 쪽 "오프라인 AP / 저장된 Wi-Fi" 패널 안에서 주변 Wi-Fi 검색 목록(신호 dBm·%,
+대역·채널, 보안), 비밀번호로 연결, 자동 연결과 우선순위, 저장된 Wi-Fi의 자동 연결·
+우선순위 바꾸기를 한다. 메뉴와 쪽 구성은 그대로다. 화면 모듈
+(`static/network/wifi-manager.mjs`)은 Network 쪽을 처음 열 때만 받는다.
+
+```text
+GET  /api/network/wifi            저장된 Wi-Fi(10초 캐시)와 마지막 검색 결과. 검색은 하지 않는다
+POST /api/network/wifi/scan       주변 검색 (모든 사용자 합쳐 15초에 한 번, 도우미도 10초 캐시)
+POST /api/network/wifi/connect    {"ssid"|"uuid", "password"?, "autoconnect", "priority",
+                                   "confirm":"connect_with_auto_revert"}
+POST /api/network/wifi/confirm    {"txn"}  시험 연결을 유지
+POST /api/network/wifi/revert     {"txn"}  시험 연결을 지금 되돌림
+POST /api/network/wifi/profile    {"uuid", "autoconnect", "priority"}  (-999 ~ 999)
+```
+
+- **시험 연결과 자동 되돌림.** 연결을 바꾸면 controller가 새 연결을 시도하고, 45초 안에
+  주소·기본 경로가 없거나 연결이 실패하면 곧바로, 연결된 뒤에는 150초 안에 화면의
+  '이 연결 유지'가 오지 않으면 이전 연결(저장 Wi-Fi 프로필 또는 AP)로 되돌린다.
+  되돌릴 때 이번에 만든 프로필만 지우고(uuid와 `/run` 경로 확인), 비밀번호를 바꾼
+  저장 프로필은 원래 파일로 돌린다. 새 프로필은 시험 동안 메모리 프로필
+  (`/run/NetworkManager`)이고 자동 연결이 꺼져 있어 재부팅하면 사라진다. 이전 Wi-Fi로도
+  못 붙으면 기존 안전장치(저장된 Wi-Fi 60초 검색 → AP)가 이어 받는다.
+- **비밀번호.** 화면 → 대시보드 → 도우미 표준 입력 → root 전용 NetworkManager 파일로만
+  간다. 명령행 인자, 로그, 대기 명령 파일, 상태 파일, 응답에 넣지 않는다.
+- **막는 때.** Ethernet으로 AP가 유지되는 동안, AP 시작·저장된 Wi-Fi 검색·다른 시험
+  연결 중. AP 방식에서는 무선랜이 하나라 주변 검색을 하지 못한다(10분 안의 검색
+  결과나 저장된 Wi-Fi로는 연결 시험을 할 수 있다). 새 SSID는 최근 검색 결과에 있는
+  것만, 기업용(802.1X)·WEP는 받지 않는다. 숨긴 SSID는 지원하지 않는다.
+- **AP에서 다른 Wi-Fi로.** AP가 꺼지므로 휴대폰도 그 Wi-Fi나 인터넷으로 옮겨
+  대시보드에 들어와 확인해야 한다. 못 하면 150초 뒤 AP로 돌아온다.
+- 설치: 도우미는 `deploy/network_helper_update/README_KO.md`(sudo), 대시보드는
+  `deploy/jetson_dashboard/README_KO.md`. 도우미를 먼저 바꾼다.
 
 ## 오프라인 주소와 보안 계약
 
