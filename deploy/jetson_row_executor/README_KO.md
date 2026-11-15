@@ -85,7 +85,7 @@ MOTOR 모드는 차를 움직일 수 있는 실행기다. 그래도 운영자가
 
 1. 브리지가 구동 방향 확인을 마쳤다(`ROVER_ESP32_DIRECTION_VERIFIED=1`, 브리지 묶음의 `--direction-verified`). 아니면 실행기 Arm 이 `drive_direction_unverified`로 거절된다.
 2. 실행기 설정에 현장 값이 들어갔다: 구동 C2·C3·C7, 조향 B0(극성)·B2/B3(범위, `steer_esp32_mark_deg`)·B4·F1, 측정 조향 속도와 GO 문턱 결정(`steer_rate_min_deg_s`), `motor_output_enabled: true`. 실행기의 설정 검사(`feasibility` ok)를 지나야 사전 점검을 통과한다.
-3. 펌웨어 구동 감시(watchdog) 패치가 들어갔거나(`steer_esp32_require_fw_watchdog: true` 그대로), 들어가지 않았다면 그 위험(브리지 프로세스가 죽으면 마지막 구동이 계속됨)을 받아들인다는 결정과 함께 `false`로 적고 물리 비상정지와 사람이 차 옆에 있다.
+3. 펌웨어 구동 감시(watchdog) 패치가 들어갔거나(`steer_esp32_require_fw_watchdog: true` 그대로; **2026-11-16 보드에 씀, FW `DRIVE_WD=300`**), 들어가지 않았다면 그 위험(브리지 프로세스가 죽으면 마지막 구동이 계속됨)을 받아들인다는 결정과 함께 `false`로 적고 물리 비상정지와 사람이 차 옆에 있다.
 
 ```sh
 python3 install_row_executor.py --apply --mode motor --config-file ~/ubts-row-executor/config.motor.json
@@ -95,7 +95,7 @@ python3 install_row_executor.py --apply --mode motor --config-file ~/ubts-row-ex
 
 ## 8. 남는 위험
 
-- ESP32 펌웨어에는 구동 시간 제한이 없다. 실행기가 죽으면 브리지의 입력 기한(0.75 s)이 STOP 한다(가짜 보드 시험으로 확인). 브리지 프로세스가 SIGKILL 이나 멈춤으로 죽고 보드가 USB 전원을 받으면 마지막 구동이 계속 돈다. 펌웨어 감시 패치 전까지는 물리 비상정지가 마지막 수단이다.
+- 원본 ESP32 펌웨어에는 구동 시간 제한이 없었다. 2026-11-16 감시 패치(300 ms)를 보드에 써서, 브리지 프로세스가 SIGKILL 이나 멈춤으로 죽어도 구동은 0.3 s 안에 선다(가짜 보드 시험, 실제 보드에서 아직 재지 않음). 실행기가 죽으면 브리지의 입력 기한(0.75 s)이 STOP 한다. 물리 비상정지는 그대로 마지막 수단이다.
 - 조향 명령 눈금(명령 20 = 바퀴 몇 도)은 아직 재지 않았다. 설정의 `steer_esp32_mark_deg` 17.831 은 SIM 가정(기계 한계 − 1°)이다.
 - 실행기의 열 추종은 SIM 에서만 쟀다(자리값 기반 SIM 결과). 실차의 조향 응답(정지 중 약 5 °/s, 펄스 유지)과 구동 응답은 현장에서 처음 본다.
 
