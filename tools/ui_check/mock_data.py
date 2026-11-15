@@ -243,7 +243,16 @@ def _stress_telemetry(now: float) -> dict:
                 "seconds_until_auto_switch": 86399,
                 "can_request_ap": True,
                 "can_request_wifi": True,
+                "can_request_connect": True,
+                "can_scan": True,
                 "last_error": "mock: 저장된 Wi-Fi를 찾지 못해 AP 방식으로 되돌아갔습니다(점검용으로 지어낸 긴 오류 문장)",
+                "link": {"ssid": LONG_SSID, "freq_mhz": 5745, "band": "5GHz", "signal_dbm": -100, "tx_mbps": 2401.9, "rx_mbps": 2401.9},
+                "trial_seconds": 300,
+                # A trial waiting for the operator: the banner with the longest texts (ui_check stress).
+                "trial": {"txn": "0123456789abcdef", "ssid": LONG_SSID, "kind": "new", "phase": "waiting_confirm",
+                          "seconds_left": 299.9, "trial_seconds": 300, "previous": LONG_SSID, "can_confirm": True,
+                          "ipv4": "192.0.2.254", "gateway_reply": True, "internet_reply": False},
+                "last_trial": None,
             },
         },
         "docker": {
@@ -574,6 +583,7 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
             "/api/recordings/media-jobs": {"ok": True, "jobs": []},
             "/api/live/map": {"ok": True, "state": "idle", "active": False, "map_epoch": "mock-empty", "version": 0, "scan_count": 0},
             "/api/live/mapping-jobs": {"ok": True, "resources": {}, "jobs": []},
+            "/api/network/wifi": {"ok": False, "enabled": False, "state": "disabled", "saved": [], "scan": None},
             "/api/autonomy": {"ok": True, "speed_percent": 0, "message": "mock: 실차 자동 구동 보류", "preparation": None},
             "/api/autonomy/observe": {
                 "ok": True,
@@ -668,7 +678,31 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
         "/api/executor/status": _executor_status(dataset, now),
         "/api/executor/tuning": _tuning_view(dataset),
         "/api/executor/tuning/log": _tuning_log(dataset, now),
+        "/api/network/wifi": _stress_wifi(),
     }
+
+
+def _stress_wifi() -> dict:
+    """Wi-Fi management (Network page): 32-byte SSIDs without spaces, every tag, long details."""
+    securities = ["WPA2", "WPA1 WPA2", "WPA2 WPA3", "WPA3", "WPA2 802.1X", "", "WEP", "WPA2"]
+    networks = [
+        {"ssid": f"{LONG_SSID[:28]}_{index:03d}", "band": "5GHz" if index % 2 else "2.4GHz", "channel": 165 if index % 2 else 13,
+         "freq_mhz": 5825 if index % 2 else 2472, "signal_pct": 100 - index * 12, "signal_dbm": -30 - index * 9,
+         "rate_mbps": 2402, "security": securities[index] or "open",
+         "key_mgmt": {"": "none", "WPA3": "sae", "WPA2 802.1X": "unsupported", "WEP": "unsupported"}.get(securities[index], "wpa-psk"),
+         "supported": securities[index] not in {"WPA2 802.1X", "WEP"}, "in_use": index == 0, "ap_count": 1 + index}
+        for index in range(8)
+    ]
+    saved = [
+        {"uuid": f"00000000-0000-4000-8000-{index:012d}", "name": f"{LONG_SSID[:28]}_{index:03d} (99)", "ssid": f"{LONG_SSID[:28]}_{index:03d}",
+         "autoconnect": index % 2 == 0, "priority": [999, -999, 200, 100, 0, 0][index], "active": index == 0,
+         "key_mgmt": "sae" if index == 3 else "wpa-psk", "band": "5GHz" if index % 2 else "2.4GHz", "last_used": 4102444800 - index * 86400,
+         "storage": "runtime" if index == 5 else "disk", "password_editable": index != 5, "trial": index == 4}
+        for index in range(6)
+    ]
+    return {"ok": True, "enabled": True, "state": "ok", "error": None, "saved": saved,
+            "scan": {"networks": networks, "hidden_count": 99, "rescanned": True, "scanned_at": 4102444800, "age_s": 86399},
+            "limits": {"scan_min_interval_s": 15, "priority_min": -999, "priority_max": 999}}
 
 
 def doc_payload(dataset: str, slug: str) -> dict | None:

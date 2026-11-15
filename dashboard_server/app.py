@@ -183,8 +183,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/link-log":
             self._link_log()
         elif path == "/api/network/mode":
-            payload = self._read_json_body()
-            self._send_json(self.provider.set_network_mode(payload))
+            if self._network_request_allowed():
+                payload = self._read_json_body()
+                self._send_json(self.provider.set_network_mode(payload))
+        elif path.startswith("/api/network/wifi/"):
+            self._network_wifi_action(path.removeprefix("/api/network/wifi/"))
         elif path.startswith("/rover-proxy/") or path == "/rover-proxy":
             self._proxy_rover_request(parsed)
         elif path == "/api/fan/mode":
@@ -254,6 +257,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.system())
         elif path == "/api/network":
             self._send_json(self.provider.network())
+        elif path == "/api/network/wifi":
+            wifi = getattr(self.provider, "wifi", None)
+            if wifi is None:
+                self._send_json({"ok": False, "enabled": False, "state": "disabled", "saved": [], "scan": None})
+            else:
+                self._send_json(wifi.overview(refresh_saved=parse_qs(parsed.query).get("refresh") == ["1"]))
         elif path == "/api/docker":
             self._send_json(self.provider.docker())
         elif path.startswith("/api/docker/container/"):
@@ -776,6 +785,44 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": f"link_log_write_failed: {exc.strerror or exc}"}, 500)
             return
         self._send_json({"ok": True, "written": written, "dropped": len(rows) - written})
+
+    # ---- Network page: AP switch and Wi-Fi management (dashboard_server/wifi_manager.py) ----
+    NETWORK_MAX_BODY = 4096
+
+    def _network_request_allowed(self) -> bool:
+        """Changes of the Jetson's network need this page's own origin and a dashboard session."""
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host"):
+            self.send_error(403, "Origin mismatch")
+            return False
+        if not self._ensure_session(create=False):
+            self.send_error(403, "Dashboard session required")
+            return False
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            length = -1
+        if length < 0 or length > self.NETWORK_MAX_BODY:
+            self.send_error(413, "Network request size")
+            return False
+        return True
+
+    def _network_wifi_action(self, name: str):
+        from dashboard_server.wifi_manager import http_status
+        actions = {"scan": "scan", "connect": "connect", "confirm": "confirm", "revert": "revert", "profile": "update_profile"}
+        wifi = getattr(self.provider, "wifi", None)
+        if name not in actions:
+            self.send_error(404, "Not found")
+            return
+        if not self._network_request_allowed():
+            return
+        payload = self._read_json_body()
+        if wifi is None:
+            self._send_json({"ok": False, "state": "disabled"}, 503)
+            return
+        result = wifi.scan() if name == "scan" else getattr(wifi, actions[name])(payload)
+        payload = None  # the request may hold a password; it is not kept or logged
+        self._send_json(result, http_status(result))
 
     def _send_bytes(self, body: bytes, content_type: str, filename: str | None = None):
         session_token = self._ensure_session(create=True)

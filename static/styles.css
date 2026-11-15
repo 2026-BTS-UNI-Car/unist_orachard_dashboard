@@ -499,6 +499,7 @@
 .rover-record-panel,
 .rover-gps-panel,
 .network-mode-panel,
+.wifi-stack,
 .fan-pwm-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1113,6 +1114,10 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   gap: var(--space-2) var(--space-3);
 }
 
+.wifi-priority {
+  width: 96px;
+}
+
 /* ---- Fan --------------------------------------------------------------- */
 .fan-control-grid {
   display: grid;
@@ -1308,6 +1313,7 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   justify-content: space-between;
   gap: var(--space-3);
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* On the tinted tile the neutral badge needs the stronger fill. */
