@@ -652,6 +652,11 @@
 <div><button class="btn-hold" data-steer-key="a" type="button">◀ A</button><button class="btn-hold" data-steer-key="c" type="button">가운데</button><button class="btn-hold" data-steer-key="d" type="button">D ▶</button></div>
 <div><button class="btn-hold" data-steer-key="w" type="button">전진 W</button><button class="btn-hold" data-steer-key="s" type="button">후진 S</button></div>
 </div>
+<div class="steer-drag-block">
+<div class="gps-map-footer"><span id="steerDragLabel">끌어서 조향 각 (놓으면 0°)</span><strong><output for="steerDrag" id="steerDragValue">0°</output></strong></div>
+<div aria-disabled="true" aria-labelledby="steerDragLabel" aria-valuemax="20" aria-valuemin="-20" aria-valuenow="0" aria-valuetext="가운데 0°" class="steer-gauge steer-drag btn-hold" id="steerDrag" role="slider"><i class="steer-drag-centre"></i><i class="steer-drag-thumb" id="steerDragThumb"></i></div>
+<div class="gps-map-footer"><small>◀ 왼쪽 20°</small><small>오른쪽 20° ▶</small></div>
+</div>
 <div aria-hidden="true" class="steer-gauge"><i></i><i class="measured" hidden="" id="steerGaugeMeasured"></i><i class="target" hidden="" id="steerGaugeTarget"></i></div>
 <div class="gps-map-footer"><small id="steerGaugeLeft">왼쪽</small><small>목표(파랑) · 측정(검정)</small><small id="steerGaugeRight">오른쪽</small></div>
 <div class="chart-readout compact" id="steerReadout"></div>
@@ -659,9 +664,9 @@
 <label for="steerSpeedSlider"><span>속도 상한 (Q −5, E +5)</span><strong id="steerSpeedValue">20%</strong></label>
 <input id="steerSpeedSlider" max="60" min="0" step="5" type="range" value="20"/>
 </div>
-<div aria-label="조향 각" class="segmented-control"><button data-steer-angle="5" type="button">5°</button><button data-steer-angle="10" type="button">10°</button><button data-steer-angle="15" type="button">15°</button><button data-steer-angle="20" type="button">20°</button></div>
+<div aria-label="조향 각" class="segmented-control" id="steerAngleChoices"><button data-steer-angle="5" type="button">5°</button><button data-steer-angle="10" type="button">10°</button><button data-steer-angle="15" type="button">15°</button><button data-steer-angle="20" type="button">20°</button></div>
 <div aria-label="조향 키를 놓았을 때" class="segmented-control"><button class="active" data-steer-mode="centre" type="button">가운데로</button><button data-steer-mode="hold" type="button">각 유지</button></div>
-<p class="help-text">조종 활성화 뒤 W/S는 누르는 동안 구동, A/D는 고른 각까지 조향, C는 누르는 동안 가운데로. A/D를 놓으면 가운데로 돌아온다(정지 중에는 한 번 5°까지, ‘각 유지’를 고르면 그대로). STOP·Esc는 언제나.</p>
+<p class="help-text" id="steerHelp">조종 활성화 뒤 W/S는 누르는 동안 구동, A/D는 고른 각까지 조향, C는 누르는 동안 가운데로. A/D를 놓으면 가운데로 돌아온다(정지 중에는 한 번 5°까지, ‘각 유지’를 고르면 그대로). 막대를 끌면 그 각으로, 놓으면 0°로. STOP·Esc는 언제나.</p>
 <div class="sim-map-actions" hidden="" id="steerFaults"></div>
 <div class="test-result" id="steerCommandStatus">조향 장치 확인 중</div>
 </div>

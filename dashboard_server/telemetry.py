@@ -3424,6 +3424,9 @@ class TelemetryProvider:
             "status_topic": rover_bridge.get("status_topic"),
             "serial_open": rover_bridge.get("serial_open"),
             "last_error": rover_bridge.get("last_error"),
+            # The bridge kind: the page takes the steering panel when a front-steer bridge answers (14-steer.js).
+            "vehicle_profile": rover_bridge.get("vehicle_profile") if isinstance(rover_bridge.get("vehicle_profile"), str) else None,
+            "esp_kind": rover_bridge.get("esp_kind") if isinstance(rover_bridge.get("esp_kind"), str) else None,
         }
         recorder = self.recording_status()
         services["data_recorder"] = {

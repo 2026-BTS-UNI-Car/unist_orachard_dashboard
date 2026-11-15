@@ -422,22 +422,27 @@ STRESS_MARKDOWN = "\n".join(
 
 
 def _steer_rover_status(dataset: str, now: float) -> dict:
-    """GET /api/rover/status of a front-steer bridge (V3 snapshot with the steering block, docs/STEERING_SERVER_KO.md 4).
-    empty: no bridge (the dashboard's reply when the control socket is missing)."""
+    """GET /api/rover/status of a front-steer bridge (docs/STEERING_SERVER_KO.md 4, docs/esp_rover_control.md): the
+    ESP32-S3 'ABS-HOLD' bridge (steer_control keys full_limit: the drag control and A/D to the full limit) with the
+    steering block and long fault names. empty: no bridge (the dashboard's reply when the control socket is missing)."""
     if dataset == "empty":
         return {"ok": False, "connected": False, "state": "unavailable", "error": "motor_bridge_unavailable"}
     return {
         "ok": True, "state": "fault", "connected": True, "armed": False, "moving": False, "reason": "mock_steering_not_following",
         "input_ttl_s": 0.75, "automatic_input_enabled": False, "last_error": "mock: 점검용으로 지어낸 아주 긴 오류 문장",
-        "updated_at": now, "vehicle_profile": "front_steer", "steer_limit_mrad": {"left": 409, "right": 380},
+        "updated_at": now, "vehicle_profile": "front_steer", "steer_limit_mrad": {"left": 349, "right": 349},
+        "esp_kind": "esp32_abs_hold",
+        "steer_control": {"kind": "esp32_abs_hold", "keys": "full_limit", "ramp": False, "command_limit_deg": 20.0,
+                          "angle_quantum_deg": 1.0, "angle_min_interval_ms": 500, "angle_max_jump_deg": 20.0},
         "requested": {"throttle": 0, "steer_mrad": 0, "left": 0, "right": 0},
         "outputs": {"D8": 0, "D5": 0, "D3": 0, "D0": 0, "D1": 0, "D2": 0, "D6": 0, "D7": 0},
-        "firmware": "UBTS_STEER_V3", "protocol": 3, "boot_id": "89025CC1", "device_id": "5A1B2C", "reset_reason": "power_on",
+        "firmware": "ABS-HOLD-8-REBOUND-LIMITS", "protocol": 3, "boot_id": "89025CC1", "device_id": "5A1B2C", "reset_reason": "power_on",
         "hw_profile": "front_steer_v0", "simulated": True, "profile": "front_steer", "cal_id": 1,
         "steering": {"measured_mrad": -152, "measured_permille": -347, "raw": 401, "target_permille": -320, "cmd_permille": -320,
                      "pwm": 0, "mcu_ms": 123456, "seq": 789, "applied_q": 12, "age_ms": 20, "ttl_remaining_ms": 0,
                      "drive_en": False, "steer_en": False, "hold_remaining_ms": None, "stop_mode": "brake",
-                     "faults": ["SOFTLIMIT", "POT_NOISE", "steering_not_following", "mock_unknown_fault_with_a_long_name"],
+                     "age_limit_ms": 300,
+                     "faults": ["pot_invalid", "steer_hold_cancelled", "steering_not_following", "mock_unknown_fault_with_a_long_name"],
                      "servo_state": "off", "saturated": True, "calibrated": True},
         "steering_host": {"arm_state": "none", "stop_state": "confirmed", "mcu_state": "DISARMED", "fl": "0110", "stale": False,
                           "target_mrad": None, "latches": {}},
