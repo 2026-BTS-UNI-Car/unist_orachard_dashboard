@@ -23,8 +23,9 @@ UNIST BTS 과수원 로버의 웹 대시보드입니다. 차에 실린 Jetson에
 |---|---|
 | ![Rover Control, 노트북](docs/assets/screens/rover_control_1440.png) | ![Rover Control, 휴대폰](docs/assets/screens/rover_control_390.png) |
 
-[화면 · 모의 자료] 2026-11-14 판(메뉴를 수정 전 구성으로 되돌림). 화면 점검 도구의 모의 서버(`tools/ui_check`)가 내는 예시 자료로 찍었다(실제 센서 값이 아니다).
-왼쪽은 Rover Control의 첫 화면(LiDAR, 카메라, 차동 차량의 주행 제어), 오른쪽은 같은 페이지의 휴대폰 첫 화면이다. STOP은 모든 페이지의 상태 막대와 주행 제어에 있다.
+[화면 · 모의 자료] 2026-11-16 판(조향 차량, ESP32-S3 브리지의 상태를 흉내 냄). 화면 점검 도구의 모의 서버(`tools/ui_check`)가 내는 예시 자료로 찍었다(실제 센서 값이 아니다).
+왼쪽은 Rover Control의 첫 화면(위 카드의 ESP32-S3 연결, LiDAR, 카메라, 조향 주행 제어: A/D·가운데·끌기 막대·목표와 측정 조향각), 오른쪽은 같은 페이지의 휴대폰 첫 화면이다.
+STOP은 모든 페이지의 상태 막대와 주행 제어에 있다. 메뉴는 2026-11-14에 수정 전 구성(8쪽)으로 되돌린 그대로다.
 
 > **지금 상태.** 화면과 서버는 가짜 센서·가짜 MCU·가짜 실행기와 느린 연결 시험대로 확인했다. 2026-11-16 차의 보드가 ESP32-S3(BTS7960 3개: 조향,
 > 왼쪽·오른쪽 구동)로 바뀌었고, 같은 날 이 판(대시보드, ESP32-S3 조종 브리지 `ROVER_ESP_KIND=esp32_abs_hold`, Wi-Fi 관리용 호스트 도우미)을
@@ -62,7 +63,8 @@ PWM 값은 요청한 출력이지 실제 바퀴 속도가 아니다(차에 휠 �
 Rover Control의 주행 제어 패널에 조향 패널(구동 W/S, 조향 A/D·가운데, 끌어서 조향 각, 목표·측정 조향각)과 조향 가변저항 값이 보인다.
 ESP32-S3 브리지에서는 A/D를 누르는 동안 왼쪽·오른쪽 끝(±20 명령 도)까지 가고 놓으면 가운데로 오며, 막대를 끌면 그 각으로 가고 놓으면 0°로 돌아온다
 (키와 막대는 먼저 잡은 쪽만 듣고, STOP이 언제나 이긴다). 브리지와 구동 안전: [`docs/esp_rover_control.md`](docs/esp_rover_control.md). 그 아래 자율 칸에서 "준비 → Arm → 자율 주행 시작"을 누르면
-실행기가 열 끝까지 간다(시뮬레이션에서 확인, 실차 전). Rover Control을 떠나거나 탭을 숨기면 0.5초 뒤 차가 서고(페이지 안에서 스크롤하는 것은 괜찮다),
+실행기가 열 끝까지 간다(시뮬레이션에서 확인, 실차 전). Rover Control을 떠나거나 탭을 숨기면 화면이 운영자 연결 신호를 멈추고, 실행기의 운영자 연결 기한
+(기본 1.0 s, 시뮬레이션 저장소 결정 R60. 화면에 그 값이 보인다)이 지나면 차가 선다(페이지 안에서 스크롤하는 것은 괜찮다),
 다시 출발은 사람이 누른다. 현장 조정 값은 같은 페이지의 접힌 칸에 있다. 서버 사양: [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md).
 
 | 조향 수동 조종 (휴대폰) | 자율 주행 칸 (실행기 상태 자세히) |
@@ -152,7 +154,18 @@ flowchart LR
 [도식] ESP32-S3 한 장이 모터 드라이버(BTS7960) 세 개를 돌린다. 조향은 보드 안에서 가변저항 값이 목표에 오도록 위치를 잡고(약 ±20°),
 구동 둘은 브리지가 보낸 PWM을 그대로 낸다. 화면은 상태를 짧은 HTTP 요청으로, 센서는 WebSocket으로 받는다. 조종 요청은 대시보드 서버가 조종 브리지 하나에 전한다(브리지만 직렬 장치를 연다).
 자율주행은 실행기가 브리지 조종권(lease)을 잡고 몰며, 대시보드는 실행기 운영자 API를 대신 부르고 토큰은 화면에 내보내지 않는다.
-실행기와 조향 브리지 V3는 시뮬레이션 저장소(`unist_orchard_simulation`)에서 만들었고, 조향 브리지는 이 레포로 옮겨 왔다([`docs/STEERING_HOST_PORT_KO.md`](docs/STEERING_HOST_PORT_KO.md)).
+실행기와 조향 브리지 V3는 시뮬레이션 저장소([`unist_orchard_simulation`](https://github.com/2026-BTS-UNI-Car/unist_orchard_simulation), 팀 비공개)에서 만들었고, 조향 브리지는 이 레포로 옮겨 왔다([`docs/STEERING_HOST_PORT_KO.md`](docs/STEERING_HOST_PORT_KO.md)).
+
+펌웨어 소스(`BTS7960_Serial_Control.ino`, 개발자 제공)에 적힌 배선이다. 차에서 배선을 따로 확인하지는 않았고 보드 사진은 아직 없다.
+
+| BTS7960 | 맡은 일 | R_EN | RPWM | L_EN | LPWM |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 조향 DC 모터(F = 오른쪽) | 16 | 17 | 18 | 8 |
+| 2 | 왼쪽 구동 | 46 | 3 | 9 | 10 |
+| 3 | 오른쪽 구동 | 12 | 11 | 13 | 14 |
+
+가변저항은 바깥 단자를 3.3 V·GND에, 가운데 단자를 GPIO6에 잇는다. PWM은 20 kHz, 8비트(0~255). GPIO3·GPIO46은 부팅 설정 핀이라
+외부 배선이 부팅에 영향을 줄 수 있다(소스 주석). 명령과 보정 값: [`docs/esp_rover_control.md`](docs/esp_rover_control.md) 1절.
 
 ## 빠른 시작
 
@@ -183,7 +196,7 @@ scripts/run_local.sh            # = python3 -m dashboard_server --host 127.0.0.1
 | `LIDAR_WS_UPSTREAM`, `CAMERA_WS_UPSTREAM`, `IMU_WS_UPSTREAM`, `GPS_WS_UPSTREAM` | 센서 브리지 WebSocket 주소 |
 | `DASHBOARD_MODE` | `live`(기본) / `simulation`(시뮬레이션 확장을 꽂을 때, [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) 2절) |
 
-시뮬레이션 스택(Gazebo, 가상 센서, 조향 브리지, 실행기)과 함께 보려면 시뮬레이션 저장소 `unist_orchard_simulation`의 안내를 따른다.
+시뮬레이션 스택(Gazebo, 가상 센서, 조향 브리지, 실행기)과 함께 보려면 시뮬레이션 저장소 [`unist_orchard_simulation`](https://github.com/2026-BTS-UNI-Car/unist_orchard_simulation)(팀 비공개)의 안내를 따른다. 그 스택은 2026-11-16부터 실제 치수 차로 뜬다.
 그 저장소는 이 레포의 한 커밋을 사본으로 가져가 쓴다.
 
 ### 3. 차(Jetson)에 설치
@@ -203,10 +216,10 @@ scripts/run_local.sh            # = python3 -m dashboard_server --host 127.0.0.1
 
 | 위치 | 내용 |
 | --- | --- |
-| `dashboard_server/` | 대시보드 서버(Python 표준 라이브러리 HTTP 서버): 화면·정적 파일, 상태 API, WebSocket 중계, 조종 중계(`rover_api.py`), 실행기 중계(`executor_proxy.py`), 조정(`steer_tuning.py`), 기록·지도, 확장 지점(`extensions.py`) |
-| `static/` | 화면: `index.html`, `app/`(화면 스크립트 17개), `steer/`(Rover Control의 조향·자율·조정 값·국소 격자), `css/`, `vendor/`(지도·영상 라이브러리, 글꼴) |
+| `dashboard_server/` | 대시보드 서버(Python 표준 라이브러리 HTTP 서버): 화면·정적 파일, 상태 API, WebSocket 중계, 조종 중계(`rover_api.py`), 실행기 중계(`executor_proxy.py`), 조정(`steer_tuning.py`), Wi-Fi 관리 중계(`wifi_manager.py`), 기록·지도, 확장 지점(`extensions.py`) |
+| `static/` | 화면: `index.html`, `app/`(화면 스크립트 17개), `steer/`(Rover Control의 조향·자율·조정 값·국소 격자), `network/`(Network 쪽 Wi-Fi 관리), `css/`, `vendor/`(지도·영상 라이브러리, 글꼴) |
 | `scripts/` | Jetson에서 도는 ROS 2 드라이버·브리지(`*_ros2_driver.py`, `*_ws_bridge.py`), 조종 브리지(ESP32-S3 `esp32_steer_bridge.py`·`esp32_abs_hold.py`, 고르기 `esp_rover_bridge.py`, 옛 차동 `rover_control_bridge.py`, 조향 V3 `steer_rover_bridge.py`), 녹화기, 기록 후처리 |
-| `deploy/` | `jetson_dashboard/`(대시보드 설치 묶음), `jetson_esp32_bridge/`(ESP32-S3 조종 브리지 설치 묶음), `offline_ap/`(무선 AP 전환), `systemd/`, `native_sensor_stream/`·`native_sensor_shadow/`(차동 시절 관찰 서비스) |
+| `deploy/` | `jetson_dashboard/`(대시보드 설치 묶음), `jetson_esp32_bridge/`(ESP32-S3 조종 브리지 설치 묶음), `offline_ap/`(무선 AP 전환과 Wi-Fi 관리 호스트 도우미), `network_helper_update/`(호스트 도우미 교체, 점검·자동 되돌림), `systemd/`, `native_sensor_stream/`·`native_sensor_shadow/`(차동 시절 관찰 서비스) |
 | `tools/` | `ui_check/`(화면 점검), `slow_link/`(느린 통신 시험대, 현장 연결 기록 보고), `fonts/`(화면 글꼴 분할), 차동 시절 관찰 도구 |
 | `tests/` | Python 시험(`test_*.py`)과 화면 시험(`test_*.js`, `test_*.mjs`) |
 | `config/` | 대시보드 설정 |
@@ -241,6 +254,10 @@ python3 -m unittest discover -s tests
 # ESP32-S3 브리지 (가짜 보드. pty 끝단 시험은 Linux)
 python3 -m unittest tests.test_esp32_bridge tests.test_esp32_bridge_linux tests.test_jetson_esp32_bridge_kit
 node --test tests/test_steer_drag.mjs
+
+# Wi-Fi 관리 (가짜 nmcli. 화면 시험은 Node 22 이상)
+python3 -m unittest tests.test_network_wifi_api tests.test_network_wifi_helper tests.test_network_helper_update tests.test_network_mode
+node --test tests/test_network_wifi_ui.mjs
 
 # 조종 회귀 (조종·STOP 경로를 바꿨을 때 꼭)
 node tests/test_control_path_regression.js && node tests/test_rover_browser.js && node tests/test_rover_pad_touch.js
