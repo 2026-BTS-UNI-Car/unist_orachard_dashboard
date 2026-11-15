@@ -353,6 +353,43 @@ services:
       - "${UBTS_STEER_HOST_PROFILE_FILE:-./runtime/steer_host_profile.json}:/app/steer/host_profile.json:ro"
     command: ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && python3 -m scripts.steer_rover_bridge --transport serial"]
 
+  # ESP32-S3 'ABS-HOLD' bridge (ROVER_ESP_KIND=esp32_abs_hold, docs/esp_rover_control.md). Optional profile "esp32":
+  # never started by default. One ESP32-S3 with three BTS7960 drivers (1 steering, 2 left, 3 right). It serves the same
+  # control socket as ros2-esp-rover-bridge, so stop that one first (the lock next to the socket refuses a second
+  # bridge). "exec" puts python in place of the shell, so the SIGTERM of docker stop reaches the bridge (it sends STOP).
+  # On the Jetson it is installed with deploy/jetson_esp32_bridge/ (Docker API, keeps the old container), not compose.
+  ros2-esp32-bridge:
+    profiles: ["esp32"]
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    image: unist-orachard-ros2-esp-rover-bridge:latest
+    container_name: unist-orachard-ros2-esp32-bridge
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    stop_grace_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      ROVER_ESP_KIND: "esp32_abs_hold"
+      ROVER_SERIAL_PORT: "/dev/ubts-motor"
+      ROVER_ESP_IDENTITY: "${ROVER_ESP32_IDENTITY:-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60}"
+      ROVER_CONTROL_SOCKET: "/run/ubts-rover/control.sock"
+      ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
+      ROVER_ESP32_LEFT_FORWARD: "${ROVER_ESP32_LEFT_FORWARD:-F}"
+      ROVER_ESP32_RIGHT_FORWARD: "${ROVER_ESP32_RIGHT_FORWARD:-F}"
+      ROVER_ESP32_MAX_DRIVE_PWM: "${ROVER_ESP32_MAX_DRIVE_PWM:-153}"
+    devices:
+      - "${ROVER_ESP32_DEVICE:-/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00}:/dev/ubts-motor"
+    volumes:
+      - ./runtime:/app/runtime
+      - /run/ubts-rover:/run/ubts-rover
+      - /run/lock:/run/lock
+      - /run/udev:/run/udev:ro
+    command: ["/bin/bash", "-lc", "source /opt/ros/iron/setup.bash && exec python3 -m scripts.esp_rover_bridge"]
+
   ros2-gps-driver:
     build:
       context: .

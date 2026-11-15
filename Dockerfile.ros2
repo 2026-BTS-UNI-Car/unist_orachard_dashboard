@@ -20,6 +20,7 @@ COPY scripts/imu_ros2_driver.py ./scripts/imu_ros2_driver.py
 COPY scripts/imu_ws_bridge.py ./scripts/imu_ws_bridge.py
 COPY scripts/esp_wheel_controller.py scripts/esp_motor.py scripts/rover_control_core.py scripts/rover_control_bridge.py scripts/stream_policy.py ./scripts/
 COPY scripts/esp_motor_v3.py scripts/steer_control_core.py scripts/steer_bridge_core.py scripts/steer_rover_bridge.py ./scripts/
+COPY scripts/esp32_abs_hold.py scripts/esp32_steer_bridge.py scripts/esp_rover_bridge.py ./scripts/
 COPY scripts/data_recorder_service.py scripts/recording_durability.py ./scripts/
 COPY scripts/native_camera_encoder.py scripts/mapping_sensor_writer.py scripts/recording_postprocess.py scripts/export_recording_camera.py scripts/build_adaptive_recording.py scripts/native_jpeg_vfr.py scripts/hls_bandwidth.py scripts/install_adaptive_recording.py ./scripts/
 COPY scripts/gps_ros2_driver.py scripts/gps_ws_bridge.py ./scripts/
