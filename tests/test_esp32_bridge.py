@@ -217,6 +217,9 @@ class Startup(unittest.TestCase):
         rig.run(0.5)
         self.assertEqual(rig.motor.link, 'firmware_mismatch')
         self.assertEqual(rig.call('arm', vehicle_profile='front_steer')['error'], 'firmware_mismatch')
+        writes = len(rig.tr.writes)
+        rig.run(2.0)
+        self.assertEqual(len(rig.tr.writes), writes, 'nothing more is written to a board with another firmware')
 
 
 class Armed(unittest.TestCase):

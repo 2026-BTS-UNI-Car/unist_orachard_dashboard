@@ -525,7 +525,8 @@ class Esp32SteerMotor:
             if self.link == 'closed':
                 return
             self._service_link(now)
-            if self.link in ('ready', 'firmware_mismatch', 'confirming'):
+            if self.link in ('ready', 'confirming'):
+                # (a board with another firmware gets nothing more than the STOP written at open)
                 self._service_stop(now)
                 self._service_drive(now)
                 if self.link == 'ready':
@@ -788,7 +789,7 @@ class Esp32SteerMotor:
             self.reconnect_at = now + RECONNECT_S
 
     def _service_drive(self, now):
-        if self.link not in ('ready', 'confirming', 'firmware_mismatch'):
+        if self.link not in ('ready', 'confirming'):
             return
         if self.link != 'ready':
             # Only stops before the link is confirmed (and on a wrong firmware).
