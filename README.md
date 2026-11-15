@@ -282,7 +282,7 @@ CI(`.github/workflows/smoke.yml`)는 컴파일과 Python 시험을 돌린다. RO
 - **ESP32-S3 보드는 차에서 확인 전.** 2026-11-16 차에 ESP32-S3(ABS-HOLD 펌웨어)가 달렸다. 브리지는 가짜 보드로 시험했고, 실제 보드에는 상태 읽기와 정지 명령만 보냈다.
   구동 방향(모터 2·3 의 F 가 앞인지), 명령 눈금과 실제 바퀴 각도의 관계는 재지 않았다. 펌웨어의 구동 모터에는 시간 제한이 없어서, 브리지 프로세스가
   죽은 채 보드가 전원을 받으면 마지막 구동이 계속 돈다(남는 위험, [`docs/esp_rover_control.md`](docs/esp_rover_control.md) 1-2절). 물리 비상정지가 마지막 수단이다.
-- **실행기는 아직 ESP32 브리지에 맞추지 않았다.** 요청 형식(`throttle`, `steer_mrad`)은 같지만 실행기의 Arm 전 점검(V3 의 cal_id 등)은 이 브리지 상태를 모른다.
+- **자율 실행기는 SHADOW 로만 설치됨.** 실행기가 ESP32 브리지와 말하는 어댑터(시뮬레이션 레포 `docs/steering/EXECUTOR_ESP32_KO.md`)는 가짜 보드로 확인했다. Jetson 에는 2026-11-16 SHADOW(조종 소켓 없음)로 설치해 `/scan`·IMU 를 받는 것까지 봤다([`deploy/jetson_row_executor/README_KO.md`](deploy/jetson_row_executor/README_KO.md)). 차를 움직이는 MOTOR 는 현장 측정(구동 방향, 조향 극성·눈금·속도, 구동 C2·C3·C7)과 결정(조향 GO 문턱, 펌웨어 구동 감시) 뒤에만 쓴다([`docs/FIELD_STEER_AUTONOMY_TEST_KO.md`](docs/FIELD_STEER_AUTONOMY_TEST_KO.md)).
   차동 시절 자율·관찰 코드는 조향 실행기로 바뀔 때까지 남겨 둔다(결정 나5, [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) 9절).
 - **느린 연결 값은 흉내 낸 값.** 연결 프로필(좋음 10 Mbit/s ~ 아주 나쁨 150 kbit/s)과 연결 등급 경계(25 / 90 / 220 ms)는 가정이다.
   현장에서 `?link_log=1`로 기록을 받아 고친다. 목표 32개 중 못 미친 것과 까닭은 [`docs/slow_link.md`](docs/slow_link.md) 12절.

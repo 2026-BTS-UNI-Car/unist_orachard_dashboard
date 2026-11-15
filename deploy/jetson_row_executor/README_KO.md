@@ -98,3 +98,10 @@ python3 install_row_executor.py --apply --mode motor --config-file ~/ubts-row-ex
 - ESP32 펌웨어에는 구동 시간 제한이 없다. 실행기가 죽으면 브리지의 입력 기한(0.75 s)이 STOP 한다(가짜 보드 시험으로 확인). 브리지 프로세스가 SIGKILL 이나 멈춤으로 죽고 보드가 USB 전원을 받으면 마지막 구동이 계속 돈다. 펌웨어 감시 패치 전까지는 물리 비상정지가 마지막 수단이다.
 - 조향 명령 눈금(명령 20 = 바퀴 몇 도)은 아직 재지 않았다. 설정의 `steer_esp32_mark_deg` 17.831 은 SIM 가정(기계 한계 − 1°)이다.
 - 실행기의 열 추종은 SIM 에서만 쟀다(자리값 기반 SIM 결과). 실차의 조향 응답(정지 중 약 5 °/s, 펄스 유지)과 구동 응답은 현장에서 처음 본다.
+
+## 9. 확인한 것 (2026-11-16)
+
+- 시험(PC, 가짜 Docker·가짜 호스트): `tests/test_jetson_row_executor_kit.py` 14개. 점검이 아무것도 바꾸지 않음, 거절(이미지 없음, 포트 사용 중, 모드와 설정이 다름, loopback 아님, 묶음 변조, 패키지 SHA256SUMS 어긋남), SHADOW 설치(명령·마운트·토큰·연결 파일·조정 파일 보존), 센서가 없으면 연결 파일 없이 자동 되돌림, 옛 실행기 보존과 복원, 사전 점검 실패 시 바뀐 것 없음, MOTOR 모드의 마운트, 되돌리기, 묶음 만들기, 도구에 지우기·prune·build·compose·subprocess 없음. 연결 파일 읽기: `tests/test_executor_proxy.py`(Linux 경로 시험 포함).
+- 실행기와 ESP32 브리지의 끝단 시험(가짜 펌웨어, 시뮬레이션 레포 `tools/row_executor/tests/test_esp32_executor_*.py`): Windows Python 3.13 과 WSL Python 3.10 + numpy 1.21.5 + scipy 1.8.0(Jetson 과 같은 판)에서 통과.
+- Jetson 설치(SHADOW, 시뮬레이션 a6630c6 + 이 레포 8c891b2 묶음): 첫 시도는 준비 확인 규칙의 잘못(run 이 없을 때 센서 나이는 늘 비어 있음)으로 60 s 뒤 스스로 되돌렸다(`unist-orachard-row-executor-failed-20261115T181822Z`로 남음, 그 사이 실행기는 `/scan` 약 10 Hz, IMU 약 32 Hz 를 받고 있었다). 고친 묶음으로 설치됨: 사전 점검 Python 3.10.12 / numpy 1.21.5 / scipy 1.8.0, `SHA256SUMS`·vendor 통과, `motor_allowed` false. 읽기 확인: `run_state` idle, 모드 SHADOW, 5 s 동안 스캔 51개(10.1 Hz)·IMU 167개(33 Hz) 처리, 버린 스캔 0, 놓친 틱 0, 루프 약 1.1 ms, CPU 약 15 %, 메모리 53 MiB, 마운트에 `/run/ubts-rover` 없음, 로그에 토큰 없음.
+- 대시보드: 그때 설치된 대시보드(feb4600)는 연결 파일을 읽지 않아 `/api/executor/status`가 `executor_not_configured`였다. 이 레포의 `executor_proxy.py`(연결 파일 읽기)를 그 대시보드 컨테이너 안에서 파일을 바꾸지 않고 한 번 실행해 보니 연결 파일과 토큰으로 실행기에 닿았다(`configured` true, idle, SHADOW). 화면에 보이려면 이 판의 대시보드를 대시보드 묶음으로 설치해야 한다.
