@@ -417,6 +417,68 @@ class DashboardRouteTest(FakeExecutorCase):
         self.assertEqual((status, reply["error"]), (503, "executor_not_configured"))
         self.assertIs(self.call(page, base + "/api/dashboard/config")[1]["executor_configured"], False)
 
+    def test_kit_link_file(self):
+        link = Path(self.tmp.name) / "dashboard_link.json"
+        base, page = self.serve({"UBTS_EXECUTOR_LINK_FILE": str(link)})
+        self.assertIs(self.call(page, base + "/api/dashboard/config")[1]["executor_configured"], False)
+        link.write_text(json.dumps({"schema": proxy.LINK_SCHEMA, "url": "http://%s" % self.fake.host_header,
+                                    "token_file": str(self.token_file)}), encoding="utf-8")
+        status, reply = self.call(page, base + "/api/executor/status")      # read at once, no restart
+        self.assertEqual((status, reply["configured"], reply["status"]["run_state"]), (200, True, "idle"))
+        self.assertIs(self.call(page, base + "/api/dashboard/config")[1]["executor_configured"], True)
+        self.assertEqual(self.call(page, base + "/api/executor/stop", {})[0], 200)
+
+
+class LinkFileTest(unittest.TestCase):
+    """The executor link file of the Jetson kit (executor_proxy.LinkedExecutor)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="ubts-link-")
+        self.dir = Path(self.tmp.name)
+        self.link = self.dir / "dashboard_link.json"
+        self.token = self.dir / "operator_token.txt"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, **data):
+        body = {"schema": proxy.LINK_SCHEMA, "url": "http://127.0.0.1:8097", "token_file": str(self.token)}
+        body.update(data)
+        self.link.write_text(json.dumps({k: v for k, v in body.items() if v is not None}), encoding="utf-8")
+        os.utime(self.link, ns=(time.time_ns(), time.time_ns() + len(json.dumps(body))))
+
+    def test_missing_valid_and_refused(self):
+        linked = proxy.LinkedExecutor(self.link)
+        self.assertIsNone(linked.current())
+        self.assertEqual(linked.error(), "link_file_missing")
+        self.write()
+        client = linked.current()
+        self.assertIsInstance(client, ExecutorClient)
+        self.assertEqual((client.host, client.port, client.token_file), ("127.0.0.1", 8097, str(self.token)))
+        cases = [(dict(url="http://10.77.0.1:8097"), "link_url_not_loopback"),
+                 (dict(token_file=str(self.dir.parent / "elsewhere.txt")), "link_token_outside_folder"),
+                 (dict(schema="other"), "link_file_schema"),
+                 (dict(extra=1), "link_file_schema"),
+                 (dict(url="http://127.0.0.1"), "link_url_invalid")]
+        for change, error in cases:
+            with self.subTest(error=error):
+                self.write(**change)
+                self.assertIsNone(linked.current())
+                self.assertEqual(linked.error(), error)
+        self.link.write_text("{not json", encoding="utf-8")
+        self.assertIsNone(linked.current())
+        self.assertEqual(linked.error(), "link_file_unreadable")
+        self.link.unlink()
+        self.assertIsNone(linked.current())
+
+    def test_environment_wins(self):
+        env = {"UBTS_EXECUTOR_URL": "http://127.0.0.1:9000", "UBTS_EXECUTOR_TOKEN_FILE": str(self.token),
+               "UBTS_EXECUTOR_LINK_FILE": str(self.link)}
+        self.assertIsInstance(proxy.executor_from_env(env, self.dir), ExecutorClient)
+        linked = proxy.executor_from_env({}, self.dir)
+        self.assertIsInstance(linked, proxy.LinkedExecutor)
+        self.assertEqual(linked.path, os.path.join(str(self.dir), proxy.LINK_FILE))
+
 
 if __name__ == "__main__":
     unittest.main()

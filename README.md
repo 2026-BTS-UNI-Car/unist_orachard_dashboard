@@ -144,8 +144,9 @@ flowchart LR
   DRV --> REC
   D <-->|"HTTP"| REC
   D <-->|"Unix 소켓<br/>/run/ubts-rover/control.sock"| MB
-  D <-->|"HTTP + 토큰<br/>/api/executor/*"| EX
-  EX -->|"lease 보유자로 구동"| MB
+  D <-->|"HTTP + 토큰<br/>/api/executor/* → 127.0.0.1:8097"| EX
+  DRV -->|"/scan · /imu/data_raw"| EX
+  EX -->|"lease 보유자로 구동<br/>(ESP32 어댑터)"| MB
   MB <-->|"USB 직렬(네이티브 USB)"| ESP
 ```
 
@@ -179,7 +180,8 @@ scripts/run_local.sh            # = python3 -m dashboard_server --host 127.0.0.1
 | 변수 | 뜻 |
 | --- | --- |
 | `DASHBOARD_VEHICLE` | `differential`(기본, 지금 차) / `front_steer`(조향 차량 화면) |
-| `UBTS_EXECUTOR_URL`, `UBTS_EXECUTOR_TOKEN_FILE` | 자율 실행기 운영자 API 주소와 토큰 파일. 없으면 자율·조정 칸은 "설정 없음" |
+| `UBTS_EXECUTOR_URL`, `UBTS_EXECUTOR_TOKEN_FILE` | 자율 실행기 운영자 API 주소와 토큰 파일 |
+| `UBTS_EXECUTOR_LINK_FILE` | 위 둘이 없을 때 읽는 실행기 연결 파일(기본 `runtime/row_executor/dashboard_link.json`, Jetson 실행기 묶음이 쓴다, 바뀌면 다시 읽음). 셋 다 없으면 자율·조정 칸은 "설정 없음" |
 | `LIDAR_WS_UPSTREAM`, `CAMERA_WS_UPSTREAM`, `IMU_WS_UPSTREAM`, `GPS_WS_UPSTREAM` | 센서 브리지 WebSocket 주소 |
 | `DASHBOARD_MODE` | `live`(기본) / `simulation`(시뮬레이션 확장을 꽂을 때, [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) 2절) |
 

@@ -42,12 +42,14 @@
 | --- | --- | --- |
 | [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) | 조향 차량의 서버 사양: 구동·조향 조종 API, 조향 상태, 자율주행 시작·정지·heartbeat 중계, 조정 값, 정지 규칙, 차동과의 공존 | 현재(실차 펌웨어 V3 전) |
 | [STEERING_HOST_PORT_KO.md](STEERING_HOST_PORT_KO.md) | 시뮬레이션 레포에서 옮긴 조향 V3 호스트 브리지의 출처와 시험 | 현재 |
+| [FIELD_STEER_AUTONOMY_TEST_KO.md](FIELD_STEER_AUTONOMY_TEST_KO.md) | ESP32-S3 차량의 현장 첫 조향 시험(바퀴 든 상태, 잴 값 표), 그림자 주행, 구동 측정, 결정할 것, 첫 자율 시험 순서 | 현재(2026-11-16, 차에서 하기 전) |
 
 ## 설치
 
 | 문서 | 내용 | 상태 |
 | --- | --- | --- |
 | [../deploy/jetson_dashboard/README_KO.md](../deploy/jetson_dashboard/README_KO.md) | Jetson 대시보드 설치 묶음: 점검, 설치, 확인, 되돌리기. 4-1절: 이 묶음만으로 현장에 가는 변경과 브리지를 바꿔야 하는 변경 | 현재 |
+| [../deploy/jetson_row_executor/README_KO.md](../deploy/jetson_row_executor/README_KO.md) | Jetson 자율 실행기 설치 묶음: SHADOW 기본(조종 소켓 없음), 점검, 설치, 대시보드 연결 파일, 되돌리기, 현장 날의 MOTOR 모드 | 현재(2026-11-16) |
 
 ## 접속과 운영
 
