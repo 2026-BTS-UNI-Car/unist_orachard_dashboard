@@ -11,9 +11,13 @@ UNIST BTS 과수원 로버의 웹 대시보드입니다. 차에 실린 Jetson에
 > BNO085 IMU, manual control with a STOP that always goes first, autonomy start/stop, the row executor's field tuning
 > set, recording and synchronized playback) and Docs. A STOP is in the status bar of every page. The server is plain Python
 > (standard library HTTP server, no web framework); sensors come from ROS 2 bridge containers over WebSocket, manual
-> control goes to the motor bridge over a Unix socket, autonomy goes through the row executor's operator API. The vehicle
-> is being refitted from differential (left/right PWM) to front-wheel steering; both control panels exist. The slow-link
-> work was measured on a PC link emulator, not yet on the rover's real Wi-Fi. The documents are in Korean.
+> control goes to the motor bridge over a Unix socket, autonomy goes through the row executor's operator API. Since
+> 2026-11-16 the vehicle has front-wheel steering driven by one ESP32-S3 with three BTS7960 motor drivers (steering DC
+> motor with a belt-coupled potentiometer, left drive, right drive); A/D steers to full lock and a drag bar sets a fine
+> angle that returns to 0 on release. The Network page manages the Jetson's Wi-Fi (scan, connect with a password,
+> autoconnect, automatic rollback). This version runs on the rover's Jetson since 2026-11-16; steering has not yet been
+> tried on the real vehicle. The slow-link work was measured on a PC link emulator, not yet on the rover's real Wi-Fi.
+> The documents are in Korean.
 
 | Rover Control (노트북 1440 px) | 휴대폰 (390 px) |
 |---|---|
@@ -23,8 +27,10 @@ UNIST BTS 과수원 로버의 웹 대시보드입니다. 차에 실린 Jetson에
 왼쪽은 Rover Control의 첫 화면(LiDAR, 카메라, 차동 차량의 주행 제어), 오른쪽은 같은 페이지의 휴대폰 첫 화면이다. STOP은 모든 페이지의 상태 막대와 주행 제어에 있다.
 
 > **지금 상태.** 화면과 서버는 가짜 센서·가짜 MCU·가짜 실행기와 느린 연결 시험대로 확인했다. 2026-11-16 차의 보드가 ESP32-S3(BTS7960 3개: 조향,
-> 왼쪽·오른쪽 구동)로 바뀌었고 그 조종 브리지(`ROVER_ESP_KIND=esp32_abs_hold`)는 펌웨어 소스로 만든 가짜 보드로만 확인했다. 조향 화면과 브리지는
-> 실차에서 확인하지 않았고 이 판은 Jetson에 아직 설치하지 않았다(대시보드·브리지 설치 묶음은 준비됨). 자세한 것은 [현재 한계](#현재-한계).
+> 왼쪽·오른쪽 구동)로 바뀌었고, 같은 날 이 판(대시보드, ESP32-S3 조종 브리지 `ROVER_ESP_KIND=esp32_abs_hold`, Wi-Fi 관리용 호스트 도우미)을
+> Jetson에 설치했다. 설치 뒤 브리지는 보드와 연결된 채 조종 비활성(disarmed)이고, 실제 보드에는 상태 읽기와 정지 명령만 보냈다.
+> 조향·구동은 아직 실차에서 움직여 보지 않았다(첫 시험 순서: [`deploy/jetson_esp32_bridge/README_KO.md`](deploy/jetson_esp32_bridge/README_KO.md) 5절).
+> 자세한 것은 [현재 한계](#현재-한계).
 
 ## 주요 기능
 
@@ -67,7 +73,7 @@ ESP32-S3 브리지에서는 A/D를 누르는 동안 왼쪽·오른쪽 끝(±20 �
 |---|---|
 | ![조정 화면](docs/assets/screens/tuning_1440.png) | ![국소 격자](docs/assets/screens/map_local_grid_1440.png) |
 
-[화면 · 모의 자료] 위 네 장은 `front_steer`(조향 차량)의 Rover Control을 모의 서버의 예시 자료로 찍은 것이다(그 부분으로 스크롤한 화면). 실행기 상태·조정 값·격자는 가짜 실행기의 값이고
+[화면 · 모의 자료] 위 네 장은 `front_steer`(조향 차량)의 Rover Control을 모의 서버의 예시 자료로 찍은 것이다(그 부분으로 스크롤한 화면). 휴대폰 그림(2026-11-16)은 ESP32-S3 브리지 응답을 흉내 내어 조종 활성화 뒤 막대를 왼쪽 10°까지 끌고 있는 순간이다(파란 막대가 목표, 검은 막대가 측정, 측정값은 지어낸 값). 실행기 상태·조정 값·격자는 가짜 실행기의 값이고
 현장 값이 아니다. 조정 묶음의 이름·범위·단위는 실행기가 알려 준 것을 그대로 보인다.
 
 **느린 연결 최적화.** PC에서 2.4 GHz 연결을 흉내 내는 시험대(`tools/slow_link`)로 재며 고쳤다. 아래는 그 측정의 일부다(주행 화면 2분, LiDAR는 주행 화면의
@@ -107,7 +113,8 @@ NetworkManager 파일에만 들어가고 명령행·로그·응답에는 나오�
 | ![Wi-Fi 관리, 노트북](docs/assets/screens/network_wifi_1440.png) | ![Wi-Fi 시험 연결, 휴대폰](docs/assets/screens/network_wifi_390.png) |
 
 [화면 · 모의 자료] 2026-11-16. 화면 점검 도구의 모의 서버에 지어낸 SSID·주소(문서 예시 대역)를 넣어 찍었다. 실제 Jetson의 Wi-Fi 목록이 아니다.
-이 기능은 가짜 nmcli 시험과 모의 서버로만 확인했고 Jetson에는 아직 설치하지 않았다.
+이 기능은 가짜 nmcli 시험과 모의 서버로 확인했고, 2026-11-16 Jetson에 설치했다(대시보드와 호스트 도우미). 같은 날 Jetson의 Wi-Fi를 5 GHz에서
+2.4 GHz로 옮겨 자동 연결 우선순위를 2.4 GHz 먼저로 두었다(그 전환은 화면이 아니라 명령으로 했다). 화면의 시험 연결 흐름은 차에서 아직 눌러 보지 않았다.
 
 ## 구성
 
@@ -126,7 +133,11 @@ flowchart LR
     MB["조종 브리지<br/>ESP32-S3 ABS-HOLD<br/>(옛 차동 V2·조향 V3)"]
     EX["자율 실행기<br/>row_executor"]
   end
-  ESP["ESP32-S3<br/>BTS7960 ×3<br/>조향 · 왼쪽 · 오른쪽 구동"]
+  subgraph ESP["ESP32-S3 (ABS-HOLD 펌웨어)"]
+    M1["BTS7960 1<br/>조향 DC 모터<br/>+ 벨트 연결 가변저항"]
+    M2["BTS7960 2<br/>왼쪽 구동 모터"]
+    M3["BTS7960 3<br/>오른쪽 구동 모터"]
+  end
   B <-->|"HTTP /api/*<br/>WebSocket /ws/*"| D
   D <-->|"WebSocket 중계"| SB
   DRV --> SB
@@ -138,7 +149,8 @@ flowchart LR
   MB <-->|"USB 직렬(네이티브 USB)"| ESP
 ```
 
-[도식] 화면은 상태를 짧은 HTTP 요청으로, 센서는 WebSocket으로 받는다. 조종 요청은 대시보드 서버가 조종 브리지 하나에 전한다(브리지만 직렬 장치를 연다).
+[도식] ESP32-S3 한 장이 모터 드라이버(BTS7960) 세 개를 돌린다. 조향은 보드 안에서 가변저항 값이 목표에 오도록 위치를 잡고(약 ±20°),
+구동 둘은 브리지가 보낸 PWM을 그대로 낸다. 화면은 상태를 짧은 HTTP 요청으로, 센서는 WebSocket으로 받는다. 조종 요청은 대시보드 서버가 조종 브리지 하나에 전한다(브리지만 직렬 장치를 연다).
 자율주행은 실행기가 브리지 조종권(lease)을 잡고 몰며, 대시보드는 실행기 운영자 API를 대신 부르고 토큰은 화면에 내보내지 않는다.
 실행기와 조향 브리지 V3는 시뮬레이션 저장소(`unist_orchard_simulation`)에서 만들었고, 조향 브리지는 이 레포로 옮겨 왔다([`docs/STEERING_HOST_PORT_KO.md`](docs/STEERING_HOST_PORT_KO.md)).
 
@@ -246,8 +258,9 @@ CI(`.github/workflows/smoke.yml`)는 컴파일과 Python 시험을 돌린다. RO
 
 ## 현재 한계
 
-- **실차 확인 전.** 이 판(메뉴 8쪽, 느린 연결 최적화, 조향 칸)은 PC에서 가짜 센서·MCU·실행기로만 확인했고 Jetson에 아직 설치하지 않았다.
-- **ESP32-S3 보드는 차에서 확인 전.** 2026-11-16 차에 ESP32-S3(ABS-HOLD 펌웨어)가 달렸다. 브리지는 가짜 보드로만 확인했고, 실제 보드에는 STATUS만 보냈다.
+- **실차 확인 전.** 이 판(메뉴 8쪽, 느린 연결 최적화, 조향 칸, Wi-Fi 관리)은 PC에서 가짜 센서·MCU·실행기로 확인했다. 2026-11-16 Jetson에 설치해
+  페이지가 열리고 브리지가 보드와 연결되는 것까지 봤지만, 조종·조향·자율은 차에서 아직 눌러 보지 않았다.
+- **ESP32-S3 보드는 차에서 확인 전.** 2026-11-16 차에 ESP32-S3(ABS-HOLD 펌웨어)가 달렸다. 브리지는 가짜 보드로 시험했고, 실제 보드에는 상태 읽기와 정지 명령만 보냈다.
   구동 방향(모터 2·3 의 F 가 앞인지), 명령 눈금과 실제 바퀴 각도의 관계는 재지 않았다. 펌웨어의 구동 모터에는 시간 제한이 없어서, 브리지 프로세스가
   죽은 채 보드가 전원을 받으면 마지막 구동이 계속 돈다(남는 위험, [`docs/esp_rover_control.md`](docs/esp_rover_control.md) 1-2절). 물리 비상정지가 마지막 수단이다.
 - **실행기는 아직 ESP32 브리지에 맞추지 않았다.** 요청 형식(`throttle`, `steer_mrad`)은 같지만 실행기의 Arm 전 점검(V3 의 cal_id 등)은 이 브리지 상태를 모른다.
