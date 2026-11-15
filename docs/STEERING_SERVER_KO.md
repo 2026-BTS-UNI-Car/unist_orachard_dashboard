@@ -177,7 +177,7 @@ stateDiagram-v2
 | 항목 | 값 |
 | --- | --- |
 | 주 버튼 | idle·ended "준비"(start, MOTOR면 이어서 arm) → ready "Arm" → armed "자율 주행 시작"(go) → running "주행 중"(꺼짐) → paused "다시 출발"(새 go) → latched "래치 확인"(ack). go 버튼은 `go_ready`일 때만 켜고, 아니면 `go_blockers`를 한국어로 보인다(규약 개정 2) |
-| heartbeat | `run_state`가 armed·running·paused이고 상태가 새것인 동안, Rover Control이 열려 있고 탭이 보일 때만(스크롤 위치와 무관) 100 ms마다(규약 개정 1, 늦어도 250 ms). go 전 armed부터 보내므로 go 때 운영자 연결이 이미 새것이다(`operator_link_not_fresh` 막음 없음). 탭을 숨기거나 화면을 떠나면 멈춘다 → 실행기가 `operator_link.timeout_s` 뒤 선다(규약 개정 1: 기본 0.5 s, 범위 0.5 ~ 3.0, 화면에서 못 바꿈. 화면은 상태의 값을 보인다) |
+| heartbeat | `run_state`가 armed·running·paused이고 상태가 새것인 동안, Rover Control이 열려 있고 탭이 보일 때만(스크롤 위치와 무관) 100 ms마다(규약 개정 1, 늦어도 250 ms). go 전 armed부터 보내므로 go 때 운영자 연결이 이미 새것이다(`operator_link_not_fresh` 막음 없음). 탭을 숨기거나 화면을 떠나면 멈춘다 → 실행기가 `operator_link.timeout_s` 뒤 선다(규약 개정 1: 범위 0.5 ~ 3.0, 화면에서 못 바꿈. 기본은 처음 0.5 s 였고 2026-11-13 시뮬레이션 저장소 결정 R60 으로 1.0 s. 화면은 상태의 값을 보인다) |
 | lease 잃음(규약 개정 3) | Arm 뒤 첫 go 전에 브리지가 lease를 거두면 run은 열린 채 `ready`, `go_blockers`에 `lease_lost`·`arm_first`. 주 버튼은 "Arm 다시 (브리지가 권한을 거둠)", 안내 "브리지가 권한을 거뒀다: Arm을 다시 누른다" |
 | 온라인 배율(규약 개정 6, PW-10) | 자율 칸의 '온라인 배율' 줄(`autoScale`): 실행기 상태에 `online_scale`이 있을 때만 보인다. 값(소수 3자리)과 창 길이 `(최근 20/20 s)`, 갱신이 멈췄으면 `멈춤: <까닭>`(LiDAR 스캔 없음, LiDAR 속도 품질 미달(스캔 정합 실패), 주행 중 아님, 구동 상태 없음), 표 ±20 % 어긋남이면 `표 어긋남`. 상태가 1.5 s 넘게 오래되면 숨긴다. 따로 묻지 않고 자율 칸의 상태 읽기(500 ms)에 실려 온다 |
 | 주행 뒤 저장 묻기(PW-10) | `online_scale.offer`가 있고 주행 중(armed·running·paused)이 아닐 때 자율 칸에 'run N 끝: 온라인 배율 … 전체 배율(k_field)을 a → b로 저장할까요?'와 '배율 저장'·'저장 안 함'(`autoScaleOffer`). '배율 저장'은 확인 창 뒤 `POST /api/executor/params {online_scale: accept, run_id}`, '저장 안 함'은 dismiss. 받을 수 없는 제안(`ok` false)은 까닭과 '닫기'만. 거절은 실행기 이유를 오류 줄에 보인다. 파일 저장은 현장 조정 값의 '파일에 저장' |
@@ -241,7 +241,7 @@ stateDiagram-v2
 | 화면 숨김·초점 잃음 | 화면 | 입력 놓음(숨김은 STOP) |
 | 상태 1 s 오래됨(Arm 중) | 화면 | STOP |
 | 화면 STOP 중 run이 있을 때 | 대시보드 → 실행기 `stop` + 브리지 `stop` | run LATCHED, 구동 정지 |
-| heartbeat 끊김 > operator_link.timeout_s(기본 0.5 s) | 실행기 | 구동 0, 조향 유지, run paused(`OPERATOR_LINK_LOST`). 자동 재출발 없음 |
+| heartbeat 끊김 > operator_link.timeout_s(기본 1.0 s, R60) | 실행기 | 구동 0, 조향 유지, run paused(`OPERATOR_LINK_LOST`). 자동 재출발 없음 |
 | 센서 오래됨, 장애물, 열 끝 | 실행기 | 실행기 규칙대로 |
 | 실행기에 닿지 못함 | 화면 | 버튼 꺼짐. STOP은 브리지 stop으로 계속 |
 | 브리지 오류 응답(조종권 잃음) | 화면 | lease를 버리고 STOP을 한 번 보낸다. 자동 재무장 없음 |
@@ -274,7 +274,7 @@ stateDiagram-v2
 | 화면 속도 상한 | 0 ~ 60 % | 현장 확인 |
 | 상태 오래됨 판정 | 300 ms, age 150 ms, STOP 1 s | 느린 통신 측정(NET-05) |
 | heartbeat 주기 | 100 ms | 규약 개정 1(≤ 250 ms), 느린 통신 측정 |
-| operator_timeout_s | 0.5 s(0.5 ~ 3.0) | 규약 개정 1(A17 개정 31), 현장 |
+| operator_timeout_s | 1.0 s(0.5 ~ 3.0) | 규약 개정 1(A17 개정 31), 2026-11-13 R60 으로 0.5 → 1.0 s(느린 연결에서 자주 서지 않게), 현장 |
 | 조정 값 이름·범위·기본 | 7절 표 | 실행기 S1(PW-07, PC-13, PC-10) |
 | 조종 WebSocket 채택 | 미정 | NET-05(S4a) |
 
