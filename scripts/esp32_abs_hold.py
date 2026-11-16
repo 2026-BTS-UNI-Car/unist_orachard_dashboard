@@ -1159,7 +1159,8 @@ class Esp32SteerMotor:
             found['usable'] = self.cal_found_usable(found)
             self.cal_found[f['side']] = found
             self._event(now, 'calibration', 'found %s pot=%d reason=%s' % (f['side'], f['pot'], f['reason']))
-            if job is not None and job['state'] == 'waiting' and job['expect'] == 'found':
+            if job is not None and job['state'] == 'waiting' and job['expect'] == 'found' and \
+                    job['action'] == 'find_' + f['side']:
                 job['index'] += 1
                 job['state'] = 'next'
                 job['found'] = found
