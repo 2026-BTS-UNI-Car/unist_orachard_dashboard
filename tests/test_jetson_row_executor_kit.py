@@ -3,7 +3,9 @@ Checks: the dry run changes nothing; refusals (a motor config in shadow mode, a 
 tampered kit, a package whose SHA256SUMS does not match); the shadow install (no --motor-output, no control socket
 mount, loopback operator page, token file next to the link file and never printed, staged files, the field tuning copy
 only when missing), the link file only after the executor is ready, a failed start restores the earlier executor and
-puts nothing in the dashboard's way, the rollback, the kit builder from two commits, and that the tools have no
+puts nothing in the dashboard's way, the two start-up races of the ready check (an empty status before the executor's
+first loop iteration, a 401/403 while the token file still holds the earlier token) are waited out until the deadline
+while a real run_state other than idle still fails at once, the rollback, the kit builder from two commits, and that the tools have no
 remove / prune / pull / build / compose / subprocess (the installer) calls.
 Run: python -B -m unittest tests.test_jetson_row_executor_kit
 """
@@ -80,6 +82,7 @@ class FakeHost:
         self.rates = (10, 33)            # messages per status read (the installer polls once per second)
         self.counts = [0, 0]
         self.http_calls = []
+        self.empty_replies = 0           # replies of the operator API before the loop's first status ({}, 2026-11-16)
 
     def home(self):
         return self._home
@@ -109,9 +112,14 @@ class FakeHost:
 
     def http_status(self, port, token, timeout=2.):
         self.http_calls.append((port, token))
+        if token != TOKEN:
+            return 403, {'ok': False, 'error': 'forbidden'}
+        if self.empty_replies:
+            self.empty_replies -= 1
+            return 200, {}
         self.counts = [self.counts[0] + self.rates[0], self.counts[1] + self.rates[1]]
         status = dict(self.status, counts=dict(scans_processed=self.counts[0], imu_fed=self.counts[1]))
-        return (200, status) if token == TOKEN else (403, {})
+        return 200, status
 
 
 def container(cid, name, image, env=(), mounts=(), running=True, host_config=None):
@@ -135,6 +143,7 @@ class FakeDocker:
         self.preflight_log = None
         self.start_fails = False
         self.exit_after_start = False
+        self.old_tokens = []             # token file reads before the new executor wrote its own token
 
     def _find(self, ref):
         for cid, info in self.containers.items():
@@ -160,7 +169,9 @@ class FakeDocker:
 
     def read_file(self, cid, path, max_bytes=0):
         self.calls.append(('read_file', path))
-        return (TOKEN + '\n').encode() if path.endswith('operator_token.txt') else None
+        if not path.endswith('operator_token.txt'):
+            return None
+        return ((self.old_tokens.pop(0) if self.old_tokens else TOKEN) + '\n').encode()
 
     def start(self, cid):
         self.calls.append(('start', self.containers[cid]['Name']))
@@ -322,6 +333,52 @@ class Install(KitCase):
         self.host.status = dict(self.host.status, mode='MOTOR')
         code, installer = self.install()
         self.assertEqual((code, installer.receipt['error']['code']), (1, 'mode_mismatch'))
+
+    def test_a_real_run_state_other_than_idle_still_fails_at_once(self):
+        self.host.empty_replies = 1                   # waited out first, then the status says active
+        self.host.status = dict(self.host.status, run_state='active')
+        code, installer = self.install()
+        self.assertEqual((code, installer.receipt['error']), (1, {'code': 'not_idle', 'detail': 'active'}))
+        self.assertEqual(len(self.host.http_calls), 2)
+        self.assertEqual(installer.receipt['result'], 'failed_rolled_back')
+        self.assertNotIn(self.link(), self.host.files)
+
+    def test_ready_waits_for_the_first_status_of_the_loop(self):
+        # Jetson 2026-11-16: the operator API answered 200 {} about 2 s after the start (ROS still starting); the
+        # earlier installer took that for 'not_idle: None' and rolled back
+        self.host.empty_replies = 2
+        code, installer = self.install('--ready-timeout', '10')   # 2 s waiting + the 3 s rate window
+        self.assertEqual(code, 0, installer.receipt)
+        ready = installer.receipt['ready']
+        self.assertEqual((ready['run_state'], ready['mode'], ready['scan_hz'], ready['imu_hz']), ('idle', 'SHADOW', 10., 33.))
+        self.assertEqual(json.loads(self.host.files[self.link()])['url'], 'http://127.0.0.1:8097')
+
+    def test_ready_waits_for_the_token_of_the_new_executor(self):
+        old_id, old_token = 'f' * 64, 'old-' + 'y' * 24
+        self.docker.containers[old_id] = container(old_id, inst.NAME, inst.IMAGE)
+        self.host.port_open = True
+        self.docker.old_tokens = [old_token] * 2       # the earlier executor's token is still in the link folder
+        code, installer = self.install('--ready-timeout', '10')
+        self.assertEqual(code, 0, installer.receipt)
+        self.assertEqual([t for _, t in self.host.http_calls[:3]], [old_token, old_token, TOKEN])
+        receipt = json.dumps(installer.receipt, default=str)
+        self.assertNotIn(TOKEN, receipt)
+        self.assertNotIn(old_token, receipt)
+        self.assertEqual(self.docker.by_name('%s-kept-%s' % (inst.NAME, installer.stamp))['Id'], old_id)
+
+    def test_races_that_never_end_fail_at_the_deadline(self):
+        cases = (('first_status_of_the_loop', lambda: setattr(self.host, 'empty_replies', 99)),
+                 ('token_of_the_new_executor', lambda: setattr(self.docker, 'old_tokens', ['old-' + 'y' * 24] * 99)))
+        for waiting, setup in cases:
+            with self.subTest(waiting=waiting):
+                self.docker, self.host = FakeDocker(), FakeHost('/home/unist')
+                setup()
+                code, installer = self.install()
+                self.assertEqual((code, installer.receipt['error']['code']), (1, 'ready_timeout'))
+                self.assertIn(waiting, installer.receipt['error']['detail'])
+                self.assertEqual(installer.receipt['result'], 'failed_rolled_back')
+                self.assertNotIn(self.link(), self.host.files)
+                self.assertIsNone(self.docker.by_name(inst.NAME))
 
     def test_replace_keeps_the_earlier_executor_and_restores_it_on_failure(self):
         old_id = 'f' * 64

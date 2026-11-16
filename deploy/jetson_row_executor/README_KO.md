@@ -58,7 +58,7 @@ python3 install_row_executor.py            # 점검만. 마지막 줄 '점검 �
 python3 install_row_executor.py --apply
 ```
 
-순서: 파일 준비 → 사전 점검 컨테이너(network none; 실행기 import, `SHA256SUMS`, vendor, 설정, 루프 생성, rclpy) → 새 컨테이너 → 시작 → 준비 확인(운영자 API가 답하고 `run_state` idle, 모드 SHADOW, 3 s 동안 실행기가 받은 `/scan` 5 Hz 이상·IMU 15 Hz 이상; run 이 없을 때는 실행기가 센서 나이를 내지 않아 받은 메시지 수로 본다) → 연결 파일. 준비 확인에 실패하면 새 컨테이너를 멈춰 남기고 연결 파일을 쓰지 않으며 옛 실행기를 되살린다.
+순서: 파일 준비 → 사전 점검 컨테이너(network none; 실행기 import, `SHA256SUMS`, vendor, 설정, 루프 생성, rclpy) → 새 컨테이너 → 시작 → 준비 확인(운영자 API가 답하고 `run_state` idle, 모드 SHADOW, 3 s 동안 실행기가 받은 `/scan` 5 Hz 이상·IMU 15 Hz 이상; run 이 없을 때는 실행기가 센서 나이를 내지 않아 받은 메시지 수로 본다. 실행기는 운영자 API를 첫 루프보다 먼저 열어 처음 잠깐은 빈 상태를 주고, 연결 폴더에는 새 토큰이 쓰이기 전까지 옛 실행기의 토큰이 남아 403 을 받는다. 이 두 경우는 실패로 보지 않고 기한(60 s)까지 다시 묻는다. `run_state`가 idle 이 아닌 다른 값이면 바로 실패다) → 연결 파일. 준비 확인에 실패하면 새 컨테이너를 멈춰 남기고 연결 파일을 쓰지 않으며 옛 실행기를 되살린다.
 
 설치 뒤 읽기 확인:
 
@@ -101,7 +101,8 @@ python3 install_row_executor.py --apply --mode motor --config-file ~/ubts-row-ex
 
 ## 9. 확인한 것 (2026-11-16)
 
-- 시험(PC, 가짜 Docker·가짜 호스트): `tests/test_jetson_row_executor_kit.py` 14개. 점검이 아무것도 바꾸지 않음, 거절(이미지 없음, 포트 사용 중, 모드와 설정이 다름, loopback 아님, 묶음 변조, 패키지 SHA256SUMS 어긋남), SHADOW 설치(명령·마운트·토큰·연결 파일·조정 파일 보존), 센서가 없으면 연결 파일 없이 자동 되돌림, 옛 실행기 보존과 복원, 사전 점검 실패 시 바뀐 것 없음, MOTOR 모드의 마운트, 되돌리기, 묶음 만들기, 도구에 지우기·prune·build·compose·subprocess 없음. 연결 파일 읽기: `tests/test_executor_proxy.py`(Linux 경로 시험 포함).
+- 시험(PC, 가짜 Docker·가짜 호스트): `tests/test_jetson_row_executor_kit.py` 18개. 점검이 아무것도 바꾸지 않음, 거절(이미지 없음, 포트 사용 중, 모드와 설정이 다름, loopback 아님, 묶음 변조, 패키지 SHA256SUMS 어긋남), SHADOW 설치(명령·마운트·토큰·연결 파일·조정 파일 보존), 센서가 없으면 연결 파일 없이 자동 되돌림, 준비 확인의 두 경쟁(첫 루프 전의 빈 상태, 옛 토큰의 403)은 기다리고 끝나지 않으면 기한에 실패, 진짜 idle 아닌 상태는 바로 실패, 옛 실행기 보존과 복원, 사전 점검 실패 시 바뀐 것 없음, MOTOR 모드의 마운트, 되돌리기, 묶음 만들기, 도구에 지우기·prune·build·compose·subprocess 없음. 연결 파일 읽기: `tests/test_executor_proxy.py`(Linux 경로 시험 포함).
 - 실행기와 ESP32 브리지의 끝단 시험(가짜 펌웨어, 시뮬레이션 레포 `tools/row_executor/tests/test_esp32_executor_*.py`): Windows Python 3.13 과 WSL Python 3.10 + numpy 1.21.5 + scipy 1.8.0(Jetson 과 같은 판)에서 통과.
 - Jetson 설치(SHADOW, 시뮬레이션 a6630c6 + 이 레포 8c891b2 묶음): 첫 시도는 준비 확인 규칙의 잘못(run 이 없을 때 센서 나이는 늘 비어 있음)으로 60 s 뒤 스스로 되돌렸다(`unist-orachard-row-executor-failed-20261115T181822Z`로 남음, 그 사이 실행기는 `/scan` 약 10 Hz, IMU 약 32 Hz 를 받고 있었다). 고친 묶음으로 설치됨: 사전 점검 Python 3.10.12 / numpy 1.21.5 / scipy 1.8.0, `SHA256SUMS`·vendor 통과, `motor_allowed` false. 읽기 확인: `run_state` idle, 모드 SHADOW, 5 s 동안 스캔 51개(10.1 Hz)·IMU 167개(33 Hz) 처리, 버린 스캔 0, 놓친 틱 0, 루프 약 1.1 ms, CPU 약 15 %, 메모리 53 MiB, 마운트에 `/run/ubts-rover` 없음, 로그에 토큰 없음.
+- Jetson 다시 설치(SHADOW, 시뮬레이션 5ce700f + 이 레포 da39e8a 묶음, 2026-11-16 23:46 KST): 사전 점검은 통과했지만 새 실행기가 시작한 지 2 s 만에 운영자 API가 빈 상태(200, `run_state` 없음)를 주었고, 그때의 설치기는 이것을 `not_idle: None`으로 보고 스스로 되돌렸다(`unist-orachard-row-executor-failed-20261116T144610Z`로 남음, 옛 실행기 다시 돎). 실행기는 운영자 API를 연 뒤 약 0.7 s 지나 첫 루프를 돈다(옛 실행기를 되살릴 때의 로그). 2026-11-15 설치가 통과한 것은 확인 시각이 그 틈을 비켜 간 덕이다. 이 판의 설치기는 그 빈 상태와 옛 토큰의 403 을 기한까지 기다린다.
 - 대시보드: 그때 설치된 대시보드(feb4600)는 연결 파일을 읽지 않아 `/api/executor/status`가 `executor_not_configured`였다. 이 레포의 `executor_proxy.py`(연결 파일 읽기)를 그 대시보드 컨테이너 안에서 파일을 바꾸지 않고 한 번 실행해 보니 연결 파일과 토큰으로 실행기에 닿았다(`configured` true, idle, SHADOW). 화면에 보이려면 이 판의 대시보드를 대시보드 묶음으로 설치해야 한다.

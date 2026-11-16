@@ -25,8 +25,9 @@ the kit carries that package byte-exact and the vehicle configuration. What --ap
      missing. A container of an earlier install is stopped, renamed '<name>-kept-<stamp>' (restart no) and kept.
   5. ready: the container runs, the operator API on 127.0.0.1 answers (the token is read through the Docker API and
      never printed), run_state idle, the mode is the requested one, /scan and IMU arrive (the executor's message
-     counters grow by >= 5 Hz scans and >= 15 Hz IMU over 3 s; the sensor ages exist only inside a run);
-     then the link file <dashboard runtime>/row_executor/dashboard_link.json is written (the dashboard relay reads it
+     counters grow by >= 5 Hz scans and >= 15 Hz IMU over 3 s; the sensor ages exist only inside a run; a 401/403
+     while the token file still holds the earlier token and a status without run_state before the executor's first
+     loop iteration are polled again until the deadline); then the link file <dashboard runtime>/row_executor/dashboard_link.json is written (the dashboard relay reads it
      when its code has the link-file reader, dashboard_server/executor_proxy.LinkedExecutor)
   Any failure after step 4 began stops the new container (renamed '<name>-failed-<stamp>', restart no, kept), puts
   the link file aside and restores the earlier container. Never used: docker compose, build, pull, prune, container or
@@ -584,7 +585,14 @@ class Installer:
     def wait_ready(self, cid, port):
         """The executor answers on its operator API, idle, in the requested mode, and /scan and IMU arrive: while no run
         is open the executor reports no sensor ages, so its message counters (counts scans_processed, imu_fed) must grow
-        by at least SCAN_HZ_MIN / IMU_HZ_MIN over READY_RATE_WINDOW_S."""
+        by at least SCAN_HZ_MIN / IMU_HZ_MIN over READY_RATE_WINDOW_S.
+
+        Two start-up races are waited out (polled again until the deadline, never a failure by themselves):
+          * 401/403: the link folder still holds the token of the earlier executor until the new one writes its own,
+            and the new operator API refuses that token; the token is read again on the next poll
+          * 200 without run_state: the executor serves its operator API before its first loop iteration has published
+            a status (an empty status for about a second while ROS starts; seen on the Jetson 2026-11-16)
+        A status with a run_state other than idle, or with another mode, still fails at once."""
         deadline = self.clock() + self.options.ready_timeout
         last, first = None, None
         while self.clock() < deadline:
@@ -594,9 +602,16 @@ class Installer:
             raw = self.docker.read_file(cid, LINK_IN + '/' + TOKEN_NAME)
             token = raw.decode('utf-8', 'replace').strip() if raw else ''
             reply = self.host.http_status(port, token) if token else None
+            if reply is not None and reply[0] in (401, 403):            # token race: not yet the new executor's token
+                last, reply = {'operator_api_http': reply[0], 'waiting': 'token_of_the_new_executor'}, None
             if reply is not None:
                 code, status = reply
                 need(code == 200, 'operator_api_http_%s' % code)
+                if not isinstance(status, dict) or status.get('run_state') is None:
+                    # the operator API is up, the first loop iteration has not published a status yet
+                    last = {'operator_api_http': code, 'waiting': 'first_status_of_the_loop'}
+                    self.sleep(1.0)
+                    continue
                 last = {'run_state': status.get('run_state'), 'mode': status.get('mode'),
                         'lidar_age': status.get('lidar_age'), 'imu_age': status.get('imu_age'),
                         'vehicle_control': status.get('vehicle_control'), 'start_mode': status.get('start_mode'),
