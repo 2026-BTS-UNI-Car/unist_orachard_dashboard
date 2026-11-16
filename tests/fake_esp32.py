@@ -92,8 +92,10 @@ def cal_problem(right, center, left, left_max=HARD_LEFT_MAX, center_min=CENTER_M
 class FakeEsp32:
     def __init__(self, clock, *, pot=1966.0, rate_counts_s=400.0, reset_on_open=True, ignore_stops=False,
                  stuck=False, rebound_counts=0, drive_watchdog_ms=None, step_ms=2, cal_runtime=False, nvs=None,
-                 stop_left=None, stop_right=None, compliance=0.45, max_past=70.0, spring_tau_ms=25.0, smooth=False):
+                 stop_left=None, stop_right=None, compliance=0.45, max_past=70.0, spring_tau_ms=25.0, smooth=False,
+                 fw_name=None):
         self.clock = clock
+        self.fw_name = fw_name          # another firmware name on every FW line (tests of firmware_mismatch)
         self.smooth_fw = bool(smooth)   # the SMOOTH firmware (its hold method is smooth_mode, 'SM ON' / 'SM OFF')
         cal_runtime = cal_runtime or self.smooth_fw
         self.hard_left_max = HARD_LEFT_MAX_SMOOTH if smooth else HARD_LEFT_MAX
@@ -346,7 +348,8 @@ class FakeEsp32:
             self.stop_motor(i)
 
     def fw_line(self):
-        line = FW_LINE + ('' if self.drive_watchdog_ms is None else ' DRIVE_WD=%d' % self.drive_watchdog_ms)
+        line = FW_LINE if not self.fw_name else FW_LINE.replace('ABS-HOLD-8-REBOUND-LIMITS', self.fw_name)
+        line += '' if self.drive_watchdog_ms is None else ' DRIVE_WD=%d' % self.drive_watchdog_ms
         line += ' CAL_RUNTIME=1' if self.cal_runtime else ''
         return line + (' SMOOTH=%d' % (1 if self.smooth_mode else 0) if self.smooth_fw else '')
 

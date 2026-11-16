@@ -210,12 +210,14 @@ class Startup(unittest.TestCase):
         self.assertGreaterEqual(waited, esp.BOOT_WAIT_S - 0.05, 'no READY: waits the boot time, then confirms')
 
     def test_wrong_firmware_never_arms(self):
-        rig = Rig()
+        # another firmware name on FW_MISMATCH_LINES FW lines in a row (banner + STATUS answers): believed and latched
+        rig = Rig(dict(fw_name='SOMETHING-ELSE'))
         rig.clock.t += 0.02
         rig.bridge.step()
-        rig.fake.out.append('FW: SOMETHING-ELSE')
-        rig.run(0.5)
+        rig.run(1.0)
         self.assertEqual(rig.motor.link, 'firmware_mismatch')
+        self.assertEqual(rig.motor.firmware, 'SOMETHING-ELSE')
+        self.assertIn('firmware_mismatch', rig.motor.latches)
         self.assertEqual(rig.call('arm', vehicle_profile='front_steer')['error'], 'firmware_mismatch')
         writes = len(rig.tr.writes)
         rig.run(2.0)

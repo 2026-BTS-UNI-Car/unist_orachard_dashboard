@@ -37,6 +37,11 @@
   arm 직후 첫 목표가 지금 각도와 같으면(0.5 도 안) 보내지 않는다.
 - 구동: `throttle` → `2 F/R pwm` + `3 F/R pwm`, pwm = (|t| × 255 + 50) // 100, 호스트 상한(`ROVER_ESP32_MAX_DRIVE_PWM`). 앞으로 가는 방향은
   `ROVER_ESP32_LEFT_FORWARD`, `ROVER_ESP32_RIGHT_FORWARD`(기본 F, **현장 미확인**).
+- 한 줄 깨짐(2026-11-17 08:47 차에서: USB 로 오는 바이트가 빠져 FW 줄이 `FW: MITS F=RIGHT …` 로 읽혔고, 브리지가 `firmware_mismatch` 에
+  묶여 재시작 전까지 조종 활성화를 거절함): 다른 펌웨어 이름은 FW 줄 3개가 잇달아 같을 때만 믿는다(`FW_MISMATCH_LINES`, 그 뒤는 전처럼 래치).
+  그보다 적으면 `counts.fw_line_mismatch` 로 세고 사건 `fw_line_corrupt`(10 s 에 한 번)만 남긴다. 이름이 맞는 FW 줄의 토큰(DRIVE_WD, CAL_RUNTIME,
+  SMOOTH)이 바뀌거나, 보정 작업이 없는데 CAL 값이 바뀌면 다음 줄이 같을 때 받는다. 끝까지 맞지 않는 CAL 줄은 `cal_line_corrupt` 로 세고 버린다.
+  STATUS 줄 하나가 깨져도 아무 래치도 걸리지 않는다(시험 `tests/test_esp32_corrupt_lines.py`).
 - 상태: 10 Hz `STATUS`. 상태 응답에 `steering`(측정 mrad, 명령 도, 가변저항 값, 유지 목표, `age_ms`, `age_limit_ms` 300, 결함),
   `steer_control`(`keys: full_limit` → 화면이 A/D 를 끝까지, 끌기 막대), `drive`(원하는 값, 펌웨어가 확인한 값, TTL), `outputs`(V2 핀 이름 관례 D8/D5/D3/D0 에 확인된 구동 duty).
 

@@ -83,6 +83,13 @@ STAGE_REACHED_DEG = 1.0           # an intermediate target counts as reached wit
 DRIVE_TTL_S = 0.75                # = RoverControl.INPUT_TTL; never longer
 EVENT_KEEP_S = 30.0
 WRITE_DEADLINE_S = 0.1
+# One corrupted line (2026-11-17 08:47 on the vehicle: bytes dropped in the USB CDC stream spliced 'FW: ' onto
+# 'MITS F=RIGHT ...', the tail of the firmware name, and the bridge latched firmware_mismatch for good). A FW name other
+# than FIRMWARE_NAME is believed only on this many FW lines in a row (a FW line comes with every STATUS answer, 10 Hz);
+# fewer are counted (fw_line_mismatch) and ignored. A changed token set (DRIVE_WD, CAL_RUNTIME, SMOOTH) on a FW line
+# with the right name, and changed CAL marks that no calibration job asked for, are taken on the second line in a row.
+FW_MISMATCH_LINES = 3
+LINE_CORRUPT_EVENT_S = 10.0       # at most one 'fw_line_corrupt' / 'cal_line_corrupt' event per this time
 MAX_LINE_BYTES = 8192
 # One ANGLE target moves at most this many potentiometer counts [proposal]: the developer's verification moved 280
 # counts (0 -> LEFT 20 at the default marks) in one target without a budget cancel; a wider calibration is staged.
@@ -122,8 +129,10 @@ CAL_SAMPLES_KEEP = 48
 _FLOAT = r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)'
 _RE = {
     'fw': re.compile(r'^FW: (\S+)(.*)$'),
+    # the whole line must parse (a CAL line cut short or spliced by dropped bytes is 'cal_corrupt')
     'cal': re.compile(r'^CAL: RIGHT=(-?\d+) CENTER=(-?\d+) LEFT=(-?\d+) MAX_COMMAND=(\d+)'
-                      r'(?: STORE=([A-Z]+))?(?: GUARD=(\d+)\.\.(\d+))?'),
+                      r'(?: STORE=(DEFAULT|NVS|UNSAVED))?(?: GUARD=(\d+)\.\.(\d+))?'
+                      r' \(physical degrees unverified\)\s*$'),
     'cal_runtime': re.compile(r'(?:^|\s)CAL_RUNTIME=1(?:\s|$)'),
     'smooth': re.compile(r'(?:^|\s)SMOOTH=([01])(?:\s|$)'),
     'sm': re.compile(r'^SM: MODE=([A-Z]+)((?:\s+[A-Z_]+=\S+)*)\s*$'),
@@ -195,6 +204,8 @@ def parse_line(text):
         if m[6]:
             cal['guard_right'], cal['guard_left'] = int(m[6]), int(m[7])
         return 'cal', cal
+    if line.startswith('CAL: '):
+        return 'cal_corrupt', dict(text=line)
     if line.startswith('CAL'):
         m = _RE['cal_sample'].match(line)
         if m:
@@ -521,6 +532,11 @@ class Esp32SteerMotor:
         self.drive_wd_ms = None         # firmware drive watchdog (FW line DRIVE_WD=<ms>); None = no firmware timeout
         self.heartbeat_at = None
         self.cal = None
+        # one corrupted line (FW_MISMATCH_LINES): kept across reopens, reset by a FW line with the right name
+        self.fw_mismatch_run = 0        # FW lines in a row with another name
+        self.fw_tokens_pending = None   # a changed token set seen once (applied when the next FW line repeats it)
+        self.cal_pending = None         # changed CAL marks seen once outside a calibration job
+        self.corrupt_event_at = {}      # event kind -> time of its last event (rate limit)
         # runtime calibration (FW line CAL_RUNTIME=1)
         self.cal_runtime = False
         self.cal_job = None             # the running job (start_calibration), else None
@@ -570,7 +586,8 @@ class Esp32SteerMotor:
         self.stop_reason = None
         self.error = None
         self.counts = dict(lines=0, status=0, writes=0, write_errors=0, read_errors=0, opens=0, open_errors=0,
-                           ack_resends=0, zero_refresh=0, unknown_lines=0, errors=0, data_lines=0)
+                           ack_resends=0, zero_refresh=0, unknown_lines=0, errors=0, data_lines=0,
+                           fw_line_mismatch=0, fw_line_tokens_once=0, cal_line_corrupt=0, cal_line_changed_once=0)
         self.enabled = False
         self.last_open_error = None
 
@@ -841,6 +858,12 @@ class Esp32SteerMotor:
         while self.events and now - self.events[0][0] > EVENT_KEEP_S:
             self.events.pop(0)
 
+    def _corrupt_event(self, now, kind, text):
+        last = self.corrupt_event_at.get(kind)
+        if last is None or now - last >= LINE_CORRUPT_EVENT_S:
+            self.corrupt_event_at[kind] = now
+            self._event(now, kind, text[:120])
+
     def _line(self, now, text):
         self.counts['lines'] += 1
         self.last_rx = now
@@ -867,6 +890,24 @@ class Esp32SteerMotor:
             self.counts['data_lines'] += 1      # TRACE output (not from this bridge): counted, otherwise ignored
             return
         if kind == 'fw':
+            if f['name'] != FIRMWARE_NAME:
+                self.fw_mismatch_run += 1
+                self.counts['fw_line_mismatch'] += 1
+                if self.fw_mismatch_run < FW_MISMATCH_LINES:
+                    # Most likely one line corrupted on the USB link: counted, otherwise ignored (firmware, tokens and
+                    # the link stay). FW_MISMATCH_LINES in a row are believed below, exactly as before.
+                    self._corrupt_event(now, 'fw_line_corrupt', text)
+                    return
+            else:
+                self.fw_mismatch_run = 0
+                tokens = (f['drive_wd_ms'], bool(f.get('cal_runtime')), f.get('smooth'))
+                if self.firmware == FIRMWARE_NAME and tokens != (self.drive_wd_ms, self.cal_runtime, self.smooth) \
+                        and tokens != self.fw_tokens_pending:
+                    # A changed token set (e.g. SMOOTH=0 after 'SM OFF', or a line cut short) counts on its second line.
+                    self.fw_tokens_pending = tokens
+                    self.counts['fw_line_tokens_once'] += 1
+                    return
+                self.fw_tokens_pending = None
             self.firmware, self.firmware_detail = f['name'], f['detail']
             self.drive_wd_ms = f['drive_wd_ms']
             self.cal_runtime = bool(f.get('cal_runtime'))
@@ -883,8 +924,19 @@ class Esp32SteerMotor:
                 self.link = 'firmware_mismatch'
             return
         if kind == 'cal':
+            if self.cal_job is None and self.cal is not None and f != self.cal and f != self.cal_pending:
+                # Changed marks that no calibration job asked for (a line spliced by dropped bytes can still parse):
+                # taken when the next CAL line (the next STATUS answer) says the same.
+                self.cal_pending = f
+                self.counts['cal_line_changed_once'] += 1
+                return
+            self.cal_pending = None
             self.cal = f
             self._cal_reply(now, kind, f)
+            return
+        if kind == 'cal_corrupt':
+            self.counts['cal_line_corrupt'] += 1
+            self._corrupt_event(now, 'cal_line_corrupt', f['text'])
             return
         if kind in ('ok_cal', 'cal_error', 'cal_warning', 'cal_find_start', 'cal_sample', 'cal_found'):
             self._cal_reply(now, kind, f)
