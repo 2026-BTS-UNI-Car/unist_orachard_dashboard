@@ -92,6 +92,28 @@ test('apply proposal: found ends moved inward by the margins, checked against th
   assert.match(rows(calView({ ok: true, calibration: unusable }))['왼쪽 끝 (찾은 값)'], /쓸 수 없음/);
 });
 
+test('SMOOTH firmware r2: the guards of the status (2600, centre 1850..2150), the 2026-11-16 values pass, no staging', () => {
+  // 2026-11-16 lifted-wheel field values: straight ahead about pot 2029, left end found 2543..2551
+  const smooth = {
+    cal: { right: 1475, center: 2029, left: 2513, max_command: 20, store: 'NVS', guard_right: 1300, guard_left: 2600 },
+    guards: { right_min: 1300, left_max: 2600, center_min: 1850, center_max: 2150, min_span: 150, source: 'cal_line' },
+    pot: 2029, max_jump_deg: 40, smooth: true,
+  };
+  const v = calView(reply(smooth));
+  assert.equal(v.buttons.set_center.enabled, true, 'pot 2029 is inside 1850..2150');
+  assert.equal(rows(v)['하드 한계'], '오른쪽 ≥ 1300 · 왼쪽 ≤ 2600 · 가운데 1850–2150 · 폭 ≥ 150');
+  assert.match(rows(v)['한 목표 최대'], /나누지 않음/);
+  const cal = block({ ...smooth, found: { left: found('left', 2551, true, 'NO_PROGRESS'), right: null } });
+  const p = proposal(cal, { left: 30, right: 30 });
+  assert.deepEqual([p.marks, p.problem], [{ right: 1475, center: 2029, left: 2521 }, null]);
+  assert.equal(proposal(block({ ...smooth, found: { left: found('left', 2640), right: null } }), { left: 30, right: 30 }).problem,
+    'calibration_left_above_guard');
+  const old = calView(reply());
+  assert.match(rows(old)['한 목표 최대'], /나눠 간다/, 'the pulse-hold firmware still stages');
+  const bare = calView(reply({ guards: undefined, pot: 2029 }));
+  assert.equal(rows(bare)['하드 한계'], '오른쪽 ≥ 1300 · 왼쪽 ≤ 2600 · 가운데 1850–2150 · 폭 ≥ 150', 'fallbacks = SMOOTH r2');
+});
+
 test('a running scan: progress, live potentiometer, every action off', () => {
   const v = calView(reply({
     state: 'running', blocker: 'calibration_busy', live_pot: 2101,

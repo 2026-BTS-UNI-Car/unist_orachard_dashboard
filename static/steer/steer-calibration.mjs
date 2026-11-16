@@ -7,7 +7,8 @@
 // that is hidden or left while a scan runs sends STOP too. Loaded by static/app/14-steer.js when the section is
 // opened on a front-steer dashboard. Requests: POST /api/rover/calibrate {action, left_margin_counts,
 // right_margin_counts}; the status comes from GET /api/rover/status ('calibration' block), shared with the steering
-// panel when its reply is fresh.
+// panel when its reply is fresh. The hard guards come from the status (the CAL line's GUARD; SMOOTH firmware r2: right
+// >= 1300, left <= 2600, centre 1850..2150); the fallbacks below are only for a status without them.
 
 export const STATUS_MS = 500;
 export const SHARED_MAX_AGE_MS = 1000;
@@ -44,9 +45,11 @@ export const CAL_MESSAGES = {
   calibration_stop_unconfirmed: 'STOP 확인이 없어 시작하지 않음',
   calibration_nothing_found: '적용할 끝 값이 없음: 먼저 끝 찾기',
   calibration_margin_invalid: '여유는 10~120 count 정수',
-  calibration_right_below_guard: '오른쪽이 하드 한계(1300) 밖',
-  calibration_left_above_guard: '왼쪽이 하드 한계(2500) 밖',
-  calibration_center_outside: '가운데가 1800~2000 밖',
+  calibration_right_below_guard: '오른쪽이 하드 한계 밖(아래 하드 한계 줄)',
+  calibration_left_above_guard: '왼쪽이 하드 한계 밖(아래 하드 한계 줄)',
+  calibration_center_outside: '가운데가 허용 범위 밖(아래 하드 한계 줄)',
+  calibration_pulse_invalid: '끝 찾기 펄스는 40~100 ms 정수',
+  calibration_pulse_needs_firmware_update: '끝 찾기 펄스 길이 지정은 SMOOTH 펌웨어부터',
   calibration_right_span_small: '오른쪽 폭이 150 count 보다 작음',
   calibration_left_span_small: '왼쪽 폭이 150 count 보다 작음',
   invalid_calibration_action: '알 수 없는 보정 동작',
@@ -75,6 +78,8 @@ function foundText(found) {
   return `${found.pot} (${how}${ago})${found.usable ? '' : ' · 쓸 수 없음'}`;
 }
 
+export const FALLBACK_GUARDS = { right_min: 1300, left_max: 2600, center_min: 1850, center_max: 2150, min_span: 150 };
+
 // The marks 'apply' would set with these margins (as scripts/esp32_abs_hold.cal_proposal), or a problem code.
 export function proposal(cal, margins) {
   if (!cal || !cal.cal) return { marks: null, sides: [], problem: 'calibration_nothing_found' };
@@ -95,7 +100,7 @@ export function proposal(cal, margins) {
     const margin = margins[side];
     if (!Number.isInteger(margin) || margin < lo || margin > hi) return { marks, sides, problem: 'calibration_margin_invalid' };
   }
-  const g = cal.guards || { right_min: 1300, left_max: 2500, center_min: 1800, center_max: 2000, min_span: 150 };
+  const g = cal.guards || FALLBACK_GUARDS;
   let problem = null;
   if (marks.right < g.right_min) problem = 'calibration_right_below_guard';
   else if (marks.left > g.left_max) problem = 'calibration_left_above_guard';
@@ -122,15 +127,16 @@ export function calView(reply, margins = { left: 30, right: 30 }, notice = null)
   const store = cal.cal ? (STORE_TEXT[cal.cal.store] || cal.cal.store || '') : '';
   const pot = running && num(cal.live_pot) !== null ? cal.live_pot : cal.pot;
   const plan = proposal(cal, margins);
-  const g = cal.guards || {};
+  const g = { ...FALLBACK_GUARDS, ...(cal.guards || {}) };
   const rows = [
     ['지금 보정', cal.cal ? `${marksText(cal.cal)}${store ? ` (${store})` : ''}` : '--'],
     [running ? '가변저항(정착 값)' : '가변저항', num(pot) === null ? '--' : String(pot)],
     ['왼쪽 끝 (찾은 값)', foundText(cal.found && cal.found.left)],
     ['오른쪽 끝 (찾은 값)', foundText(cal.found && cal.found.right)],
     ['적용하면', plan.problem ? calMessage(plan.problem) : `${marksText(plan.marks)} (${plan.sides.map((s) => (s === 'left' ? '왼쪽' : '오른쪽')).join('·')} 바뀜)`],
-    ['하드 한계', `오른쪽 ≥ ${g.right_min ?? 1300} · 왼쪽 ≤ ${g.left_max ?? 2500} · 가운데 ${g.center_min ?? 1800}–${g.center_max ?? 2000} · 폭 ≥ ${g.min_span ?? 150}`],
-    ['한 목표 최대', num(cal.max_jump_deg) === null ? '--' : `${cal.max_jump_deg}° (보정 구동 1 s 예산 때문에 큰 각은 나눠 간다)`],
+    ['하드 한계', `오른쪽 ≥ ${g.right_min} · 왼쪽 ≤ ${g.left_max} · 가운데 ${g.center_min}–${g.center_max} · 폭 ≥ ${g.min_span}`],
+    ['한 목표 최대', cal.smooth === true ? '나누지 않음 (SMOOTH 펌웨어: 한 목표를 끊김 없이 한 번에 간다)'
+      : num(cal.max_jump_deg) === null ? '--' : `${cal.max_jump_deg}° (보정 구동 1 s 예산 때문에 큰 각은 나눠 간다)`],
   ];
   const enabled = !running && !blockerCode;
   const buttons = {};
@@ -138,8 +144,8 @@ export function calView(reply, margins = { left: 30, right: 30 }, notice = null)
     let why = running ? `${ACTION_TEXT[cal.job.action] || cal.job.action} 진행 중` : blocker;
     if (!why && action === 'apply' && plan.problem) why = calMessage(plan.problem);
     if (!why && action === 'set_center' && cal.cal && num(cal.pot) !== null
-        && (cal.pot < (g.center_min ?? 1800) || cal.pot > (g.center_max ?? 2000))) {
-      why = `지금 위치 ${cal.pot} 는 가운데 범위(${g.center_min ?? 1800}–${g.center_max ?? 2000}) 밖`;
+        && (cal.pot < g.center_min || cal.pot > g.center_max)) {
+      why = `지금 위치 ${cal.pot} 는 가운데 범위(${g.center_min}–${g.center_max}) 밖`;
     }
     buttons[action] = { enabled: enabled && !why, title: why || ACTION_TEXT[action] };
   }
@@ -268,7 +274,7 @@ export function initSteerCalibration(page, options = {}) {
       return `지금 바퀴 위치(가변저항 ${cal?.pot ?? '--'})를 가운데로 저장합니다. 앞바퀴가 똑바로 섰는지 확인했나요?`;
     }
     const side = action === 'find_left' ? '왼쪽' : '오른쪽';
-    return `앞바퀴를 ${side} 끝까지 천천히 돌려 끝을 찾습니다(조향 모터만, 구동 모터는 쓰지 않음, 최대 약 40 s).\n`
+    return `앞바퀴를 ${side} 끝까지 천천히 돌려 끝을 찾습니다(조향 모터만, 구동 모터는 쓰지 않음, 최대 약 50 s).\n`
       + '바퀴 주변에 사람·손·물건이 없나요? 멈추려면 STOP.';
   }
 

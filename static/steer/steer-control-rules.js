@@ -51,6 +51,14 @@
  *   - Keys and the drag never fight: whichever started first owns the steering until it is released; the other input
  *     is ignored meanwhile (W/S drive is separate). STOP always wins: it drops the lease and clears every input.
  *   - The status age limit is the bridge's steering.age_limit_ms when it gives one (150..500 ms), else statusAgeMaxMs.
+ * The SMOOTH firmware (2026-11-16 evening, status steer_control.smooth true): the firmware drives one continuous run per
+ * target (no 1000 ms budget, no settle before a new target, a target ahead in the running direction taken over while
+ * running) and the bridge no longer stages targets (0.25 deg, one per 0.2 s). A/D stay one full-limit target, which is
+ * one continuous run (a page ramp slower than the wheel would make the firmware reach each step, stop and start again);
+ * the drag uses dragStepSmoothDeg steps at most every dragPeriodSmoothMs. Without steer_control.smooth true (older
+ * firmware, or 'SM OFF') the drag keeps dragStepDeg / dragPeriodMs.
+ * W/S are never disabled by the page beyond the lease, a fresh status and the speed cap: the bridge's own drive cap
+ * (status drive.max_pwm, its install flag --max-drive-pwm) is shown, and with a cap of 0 a W/S press says so.
  * The fault and latch catalogues carry the short Korean labels a screen shows. Placeholder-based SIM results only
  * (자리값 기반 SIM 결과), never field validation. Tests: node --test dashboard/static/test_steer_control_rules.mjs.
  */
@@ -83,6 +91,8 @@
     sampleKeepMs: 2000,
     dragPeriodMs: 250,           // drag: at most one new target per this time (the bridge spaces ANGLE >= 0.5 s)
     dragStepDeg: 0.5,            // drag targets in this step
+    dragPeriodSmoothMs: 100,     // SMOOTH firmware: the bridge spaces ANGLE >= 0.2 s (newest wins) [proposal]
+    dragStepSmoothDeg: 0.25,     // SMOOTH firmware: about 6-7 pot counts (STOP_TOL 6, RESTART_TOL 16) [proposal]
     ageLimitMaxMs: 500,          // upper bound of a bridge-given steering.age_limit_ms
   });
 
@@ -298,6 +308,24 @@
     var sc = this.lastStatus && this.lastStatus.steer_control;
     return !!(sc && typeof sc === 'object' && sc.keys === 'full_limit');
   };
+  // True for the SMOOTH firmware (status steer_control.smooth true): finer and faster drag targets.
+  SteerController.prototype.smoothMode = function () {
+    var sc = this.lastStatus && this.lastStatus.steer_control;
+    return this.absoluteMode() && sc.smooth === true;
+  };
+  SteerController.prototype.dragStepDeg = function () {
+    var step = this.smoothMode() ? this.cfg.dragStepSmoothDeg : this.cfg.dragStepDeg;
+    return step > 0 ? step : 0.5;
+  };
+  SteerController.prototype.dragPeriodMs = function () {
+    return this.smoothMode() ? this.cfg.dragPeriodSmoothMs : this.cfg.dragPeriodMs;
+  };
+  // The bridge's drive cap (status drive.max_pwm, 0..255), or null when the bridge does not report one.
+  SteerController.prototype.driveCapPwm = function () {
+    var drive = this.lastStatus && this.lastStatus.drive;
+    var cap = drive && typeof drive === 'object' ? drive.max_pwm : null;
+    return isNum(cap) ? cap : null;
+  };
   // Largest drag angle (deg) per side from the status limits; 20 before a status gives them.
   SteerController.prototype.dragLimitDeg = function () {
     var lim = this.limits();
@@ -399,6 +427,9 @@
     this.keys[key] = true;
     if (steerKey) { this.centreReturn = false; this.steerSource = 'keys'; }
     this._armedHint();
+    if ((key === 'w' || key === 's') && this.lease && this.driveCapPwm() === 0) {
+      this._say('warn', '구동 상한 0(브리지 설치 값 --max-drive-pwm 0): W/S를 눌러도 바퀴는 돌지 않는다. 조향은 된다.');
+    }
     this.dirty = true;
     this._emit();
   };
@@ -472,7 +503,7 @@
   // The drag control. deg: left positive (as steer_mrad), clamped to the status limits, in dragStepDeg steps.
   SteerController.prototype._dragDeg = function (deg) {
     var lim = this.dragLimitDeg();
-    var step = this.cfg.dragStepDeg > 0 ? this.cfg.dragStepDeg : 0.5;
+    var step = this.dragStepDeg();
     var value = clamp(num(deg), -lim.right, lim.left);
     value = roundHalfAway(value / step) * step;
     value = clamp(value, -lim.right, lim.left);
@@ -594,7 +625,7 @@
   SteerController.prototype._updateAbsolute = function (now, lim) {
     var goal = null;
     if (this.drag.active) {
-      if (this.drag.appliedAt !== null && now - this.drag.appliedAt < this.cfg.dragPeriodMs) return;
+      if (this.drag.appliedAt !== null && now - this.drag.appliedAt < this.dragPeriodMs()) return;
       goal = degToMrad(this.drag.deg);
       if (this.hostTarget !== null && Math.abs(goal - this.hostTarget) < 0.5) return;
       this.drag.appliedAt = now;

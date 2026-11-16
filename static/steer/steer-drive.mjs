@@ -7,6 +7,8 @@
 // (stopRoverNow: one /api/rover/stop); here they only drop the steering lease at once.
 // The drag control (2026-11-16, bindSteerDrag): a precise angle while dragging, back to 0 when released; with an
 // absolute-target bridge (the ESP32-S3 'ABS-HOLD' firmware) A/D go to the full limit and the angle choices are hidden.
+// SMOOTH firmware (2026-11-16 evening, status steer_control.smooth): the same full-limit A/D is one continuous run of the
+// steering motor; the drag goes in 0.25 deg steps. The readout names the bridge's drive cap (drive.max_pwm).
 import './steer-control-rules.js';
 
 const R = globalThis.UbtsSteerRules;
@@ -20,7 +22,14 @@ export const dragText = (deg) => (!deg ? '0°' : `${deg > 0 ? '왼쪽' : '오른
 export const HELP_TEXT = {
   ramp: '조종 활성화 뒤 W/S는 누르는 동안 구동, A/D는 고른 각까지 조향, C는 누르는 동안 가운데로. A/D를 놓으면 가운데로 돌아온다(정지 중에는 한 번 5°까지, ‘각 유지’를 고르면 그대로). 막대를 끌면 그 각으로, 놓으면 0°로. STOP·Esc는 언제나.',
   absolute: '조종 활성화 뒤 W/S는 누르는 동안 구동, A/D는 누르는 동안 왼쪽·오른쪽 끝까지, 놓으면 가운데로(‘각 유지’를 고르면 그대로), C는 가운데로. 막대를 끌면 그 각으로 가고 놓으면 0°로 돌아온다. 키와 막대는 먼저 잡은 쪽만 듣는다. STOP·Esc는 언제나.',
+  smooth: '조종 활성화 뒤 W/S는 누르는 동안 구동, A/D는 누르는 동안 왼쪽·오른쪽 끝까지 끊김 없이 한 번에(SMOOTH 펌웨어), 놓으면 가운데로(‘각 유지’를 고르면 그대로), C는 가운데로. 막대를 끌면 0.25° 단위로 그 각을 따라가고 놓으면 0°로 돌아온다. 키와 막대는 먼저 잡은 쪽만 듣는다. STOP·Esc는 언제나.',
 };
+// The drive readout's second line: what the MCU reports and the bridge's own drive cap (its install flag).
+export function driveCapText(cap) {
+  if (typeof cap !== 'number' || !isFinite(cap)) return 'MCU 보고 · 속도 아님';
+  if (cap <= 0) return '구동 상한 0 (브리지 설치 값): W/S 꺼짐';
+  return `MCU 보고 · 브리지 상한 PWM ${cap}`;
+}
 
 // The device chip (short) and, while not armed, the explanation in the status line (controller.device()).
 export const DEVICE_TEXT = {
@@ -63,7 +72,8 @@ export function steerView(ctl, now) {
     duty: drive ? { left: drive.left, right: drive.right, en: drive.en } : null,
     deadlineMs: deadline, saturated: steering.saturated === true, faults: faultLabels(steering.faults),
     centreOff: target !== null && Math.abs(target) >= 0.5 && !ctl.centreReturn && !ctl.steeringActive(),
-    absolute: ctl.absoluteMode(), dragActive: ctl.drag.active, dragDeg: ctl.drag.active ? ctl.drag.deg : 0,
+    absolute: ctl.absoluteMode(), smooth: ctl.smoothMode(), dragStepDeg: ctl.dragStepDeg(), driveCapPwm: ctl.driveCapPwm(),
+    dragActive: ctl.drag.active, dragDeg: ctl.drag.active ? ctl.drag.deg : 0,
     dragPos: dragPosition(ctl, ctl.drag.active ? ctl.drag.deg : 0),
   };
 }
@@ -241,7 +251,7 @@ export function initSteerDrive(page) {
     const colours = page.chartColors();
     page.renderReadout('steerReadout', [
       { label: '목표 / 측정', value: `${fmtDeg(v.targetDeg)} / ${fmtDeg(v.measuredDeg)}`, sub: v.fresh ? `오차 ${fmtDeg(v.errorDeg)}` : '상태 오래됨', color: colours.cyan },
-      { label: '구동 duty', value: v.duty ? `${v.duty.left} / ${v.duty.right}` : '--', sub: 'MCU 보고 · 속도 아님', color: colours.blue },
+      { label: '구동 duty', value: v.duty ? `${v.duty.left} / ${v.duty.right}` : '--', sub: driveCapText(v.driveCapPwm), color: colours.blue },
       { label: '입력 기한', value: v.deadlineMs === null ? '--' : `${Math.round(v.deadlineMs)} ms`, sub: v.saturated ? '조향 포화' : '0.75 s · Esc 즉시 정지', color: colours.good },
     ]);
     setText('steerSpeedValue', `${ctl.speedCapPct}%`);
@@ -259,7 +269,7 @@ export function initSteerDrive(page) {
     }
     const choices = $('steerAngleChoices');
     if (choices) choices.hidden = v.absolute;
-    setText('steerHelp', v.absolute ? HELP_TEXT.absolute : HELP_TEXT.ramp);
+    setText('steerHelp', v.smooth ? HELP_TEXT.smooth : v.absolute ? HELP_TEXT.absolute : HELP_TEXT.ramp);
     for (const choice of ctl.angleChoices()) {
       const button = root.querySelector(`[data-steer-angle="${choice.deg}"]`);
       if (!button) continue;

@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { bindSteerDrag, dragPosition, dragText, faultLabels, steerView, HELP_TEXT } from '../static/steer/steer-drive.mjs';
+import { bindSteerDrag, dragPosition, dragText, driveCapText, faultLabels, steerView, HELP_TEXT } from '../static/steer/steer-drive.mjs';
 
 const R = globalThis.UbtsSteerRules;
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -122,6 +122,79 @@ test('drag: a precise angle, rate limited, and 0 when released', async () => {
   r.ctl.blur();
   await r.step();
   assert.equal(r.lastSteer(), 0, 'blur ends the drag: 0');
+});
+
+const SMOOTH_CONTROL = { kind: 'esp32_abs_hold', keys: 'full_limit', ramp: false, angle_quantum_deg: 0.25,
+  angle_min_interval_ms: 200, angle_max_jump_deg: 40, stage_max_counts: null, smooth: true };
+
+test('SMOOTH firmware: A/D stay one full-limit target; the drag goes in 0.25 deg steps at most every 100 ms', async () => {
+  const r = rig({ steer_control: SMOOTH_CONTROL });
+  await r.arm();
+  assert.equal(r.ctl.smoothMode(), true);
+  assert.equal(r.ctl.dragStepDeg(), 0.25);
+  assert.equal(r.ctl.dragPeriodMs(), 100);
+  r.ctl.keyDown('a');
+  for (let i = 0; i < 10; i += 1) await r.step(100);    // A held for a second: the same target every time
+  assert.deepEqual([...new Set(r.bridge.drives.map((d) => d.steer))], [LIMIT], 'one full-limit target, no page ramp');
+  r.ctl.keyUp('a');
+  await r.step();
+  assert.equal(r.lastSteer(), 0, 'released: the centre at once');
+  assert.equal(r.ctl.dragStart(12.3), true);
+  assert.equal(r.ctl.drag.deg, 12.25, '0.25 deg steps');
+  await r.step();
+  assert.equal(r.lastSteer(), Math.round(R.degToMrad(12.25)));
+  const changes = [];
+  let last = r.ctl.hostTarget;
+  for (let i = 0; i < 40; i += 1) {                       // a slow drag: 0.1 deg per 25 ms
+    r.ctl.dragMove(12.25 - 0.1 * i);
+    await r.step(25);
+    if (r.ctl.hostTarget !== last) { changes.push(r.clock.now()); last = r.ctl.hostTarget; }
+  }
+  const gaps = changes.slice(1).map((at, i) => at - changes[i]);
+  assert.ok(changes.length >= 8, `the target follows the drag in fine steps: ${changes.length}`);
+  assert.ok(gaps.every((gap) => gap >= 100), `at most one new target per 100 ms: ${gaps}`);
+  for (const d of r.bridge.drives.slice(-5)) {
+    const deg = R.mradToDeg(d.steer);
+    // integer mrad on the wire (0.057 deg); the bridge rounds back to the 0.25 deg grid
+    assert.ok(Math.abs(deg - 0.25 * Math.round(deg / 0.25)) < 0.03, `0.25 deg targets: ${deg}`);
+  }
+  r.ctl.dragEnd('pointerup');
+  await r.step();
+  assert.equal(r.lastSteer(), 0);
+  const view = steerView(r.ctl, r.clock.now());
+  assert.equal(view.smooth, true);
+  assert.equal(view.dragStepDeg, 0.25);
+  assert.equal(dragText(12.25), '왼쪽 12.3°', 'shown with one decimal');
+  assert.match(HELP_TEXT.smooth, /끊김 없이/);
+});
+
+test('without steer_control.smooth the drag keeps 0.5 deg / 250 ms (older firmware, SM OFF)', async () => {
+  const r = rig({ steer_control: { ...SMOOTH_CONTROL, smooth: false } });
+  await r.arm();
+  assert.equal(r.ctl.smoothMode(), false);
+  assert.equal(r.ctl.dragStepDeg(), 0.5);
+  assert.equal(r.ctl.dragPeriodMs(), 250);
+});
+
+test('W/S are not disabled by the page; a drive cap of 0 is shown and said', async () => {
+  const r = rig({ drive: { max_pwm: 0 } });
+  await r.arm();
+  assert.equal(r.ctl.driveCapPwm(), 0);
+  r.ctl.keyDown('w');
+  await r.step();
+  assert.equal(r.bridge.drives.at(-1).throttle, r.ctl.speedCapPct, 'W is sent as always: the bridge applies its cap');
+  assert.match(r.ctl.message.text, /구동 상한 0/);
+  r.ctl.keyUp('w');
+  assert.equal(driveCapText(0), '구동 상한 0 (브리지 설치 값): W/S 꺼짐');
+  assert.equal(driveCapText(120), 'MCU 보고 · 브리지 상한 PWM 120');
+  assert.equal(driveCapText(undefined), 'MCU 보고 · 속도 아님');
+  const s = rig({ drive: { max_pwm: 255 } });
+  await s.arm();
+  s.ctl.keyDown('s');
+  await s.step();
+  assert.equal(s.bridge.drives.at(-1).throttle, -s.ctl.speedCapPct);
+  assert.doesNotMatch(s.ctl.message.text, /구동 상한 0/);
+  assert.equal(steerView(s.ctl, s.clock.now()).driveCapPwm, 255);
 });
 
 test('keys and drag never fight; STOP always wins', async () => {
