@@ -705,6 +705,30 @@
 <dl class="detail-list" id="steerPotDetails"></dl>
 <p class="help-text">조향 브리지가 보낸 가변저항 값(앞바퀴 각도)이다. 보정 없음·잡음·끊김은 결함 줄에 보인다.</p>
 </section>
+<section class="panel-section" data-vehicle="front_steer" id="steerCalPanel">
+<div class="panel-head mini"><h3>조향 보정</h3><span class="status-chip" id="steerCalState">열면 확인</span></div>
+<details id="steerCalDetails">
+<summary>보정 보기 · 하기</summary>
+<p class="help-text">좌우 끝은 날마다(배터리 전압, 바닥) 다를 수 있다. 끝 찾기로 앞바퀴를 바깥으로 천천히 돌려 멈춤·되밀림 위치를 찾고, 적용하면 찾은 끝에서 여유만큼 안쪽이 조향 명령 ±20(왼쪽·오른쪽 끝)이 되어 보드에 저장된다. 조종 활성화를 끈 채로만 된다. ±20 은 명령 눈금이고 실제 바퀴 각도는 재지 않았다.</p>
+<dl class="detail-list" id="steerCalRows"></dl>
+<div class="sim-map-actions">
+<button class="action-button secondary" data-steer-cal="set_center" disabled="" type="button">지금 위치를 가운데로</button>
+<button class="action-button secondary" data-steer-cal="find_left" disabled="" type="button">왼쪽 끝 찾기</button>
+<button class="action-button secondary" data-steer-cal="find_right" disabled="" type="button">오른쪽 끝 찾기</button>
+</div>
+<div class="tune-fields">
+<label class="field" for="steerCalMarginLeft">왼쪽 여유 (count)<input class="input" id="steerCalMarginLeft" inputmode="numeric" max="120" min="10" step="1" type="number" value="30"/></label>
+<label class="field" for="steerCalMarginRight">오른쪽 여유 (count)<input class="input" id="steerCalMarginRight" inputmode="numeric" max="120" min="10" step="1" type="number" value="30"/></label>
+</div>
+<div class="sim-map-actions">
+<button class="action-button primary" data-steer-cal="apply" disabled="" type="button">적용</button>
+<button class="action-button secondary" data-steer-cal="default" disabled="" type="button">기본값으로</button>
+<button class="action-button danger" id="steerCalStop" type="button">STOP</button>
+</div>
+<div class="test-result" id="steerCalStatus" role="status">열면 확인</div>
+<div class="table-wrap" hidden="" id="steerCalSamplesWrap"><table class="table"><thead><tr><th>펄스</th><th>쪽</th><th>정착 값</th><th>진척</th><th>되밀림</th></tr></thead><tbody id="steerCalSamples"></tbody></table></div>
+</details>
+</section>
 <section class="panel-section steer-drive" data-vehicle="front_steer" id="autoPanel">
 <div class="panel-head mini"><h3>자율주행 · 열 따라가기</h3><span class="status-chip" id="autoState">확인 중</span></div>
 <label class="field" for="autoRowLen">열 길이 m (비워도 됨)<input class="input" id="autoRowLen" inputmode="decimal" max="300" min="1" step="0.1" type="number"/></label>

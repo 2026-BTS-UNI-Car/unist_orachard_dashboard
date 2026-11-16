@@ -601,11 +601,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error(400, "Object required")
             return
         operations = {"/api/rover/arm": "arm", "/api/rover/command": "drive", "/api/rover/release": "release",
-                      "/api/rover/keepalive": "keepalive", "/api/rover/stop": "stop"}
+                      "/api/rover/keepalive": "keepalive", "/api/rover/stop": "stop",
+                      "/api/rover/calibrate": "calibrate"}
         if path not in operations:
             self.send_error(404)
             return
         supervisor=getattr(self,'autonomy_supervisor',None)
+        if path == "/api/rover/calibrate":
+            # Steering calibration (ESP32-S3 bridge op calibrate): never during an autonomy run, and no takeover for
+            # it; only its own fields go to the bridge (the bridge itself refuses while armed or moving).
+            if supervisor is not None and (supervisor.status().get('active') or supervisor.status().get('loop_cleanup_pending')):
+                self._send_json({'ok': False, 'error': 'calibration_needs_disarmed'}, 409); return
+            fields = {key: payload[key] for key in ("action", "left_margin_counts", "right_margin_counts") if key in payload}
+            self._send_json(request({**fields, "op": "calibrate", "owner": session}))
+            return
         if supervisor is not None and (supervisor.status().get('active') or supervisor.status().get('loop_cleanup_pending')):
             handoff=supervisor.manual_takeover()
             if path!='/api/rover/stop' and not handoff.get('loop_joined'):

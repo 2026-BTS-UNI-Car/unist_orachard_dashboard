@@ -20,7 +20,7 @@ function adoptBridgeVehicle(bridge) {
   return true;
 }
 
-const steerScreens = { drive: null, auto: null, tuning: null, grid: null, pot: null, driveScreen: null };
+const steerScreens = { drive: null, auto: null, tuning: null, grid: null, pot: null, cal: null, driveScreen: null };
 
 function steerPageApi() {
   // controlRequest: the one transport for driving requests (NET-05): high priority, never queued, with a time limit.
@@ -49,6 +49,10 @@ function loadSteerScreens(route = currentRoute()) {
     loadSteerScreen("auto", "/static/steer/auto-panel.mjs", "initAutoPanel");
     loadSteerScreen("pot", "/static/steer/steer-sensor.mjs", "initSteerSensor");
   }
+  // The steering calibration section (2026-11-16, ESP32-S3 runtime calibration): fetched when it is opened the first time.
+  if (steerVehicle() && (steerScreens.cal || (route === "/rover-control" && steerPartWanted.cal()))) {
+    loadSteerScreen("cal", "/static/steer/steer-calibration.mjs", "initSteerCalibration");
+  }
   // The field tuning values (UI-12) are a part of Rover Control on every dashboard; without an executor they say so.
   if (steerScreens.tuning || (route === "/rover-control" && steerPartWanted.tuning())) loadSteerScreen("tuning", "/static/steer/tuning-page.mjs", "initTuningPage");
   // The executor's local grid on the live occupancy grid map (UI-09): shown only when the executor sends one.
@@ -58,10 +62,12 @@ function loadSteerScreens(route = currentRoute()) {
 // When the two parts are wanted the first time. Without IntersectionObserver the local grid is wanted at once (as before).
 const steerPartWanted = {
   tuning: () => Boolean($("tuningDetails")?.open),
+  cal: () => Boolean($("steerCalDetails")?.open),
   mapSeen: typeof IntersectionObserver !== "function" || !$("liveMapPanel"),
   grid: () => steerPartWanted.mapSeen,
 };
 $("tuningDetails")?.addEventListener("toggle", () => loadSteerScreens());
+$("steerCalDetails")?.addEventListener("toggle", () => loadSteerScreens());
 if (!steerPartWanted.mapSeen) {
   const mapWatch = new IntersectionObserver((entries) => {
     if (!entries.some((entry) => entry.isIntersecting)) return;

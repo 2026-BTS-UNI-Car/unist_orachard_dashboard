@@ -84,7 +84,7 @@ const html = fs.readFileSync(path.join(ROOT, 'static', 'index.html'), 'utf8');
 // ---- Pages: every old page is there with its titles in the old order; Research is not ----
 // The only new titles are those of the new parts of Rover Control.
 const NEW_TITLES = {
-  '/rover-control': ['조향 가변저항', '자율주행 · 열 따라가기', '현장 조정 값', '기본 묶음', '고급 묶음', '변경 기록'],
+  '/rover-control': ['조향 가변저항', '조향 보정', '자율주행 · 열 따라가기', '현장 조정 값', '기본 묶음', '고급 묶음', '변경 기록'],
 };
 {
   const now = pageTitlesOf(html);
@@ -111,12 +111,16 @@ const NEW_TITLES = {
   const rover = page('/rover-control');
   const drive = rover.slice(rover.indexOf('<article class="panel rover-drive-panel">'), rover.indexOf('<article class="panel rover-tuning-panel"'));
   assert.ok(drive.includes('<h2>주행 제어</h2>'), 'the drive panel');
-  for (const id of ['steerDrive', 'steerPotPanel', 'autoPanel', 'roverArmButton', 'roverStopButton']) {
+  for (const id of ['steerDrive', 'steerPotPanel', 'steerCalPanel', 'autoPanel', 'roverArmButton', 'roverStopButton']) {
     assert.ok(drive.includes(`id="${id}"`), `${id} is in the drive panel`);
   }
   assert.ok(drive.indexOf('id="hardwareAutonomyPanel"') < drive.indexOf('id="roverArmButton"'), 'old order: autonomy row, arm, speed, pad');
   assert.ok(drive.indexOf('id="roverSpeedSlider"') < drive.indexOf('data-rover-drive="forward"'));
   assert.ok(drive.indexOf('data-rover-drive="forward"') < drive.indexOf('id="steerDrive"'), 'the steering panel after the differential parts');
+  // The steering calibration (2026-11-16) is a collapsed part of the steering panel, after the potentiometer rows.
+  assert.match(drive, /<section class="panel-section" data-vehicle="front_steer" id="steerCalPanel">\n<div class="panel-head mini"><h3>조향 보정<\/h3>[^\n]*\n<details id="steerCalDetails">\n/,
+    'the steering calibration is a collapsed part (no open attribute)');
+  assert.ok(drive.indexOf('id="steerPotPanel"') < drive.indexOf('id="steerCalPanel"') && drive.indexOf('id="steerCalPanel"') < drive.indexOf('id="autoPanel"'));
   assert.match(rover, /<article class="panel rover-tuning-panel" id="tuningPanel">\n<div class="panel-head"><h2>현장 조정 값<\/h2><span class="status-chip" id="tuneState">[^<]*<\/span><\/div>\n<details id="tuningDetails">\n/,
     'the tuning values are a collapsed part (no open attribute)');
   for (const id of ['tuneForm', 'tuneBasic', 'tuneAdvanced', 'tuneLocked', 'tuneLogBody', 'tuneApply', 'tunePreset']) {
