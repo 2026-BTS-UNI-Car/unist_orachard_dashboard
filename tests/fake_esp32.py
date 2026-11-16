@@ -22,6 +22,14 @@ CAL FIND LEFT|RIGHT (scan: PWM 100, 100 ms pulse, 650 ms quiet, stop at >= 20 re
 40 pulses / 4 s powered / 40 s; any input byte aborts with REASON=ABORTED_INPUT), all refused unless every motor is
 stopped (motors 2/3 off for 1 s). stop_left / stop_right add a mechanical stop: past it the wheel moves at compliance of
 the free rate (at most max_past counts) while powered and springs back to the stop when the driver is off.
+smooth=True models the SMOOTH firmware r2 (runs/steer_smooth_20261116/fw: make_smooth.py + r2_changes.py; implies
+cal_runtime): FW token SMOOTH=1 (SMOOTH=0 after 'SM OFF'), hard guards RIGHT >= 1300, LEFT <= 2600, CENTER 1850..2150,
+POT valid 1200..2700, CAL FIND LEFT|RIGHT [ms] (40..100 ms pulses, 60 pulses, 50 s), the SM line at boot and on 'SM',
+SM ON / OFF / SET / SAVE / DEFAULT, TRACE ON [ms] / OFF (DATA lines every 10 ms) and the smooth ANGLE hold
+(updateSmoothHold: one continuous run at a PWM ramp from PWM_MIN to PWM_MAX, slowing within SLOW counts, off within
+STOP_TOL; settle SETTLE_MS, restart above RESTART_TOL; STALL boost then cancel, RUN TIME LIMIT, NO CONVERGENCE after
+4 runs; a new target in the running direction taken over without stopping, a reversal after 60 ms off). Not modelled:
+coasting after the driver goes off (so BRAKE_MS changes nothing here) and the PWM-to-speed curve (speed is linear in PWM).
 Time comes from an injected clock in seconds; call advance() (or run()) to let the firmware loop act.
 """
 import math
@@ -29,6 +37,15 @@ import re
 
 RIGHT_LIMIT, CENTER, LEFT_LIMIT = 1681, 1900, 2180
 HARD_RIGHT_MIN, HARD_LEFT_MAX, CENTER_MIN, CENTER_MAX, MIN_SPAN = 1300, 2500, 1800, 2000, 150
+# SMOOTH firmware r2: left guard 2600 (r1 already), centre 1850..2150 (r2)
+HARD_LEFT_MAX_SMOOTH, CENTER_MIN_SMOOTH, CENTER_MAX_SMOOTH = 2600, 1850, 2150
+SM_NAMES = ('PWM_MIN', 'PWM_MAX', 'SLOW', 'STOP_TOL', 'RESTART_TOL', 'RAMP', 'SETTLE_MS', 'STALL_MS', 'BOOST',
+            'MAX_RUN_MS', 'BRAKE_MS')
+SM_DEFAULTS = dict(zip(SM_NAMES, (60, 100, 120, 6, 16, 12, 120, 200, 15, 5000, 40)))
+SM_LIMITS = dict(zip(SM_NAMES, ((20, 150), (40, 160), (20, 400), (3, 30), (5, 60), (1, 100), (40, 1000), (80, 1000),
+                                (1, 60), (300, 8000), (0, 200))))
+SM_HELP = 'Smooth: SM / SM ON / SM OFF / SM SET name n / SM SAVE / SM DEFAULT; TRACE ON [ms] / TRACE OFF'
+SM_PROGRESS_COUNTS, SM_MAX_RUNS, SM_REVERSE_PAUSE_MS, SM_TICK_MS = 4, 4, 60, 10
 FW_LINE = 'FW: ABS-HOLD-8-REBOUND-LIMITS F=RIGHT POT_DECREASES'
 CAL_LINE = 'CAL: RIGHT=1681 CENTER=1900 LEFT=2180 MAX_COMMAND=20 (physical degrees unverified)'
 HELP = ['Commands: 1 F 100 / 1 R 100 / 1 S / STOP / POT / POT ON / POT OFF',
@@ -43,6 +60,7 @@ FLOAT = r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?'
 # calibration scan of the runtime-calibration firmware (calFind)
 FIND_PWM, FIND_PULSE_MS, FIND_QUIET_MS, SETTLE_WINDOW_MS, PEAK_TAIL_MS = 100, 100, 650, 150, 50
 FIND_MAX_PULSES, FIND_MAX_DRIVE_MS, FIND_MAX_MS, REBOUND_STOP, PROGRESS_STOP, GUARD_APPROACH = 40, 4000, 40000, 20, 3, 15
+FIND_MAX_PULSES_SMOOTH, FIND_MAX_MS_SMOOTH, FIND_PULSE_MIN_MS = 60, 50000, 40
 DRIVE_QUIET_MS = 1000
 
 
@@ -56,14 +74,14 @@ def pot_to_angle(value, right=RIGHT_LIMIT, center=CENTER, left=LEFT_LIMIT):
     return -20.0 * (value - center) / (left - center)
 
 
-def cal_problem(right, center, left):
+def cal_problem(right, center, left, left_max=HARD_LEFT_MAX, center_min=CENTER_MIN, center_max=CENTER_MAX):
     """None when the three marks pass the hard guards of the runtime-calibration firmware, else its reason."""
     if right < HARD_RIGHT_MIN:
         return 'RIGHT BELOW HARD GUARD 1300'
-    if left > HARD_LEFT_MAX:
-        return 'LEFT ABOVE HARD GUARD 2500'
-    if center < CENTER_MIN or center > CENTER_MAX:
-        return 'CENTER OUTSIDE 1800..2000'
+    if left > left_max:
+        return 'LEFT ABOVE HARD GUARD %d' % left_max
+    if center < center_min or center > center_max:
+        return 'CENTER OUTSIDE %d..%d' % (center_min, center_max)
     if center - right < MIN_SPAN:
         return 'RIGHT SPAN BELOW 150'
     if left - center < MIN_SPAN:
@@ -74,8 +92,17 @@ def cal_problem(right, center, left):
 class FakeEsp32:
     def __init__(self, clock, *, pot=1966.0, rate_counts_s=400.0, reset_on_open=True, ignore_stops=False,
                  stuck=False, rebound_counts=0, drive_watchdog_ms=None, step_ms=2, cal_runtime=False, nvs=None,
-                 stop_left=None, stop_right=None, compliance=0.45, max_past=70.0, spring_tau_ms=25.0):
+                 stop_left=None, stop_right=None, compliance=0.45, max_past=70.0, spring_tau_ms=25.0, smooth=False):
         self.clock = clock
+        self.smooth_fw = bool(smooth)   # the SMOOTH firmware (its hold method is smooth_mode, 'SM ON' / 'SM OFF')
+        cal_runtime = cal_runtime or self.smooth_fw
+        self.hard_left_max = HARD_LEFT_MAX_SMOOTH if smooth else HARD_LEFT_MAX
+        self.center_min, self.center_max = (CENTER_MIN_SMOOTH, CENTER_MAX_SMOOTH) if smooth else (CENTER_MIN, CENTER_MAX)
+        self.find_max_pulses = FIND_MAX_PULSES_SMOOTH if smooth else FIND_MAX_PULSES
+        self.find_max_ms = FIND_MAX_MS_SMOOTH if smooth else FIND_MAX_MS
+        self.smooth_runs_started = 0    # smooth hold runs started since the board object was made (tests)
+        self.takeovers = 0              # smooth: new targets taken over while running (tests)
+        self.sm_saved = None            # NVS "steer_sm" after SM SAVE: (mode, params), survives boot()
         self.pot = float(pot)
         self.rate = rate_counts_s
         self.reset_on_open = reset_on_open
@@ -127,13 +154,30 @@ class FakeEsp32:
         self.cal_store = 'DEFAULT'
         self.find = None                # running CAL FIND scan
         self.center_job = None          # running CAL CENTER measurement
+        # smooth hold (SMOOTH firmware); SM SAVE keeps mode and parameters in sm_saved (loaded again at boot)
+        self.smooth_mode = self.smooth_fw
+        self.sm = dict(SM_DEFAULTS)
+        self.sm_store = 'DEFAULT'
+        if self.smooth_fw and self.sm_saved is not None:
+            self.smooth_mode, self.sm, self.sm_store = self.sm_saved[0], dict(self.sm_saved[1]), 'NVS'
+        self.sm_phase = 0               # 0 idle / monitor, 1 driving, 2 settling after a run
+        self.sm_dir = 0
+        self.sm_pwm = self.sm_floor = 0
+        self.sm_run_start = self.sm_limit_start = self.sm_tick = self.sm_progress_ms = self.sm_settle_start = 0
+        self.sm_drive_ms = 0
+        self.sm_progress_ref = self.sm_run_start_pot = self.sm_peak = 0
+        self.sm_runs = 0
+        self.sm_fresh = False
+        self.steer_off_ms = -10 ** 6
+        self.trace_until = None
+        self.trace_last = 0
 
     def _load_cal(self):
         self.cal_right, self.cal_center, self.cal_left, self.cal_store = RIGHT_LIMIT, CENTER, LEFT_LIMIT, 'DEFAULT'
         if not self.nvs:
             return
         values = (self.nvs.get('right', -1), self.nvs.get('center', -1), self.nvs.get('left', -1))
-        problem = 'VERSION OR INCOMPLETE SAVE' if self.nvs.get('ver') != 1 else cal_problem(*values)
+        problem = 'VERSION OR INCOMPLETE SAVE' if self.nvs.get('ver') != 1 else self.cal_problem(*values)
         if problem:
             self._print('CAL WARNING: STORED VALUES IGNORED (%s) RIGHT=%d CENTER=%d LEFT=%d' % ((problem,) + values))
             return
@@ -153,7 +197,16 @@ class FakeEsp32:
         for line in HELP:
             self._print(line)
         if self.cal_runtime:
-            self._print(CAL_HELP)
+            self._print(self.cal_help())
+        if self.smooth_fw:
+            self._print(SM_HELP)
+            self._print_sm()
+
+    def cal_problem(self, right, center, left):
+        return cal_problem(right, center, left, self.hard_left_max, self.center_min, self.center_max)
+
+    def cal_help(self):
+        return CAL_HELP + (' [ms]' if self.smooth_fw else '')
 
     def on_open(self):
         if self.reset_on_open:
@@ -238,6 +291,15 @@ class FakeEsp32:
         if self.pot_streaming and self.ms - self.pot_report_ms >= 200:
             self.pot_report_ms = self.ms
             self._print_pot()
+        if self.trace_until is not None and self.ms - self.trace_last >= 10:
+            self.trace_last = self.ms
+            m = self.motors[0]
+            self._print('DATA,%d,%d,%d,%d,%d,%d,%d' % (self.ms, self.read_pot(), self.read_pot(),
+                                                       1 if m['direction'] else 0, 0,
+                                                       m['pwm'] if m['direction'] else 0, self.target))
+            if self.ms >= self.trace_until:
+                self.trace_until = None
+                self._print('OK: TRACE END')
 
     # ---- firmware functions (names follow the .ino) ----------------------------------------------------------------
     def read_pot(self):
@@ -250,7 +312,7 @@ class FakeEsp32:
 
     def valid(self, value):
         if self.cal_runtime:
-            return 100 < value < 4000 and HARD_RIGHT_MIN - 100 < value < HARD_LEFT_MAX + 100
+            return 100 < value < 4000 and HARD_RIGHT_MIN - 100 < value < self.hard_left_max + 100
         return 100 < value < 4000 and RIGHT_LIMIT - 100 < value < LEFT_LIMIT + 100
 
     def angle_of(self, value):
@@ -263,6 +325,8 @@ class FakeEsp32:
     def _deenergize(self, index):
         if index in (1, 2) and self.motors[index]['direction']:
             self.drive_active_ms = self.ms
+        if index == 0 and self.motors[0]['direction']:
+            self.steer_off_ms = self.ms
         self.motors[index] = dict(direction=0, pwm=0)
 
     def stop_motor(self, index):
@@ -273,6 +337,9 @@ class FakeEsp32:
             self.pulse_pending = False
             self.drive_ms = 0
             self.no_progress = 0
+            self.sm_phase = 0
+            self.sm_runs = 0
+            self.sm_fresh = False
 
     def stop_all(self):
         for i in range(3):
@@ -280,13 +347,15 @@ class FakeEsp32:
 
     def fw_line(self):
         line = FW_LINE + ('' if self.drive_watchdog_ms is None else ' DRIVE_WD=%d' % self.drive_watchdog_ms)
-        return line + (' CAL_RUNTIME=1' if self.cal_runtime else '')
+        line += ' CAL_RUNTIME=1' if self.cal_runtime else ''
+        return line + (' SMOOTH=%d' % (1 if self.smooth_mode else 0) if self.smooth_fw else '')
 
     def cal_line(self):
         if not self.cal_runtime:
             return CAL_LINE
         return ('CAL: RIGHT=%d CENTER=%d LEFT=%d MAX_COMMAND=20 STORE=%s GUARD=%d..%d (physical degrees unverified)'
-                % (self.cal_right, self.cal_center, self.cal_left, self.cal_store, HARD_RIGHT_MIN, HARD_LEFT_MAX))
+                % (self.cal_right, self.cal_center, self.cal_left, self.cal_store, HARD_RIGHT_MIN,
+                   self.hard_left_max))
 
     def _status(self):
         value = self.read_pot()
@@ -322,11 +391,16 @@ class FakeEsp32:
 
     def _check_steer_timeout(self):
         m = self.motors[0]
-        if m['direction'] != 0 and self.ms - self.steer_start_ms >= 1000:
+        # the smooth hold limits its own runs (MAX_RUN_MS, stall); manual steering and the pulse hold keep 1000 ms
+        if m['direction'] != 0 and not (self.target_active and self.smooth_mode) and \
+                self.ms - self.steer_start_ms >= 1000:
             self.stop_motor(0)
             self._print('STEER STOP: TIMEOUT 1000ms POT=%d TARGET=%d HOLD=OFF' % (self.read_pot(), self.target))
         if self.target_active:
-            self._update_hold()
+            if self.smooth_mode:
+                self._update_smooth()
+            else:
+                self._update_hold()
         elif self.motors[0]['direction'] != 0:
             self._steering_allowed(self.motors[0]['direction'])
 
@@ -446,6 +520,25 @@ class FakeEsp32:
         if self.target_active and self.target == target:
             self._print('OK: SAME ABSOLUTE TARGET (budget unchanged)')
             return
+        if self.smooth_mode:
+            want = self.steer_right_direction if target < value else -self.steer_right_direction
+            if self.target_active and self.sm_phase == 1 and self.motors[0]['direction'] == self.sm_dir and \
+                    want == self.sm_dir and abs(target - value) > self.sm['STOP_TOL']:
+                # same direction while driving: taken over without stopping
+                self.target = target
+                self.sm_runs = 1
+                self.sm_fresh = True
+                self.sm_limit_start = self.ms
+                self.takeovers += 1
+            else:
+                self.stop_motor(0)      # a reversal then waits 60 ms unpowered
+                self.target = target
+                self.target_active = True
+                self.sm_fresh = True
+                self.sm_drive_ms = 0
+            self._print('QUIET HOLD TARGET: %s %.1f POT=%d PWM=%d' % ('LEFT' if left else 'RIGHT', degrees, target,
+                                                                     self.sm['PWM_MAX']))
+            return
         self.stop_motor(0)
         self.target = target
         self.target_active = True
@@ -472,7 +565,7 @@ class FakeEsp32:
         return True
 
     def _cal_apply(self, right, center, left, what):
-        problem = cal_problem(right, center, left)
+        problem = self.cal_problem(right, center, left)
         if problem:
             self._print('CAL ERROR: %s REFUSED: %s (RIGHT=%d CENTER=%d LEFT=%d)' % (what, problem, right, center, left))
             return False
@@ -500,6 +593,14 @@ class FakeEsp32:
         if len(words) == 3 and words[1] == 'FIND' and words[2] in ('LEFT', 'RIGHT'):
             self._find_start(words[2] == 'LEFT')
             return
+        if self.smooth_fw and len(words) == 4 and words[1] == 'FIND' and words[2] in ('LEFT', 'RIGHT') and \
+                re.fullmatch(r'[+-]?\d+', words[3]):
+            value = int(words[3])
+            if not FIND_PULSE_MIN_MS <= value <= FIND_PULSE_MS:
+                self._print('CAL ERROR: FIND PULSE %d MS OUTSIDE %d..%d' % (value, FIND_PULSE_MIN_MS, FIND_PULSE_MS))
+                return
+            self._find_start(words[2] == 'LEFT', value)
+            return
         if len(words) == 1:
             self._print(self.cal_line())
         elif words[1:] == ['CENTER']:
@@ -522,19 +623,19 @@ class FakeEsp32:
                 self._print('OK: CAL DEFAULT (NVS cleared)')
                 self._print(self.cal_line())
         else:
-            self._print('CAL ERROR: unknown CAL command; ' + CAL_HELP)
+            self._print('CAL ERROR: unknown CAL command; ' + self.cal_help())
 
-    def _find_start(self, left):
+    def _find_start(self, left, pulse_ms=FIND_PULSE_MS):
         if not self._cal_idle('FIND LEFT' if left else 'FIND RIGHT'):
             return
         right = not left
         self.find = dict(side='LEFT' if left else 'RIGHT', right=right,
                          direction=self.steer_right_direction if right else -self.steer_right_direction,
                          t0=self.ms, phase='quiet0', phase_t0=self.ms, window=[], before=None, start=None,
-                         last_good=None, pulses=0, drive_ms=0, peak=[], guard=False)
+                         last_good=None, pulses=0, drive_ms=0, peak=[], guard=False, pulse_ms=pulse_ms)
         self._print('CAL FIND START: SIDE=%s POT=%d PWM=%d PULSE_MS=%d QUIET_MS=%d MAX_PULSES=%d GUARD=%d' % (
-            self.find['side'], self.read_pot(), FIND_PWM, FIND_PULSE_MS, FIND_QUIET_MS, FIND_MAX_PULSES,
-            HARD_RIGHT_MIN if right else HARD_LEFT_MAX))
+            self.find['side'], self.read_pot(), FIND_PWM, pulse_ms, FIND_QUIET_MS, self.find_max_pulses,
+            HARD_RIGHT_MIN if right else self.hard_left_max))
 
     def _find_end(self, reason):
         f = self.find
@@ -559,9 +660,9 @@ class FakeEsp32:
         elapsed = self.ms - f['phase_t0']
         if f['phase'] == 'pulse':
             f['peak'].append(value)
-            if (value <= HARD_RIGHT_MIN) if f['right'] else (value >= HARD_LEFT_MAX):
+            if (value <= HARD_RIGHT_MIN) if f['right'] else (value >= self.hard_left_max):
                 f['guard'] = True
-            if elapsed >= FIND_PULSE_MS or f['guard']:
+            if elapsed >= f['pulse_ms'] or f['guard']:
                 f['drive_ms'] += elapsed
                 self._deenergize(0)
                 f['phase'], f['phase_t0'], f['window'] = 'quiet', self.ms, []
@@ -598,14 +699,15 @@ class FakeEsp32:
                 return
             f['last_good'] = f['before'] = settled
         # next pulse, or the end
-        if f['pulses'] >= FIND_MAX_PULSES or f['drive_ms'] + FIND_PULSE_MS > FIND_MAX_DRIVE_MS:
+        if f['pulses'] >= self.find_max_pulses or f['drive_ms'] + f['pulse_ms'] > FIND_MAX_DRIVE_MS:
             self._find_end('BUDGET')
             return
-        if self.ms - f['t0'] + FIND_PULSE_MS + FIND_QUIET_MS > FIND_MAX_MS:
+        if self.ms - f['t0'] + f['pulse_ms'] + FIND_QUIET_MS > self.find_max_ms:
             self._find_end('TIME')
             return
         before = f['before']
-        if (before <= HARD_RIGHT_MIN + GUARD_APPROACH) if f['right'] else (before >= HARD_LEFT_MAX - GUARD_APPROACH):
+        if (before <= HARD_RIGHT_MIN + GUARD_APPROACH) if f['right'] else \
+                (before >= self.hard_left_max - GUARD_APPROACH):
             self._find_end('GUARD')
             return
         f['pulses'] += 1
@@ -648,6 +750,12 @@ class FakeEsp32:
             return
         if self.cal_runtime and words and words[0] == 'CAL':
             self._cal_command(words)
+            return
+        if self.smooth_fw and words and words[0] == 'SM':
+            self._sm_command(words)
+            return
+        if self.smooth_fw and words and words[0] == 'TRACE':
+            self._trace_command(words)
             return
         if words == ['STATUS']:
             self._status()
@@ -711,7 +819,152 @@ class FakeEsp32:
             self._print(err)
         if self.cal_runtime:
             self._print('Drive watchdog: motors 2/3 stop 300 ms after the last drive command or HB')
-            self._print(CAL_HELP)
+            self._print(self.cal_help())
+        if self.smooth_fw:
+            self._print(SM_HELP)
+
+    # ---- smooth hold, SM and TRACE (smooth=True) -------------------------------------------------------------------
+    def _sm_start_run(self, direction, value):
+        self.sm_dir = direction
+        self.sm_floor = self.sm_pwm = self.sm['PWM_MIN']
+        self.motors[0] = dict(direction=direction, pwm=self.sm_pwm)
+        self.steer_start_ms = self.sm_run_start = self.sm_limit_start = self.sm_tick = self.sm_progress_ms = self.ms
+        self.sm_progress_ref = self.sm_run_start_pot = self.sm_peak = value
+        self.sm_runs += 1
+        self.smooth_runs_started += 1
+        self.sm_phase = 1
+
+    def _sm_end_run(self, value):
+        self.sm_drive_ms += self.ms - self.sm_run_start
+        self._deenergize(0)             # (BRAKE_MS: the fake has no coasting, so a brake changes nothing here)
+        self.sm_phase = 2
+        self.sm_settle_start = self.ms
+        self.sm_peak = value
+
+    def _sm_cancel(self, why):
+        self.stop_motor(0)
+        self._print('STEER HOLD CANCELLED: %s' % why)
+
+    def _update_smooth(self):
+        value = self.read_pot()
+        if not self.valid(value):
+            self._sm_cancel('ADC STALE/INVALID')
+            return
+        p = self.sm
+        error = self.target - value
+        run_right = self.sm_dir == self.steer_right_direction
+        if self.sm_phase == 1:
+            self.sm_peak = min(self.sm_peak, value) if run_right else max(self.sm_peak, value)
+            if (run_right and value <= self.cal_right - 15) or (not run_right and value >= self.cal_left + 15):
+                self._sm_end_run(value)
+                return
+            along = -error if run_right else error
+            if along <= p['STOP_TOL']:
+                self._sm_end_run(value)
+                return
+            progress = self.sm_progress_ref - value if run_right else value - self.sm_progress_ref
+            if progress >= SM_PROGRESS_COUNTS:
+                self.sm_progress_ref, self.sm_progress_ms = value, self.ms
+            elif self.ms - self.sm_progress_ms >= p['STALL_MS']:
+                if self.sm_pwm >= p['PWM_MAX']:
+                    self.sm_drive_ms += self.ms - self.sm_run_start
+                    self._sm_cancel('STALL (no force retry)')
+                    return
+                self.sm_floor = min(p['PWM_MAX'], self.sm_floor + p['BOOST'])
+                self.sm_progress_ref, self.sm_progress_ms = value, self.ms
+            if self.ms - self.sm_limit_start >= p['MAX_RUN_MS']:
+                self.sm_drive_ms += self.ms - self.sm_run_start
+                self._sm_cancel('RUN TIME LIMIT')
+                return
+            if self.ms - self.sm_tick >= SM_TICK_MS:
+                self.sm_tick = self.ms
+                scale = min(1.0, max(0.0, (along - p['STOP_TOL']) / float(p['SLOW'])))
+                want = self.sm_floor + lround((p['PWM_MAX'] - self.sm_floor) * scale)
+                self.sm_pwm = min(want, self.sm_pwm + p['RAMP']) if want > self.sm_pwm else want
+                self.motors[0] = dict(direction=self.sm_dir, pwm=self.sm_pwm)
+            return
+        if self.sm_phase == 2:
+            if self.ms - self.sm_settle_start < 100:
+                self.sm_peak = min(self.sm_peak, value) if run_right else max(self.sm_peak, value)
+            if self.ms - self.sm_settle_start < p['SETTLE_MS']:
+                return
+            self.sm_phase = 0
+            self.sm_fresh = False
+            progress = self.sm_run_start_pot - value if run_right else value - self.sm_run_start_pot
+            rebound = value - self.sm_peak if run_right else self.sm_peak - value
+            self._print('QUIET: POT=%d TARGET=%d PROGRESS=%d REBOUND=%d DRIVE_MS=%d' % (
+                value, self.target, progress, rebound, self.sm_drive_ms))
+            if abs(error) > p['RESTART_TOL'] and rebound >= 20:
+                self._sm_cancel('REBOUND (no force retry)')
+                return
+        if abs(error) <= p['STOP_TOL'] or (not self.sm_fresh and abs(error) <= p['RESTART_TOL']):
+            self.sm_fresh = False
+            self.sm_runs = 0
+            return
+        if self.sm_runs >= SM_MAX_RUNS:
+            self._sm_cancel('NO CONVERGENCE (no force retry)')
+            return
+        right = error < 0
+        if (right and value <= self.cal_right) or (not right and value >= self.cal_left):
+            self._sm_cancel('QUIET OPERATING LIMIT')
+            return
+        direction = self.steer_right_direction if right else -self.steer_right_direction
+        if direction != self.sm_dir and self.ms - self.steer_off_ms < SM_REVERSE_PAUSE_MS:
+            return
+        self._sm_start_run(direction, value)
+
+    def _print_sm(self):
+        self._print('SM: MODE=%s %s STORE=%s' % ('SMOOTH' if self.smooth_mode else 'PULSE',
+                                                 ' '.join('%s=%d' % (n, self.sm[n]) for n in SM_NAMES), self.sm_store))
+
+    def _sm_command(self, words):
+        if len(words) == 1:
+            self._print_sm()
+        elif len(words) == 4 and words[1] == 'SET' and re.fullmatch(r'[+-]?\d+', words[3]):
+            name, value = words[2], int(words[3])
+            if name not in SM_LIMITS:
+                self._print('SM ERROR: unknown parameter %s' % name)
+                return
+            new = dict(self.sm, **{name: value})
+            lo, hi = SM_LIMITS[name]
+            problem = name if not lo <= value <= hi else 'PWM_MIN ABOVE PWM_MAX' if new['PWM_MIN'] > new['PWM_MAX'] \
+                else 'RESTART_TOL NOT ABOVE STOP_TOL' if new['RESTART_TOL'] <= new['STOP_TOL'] else None
+            if problem:
+                self._print('SM ERROR: SET %s %d REFUSED: %s' % (name, value, problem))
+                return
+            self.sm, self.sm_store = new, 'UNSAVED'
+            self._print('OK: SM SET %s=%d (SM SAVE keeps it)' % (name, value))
+            self._print_sm()
+        elif len(words) == 2 and words[1] in ('ON', 'OFF'):
+            self.stop_motor(0)          # never switch the hold method under a running target
+            self.smooth_mode, self.sm_store = words[1] == 'ON', 'UNSAVED'
+            self._print('OK: SM %s (steering stopped; SM SAVE keeps it)' % words[1])
+            self._print_sm()
+        elif len(words) == 2 and words[1] == 'SAVE':
+            self.sm_saved, self.sm_store = (self.smooth_mode, dict(self.sm)), 'NVS'
+            self._print('OK: SM SAVED (NVS)')
+            self._print_sm()
+        elif len(words) == 2 and words[1] == 'DEFAULT':
+            self.stop_motor(0)
+            self.sm_saved, self.sm, self.smooth_mode, self.sm_store = None, dict(SM_DEFAULTS), True, 'DEFAULT'
+            self._print('OK: SM DEFAULT (NVS cleared, steering stopped)')
+            self._print_sm()
+        else:
+            self._print('SM ERROR: unknown SM command; ' + SM_HELP)
+
+    def _trace_command(self, words):
+        if words == ['TRACE', 'OFF']:
+            self.trace_until = None
+            self._print('OK: TRACE OFF')
+        elif words[:2] == ['TRACE', 'ON'] and len(words) <= 3:
+            ms = int(words[2]) if len(words) == 3 and words[2].isdigit() else 5000
+            if not 100 <= ms <= 30000:
+                self._print('ERROR: TRACE ON 100..30000')
+                return
+            self.trace_until, self.trace_last = self.ms + ms, self.ms - 10
+            self._print('OK: TRACE ON %d MS (DATA,ms,raw,filtered,steer_on,age_ms,steer_pwm,target)' % ms)
+        else:
+            self._print('ERROR: TRACE ON [ms] / TRACE OFF')
 
     # ---- views for the tests ---------------------------------------------------------------------------------------
     def drive(self):

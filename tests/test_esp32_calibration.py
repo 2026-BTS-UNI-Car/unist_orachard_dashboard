@@ -80,14 +80,29 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(esp.parse_line('Calibration: CAL / CAL CENTER')[0], 'help')
 
     def test_hard_guards_match_the_firmware(self):
+        # fallback guards (no GUARD on the CAL line): RIGHT >= 1300, LEFT <= 2600; CENTER 1850..2150 (SMOOTH r2)
         self.assertIsNone(esp.cal_problem(1681, 1900, 2180))
-        self.assertIsNone(esp.cal_problem(1300, 1900, 2500))
+        self.assertIsNone(esp.cal_problem(1300, 1900, 2600))
+        self.assertIsNone(esp.cal_problem(1475, 2029, 2513), 'the 2026-11-16 lifted-wheel values')
         self.assertEqual(esp.cal_problem(1299, 1900, 2180), 'calibration_right_below_guard')
-        self.assertEqual(esp.cal_problem(1681, 1900, 2501), 'calibration_left_above_guard')
-        self.assertEqual(esp.cal_problem(1500, 1799, 2180), 'calibration_center_outside')
+        self.assertEqual(esp.cal_problem(1681, 1900, 2601), 'calibration_left_above_guard')
+        self.assertEqual(esp.cal_problem(1500, 1849, 2180), 'calibration_center_outside')
+        self.assertEqual(esp.cal_problem(1500, 2151, 2500), 'calibration_center_outside')
         self.assertEqual(esp.cal_problem(1751, 1900, 2180), 'calibration_right_span_small')
         self.assertEqual(esp.cal_problem(1681, 1900, 2049), 'calibration_left_span_small')
         self.assertEqual(esp.cal_problem(1681.0, 1900, 2180), 'calibration_value_invalid')
+        # the CAL line's guards (the CAL_RUNTIME firmware before SMOOTH says GUARD=1300..2500)
+        self.assertEqual(esp.cal_problem(1681, 1900, 2501, 1300, 2500), 'calibration_left_above_guard')
+        self.assertIsNone(esp.cal_problem(1681, 1900, 2500, 1300, 2500))
+
+    def test_guards_come_from_the_cal_line(self):
+        rig = CalRig()
+        rig.ready()
+        self.assertEqual(rig.motor.cal_guards(), (1300, 2500), 'old CAL_RUNTIME firmware: GUARD=1300..2500')
+        guards = rig.bridge.snapshot['calibration']['guards']
+        self.assertEqual((guards['left_max'], guards['source']), (2500, 'cal_line'))
+        rig.motor.cal = {'right': 1681, 'center': 1900, 'left': 2180, 'max_command': 20}   # a CAL line without GUARD
+        self.assertEqual(rig.motor.cal_guards(), (esp.CAL_HARD_RIGHT_MIN, esp.CAL_HARD_LEFT_MAX))
 
 
 class OldFirmwareTest(unittest.TestCase):

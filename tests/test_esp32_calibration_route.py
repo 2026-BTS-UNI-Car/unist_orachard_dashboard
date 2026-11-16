@@ -134,6 +134,11 @@ class CalibrateRouteTest(unittest.TestCase):
         self.assertEqual(reply['error'], 'calibration_nothing_found')
         self.assertEqual({k: self.stack.relayed[-1][k] for k in ('left_margin_counts', 'right_margin_counts')},
                          {'left_margin_counts': 40, 'right_margin_counts': 20})
+        # the optional CAL FIND pulse length passes too (this fake is the CAL_RUNTIME board without SMOOTH: refused)
+        status, reply = self.page.post('/api/rover/calibrate', {'action': 'find_left', 'pulse_ms': 60})
+        self.assertEqual(self.stack.relayed[-1]['pulse_ms'], 60)
+        self.assertEqual(reply['error'], 'calibration_pulse_needs_firmware_update')
+        self.assertEqual(self.stack.fake.drive_on_ms, 0)
 
     def test_status_route_carries_the_calibration_block(self):
         status, snap = self.page.get_json('/api/rover/status')

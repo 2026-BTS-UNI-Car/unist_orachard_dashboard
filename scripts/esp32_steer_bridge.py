@@ -11,13 +11,17 @@ The ownership and timing rules are SteerControl / RoverControl (scripts/steer_co
 one-use ticket, seq + 1, deadman, input deadline 0.75 s, ticket 1.5 s, idle owner 30 s, no automatic re-arm.
 
 Mapping to the firmware (esp32_abs_hold.Esp32SteerMotor):
-  steer_mrad (left +)  -> 'ANGLE -deg' (the firmware's + is RIGHT), rounded to 1 command degree, at most every 0.5 s
+  steer_mrad (left +)  -> 'ANGLE -deg' (the firmware's + is RIGHT), rounded to 1 command degree, at most every 0.5 s,
+                          staged by counts; on the SMOOTH=1 firmware rounded to 0.25 degree, at most every 0.2 s,
+                          never staged (scripts/esp32_abs_hold.py, 'Smooth hold')
   throttle             -> '2 F/R pwm' + '3 F/R pwm' (pwm = (|t| * 255 + 50) // 100, host cap), or '2 S' / '3 S'
   stop / disarm / input expiry / lease loss / shutdown / serial error / MCU reset -> 'STOP' (all three motors)
   calibrate {action: find_left | find_right | set_center | apply | default | read, left_margin_counts?,
-             right_margin_counts? (int 10..120, default 30)} -> only disarmed, no lease, not moving; STOP, then the
-             firmware's CAL lines (needs the FW token CAL_RUNTIME=1, else 'calibration_needs_firmware_update');
-             progress and results in status 'calibration' (and so in the status file)
+             right_margin_counts? (int 10..120, default 30), pulse_ms? (find_left / find_right only, int 40..100,
+             SMOOTH firmware: 'CAL FIND LEFT 60'; default the firmware's 100 ms)}
+             -> only disarmed, no lease, not moving; STOP, then the firmware's CAL lines (needs the FW token
+             CAL_RUNTIME=1, else 'calibration_needs_firmware_update'); progress and results in status
+             'calibration' (and so in the status file)
 The firmware has no drive timeout, so the host owns it: the drive runs only inside the drive TTL, every stop is
 written again until acknowledged and zero is refreshed every second. SIGTERM, SIGINT, SIGHUP and atexit send STOP
 before the port closes. If this process is killed (SIGKILL) or hangs while the board stays powered, the last drive
@@ -29,7 +33,8 @@ Environment (defaults in brackets): ROVER_SERIAL_PORT [/dev/ubts-motor], ROVER_E
 ROVER_CONTROL_SOCKET [/run/ubts-rover/control.sock], ROVER_BRIDGE_STATUS_FILE, ROVER_ESP32_LEFT_FORWARD [F],
 ROVER_ESP32_RIGHT_FORWARD [F], ROVER_ESP32_DIRECTION_VERIFIED [0], ROVER_ESP32_MAX_DRIVE_PWM [255],
 ROVER_ESP32_DRIVE_TTL_S [0.75], ROVER_ESP32_STATUS_PERIOD_S [0.1], ROVER_ESP32_ANGLE_MIN_INTERVAL_S [0.5],
-ROVER_ESP32_ANGLE_QUANTUM_DEG [1.0]. Run from the dashboard root: python3 -m scripts.esp32_steer_bridge --help
+ROVER_ESP32_ANGLE_QUANTUM_DEG [1.0] (the last two for the pulse hold; the SMOOTH=1 firmware uses 0.2 s and 0.25 deg).
+Run from the dashboard root: python3 -m scripts.esp32_steer_bridge --help
 """
 import argparse
 import atexit
@@ -154,8 +159,8 @@ class Esp32Bridge:
         return None
 
     def _calibrate(self, request):
-        """op calibrate {action, left_margin_counts?, right_margin_counts?}: only disarmed, without a lease and not
-        moving. The motor adapter sends STOP first and then only CAL lines (never a motor 2/3 line)."""
+        """op calibrate {action, left_margin_counts?, right_margin_counts?, pulse_ms?}: only disarmed, without a lease
+        and not moving. The motor adapter sends STOP first and then only CAL lines (never a motor 2/3 line)."""
         self.control.tick()
         owner = request.get('owner')
         if not isinstance(owner, str) or not owner:
@@ -167,7 +172,7 @@ class Esp32Bridge:
         if refusal:
             return {'ok': False, 'error': refusal}
         margins = {}
-        for key in ('left_margin_counts', 'right_margin_counts'):
+        for key in ('left_margin_counts', 'right_margin_counts', 'pulse_ms'):
             if key in request:
                 margins[key] = request[key]
         result = self.motor.start_calibration(action, **margins)   # the owner (a session) is never stored

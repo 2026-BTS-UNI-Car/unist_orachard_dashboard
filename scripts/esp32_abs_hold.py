@@ -8,7 +8,8 @@ Firmware facts the host has to respect (read from the source, not measured on th
   * The drive motors 2 and 3 have NO timeout. '2 F 100' runs until STOP, '2 S', '2 F 0', a new command or a reset.
   * Manual steering ('1 F n') stops after 1000 ms. An ANGLE hold runs until STOP, manual steering or a hold fault;
     one target has a 1000 ms correction-drive budget. A new target first waits a 300 ms quiet settle, so targets that
-    change faster than about every 0.4 s never move the wheels (see ANGLE_MIN_INTERVAL_S).
+    change faster than about every 0.4 s never move the wheels (see ANGLE_MIN_INTERVAL_S). This is the pulse hold;
+    the SMOOTH=1 firmware (below) holds differently.
   * Opening the USB port reset the board once (2026-11-16, one observation); the setup banner (FW, CAL, STATUS,
     READY and three help lines) follows a reset and a reset clears every output.
 
@@ -36,6 +37,18 @@ status_extra()['calibration']. 'apply' sets the found ends moved CAL_MARGIN_DEFA
 the CAL line; then ANGLE +-20 is the calibrated near-maximum position. A firmware without CAL_RUNTIME gets nothing
 ('calibration_needs_firmware_update'). ANGLE targets are staged by counts (STAGE_MAX_COUNTS) so that one target never
 needs more than the firmware's 1000 ms correction budget when the calibration is wider than the defaults.
+
+Smooth hold (2026-11-16 evening, FW token SMOOTH=1; runs/steer_smooth_20261116): the ANGLE hold drives the steering
+motor continuously with a PWM ramp and coasts or brakes within STOP_TOL counts. There is no 1000 ms budget per target
+and no 300 ms settle before a new target, and a new target in the running direction is taken over without stopping
+(its own limits: STALL, RUN TIME LIMIT, NO CONVERGENCE, each 'no force retry'). With SMOOTH=1 the host writes a
+target at most every ANGLE_MIN_INTERVAL_SMOOTH_S, rounded to ANGLE_QUANTUM_SMOOTH_DEG (two decimals), and never stages
+it (one target may span the whole range): the count staging and the 0.5 s pacing above made the motion stop-and-go, and
+an A/D key (the full-limit target) is one continuous run of the firmware. SMOOTH=0 (the firmware's
+'SM OFF') or no token keeps the pulse-hold rules exactly. The SM line (mode, parameters, store) is parsed into
+steering.smooth; the bridge never sends SM SET / SM ON|OFF / SM SAVE / TRACE (it asks 'SM' once to read the line when
+the board did not print it). The right/left hard guards come from the CAL line (GUARD=lo..hi); CAL FIND LEFT|RIGHT
+takes an optional pulse length (40..100 ms) on this firmware.
 No ROS, socket or thread code here; the clock is injected.
 """
 import math
@@ -74,20 +87,33 @@ MAX_LINE_BYTES = 8192
 # One ANGLE target moves at most this many potentiometer counts [proposal]: the developer's verification moved 280
 # counts (0 -> LEFT 20 at the default marks) in one target without a budget cancel; a wider calibration is staged.
 STAGE_MAX_COUNTS = 280
+# SMOOTH=1 firmware (FW token; 'SM OFF' prints SMOOTH=0 and brings the pulse hold back): no budget, no settle before a
+# new target and a same-direction target taken over while running, so targets go faster, finer and unstaged [proposal].
+ANGLE_MIN_INTERVAL_SMOOTH_S = 0.2
+# 0.25 command deg = about 6-7 pot counts at the 2026-11-16 marks (1475/2029/2513); the smooth hold stops within
+# STOP_TOL 6 counts and restarts a reached target only above RESTART_TOL 16. Written with two decimals.
+ANGLE_QUANTUM_SMOOTH_DEG = 0.25
 
-# Runtime calibration (firmware CAL_RUNTIME=1). The hard guards are the firmware's; the host checks them too.
+# Runtime calibration (firmware CAL_RUNTIME=1). The firmware checks its own hard guards and refuses a value outside them
+# (CAL ERROR -> calibration_refused); the host checks the same before 'apply', so it never sends what would be refused.
 CAL_DEFAULTS = {'right': 1681, 'center': 1900, 'left': 2180}
-CAL_HARD_RIGHT_MIN, CAL_HARD_LEFT_MAX = 1300, 2500
-CAL_CENTER_MIN, CAL_CENTER_MAX, CAL_MIN_SPAN = 1800, 2000, 150
+# Right/left hard guards: from the CAL line 'GUARD=lo..hi' when present (CAL_RUNTIME firmware 1300..2500, SMOOTH
+# firmware 1300..2600); these are the fallback for a CAL line without it.
+CAL_HARD_RIGHT_MIN, CAL_HARD_LEFT_MAX = 1300, 2600
+# CENTER range (not on the CAL line): 1850..2150 of the SMOOTH firmware r2 (2026-11-16, straight ahead read about 2029
+# on the lifted vehicle). The older CAL_RUNTIME firmware and SMOOTH r1 had 1800..2000; they refuse a centre above 2000
+# themselves, and the host refuses 1800..1849 that they would accept.
+CAL_CENTER_MIN, CAL_CENTER_MAX, CAL_MIN_SPAN = 1850, 2150, 150
 CAL_MARGIN_DEFAULT = 30           # counts inward of a found end (battery voltage and load headroom) [proposal]
 CAL_MARGIN_RANGE = (10, 120)
 CAL_USABLE_REASONS = ('REBOUND', 'NO_PROGRESS')   # the scan stopped at a stop; other endings are not applied
 CAL_MIN_TRAVEL = 20               # a found end must lie this far outward of where its scan started
 CAL_ACTIONS = ('find_left', 'find_right', 'set_center', 'apply', 'default', 'read')
+CAL_FIND_PULSE_RANGE = (40, 100)  # 'CAL FIND LEFT 60' (SMOOTH firmware); without pulse_ms the firmware's 100 ms
 CAL_STOP_WAIT_S = 1.0             # the STOP before a job is acknowledged within this
 CAL_REPLY_S = 2.5                 # a CAL command answers within this (CAL CENTER measures for 650 ms)
 CAL_FIND_SILENCE_S = 3.0          # during a scan the firmware prints a line at least every ~0.75 s (first after ~1.4 s)
-CAL_FIND_TOTAL_S = 50.0           # the firmware ends a scan within 40 s
+CAL_FIND_TOTAL_S = 60.0           # the firmware ends a scan within 40 s (CAL_RUNTIME) or 50 s (SMOOTH: 60 pulses)
 CAL_SAMPLES_KEEP = 48
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -99,6 +125,10 @@ _RE = {
     'cal': re.compile(r'^CAL: RIGHT=(-?\d+) CENTER=(-?\d+) LEFT=(-?\d+) MAX_COMMAND=(\d+)'
                       r'(?: STORE=([A-Z]+))?(?: GUARD=(\d+)\.\.(\d+))?'),
     'cal_runtime': re.compile(r'(?:^|\s)CAL_RUNTIME=1(?:\s|$)'),
+    'smooth': re.compile(r'(?:^|\s)SMOOTH=([01])(?:\s|$)'),
+    'sm': re.compile(r'^SM: MODE=([A-Z]+)((?:\s+[A-Z_]+=\S+)*)\s*$'),
+    'sm_pair': re.compile(r'([A-Z_]+)=(\S+)'),
+    'data': re.compile(r'^DATA,(\d+),(-?\d+),(-?\d+),(-?\d+),(\d+),(-?\d+),(-?\d+)\s*$'),
     'cal_find_start': re.compile(r'^CAL FIND START: SIDE=(LEFT|RIGHT) POT=(-?\d+)'),
     'cal_sample': re.compile(r'^CAL SAMPLE: SIDE=(LEFT|RIGHT) N=(\d+) BEFORE=(-?\d+) PEAK=(-?\d+) SETTLED=(-?\d+) '
                              r'PROGRESS=(-?\d+) REBOUND=(-?\d+) DRIVE_MS=(\d+)'),
@@ -123,6 +153,13 @@ def parse_line(text):
     line = text.strip()
     if not line:
         return 'empty', {}
+    if line.startswith('DATA,'):
+        # TRACE output of the SMOOTH firmware (every 10 ms while TRACE ON; the bridge never sends TRACE)
+        m = _RE['data'].match(line)
+        if m:
+            return 'data', dict(ms=int(m[1]), raw=int(m[2]), filtered=int(m[3]), steer_on=int(m[4]),
+                                age_ms=int(m[5]), steer_pwm=int(m[6]), target=int(m[7]))
+        return 'data', dict(text=line)
     m = _RE['status'].match(line)
     if m:
         return 'status', dict(pot=int(m[1]), command_equiv=float(m[2]), hold=m[3] == 'ON', target_pot=int(m[4]),
@@ -143,8 +180,10 @@ def parse_line(text):
     m = _RE['fw'].match(line)
     if m:
         wd = _RE['drive_wd'].search(m[2])
+        smooth = _RE['smooth'].search(m[2])
         return 'fw', dict(name=m[1], detail=m[2].strip(), drive_wd_ms=int(wd[1]) if wd else None,
-                          cal_runtime=bool(_RE['cal_runtime'].search(m[2])))
+                          cal_runtime=bool(_RE['cal_runtime'].search(m[2])),
+                          smooth=None if smooth is None else smooth[1] == '1')
     m = _RE['drive_watchdog'].match(line)
     if m:
         return 'drive_watchdog', dict(ms=int(m[1]))
@@ -174,6 +213,24 @@ def parse_line(text):
             return 'cal_warning', dict(text=line[len('CAL WARNING:'):].strip())
     if line.startswith('OK: CAL '):
         return 'ok_cal', dict(text=line[len('OK: CAL '):].strip())
+    if line.startswith('SM'):
+        m = _RE['sm'].match(line)
+        if m:
+            params, store = {}, None
+            for name, value in _RE['sm_pair'].findall(m[2]):
+                if name == 'STORE':
+                    store = value
+                elif re.fullmatch(r'-?\d+', value):
+                    params[name] = int(value)
+            return 'sm', dict(mode=m[1], params=params, store=store)
+        if line.startswith('SM ERROR:'):
+            return 'sm_error', dict(text=line[len('SM ERROR:'):].strip())
+        if line.startswith('SM WARNING:'):
+            return 'sm_warning', dict(text=line[len('SM WARNING:'):].strip())
+    if line.startswith('OK: SM '):
+        return 'ok_sm', dict(text=line[len('OK: SM '):].strip())
+    if line.startswith('OK: TRACE'):
+        return 'ok_trace', dict(text=line[len('OK: TRACE'):].strip())
     if line.startswith('READY:'):
         return 'ready', dict(text=line)
     m = _RE['quiet'].match(line)
@@ -197,7 +254,7 @@ def parse_line(text):
         return 'pot_invalid', {}
     if line.startswith('ERROR:'):
         return 'error', dict(text=line[len('ERROR:'):].strip())
-    if line.startswith(('Commands:', 'Angles:', 'Absolute:', 'Calibration:', 'Drive watchdog:')):
+    if line.startswith(('Commands:', 'Angles:', 'Absolute:', 'Calibration:', 'Drive watchdog:', 'Smooth:')):
         return 'help', dict(text=line)
     if line.startswith(_BOOT_ROM):
         return 'boot_rom', dict(text=line)
@@ -209,17 +266,23 @@ def parse_line(text):
 
 STOP_LINE = b'STOP\n'
 STATUS_LINE = b'STATUS\n'
+SM_LINE = b'SM\n'                 # read only: the SMOOTH firmware prints its SM line
+SM_QUERY_DELAY_S = 0.5            # after the link is confirmed (the banner's own SM line comes first)
 HEARTBEAT_LINE = b'HB\n'          # only for a firmware whose FW line says DRIVE_WD=<ms> (the watchdog proposal)
 
 
-def angle_line(command_deg):
-    """ANGLE line for an absolute target in command degrees (+ = RIGHT, the firmware's sign), clamped to +-20."""
+def angle_line(command_deg, decimals=1):
+    """ANGLE line for an absolute target in command degrees (+ = RIGHT, the firmware's sign), clamped to +-20.
+    decimals: 1 ('ANGLE -12.0'), or 2 for the SMOOTH firmware's 0.25-degree targets ('ANGLE -12.25'; the firmware
+    reads the number with sscanf %f)."""
     if not isinstance(command_deg, (int, float)) or not math.isfinite(command_deg):
         raise ValueError('angle must be a finite number')
-    value = round(max(-COMMAND_LIMIT_DEG, min(COMMAND_LIMIT_DEG, float(command_deg))), 1)
+    if decimals not in (1, 2):
+        raise ValueError('decimals must be 1 or 2')
+    value = round(max(-COMMAND_LIMIT_DEG, min(COMMAND_LIMIT_DEG, float(command_deg))), decimals)
     if value == 0:
         value = 0.0                   # never '-0.0'
-    return ('ANGLE %+.1f\n' % value).encode('ascii')
+    return (('ANGLE %+.' + str(decimals) + 'f\n') % value).encode('ascii')
 
 
 def drive_line(motor, direction, pwm):
@@ -235,13 +298,14 @@ def drive_line(motor, direction, pwm):
     return ('%d %s %d\n' % (motor, direction, pwm)).encode('ascii')
 
 
-def cal_problem(right, center, left):
-    """None when the three CAL marks pass the firmware's hard guards (calProblem), else the reason code."""
+def cal_problem(right, center, left, guard_right=CAL_HARD_RIGHT_MIN, guard_left=CAL_HARD_LEFT_MAX):
+    """None when the three CAL marks pass the firmware's hard guards (calProblem), else the reason code. guard_right /
+    guard_left: the CAL line's GUARD=lo..hi (Esp32SteerMotor.cal_guards())."""
     if not all(type(v) is int for v in (right, center, left)):
         return 'calibration_value_invalid'
-    if right < CAL_HARD_RIGHT_MIN:
+    if right < guard_right:
         return 'calibration_right_below_guard'
-    if left > CAL_HARD_LEFT_MAX:
+    if left > guard_left:
         return 'calibration_left_above_guard'
     if not CAL_CENTER_MIN <= center <= CAL_CENTER_MAX:
         return 'calibration_center_outside'
@@ -257,6 +321,18 @@ def cal_set_line(side, value):
     if side not in ('right', 'center', 'left') or type(value) is not int:
         raise ValueError('calibration mark')
     return ('CAL SET %s %d\n' % (side.upper(), value)).encode('ascii')
+
+
+def cal_find_line(side, pulse_ms=None):
+    """'CAL FIND LEFT' (the firmware's 100 ms pulses) or 'CAL FIND LEFT 60' (SMOOTH firmware, 40..100 ms)."""
+    if side not in ('left', 'right'):
+        raise ValueError('calibration side')
+    if pulse_ms is None:
+        return ('CAL FIND %s\n' % side.upper()).encode('ascii')
+    lo, hi = CAL_FIND_PULSE_RANGE
+    if type(pulse_ms) is not int or not lo <= pulse_ms <= hi:
+        raise ValueError('calibration pulse')
+    return ('CAL FIND %s %d\n' % (side.upper(), pulse_ms)).encode('ascii')
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -453,6 +529,11 @@ class Esp32SteerMotor:
         self.cal_samples = []           # CAL SAMPLE lines of the current / last scan
         self.cal_jobs = 0
         self.cal_ended_at = None        # end of the last job: STATUS restarts, its age counts from here
+        # smooth hold (FW line SMOOTH=1 / SMOOTH=0; None: no token, an older firmware with the pulse hold only)
+        self.smooth = None
+        self.sm = None                  # last SM line {'mode', 'params', 'store', 'at'}
+        self.sm_reply = None            # last 'OK: SM' / 'SM ERROR' / 'SM WARNING' (time, kind, text)
+        self.sm_asked = False           # 'SM' written once on this link (only when no SM line came with the banner)
         # steering state from the firmware
         self.status = None
         self.status_at = None
@@ -489,7 +570,7 @@ class Esp32SteerMotor:
         self.stop_reason = None
         self.error = None
         self.counts = dict(lines=0, status=0, writes=0, write_errors=0, read_errors=0, opens=0, open_errors=0,
-                           ack_resends=0, zero_refresh=0, unknown_lines=0, errors=0)
+                           ack_resends=0, zero_refresh=0, unknown_lines=0, errors=0, data_lines=0)
         self.enabled = False
         self.last_open_error = None
 
@@ -600,7 +681,7 @@ class Esp32SteerMotor:
             direction = fwd if throttle >= 0 else ('R' if fwd == 'F' else 'F')
             self.desired[motor] = (direction, pwm if throttle else 0)
         self.drive_until = now + self.drive_ttl_s if throttle else 0.0
-        self.angle_req = quantize_command(mrad_to_command_deg(steer_mrad), self.angle_quantum_deg)
+        self.angle_req = quantize_command(mrad_to_command_deg(steer_mrad), self.angle_quantum())
         self.angle_requests += 1
         self._guarded(now, self._service_drive, now)
         self._guarded(now, self._service_angle, now)
@@ -645,6 +726,7 @@ class Esp32SteerMotor:
                     if self.link == 'ready':
                         self._service_angle(now)
                         self._service_status(now)
+                        self._service_sm_query(now)
             if self.link == 'ready' and self.status_at is not None and self._status_stale(now):
                 self._request_stop('steering_status_stale')
         except OSError as exc:
@@ -680,6 +762,9 @@ class Esp32SteerMotor:
         self.boot_banner = False
         self.ready_once = False
         self.firmware = None
+        self.smooth = None              # until this link's FW line says otherwise: the pulse-hold rules
+        self.sm = self.sm_reply = None
+        self.sm_asked = False
         self.status = None
         self.status_at = None
         self.pot_invalid = False
@@ -778,10 +863,19 @@ class Esp32SteerMotor:
                 if self.link == 'confirming':
                     self._reconfirm(now)       # a late setup banner: ask again after it
             return
+        if kind == 'data':
+            self.counts['data_lines'] += 1      # TRACE output (not from this bridge): counted, otherwise ignored
+            return
         if kind == 'fw':
             self.firmware, self.firmware_detail = f['name'], f['detail']
             self.drive_wd_ms = f['drive_wd_ms']
             self.cal_runtime = bool(f.get('cal_runtime'))
+            smooth = f.get('smooth')
+            if smooth != self.smooth:
+                if self.firmware == FIRMWARE_NAME and self.link == 'ready':
+                    self._event(now, 'smooth', 'SMOOTH=%s' % ('-' if smooth is None else int(smooth)))
+                self.angle_stage = None           # the staging rule follows the hold method
+                self.smooth = smooth
             if f['name'] != FIRMWARE_NAME:
                 if self.link != 'firmware_mismatch':
                     self._event(now, 'firmware_mismatch', text)
@@ -794,6 +888,13 @@ class Esp32SteerMotor:
             return
         if kind in ('ok_cal', 'cal_error', 'cal_warning', 'cal_find_start', 'cal_sample', 'cal_found'):
             self._cal_reply(now, kind, f)
+            return
+        if kind == 'sm':
+            self.sm = dict(f, at=now)
+            return
+        if kind in ('ok_sm', 'sm_error', 'sm_warning', 'ok_trace'):
+            self.sm_reply = (now, kind, f['text'])
+            self._event(now, kind, f['text'])
             return
         if kind == 'status':
             self.status = dict(f, at=now)
@@ -974,24 +1075,25 @@ class Esp32SteerMotor:
         status = self.status or {}
         measured = None if status.get('invalid') else status.get('command_equiv')
         max_jump = self.max_jump_deg()
+        staged = not self.smooth                  # SMOOTH=1: one target may span the whole range
         if self.angle_stage is not None:
             # On the way to an intermediate target: wait until it is reached unless the request no longer needs it.
             travelling = bool(status.get('hold')) and measured is not None and \
                 abs(measured - self.angle_stage) > STAGE_REACHED_DEG
             same_way = measured is not None and abs(req - measured) > max_jump and \
                 (req - measured) * (self.angle_stage - measured) > 0
-            if travelling and same_way:
+            if staged and travelling and same_way:
                 return
             self.angle_stage = None
         goal = req
-        if measured is not None and abs(req - measured) > max_jump:
+        if staged and measured is not None and abs(req - measured) > max_jump:
             # One target moves at most max_jump from the measured angle: a full left-right swing (or one 20-degree
             # target over a wide calibration) would outrun the firmware's 1000 ms correction budget of one target and
             # be cancelled half way.
-            goal = quantize_command(measured + math.copysign(max_jump, req - measured), self.angle_quantum_deg)
+            goal = quantize_command(measured + math.copysign(max_jump, req - measured), self.angle_quantum())
         if self.angle_sent is not None and goal == self.angle_sent:
             return
-        if self.angle_sent_at is not None and now - self.angle_sent_at < self.angle_min_interval_s:
+        if self.angle_sent_at is not None and now - self.angle_sent_at < self.angle_interval_s():
             return                                # the newest target goes when the interval is over
         if self.angle_sent is None and self.angle_sent_at is None and not status.get('hold') \
                 and measured is not None and abs(goal - measured) <= ANGLE_SKIP_DEG:
@@ -999,7 +1101,7 @@ class Esp32SteerMotor:
             self.angle_sent = goal
             self.angle_skipped += 1
             return
-        self._write(angle_line(goal))
+        self._write(angle_line(goal, 2 if self.smooth else 1))
         self.angle_sent = goal
         self.angle_sent_at = now
         self.angle_stage = goal if goal != req else None
@@ -1013,10 +1115,29 @@ class Esp32SteerMotor:
             self._write(STATUS_LINE)
             self.status_sent_at = now
 
+    def _service_sm_query(self, now):
+        """'SM' (read only: the firmware prints its SM line) once per link, on a SMOOTH firmware whose banner did not
+        bring the line (a board that did not reset on open). Never SM SET / ON / OFF / SAVE / DEFAULT or TRACE."""
+        if self.sm is None and self.smooth is not None and not self.sm_asked and \
+                now - self.link_since >= SM_QUERY_DELAY_S:
+            self.sm_asked = True
+            self._write(SM_LINE)
+
+    def angle_interval_s(self):
+        """Shortest time between two ANGLE writes: ANGLE_MIN_INTERVAL_SMOOTH_S on the SMOOTH=1 firmware, else the
+        configured angle_min_interval_s (the pulse hold's 300 ms settle per target)."""
+        return ANGLE_MIN_INTERVAL_SMOOTH_S if self.smooth else self.angle_min_interval_s
+
+    def angle_quantum(self):
+        return ANGLE_QUANTUM_SMOOTH_DEG if self.smooth else self.angle_quantum_deg
+
     def max_jump_deg(self):
-        """Largest move of one ANGLE target in command degrees: angle_max_jump_deg, narrowed only when STAGE_MAX_COUNTS
-        counts are fewer than 20 command degrees (a calibration wider than the default marks, whose wider side is
-        exactly 280 counts = 20 degrees, so the default marks keep the configured value)."""
+        """Largest move of one ANGLE target in command degrees. SMOOTH=1: the whole range (2 x 20, no staging). Else
+        angle_max_jump_deg, narrowed only when STAGE_MAX_COUNTS counts are fewer than 20 command degrees (a calibration
+        wider than the default marks, whose wider side is exactly 280 counts = 20 degrees, so the default marks keep the
+        configured value)."""
+        if self.smooth:
+            return 2 * COMMAND_LIMIT_DEG
         cal = self.cal or CAL_DEFAULTS
         span = max(cal['center'] - cal['right'], cal['left'] - cal['center'])
         if span <= 0:
@@ -1047,11 +1168,20 @@ class Esp32SteerMotor:
             return 'calibration_needs_standstill'
         return None
 
+    def cal_guards(self):
+        """(right_min, left_max): the hard guards of the CAL line (GUARD=lo..hi), else the fallback constants."""
+        cal = self.cal or {}
+        right, left = cal.get('guard_right'), cal.get('guard_left')
+        if type(right) is int and type(left) is int and right < left:
+            return right, left
+        return CAL_HARD_RIGHT_MIN, CAL_HARD_LEFT_MAX
+
     def cal_found_usable(self, found):
         if not found or found.get('reason') not in CAL_USABLE_REASONS:
             return False
         travel = found['pot'] - found['start'] if found['side'] == 'left' else found['start'] - found['pot']
-        guard_ok = CAL_HARD_RIGHT_MIN <= found['pot'] <= CAL_HARD_LEFT_MAX
+        right_min, left_max = self.cal_guards()
+        guard_ok = right_min <= found['pot'] <= left_max
         return travel >= CAL_MIN_TRAVEL and guard_ok
 
     def cal_proposal(self, left_margin=CAL_MARGIN_DEFAULT, right_margin=CAL_MARGIN_DEFAULT):
@@ -1065,22 +1195,30 @@ class Esp32SteerMotor:
                 new[side] = found['pot'] - margin if side == 'left' else found['pot'] + margin
                 sides.append(side)
         problem = None if sides else 'calibration_nothing_found'
-        return new, sides, problem or cal_problem(new['right'], new['center'], new['left'])
+        return new, sides, problem or cal_problem(new['right'], new['center'], new['left'], *self.cal_guards())
 
     def start_calibration(self, action, left_margin_counts=CAL_MARGIN_DEFAULT,
-                          right_margin_counts=CAL_MARGIN_DEFAULT):
+                          right_margin_counts=CAL_MARGIN_DEFAULT, pulse_ms=None):
         """Start one calibration action (CAL_ACTIONS); the bridge has checked armed / moving. STOP goes first.
-        Returns the answer for the control socket."""
+        pulse_ms (find_left / find_right only, int 40..100, SMOOTH firmware): 'CAL FIND LEFT 60'; None: the
+        firmware's 100 ms. Returns the answer for the control socket."""
         now = self.clock()
         if action not in CAL_ACTIONS:
             return {'ok': False, 'error': 'invalid_calibration_action'}
+        if pulse_ms is not None:
+            lo, hi = CAL_FIND_PULSE_RANGE
+            if action not in ('find_left', 'find_right') or type(pulse_ms) is not int or not lo <= pulse_ms <= hi:
+                return {'ok': False, 'error': 'calibration_pulse_invalid'}
         blocker = self.cal_blocker(now)
         if blocker:
             return {'ok': False, 'error': blocker}
+        if pulse_ms is not None and self.smooth is None:
+            # The CAL_RUNTIME firmware before SMOOTH knows only 'CAL FIND LEFT' (it would answer CAL ERROR).
+            return {'ok': False, 'error': 'calibration_pulse_needs_firmware_update'}
         steps, want = [], None
         if action in ('find_left', 'find_right'):
             side = action.split('_')[1]
-            steps = [(('CAL FIND %s\n' % side.upper()).encode('ascii'), 'found')]
+            steps = [(cal_find_line(side, pulse_ms), 'found')]
         elif action == 'set_center':
             steps = [(b'CAL CENTER\n', 'ok_cal'), (b'CAL SAVE\n', 'ok_cal')]
         elif action == 'default':
@@ -1104,6 +1242,7 @@ class Esp32SteerMotor:
             self.cal_job = {'action': action, 'id': self.cal_jobs, 'started': now, 'state': 'stopping',
                             'steps': steps, 'index': 0, 'sent_at': None, 'got_ok': False, 'want': want,
                             'margins': {'left': left_margin_counts, 'right': right_margin_counts},
+                            'pulse_ms': pulse_ms,
                             'cal_before': dict(self.cal) if self.cal else None, 'detail': None}
             if action in ('find_left', 'find_right'):
                 self.cal_samples = []
@@ -1224,6 +1363,8 @@ class Esp32SteerMotor:
             view['age_s'] = round(now - found['at'], 1)
             return view
         proposal, sides, problem = self.cal_proposal()
+        right_min, left_max = self.cal_guards()
+        guard_line = ((self.cal or {}).get('guard_right'), (self.cal or {}).get('guard_left'))
         status = self.status or {}
         last = None
         if self.cal_last:
@@ -1236,7 +1377,7 @@ class Esp32SteerMotor:
             'state': 'running' if job else 'idle',
             'job': None if job is None else {
                 'action': job['action'], 'id': job['id'], 'phase': job['state'], 'step': job.get('line'),
-                'elapsed_s': round(now - job['started'], 1)},
+                'pulse_ms': job.get('pulse_ms'), 'elapsed_s': round(now - job['started'], 1)},
             'last': last,
             'found': {side: found_view(self.cal_found.get(side)) for side in ('left', 'right')},
             'samples': [{k: s[k] for k in ('side', 'n', 'before', 'peak', 'settled', 'progress', 'rebound',
@@ -1247,11 +1388,15 @@ class Esp32SteerMotor:
             'proposal': {'marks': proposal, 'sides': sides, 'problem': problem,
                          'margin_counts': CAL_MARGIN_DEFAULT},
             'defaults': dict(CAL_DEFAULTS),
-            'guards': {'right_min': CAL_HARD_RIGHT_MIN, 'left_max': CAL_HARD_LEFT_MAX, 'center_min': CAL_CENTER_MIN,
-                       'center_max': CAL_CENTER_MAX, 'min_span': CAL_MIN_SPAN},
+            'guards': {'right_min': right_min, 'left_max': left_max, 'center_min': CAL_CENTER_MIN,
+                       'center_max': CAL_CENTER_MAX, 'min_span': CAL_MIN_SPAN,
+                       'source': 'cal_line' if (right_min, left_max) == guard_line else 'fallback'},
             'margin_range': list(CAL_MARGIN_RANGE),
             'default_margin_counts': CAL_MARGIN_DEFAULT,
             'max_jump_deg': round(self.max_jump_deg(), 2),
+            'smooth': self.smooth,
+            'find_pulse_ms': {'default': 100, 'range': list(CAL_FIND_PULSE_RANGE),
+                              'supported': self.smooth is not None},
             'scale': 'potentiometer counts; ANGLE +-20 = the CAL marks; physical wheel degrees unverified',
         }
 
@@ -1298,7 +1443,26 @@ class Esp32SteerMotor:
             'hold_remaining_ms': None, 'stop_mode': None,
             'cal': dict(self.cal) if self.cal else None,
             'last_event': list(self.steer_event[1:]) if self.steer_event else None,
+            'smooth': self.smooth_block(now),
             'scale': 'firmware command degrees (+-20 = CAL marks); physical wheel angle unverified',
+        }
+
+    def smooth_block(self, now=None):
+        """The hold method: FW token SMOOTH (True / False / None = no token) and the last SM line (mode, parameters,
+        store) with the last SM answer. Read only: the bridge never changes the SM parameters."""
+        now = self.clock() if now is None else now
+        sm = self.sm or {}
+        reply = None
+        if self.sm_reply is not None:
+            reply = {'kind': self.sm_reply[1], 'text': self.sm_reply[2], 'age_s': round(now - self.sm_reply[0], 1)}
+        return {
+            'firmware': self.smooth,
+            'mode': sm.get('mode'),
+            'params': dict(sm['params']) if sm.get('params') else None,
+            'store': sm.get('store'),
+            'age_s': round(now - sm['at'], 1) if 'at' in sm else None,
+            'last_reply': reply,
+            'data_lines': self.counts['data_lines'],
         }
 
     def status_extra(self, now=None):
@@ -1318,10 +1482,11 @@ class Esp32SteerMotor:
             'firmware_detail': self.firmware_detail,
             'steer_control': {
                 'kind': ESP_KIND, 'keys': 'full_limit', 'ramp': False, 'release': 'centre',
-                'command_limit_deg': COMMAND_LIMIT_DEG, 'angle_quantum_deg': self.angle_quantum_deg,
-                'angle_min_interval_ms': int(round(self.angle_min_interval_s * 1000)),
+                'command_limit_deg': COMMAND_LIMIT_DEG, 'angle_quantum_deg': self.angle_quantum(),
+                'angle_min_interval_ms': int(round(self.angle_interval_s() * 1000)),
                 'angle_max_jump_deg': round(self.max_jump_deg(), 2),
-                'stage_max_counts': STAGE_MAX_COUNTS,
+                'stage_max_counts': None if self.smooth else STAGE_MAX_COUNTS,
+                'smooth': self.smooth,
                 'sign': 'steer_mrad left +; firmware ANGLE right +',
             },
             'steering': self.steering_block(now),
