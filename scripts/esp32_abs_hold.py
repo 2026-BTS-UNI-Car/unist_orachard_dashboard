@@ -26,6 +26,16 @@ flock, TIOCEXCL) and Esp32SteerMotor, the motor adapter of SteerControl with the
     the firmware cancelled is not sent again until the requested target changes (no force retry, as the firmware).
 The residual risk: if this process dies (SIGKILL, power loss of the host, a hang) while a drive is running and the
 board stays powered over USB, the firmware keeps the last drive PWM. Only a firmware drive watchdog closes that gap.
+
+Runtime steering calibration (2026-11-16, firmware token CAL_RUNTIME=1 on the FW line; runs/steer_runtime_cal_20261116):
+the firmware keeps its CAL marks in NVS and answers CAL / CAL CENTER / CAL SET RIGHT|LEFT|CENTER n / CAL SAVE /
+CAL DEFAULT / CAL FIND LEFT|RIGHT (a gentle outward scan of the steering motor only, which any serial input aborts).
+start_calibration() runs one action as a job: STOP first, then the CAL lines one by one, while STATUS, the zero refresh
+and every motor 2/3 line pause (a STATUS line would abort a scan). The job, the samples and the found ends are in
+status_extra()['calibration']. 'apply' sets the found ends moved CAL_MARGIN_DEFAULT counts inward, saves them and reloads
+the CAL line; then ANGLE +-20 is the calibrated near-maximum position. A firmware without CAL_RUNTIME gets nothing
+('calibration_needs_firmware_update'). ANGLE targets are staged by counts (STAGE_MAX_COUNTS) so that one target never
+needs more than the firmware's 1000 ms correction budget when the calibration is wider than the defaults.
 No ROS, socket or thread code here; the clock is injected.
 """
 import math
@@ -61,6 +71,24 @@ DRIVE_TTL_S = 0.75                # = RoverControl.INPUT_TTL; never longer
 EVENT_KEEP_S = 30.0
 WRITE_DEADLINE_S = 0.1
 MAX_LINE_BYTES = 8192
+# One ANGLE target moves at most this many potentiometer counts [proposal]: the developer's verification moved 280
+# counts (0 -> LEFT 20 at the default marks) in one target without a budget cancel; a wider calibration is staged.
+STAGE_MAX_COUNTS = 280
+
+# Runtime calibration (firmware CAL_RUNTIME=1). The hard guards are the firmware's; the host checks them too.
+CAL_DEFAULTS = {'right': 1681, 'center': 1900, 'left': 2180}
+CAL_HARD_RIGHT_MIN, CAL_HARD_LEFT_MAX = 1300, 2500
+CAL_CENTER_MIN, CAL_CENTER_MAX, CAL_MIN_SPAN = 1800, 2000, 150
+CAL_MARGIN_DEFAULT = 30           # counts inward of a found end (battery voltage and load headroom) [proposal]
+CAL_MARGIN_RANGE = (10, 120)
+CAL_USABLE_REASONS = ('REBOUND', 'NO_PROGRESS')   # the scan stopped at a stop; other endings are not applied
+CAL_MIN_TRAVEL = 20               # a found end must lie this far outward of where its scan started
+CAL_ACTIONS = ('find_left', 'find_right', 'set_center', 'apply', 'default', 'read')
+CAL_STOP_WAIT_S = 1.0             # the STOP before a job is acknowledged within this
+CAL_REPLY_S = 2.5                 # a CAL command answers within this (CAL CENTER measures for 650 ms)
+CAL_FIND_SILENCE_S = 3.0          # during a scan the firmware prints a line at least every ~0.75 s (first after ~1.4 s)
+CAL_FIND_TOTAL_S = 50.0           # the firmware ends a scan within 40 s
+CAL_SAMPLES_KEEP = 48
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Lines from the firmware
@@ -68,7 +96,14 @@ MAX_LINE_BYTES = 8192
 _FLOAT = r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)'
 _RE = {
     'fw': re.compile(r'^FW: (\S+)(.*)$'),
-    'cal': re.compile(r'^CAL: RIGHT=(-?\d+) CENTER=(-?\d+) LEFT=(-?\d+) MAX_COMMAND=(\d+)'),
+    'cal': re.compile(r'^CAL: RIGHT=(-?\d+) CENTER=(-?\d+) LEFT=(-?\d+) MAX_COMMAND=(\d+)'
+                      r'(?: STORE=([A-Z]+))?(?: GUARD=(\d+)\.\.(\d+))?'),
+    'cal_runtime': re.compile(r'(?:^|\s)CAL_RUNTIME=1(?:\s|$)'),
+    'cal_find_start': re.compile(r'^CAL FIND START: SIDE=(LEFT|RIGHT) POT=(-?\d+)'),
+    'cal_sample': re.compile(r'^CAL SAMPLE: SIDE=(LEFT|RIGHT) N=(\d+) BEFORE=(-?\d+) PEAK=(-?\d+) SETTLED=(-?\d+) '
+                             r'PROGRESS=(-?\d+) REBOUND=(-?\d+) DRIVE_MS=(\d+)'),
+    'cal_found': re.compile(r'^CAL FOUND (LEFT|RIGHT) POT=(-?\d+) REASON=([A-Z_]+) START=(-?\d+) PULSES=(\d+) '
+                            r'DRIVE_MS=(\d+) TIME_MS=(\d+)'),
     'status': re.compile(r'^STATUS: POT=(-?\d+) COMMAND_EQUIV=(%s) HOLD=(ON|OFF) TARGET_POT=(-?\d+) '
                          r'TARGET_COMMAND=(%s)\s*$' % (_FLOAT, _FLOAT)),
     'status_invalid': re.compile(r'^STATUS: INVALID POT=(-?\d+)'),
@@ -108,13 +143,37 @@ def parse_line(text):
     m = _RE['fw'].match(line)
     if m:
         wd = _RE['drive_wd'].search(m[2])
-        return 'fw', dict(name=m[1], detail=m[2].strip(), drive_wd_ms=int(wd[1]) if wd else None)
+        return 'fw', dict(name=m[1], detail=m[2].strip(), drive_wd_ms=int(wd[1]) if wd else None,
+                          cal_runtime=bool(_RE['cal_runtime'].search(m[2])))
     m = _RE['drive_watchdog'].match(line)
     if m:
         return 'drive_watchdog', dict(ms=int(m[1]))
     m = _RE['cal'].match(line)
     if m:
-        return 'cal', dict(right=int(m[1]), center=int(m[2]), left=int(m[3]), max_command=int(m[4]))
+        cal = dict(right=int(m[1]), center=int(m[2]), left=int(m[3]), max_command=int(m[4]))
+        if m[5]:
+            cal['store'] = m[5]
+        if m[6]:
+            cal['guard_right'], cal['guard_left'] = int(m[6]), int(m[7])
+        return 'cal', cal
+    if line.startswith('CAL'):
+        m = _RE['cal_sample'].match(line)
+        if m:
+            return 'cal_sample', dict(side=m[1].lower(), n=int(m[2]), before=int(m[3]), peak=int(m[4]),
+                                      settled=int(m[5]), progress=int(m[6]), rebound=int(m[7]), drive_ms=int(m[8]))
+        m = _RE['cal_found'].match(line)
+        if m:
+            return 'cal_found', dict(side=m[1].lower(), pot=int(m[2]), reason=m[3], start=int(m[4]),
+                                     pulses=int(m[5]), drive_ms=int(m[6]), time_ms=int(m[7]))
+        m = _RE['cal_find_start'].match(line)
+        if m:
+            return 'cal_find_start', dict(side=m[1].lower(), pot=int(m[2]), text=line)
+        if line.startswith('CAL ERROR:'):
+            return 'cal_error', dict(text=line[len('CAL ERROR:'):].strip())
+        if line.startswith('CAL WARNING:'):
+            return 'cal_warning', dict(text=line[len('CAL WARNING:'):].strip())
+    if line.startswith('OK: CAL '):
+        return 'ok_cal', dict(text=line[len('OK: CAL '):].strip())
     if line.startswith('READY:'):
         return 'ready', dict(text=line)
     m = _RE['quiet'].match(line)
@@ -138,7 +197,7 @@ def parse_line(text):
         return 'pot_invalid', {}
     if line.startswith('ERROR:'):
         return 'error', dict(text=line[len('ERROR:'):].strip())
-    if line.startswith(('Commands:', 'Angles:', 'Absolute:')):
+    if line.startswith(('Commands:', 'Angles:', 'Absolute:', 'Calibration:', 'Drive watchdog:')):
         return 'help', dict(text=line)
     if line.startswith(_BOOT_ROM):
         return 'boot_rom', dict(text=line)
@@ -174,6 +233,30 @@ def drive_line(motor, direction, pwm):
     if direction not in ('F', 'R'):
         raise ValueError('direction must be F or R')
     return ('%d %s %d\n' % (motor, direction, pwm)).encode('ascii')
+
+
+def cal_problem(right, center, left):
+    """None when the three CAL marks pass the firmware's hard guards (calProblem), else the reason code."""
+    if not all(type(v) is int for v in (right, center, left)):
+        return 'calibration_value_invalid'
+    if right < CAL_HARD_RIGHT_MIN:
+        return 'calibration_right_below_guard'
+    if left > CAL_HARD_LEFT_MAX:
+        return 'calibration_left_above_guard'
+    if not CAL_CENTER_MIN <= center <= CAL_CENTER_MAX:
+        return 'calibration_center_outside'
+    if center - right < CAL_MIN_SPAN:
+        return 'calibration_right_span_small'
+    if left - center < CAL_MIN_SPAN:
+        return 'calibration_left_span_small'
+    return None
+
+
+def cal_set_line(side, value):
+    """'CAL SET LEFT 2290' for one mark (side right, center or left; the value is checked by the caller)."""
+    if side not in ('right', 'center', 'left') or type(value) is not int:
+        raise ValueError('calibration mark')
+    return ('CAL SET %s %d\n' % (side.upper(), value)).encode('ascii')
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -362,6 +445,14 @@ class Esp32SteerMotor:
         self.drive_wd_ms = None         # firmware drive watchdog (FW line DRIVE_WD=<ms>); None = no firmware timeout
         self.heartbeat_at = None
         self.cal = None
+        # runtime calibration (FW line CAL_RUNTIME=1)
+        self.cal_runtime = False
+        self.cal_job = None             # the running job (start_calibration), else None
+        self.cal_last = None            # summary of the last finished job
+        self.cal_found = {'left': None, 'right': None}
+        self.cal_samples = []           # CAL SAMPLE lines of the current / last scan
+        self.cal_jobs = 0
+        self.cal_ended_at = None        # end of the last job: STATUS restarts, its age counts from here
         # steering state from the firmware
         self.status = None
         self.status_at = None
@@ -415,7 +506,7 @@ class Esp32SteerMotor:
             return 'firmware_mismatch'
         if self.link != 'ready':
             return 'esp32_not_ready'
-        if self.status_at is None or now - self.status_at > STATUS_STALE_S:
+        if self._status_stale(now):
             return 'steering_status_stale'
         if self.pot_invalid:
             return 'pot_invalid'
@@ -445,7 +536,20 @@ class Esp32SteerMotor:
         direction, pwm = value
         return pwm if direction == self.forward[motor] else -pwm
 
+    def _status_stale(self, now):
+        """No fresh STATUS line. During a calibration job STATUS pauses on purpose: then the link counts as alive while
+        the firmware keeps printing (a scan prints at least every ~0.75 s); after the job the age counts from its end."""
+        if self.cal_job is not None:
+            last = self.last_rx if self.last_rx is not None else self.cal_job['started']
+            return now - max(last, self.cal_job['started']) > CAL_FIND_SILENCE_S
+        if self.status_at is None:
+            return True
+        ref = self.status_at if self.cal_ended_at is None else max(self.status_at, self.cal_ended_at)
+        return now - ref > STATUS_STALE_S
+
     def arm_blocker(self):
+        if self.cal_job is not None:
+            return 'calibrating'
         return self._not_ready()
 
     def clear_latches(self):
@@ -469,6 +573,9 @@ class Esp32SteerMotor:
         self.stop_state = 'pending'
         self.stop_requested_at = now
         self.stop_written_at = None
+        if self.cal_job is not None:
+            # Any stop ends a calibration job; the STOP line itself aborts a running scan in the firmware.
+            self._cal_finish(now, ok=False, error='calibration_stopped')
         self._guarded(now, self._write_stop, now)
 
     def release(self):
@@ -525,14 +632,20 @@ class Esp32SteerMotor:
             if self.link == 'closed':
                 return
             self._service_link(now)
+            if self.link != 'ready' and self.cal_job is not None:
+                self._cal_finish(now, ok=False, error='esp32_not_ready')
             if self.link in ('ready', 'confirming'):
                 # (a board with another firmware gets nothing more than the STOP written at open)
                 self._service_stop(now)
-                self._service_drive(now)
-                if self.link == 'ready':
-                    self._service_angle(now)
-                    self._service_status(now)
-            if self.link == 'ready' and self.status_at is not None and now - self.status_at > STATUS_STALE_S:
+                if self.cal_job is not None:
+                    # A calibration job: only its own CAL lines (no STATUS, no zero refresh, no motor 2/3 line).
+                    self._service_cal(now)
+                else:
+                    self._service_drive(now)
+                    if self.link == 'ready':
+                        self._service_angle(now)
+                        self._service_status(now)
+            if self.link == 'ready' and self.status_at is not None and self._status_stale(now):
                 self._request_stop('steering_status_stale')
         except OSError as exc:
             self._link_fault(now, exc)
@@ -584,6 +697,8 @@ class Esp32SteerMotor:
             self._link_fault(now, exc)
 
     def _close_transport(self, why):
+        if self.cal_job is not None:
+            self._cal_finish(self.clock(), ok=False, error='calibration_link_closed')
         try:
             self.transport.close()
         finally:
@@ -645,6 +760,12 @@ class Esp32SteerMotor:
         self.counts['lines'] += 1
         self.last_rx = now
         kind, f = parse_line(text)
+        if self.cal_job is not None and (kind in ('ready', 'boot_rom') or
+                                         (kind == 'fw' and self.cal_job['state'] == 'waiting')):
+            # No STATUS goes out during a job, and the answer of the last one came before the STOP acknowledgement
+            # the job waited for: an FW line or a banner now means the board reset. The job ends; the reset itself
+            # is handled below as always.
+            self._cal_finish(now, ok=False, error='calibration_interrupted')
         if kind in ('ready', 'boot_rom'):
             if self.ready_once and (kind == 'ready' or self.link == 'ready'):
                 # A reset after the link was confirmed: every output went off with it; the host must not continue.
@@ -660,6 +781,7 @@ class Esp32SteerMotor:
         if kind == 'fw':
             self.firmware, self.firmware_detail = f['name'], f['detail']
             self.drive_wd_ms = f['drive_wd_ms']
+            self.cal_runtime = bool(f.get('cal_runtime'))
             if f['name'] != FIRMWARE_NAME:
                 if self.link != 'firmware_mismatch':
                     self._event(now, 'firmware_mismatch', text)
@@ -668,6 +790,10 @@ class Esp32SteerMotor:
             return
         if kind == 'cal':
             self.cal = f
+            self._cal_reply(now, kind, f)
+            return
+        if kind in ('ok_cal', 'cal_error', 'cal_warning', 'cal_find_start', 'cal_sample', 'cal_found'):
+            self._cal_reply(now, kind, f)
             return
         if kind == 'status':
             self.status = dict(f, at=now)
@@ -718,6 +844,9 @@ class Esp32SteerMotor:
         if kind == 'error':
             self.counts['errors'] += 1
             self._event(now, 'error', f['text'])
+            if self.cal_job is not None and self.cal_job['state'] == 'waiting':
+                # the generic help answer: this firmware does not know the CAL command
+                self._cal_finish(now, ok=False, error='calibration_needs_firmware_update', detail=f['text'])
             return
         if kind == 'other':
             self.counts['unknown_lines'] += 1
@@ -844,21 +973,22 @@ class Esp32SteerMotor:
             self.angle_blocked = None
         status = self.status or {}
         measured = None if status.get('invalid') else status.get('command_equiv')
+        max_jump = self.max_jump_deg()
         if self.angle_stage is not None:
             # On the way to an intermediate target: wait until it is reached unless the request no longer needs it.
             travelling = bool(status.get('hold')) and measured is not None and \
                 abs(measured - self.angle_stage) > STAGE_REACHED_DEG
-            same_way = measured is not None and abs(req - measured) > self.angle_max_jump_deg and \
+            same_way = measured is not None and abs(req - measured) > max_jump and \
                 (req - measured) * (self.angle_stage - measured) > 0
             if travelling and same_way:
                 return
             self.angle_stage = None
         goal = req
-        if measured is not None and abs(req - measured) > self.angle_max_jump_deg:
-            # One target moves at most angle_max_jump_deg from the measured angle: a full left-right swing would
-            # outrun the firmware's 1000 ms correction budget of one target and be cancelled half way.
-            goal = quantize_command(measured + math.copysign(self.angle_max_jump_deg, req - measured),
-                                    self.angle_quantum_deg)
+        if measured is not None and abs(req - measured) > max_jump:
+            # One target moves at most max_jump from the measured angle: a full left-right swing (or one 20-degree
+            # target over a wide calibration) would outrun the firmware's 1000 ms correction budget of one target and
+            # be cancelled half way.
+            goal = quantize_command(measured + math.copysign(max_jump, req - measured), self.angle_quantum_deg)
         if self.angle_sent is not None and goal == self.angle_sent:
             return
         if self.angle_sent_at is not None and now - self.angle_sent_at < self.angle_min_interval_s:
@@ -883,6 +1013,247 @@ class Esp32SteerMotor:
             self._write(STATUS_LINE)
             self.status_sent_at = now
 
+    def max_jump_deg(self):
+        """Largest move of one ANGLE target in command degrees: angle_max_jump_deg, narrowed only when STAGE_MAX_COUNTS
+        counts are fewer than 20 command degrees (a calibration wider than the default marks, whose wider side is
+        exactly 280 counts = 20 degrees, so the default marks keep the configured value)."""
+        cal = self.cal or CAL_DEFAULTS
+        span = max(cal['center'] - cal['right'], cal['left'] - cal['center'])
+        if span <= 0:
+            return self.angle_max_jump_deg
+        by_counts = COMMAND_LIMIT_DEG * STAGE_MAX_COUNTS / span
+        if by_counts >= COMMAND_LIMIT_DEG:
+            return self.angle_max_jump_deg
+        return max(5.0, min(self.angle_max_jump_deg, by_counts))
+
+    # ---- runtime calibration ------------------------------------------------------------------------------------
+    @property
+    def cal_supported(self):
+        return self.firmware == FIRMWARE_NAME and self.cal_runtime
+
+    def cal_blocker(self, now=None):
+        """Why a calibration job cannot start now (the bridge adds armed / moving), or None."""
+        now = self.clock() if now is None else now
+        if self.cal_job is not None:
+            return 'calibration_busy'
+        not_ready = self._not_ready(now)
+        if not_ready in ('device_unavailable', 'firmware_mismatch', 'esp32_not_ready'):
+            return not_ready
+        if not self.cal_supported:
+            return 'calibration_needs_firmware_update'
+        if not_ready:
+            return not_ready
+        if any(self.desired[m][1] for m in DRIVE_MOTORS) or not self.stopped:
+            return 'calibration_needs_standstill'
+        return None
+
+    def cal_found_usable(self, found):
+        if not found or found.get('reason') not in CAL_USABLE_REASONS:
+            return False
+        travel = found['pot'] - found['start'] if found['side'] == 'left' else found['start'] - found['pot']
+        guard_ok = CAL_HARD_RIGHT_MIN <= found['pot'] <= CAL_HARD_LEFT_MAX
+        return travel >= CAL_MIN_TRAVEL and guard_ok
+
+    def cal_proposal(self, left_margin=CAL_MARGIN_DEFAULT, right_margin=CAL_MARGIN_DEFAULT):
+        """The marks 'apply' would set: each usable found end moved the margin inward; the other marks stay."""
+        base = self.cal or CAL_DEFAULTS
+        new = {'right': base['right'], 'center': base['center'], 'left': base['left']}
+        sides = []
+        for side, margin in (('left', left_margin), ('right', right_margin)):
+            found = self.cal_found.get(side)
+            if self.cal_found_usable(found):
+                new[side] = found['pot'] - margin if side == 'left' else found['pot'] + margin
+                sides.append(side)
+        problem = None if sides else 'calibration_nothing_found'
+        return new, sides, problem or cal_problem(new['right'], new['center'], new['left'])
+
+    def start_calibration(self, action, left_margin_counts=CAL_MARGIN_DEFAULT,
+                          right_margin_counts=CAL_MARGIN_DEFAULT):
+        """Start one calibration action (CAL_ACTIONS); the bridge has checked armed / moving. STOP goes first.
+        Returns the answer for the control socket."""
+        now = self.clock()
+        if action not in CAL_ACTIONS:
+            return {'ok': False, 'error': 'invalid_calibration_action'}
+        blocker = self.cal_blocker(now)
+        if blocker:
+            return {'ok': False, 'error': blocker}
+        steps, want = [], None
+        if action in ('find_left', 'find_right'):
+            side = action.split('_')[1]
+            steps = [(('CAL FIND %s\n' % side.upper()).encode('ascii'), 'found')]
+        elif action == 'set_center':
+            steps = [(b'CAL CENTER\n', 'ok_cal'), (b'CAL SAVE\n', 'ok_cal')]
+        elif action == 'default':
+            steps = [(b'CAL DEFAULT\n', 'ok_cal')]
+            want = dict(CAL_DEFAULTS)
+        elif action == 'read':
+            steps = [(b'CAL\n', 'cal')]
+        else:   # apply
+            lo, hi = CAL_MARGIN_RANGE
+            for value in (left_margin_counts, right_margin_counts):
+                if type(value) is not int or not lo <= value <= hi:
+                    return {'ok': False, 'error': 'calibration_margin_invalid'}
+            new, sides, problem = self.cal_proposal(left_margin_counts, right_margin_counts)
+            if problem:
+                return {'ok': False, 'error': problem, 'proposal': new}
+            steps = [(cal_set_line(side, new[side]), 'ok_cal') for side in sides] + [(b'CAL SAVE\n', 'ok_cal')]
+            want = new
+        self.hard_stop()                 # STOP first: every motor, any hold (and no job is running)
+        if self.cal_job is None and self.link == 'ready':
+            self.cal_jobs += 1
+            self.cal_job = {'action': action, 'id': self.cal_jobs, 'started': now, 'state': 'stopping',
+                            'steps': steps, 'index': 0, 'sent_at': None, 'got_ok': False, 'want': want,
+                            'margins': {'left': left_margin_counts, 'right': right_margin_counts},
+                            'cal_before': dict(self.cal) if self.cal else None, 'detail': None}
+            if action in ('find_left', 'find_right'):
+                self.cal_samples = []
+                self.cal_found[action.split('_')[1]] = None
+            self._event(now, 'calibration', 'start %s' % action)
+            return {'ok': True, 'state': 'calibration_started', 'action': action, 'job': self.cal_jobs}
+        return {'ok': False, 'error': 'esp32_not_ready'}
+
+    def _service_cal(self, now):
+        job = self.cal_job
+        if job['state'] == 'stopping':
+            if self.stop_state == 'confirmed':
+                job['state'] = 'next'
+            elif now - job['started'] > CAL_STOP_WAIT_S:
+                self._cal_finish(now, ok=False, error='calibration_stop_unconfirmed')
+                return
+            else:
+                return
+        if job['state'] == 'next':
+            if job['index'] >= len(job['steps']):
+                self._cal_complete(now)
+                return
+            line, expect = job['steps'][job['index']]
+            self._write(line)
+            job.update(state='waiting', sent_at=now, expect=expect, got_ok=False, line=line.decode('ascii').strip())
+            return
+        if job['state'] == 'waiting':
+            if job['expect'] == 'found':
+                last = max(self.last_rx or job['sent_at'], job['sent_at'])
+                if now - last > CAL_FIND_SILENCE_S or now - job['sent_at'] > CAL_FIND_TOTAL_S:
+                    # The scan went silent or overran: STOP (it aborts a scan) and end the job.
+                    error = 'calibration_silent' if now - last > CAL_FIND_SILENCE_S else 'calibration_timeout'
+                    self._cal_finish(now, ok=False, error=error)
+                    self.stop_state = 'pending'
+                    self.stop_requested_at = now
+                    self.stop_written_at = None
+                    self._write_stop(now)
+            elif now - job['sent_at'] > CAL_REPLY_S:
+                self._cal_finish(now, ok=False, error='calibration_no_answer', detail=job.get('line'))
+
+    def _cal_reply(self, now, kind, f):
+        """CAL lines from the firmware: progress of the running job, or a late line (e.g. after an aborted scan)."""
+        job = self.cal_job
+        if kind == 'cal_warning':
+            self._event(now, 'calibration', 'warning: %s' % f['text'])
+            return
+        if kind == 'cal_sample':
+            self.cal_samples.append(dict(f, at=now))
+            del self.cal_samples[:-CAL_SAMPLES_KEEP]
+            return
+        if kind == 'cal_found':
+            found = dict(f, at=now)
+            found['usable'] = self.cal_found_usable(found)
+            self.cal_found[f['side']] = found
+            self._event(now, 'calibration', 'found %s pot=%d reason=%s' % (f['side'], f['pot'], f['reason']))
+            if job is not None and job['state'] == 'waiting' and job['expect'] == 'found':
+                job['index'] += 1
+                job['state'] = 'next'
+                job['found'] = found
+            return
+        if job is None or job['state'] != 'waiting':
+            return
+        if kind == 'cal_find_start':
+            job['scan_started'] = now
+            return
+        if kind == 'cal_error':
+            self._cal_finish(now, ok=False, error='calibration_refused', detail=f['text'])
+            return
+        if kind == 'ok_cal' and job['expect'] == 'ok_cal':
+            job['got_ok'] = True
+            return
+        if kind == 'cal' and (job['expect'] == 'cal' or (job['expect'] == 'ok_cal' and job['got_ok'])):
+            job['index'] += 1
+            job['state'] = 'next'
+
+    def _cal_complete(self, now):
+        job = self.cal_job
+        want, cal = job.get('want'), self.cal or {}
+        if want is not None and any(cal.get(k) != want[k] for k in ('right', 'center', 'left')):
+            self._cal_finish(now, ok=False, error='calibration_readback_mismatch',
+                             detail='want %(right)d/%(center)d/%(left)d' % want)
+            return
+        if job['action'] in ('apply', 'set_center') and cal.get('store') != 'NVS':
+            self._cal_finish(now, ok=False, error='calibration_not_saved')
+            return
+        found = job.get('found')
+        if job['action'] in ('find_left', 'find_right') and not (found and found.get('usable')):
+            self._cal_finish(now, ok=False, error='calibration_end_not_found',
+                             detail=found.get('reason') if found else None)
+            return
+        self._cal_finish(now, ok=True)
+
+    def _cal_finish(self, now, ok, error=None, detail=None):
+        job, self.cal_job = self.cal_job, None
+        if job is None:
+            return
+        self.cal_ended_at = now
+        self.status_sent_at = None       # STATUS again at once
+        self.zero_refresh_at = now       # and the zero refresh
+        self.cal_last = {'action': job['action'], 'job': job['id'], 'ok': bool(ok), 'error': error, 'detail': detail,
+                         'started': job['started'], 'ended': now, 'cal_before': job.get('cal_before'),
+                         'cal_after': dict(self.cal) if self.cal else None, 'want': job.get('want'),
+                         'margins': job.get('margins'), 'found': job.get('found'),
+                         'step': job.get('line')}
+        self._event(now, 'calibration', '%s %s%s' % (job['action'], 'ok' if ok else 'failed',
+                                                     '' if ok else ': %s' % error))
+
+    def calibration_block(self, now=None):
+        now = self.clock() if now is None else now
+        job = self.cal_job
+
+        def found_view(found):
+            if not found:
+                return None
+            view = {k: found.get(k) for k in ('side', 'pot', 'reason', 'start', 'pulses', 'drive_ms', 'time_ms',
+                                              'usable')}
+            view['age_s'] = round(now - found['at'], 1)
+            return view
+        proposal, sides, problem = self.cal_proposal()
+        status = self.status or {}
+        last = None
+        if self.cal_last:
+            last = {k: v for k, v in self.cal_last.items() if k not in ('started', 'ended', 'found')}
+            last['age_s'] = round(now - self.cal_last['ended'], 1)
+            last['duration_s'] = round(self.cal_last['ended'] - self.cal_last['started'], 1)
+        return {
+            'supported': self.cal_supported,
+            'blocker': self.cal_blocker(now),
+            'state': 'running' if job else 'idle',
+            'job': None if job is None else {
+                'action': job['action'], 'id': job['id'], 'phase': job['state'], 'step': job.get('line'),
+                'elapsed_s': round(now - job['started'], 1)},
+            'last': last,
+            'found': {side: found_view(self.cal_found.get(side)) for side in ('left', 'right')},
+            'samples': [{k: s[k] for k in ('side', 'n', 'before', 'peak', 'settled', 'progress', 'rebound',
+                                           'drive_ms')} for s in self.cal_samples[-12:]],
+            'cal': dict(self.cal) if self.cal else None,
+            'pot': None if status.get('invalid') else status.get('pot'),
+            'live_pot': self.cal_samples[-1]['settled'] if job and self.cal_samples else None,
+            'proposal': {'marks': proposal, 'sides': sides, 'problem': problem,
+                         'margin_counts': CAL_MARGIN_DEFAULT},
+            'defaults': dict(CAL_DEFAULTS),
+            'guards': {'right_min': CAL_HARD_RIGHT_MIN, 'left_max': CAL_HARD_LEFT_MAX, 'center_min': CAL_CENTER_MIN,
+                       'center_max': CAL_CENTER_MAX, 'min_span': CAL_MIN_SPAN},
+            'margin_range': list(CAL_MARGIN_RANGE),
+            'default_margin_counts': CAL_MARGIN_DEFAULT,
+            'max_jump_deg': round(self.max_jump_deg(), 2),
+            'scale': 'potentiometer counts; ANGLE +-20 = the CAL marks; physical wheel degrees unverified',
+        }
+
     # ---- status for the screen, the executor and the status file ------------------------------------------------
     def steering_block(self, now=None):
         now = self.clock() if now is None else now
@@ -895,7 +1266,7 @@ class Esp32SteerMotor:
         faults = []
         if self.pot_invalid:
             faults.append('pot_invalid')
-        if self.link == 'ready' and (self.status_at is None or now - self.status_at > STATUS_STALE_S):
+        if self.link == 'ready' and self._status_stale(now):
             faults.append('steering_status_stale')
         if self.steer_event is not None:
             faults.append('steer_hold_cancelled' if self.steer_event[1] == 'hold_cancelled' else 'steer_stop')
@@ -948,10 +1319,12 @@ class Esp32SteerMotor:
                 'kind': ESP_KIND, 'keys': 'full_limit', 'ramp': False, 'release': 'centre',
                 'command_limit_deg': COMMAND_LIMIT_DEG, 'angle_quantum_deg': self.angle_quantum_deg,
                 'angle_min_interval_ms': int(round(self.angle_min_interval_s * 1000)),
-                'angle_max_jump_deg': self.angle_max_jump_deg,
+                'angle_max_jump_deg': round(self.max_jump_deg(), 2),
+                'stage_max_counts': STAGE_MAX_COUNTS,
                 'sign': 'steer_mrad left +; firmware ANGLE right +',
             },
             'steering': self.steering_block(now),
+            'calibration': self.calibration_block(now),
             'steering_host': {
                 'link': self.link, 'not_ready': not_ready, 'stale': not_ready == 'steering_status_stale',
                 'stop_state': self.stop_state, 'arm_state': 'armed' if self.enabled else 'disarmed',

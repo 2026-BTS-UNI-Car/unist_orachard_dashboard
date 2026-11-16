@@ -14,6 +14,10 @@ Mapping to the firmware (esp32_abs_hold.Esp32SteerMotor):
   steer_mrad (left +)  -> 'ANGLE -deg' (the firmware's + is RIGHT), rounded to 1 command degree, at most every 0.5 s
   throttle             -> '2 F/R pwm' + '3 F/R pwm' (pwm = (|t| * 255 + 50) // 100, host cap), or '2 S' / '3 S'
   stop / disarm / input expiry / lease loss / shutdown / serial error / MCU reset -> 'STOP' (all three motors)
+  calibrate {action: find_left | find_right | set_center | apply | default | read, left_margin_counts?,
+             right_margin_counts? (int 10..120, default 30)} -> only disarmed, no lease, not moving; STOP, then the
+             firmware's CAL lines (needs the FW token CAL_RUNTIME=1, else 'calibration_needs_firmware_update');
+             progress and results in status 'calibration' (and so in the status file)
 The firmware has no drive timeout, so the host owns it: the drive runs only inside the drive TTL, every stop is
 written again until acknowledged and zero is refreshed every second. SIGTERM, SIGINT, SIGHUP and atexit send STOP
 before the port closes. If this process is killed (SIGKILL) or hangs while the board stays powered, the last drive
@@ -62,7 +66,7 @@ class Esp32Bridge:
         self.clock = clock
         self.wall_clock = wall_clock
         self.control = SteerControl(motor, clock, steer_limit_left_mrad=esp.LIMIT_MRAD,
-                                    steer_limit_right_mrad=esp.LIMIT_MRAD, status_extra=motor.status_extra)
+                                    steer_limit_right_mrad=esp.LIMIT_MRAD, status_extra=self._status_extra)
         self.pending = queue.Queue(maxsize=8)
         self.emergency = threading.Event()
         self.emergency_reason = 'operator_stop'
@@ -122,6 +126,8 @@ class Esp32Bridge:
             if not future.cancelled():
                 if self.clock() - received > REQUEST_EXPIRY_S:
                     result = {'ok': False, 'error': 'request_expired'}
+                elif request.get('op') == 'calibrate':
+                    result = self._calibrate(request)
                 else:
                     try:
                         result = self.control.dispatch(request)
@@ -138,6 +144,42 @@ class Esp32Bridge:
                     future.set_result(result)
         self.snapshot = {**self.control.status(), 'updated_at': self.wall_clock(), 'mode': 'manual',
                          'internal_errors': self.internal_errors}
+
+    def _calibration_refusal(self):
+        """Why the control side refuses a calibration action now (the motor adds its own reasons), or None."""
+        if self.control.lease:
+            return 'calibration_needs_disarmed'      # armed (screen or executor): never while someone owns control
+        if self.control.moving:
+            return 'calibration_needs_standstill'
+        return None
+
+    def _calibrate(self, request):
+        """op calibrate {action, left_margin_counts?, right_margin_counts?}: only disarmed, without a lease and not
+        moving. The motor adapter sends STOP first and then only CAL lines (never a motor 2/3 line)."""
+        self.control.tick()
+        owner = request.get('owner')
+        if not isinstance(owner, str) or not owner:
+            return {'ok': False, 'error': 'operator_required'}
+        action = request.get('action')
+        if action not in esp.CAL_ACTIONS:
+            return {'ok': False, 'error': 'invalid_calibration_action'}
+        refusal = self._calibration_refusal()
+        if refusal:
+            return {'ok': False, 'error': refusal}
+        margins = {}
+        for key in ('left_margin_counts', 'right_margin_counts'):
+            if key in request:
+                margins[key] = request[key]
+        result = self.motor.start_calibration(action, **margins)   # the owner (a session) is never stored
+        result['calibration'] = self.motor.calibration_block()
+        return result
+
+    def _status_extra(self):
+        extra = self.motor.status_extra()
+        calibration = extra.get('calibration')
+        if isinstance(calibration, dict) and calibration.get('blocker') is None:
+            calibration['blocker'] = self._calibration_refusal()
+        return extra
 
     def steering_state(self):
         """/rover/steering/state payload of the latest STATUS line."""
