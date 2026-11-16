@@ -64,7 +64,8 @@ PWM 값은 요청한 출력이지 실제 바퀴 속도가 아니다(차에 휠 �
 **조향 차량(수동·자율·조정).** 차는 앞바퀴 조향이다. `DASHBOARD_VEHICLE=front_steer`이거나 조종 브리지가 `vehicle_profile: front_steer`를 내면
 Rover Control의 주행 제어 패널에 조향 패널(구동 W/S, 조향 A/D·가운데, 끌어서 조향 각, 목표·측정 조향각)과 조향 가변저항 값이 보인다. 그 아래 접힌 칸 '조향 보정'에서 좌우 끝을 다시 찾아 저장한다(펌웨어 `CAL_RUNTIME=1` 이 있어야 함, [docs/esp_rover_control.md](docs/esp_rover_control.md) 1-4절).
 ESP32-S3 브리지에서는 A/D를 누르는 동안 왼쪽·오른쪽 끝(±20 명령 도)까지 가고 놓으면 가운데로 오며, 막대를 끌면 그 각으로 가고 놓으면 0°로 돌아온다
-(키와 막대는 먼저 잡은 쪽만 듣고, STOP이 언제나 이긴다). 브리지와 구동 안전: [`docs/esp_rover_control.md`](docs/esp_rover_control.md). 그 아래 자율 칸에서 "준비 → Arm → 자율 주행 시작"을 누르면
+(키와 막대는 먼저 잡은 쪽만 듣고, STOP이 언제나 이긴다). SMOOTH 펌웨어(FW 줄 `SMOOTH=1`, 2026-11-16 저녁)에서는 A/D 한 번이 끊김 없는 한 번의 구동이고
+막대는 0.25° 단위로 따라간다. W/S 는 화면이 막지 않고, 브리지 구동 상한(설치 값)을 '구동 duty' 칸 아래에 보인다(1-5절). 브리지와 구동 안전: [`docs/esp_rover_control.md`](docs/esp_rover_control.md). 그 아래 자율 칸에서 "준비 → Arm → 자율 주행 시작"을 누르면
 실행기가 열 끝까지 간다(시뮬레이션에서 확인, 실차 전). Rover Control을 떠나거나 탭을 숨기면 화면이 운영자 연결 신호를 멈추고, 실행기의 운영자 연결 기한
 (기본 1.0 s, 시뮬레이션 저장소 결정 R60. 화면에 그 값이 보인다)이 지나면 차가 선다(페이지 안에서 스크롤하는 것은 괜찮다),
 다시 출발은 사람이 누른다. 현장 조정 값은 같은 페이지의 접힌 칸에 있다. 서버 사양: [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md).
@@ -256,7 +257,7 @@ for f in tests/test_*.js tests/test_*.mjs; do node "$f" >/dev/null 2>&1 || echo 
 python3 -m unittest discover -s tests
 
 # ESP32-S3 브리지 (가짜 보드. pty 끝단 시험은 Linux)
-python3 -m unittest tests.test_esp32_bridge tests.test_esp32_bridge_linux tests.test_jetson_esp32_bridge_kit
+python3 -m unittest tests.test_esp32_bridge tests.test_esp32_bridge_linux tests.test_jetson_esp32_bridge_kit tests.test_esp32_smooth
 node --test tests/test_steer_drag.mjs
 
 # Wi-Fi 관리 (가짜 nmcli. 화면 시험은 Node 22 이상)
