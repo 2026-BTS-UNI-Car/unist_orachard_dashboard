@@ -44,6 +44,7 @@
 ## 2. 안전
 
 - 설치 중과 아무도 조종 활성화를 하지 않는 동안 브리지가 보드에 쓰는 것은 `STOP`, `STATUS`(초당 10번), `2 S`·`3 S`(초당 1번)뿐이다.
+  예외는 사람이 대시보드의 **조향 보정** 버튼을 눌렀을 때다(8절): 그때는 `STOP` 뒤 `CAL …` 줄만 쓴다(모터 2·3 명령 없음).
 - **USB 포트를 열면 ESP32 가 다시 켜질 수 있다**(2026-11-16 한 번 관측). 다시 켜지면 모든 출력이 꺼진다. 브리지는 열자마자 STOP 을 보내고,
   READY 배너(또는 3초) 뒤 STOP 과 STATUS 의 답을 확인하고서야 준비 상태가 된다.
 - 원본 펌웨어(ABS-HOLD-8-REBOUND-LIMITS)의 **구동 모터 2·3 에는 시간 제한이 없었다.** 2026-11-16 구동 감시 패치(300 ms, FW 줄 `DRIVE_WD=300`)를 보드에 썼고 브리지는 구동 중 `HB`를 보낸다. 호스트도 겹으로 막는다: 입력 기한 0.75초(조종권 규칙)와 별도의 구동 TTL,
@@ -139,3 +140,44 @@ Docker 에 남는 것(지우지 않음): `...-kept-<시각>`(옛 브리지), `..
   이미지 `fa63d0d9…`(arm64), 새 이름 비어 있음, by-id → `/dev/ttyACM1`(166:1), ID_SERIAL 일치, `/run/ubts-rover` 잠금 비어 있음,
   대시보드는 같은 제어 소켓과 runtime 폴더를 씀, `DASHBOARD_VEHICLE` 없음. 경고: ModemManager 실행 중.
 - 설치(`--apply`)는 Jetson 에서 아직 한 번도 하지 않았다.
+
+## 8. 실시간 조향 보정과 펌웨어 업데이트 한 번 (2026-11-16 제안, 아직 쓰지 않음)
+
+좌우 끝은 배터리 전압·바닥·하중에 따라 날마다 다를 수 있어, 보정 표시(RIGHT/CENTER/LEFT)를 보드의 NVS 에 두고 대시보드에서 다시 잰다.
+설명은 [`docs/esp_rover_control.md`](../../docs/esp_rover_control.md) 1-4절. 브리지 쪽은 제어 소켓 op `calibrate`
+(`find_left`, `find_right`, `set_center`, `apply` {`left_margin_counts`, `right_margin_counts`, 기본 30}, `default`, `read`)이고,
+조종 활성화가 꺼져 있고 움직이지 않을 때만 받는다. 진행과 결과는 상태 파일의 `calibration` 칸에 있다.
+
+이 기능은 펌웨어의 `CAL` 명령이 있어야 한다(FW 줄 끝 `CAL_RUNTIME=1`). **지금 보드의 펌웨어에는 없다**: 이 묶음의 브리지는 그때 아무것도 보내지 않고
+`calibration_needs_firmware_update` 로 답하며, 화면의 보정 버튼도 그 까닭으로 꺼져 있다. 새 펌웨어는 이름(`ABS-HOLD-8-REBOUND-LIMITS`)을 그대로 두므로
+옛 브리지도 새 펌웨어에 그대로 붙는다. 처음 켜면 NVS 가 비어 지금과 같은 기본값(1681 / 1900 / 2180)으로 돈다.
+
+펌웨어 파일(조정 쪽 기록 폴더 `steering-sim-20261108/runs/steer_runtime_cal_20261116/fw/`): 소스 `cal_runtime/`, 앱 `build/BTS7960_Serial_Control.ino.bin`
+(315,552 B, sha256 `660a991648ca4c1bd7f1f09edd5c858b679c2b08959c3074ad5e28f417651632`, Arduino-ESP32 2.0.17, FQBN `esp32:esp32:esp32s3:CDCOnBoot=cdc`),
+지금 보드와 같은 파티션 표. 되돌리기용 지금 판(구동 감시 판): `runs/fw_watchdog_20261116/build/patched_app.bin`.
+
+**쓰기는 차를 고정하고 한다(사용자, 현장).** esptool 로 쓰는 약 10 초 동안 보드는 리셋·다운로드 모드라 펌웨어가 돌지 않고 모터 드라이버 핀을
+소프트웨어가 잡지 못한다(STOP·구동 감시 없음). 그래서 원격으로 쓰지 않는다. 다음 중 하나를 한 뒤에만 쓴다:
+차를 받침에 올려 구동 바퀴를 땅에서 띄움, 또는 구동 모터 선(드라이버 2·3 출력)을 뺌, 그리고 사람이 차 옆에서 물리 비상정지를 손에 둠.
+
+Jetson 에서(2026-11-16 감시 판을 쓸 때와 같은 방법, esptool 4.7.0 가상환경 `~/ubts-releases/fw-watchdog-20261116`):
+
+```sh
+sudo python3 rollback_esp32_bridge.py --apply           # 1. 브리지가 STOP 을 보내고 포트를 놓는다
+esptool.py --chip esp32s3 --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00 \
+  write_flash --flash_mode keep --flash_freq keep --flash_size keep 0x10000 cal_runtime_app.bin   # 2. app0 만. 'Hash of data verified'
+python3 read_status.py                                  # 3. STATUS 만 보냄: FW 줄 끝 'CAL_RUNTIME=1', CAL 줄 'STORE=DEFAULT GUARD=1300..2500'
+sudo python3 install_esp32_bridge.py --max-drive-pwm 0 --apply   # 4. 이 묶음(새 커밋)의 브리지. 구동 상한은 사용자 결정대로
+```
+
+부트로더·파티션·otadata 는 쓰지 않는다. 대시보드도 같은 커밋 묶음으로 설치해야 Rover Control 에 '조향 보정' 칸이 보인다.
+되돌리기: 1 → `write_flash … 0x10000 patched_app.bin` → 3(`CAL_RUNTIME` 없음) → 4.
+
+보정 자체(쓰기 뒤, 사용자): 앞바퀴는 실제로 쓰는 조건(땅에 닿은 채)이 좋다. 끝 찾기는 조향 모터만 PWM 100 으로 짧게 밀고 구동 모터는 쓰지 않는다.
+
+1. Rover Control → 주행 제어 → **조향 보정** 칸을 연다. 조종 활성화는 꺼 둔다(켜져 있으면 버튼이 꺼진다).
+2. 앞바퀴를 똑바로 둔 채 `지금 위치를 가운데로`(필요할 때만).
+3. `왼쪽 끝 찾기` → 끝나면 '왼쪽 끝 (찾은 값)' 이 생긴다. `오른쪽 끝 찾기`도 같다. 가운데 근처에서 시작하면 빠르다. 멈추려면 STOP(어디서든).
+4. `적용`(여유 기본 30 count) → 확인 창의 새 값을 보고 승인. 보드에 저장되고, 명령 ±20(A/D 끝)이 새 값이 된다.
+5. 조종 활성화 뒤 A·D 로 끝까지 가서 끝 근처에서 서는지, '조향 유지 취소' 가 없는지 본다. 넓어진 보정에서는 브리지가 한 목표를 280 count 이하로 나눠 보낸다.
+6. 처음 값으로 돌아가려면 `기본값으로`.

@@ -49,6 +49,7 @@
 | 앞바퀴 조향 수동 조종(구동 W/S, 조향 A/D·가운데, 계기) (UI-07) | 주행 제어 패널, 차동 부분(자율 순항속도 줄, 활성화, 속도, 패드) 다음 | `steerDrive` |
 | 끌어서 조향 각(왼쪽·오른쪽으로 끄는 동안 그 각, 값 표시, 놓으면 0°) (2026-11-16, ESP32-S3) | 조향 패드 바로 아래, 계기 위 | 막대 `steerDrag`, 값 `steerDragValue` |
 | 조향 가변저항(측정 각도·원값·보정·결함) | 주행 제어 패널, 조향 조종 바로 아래 | `steerPotPanel` |
+| 조향 보정(접힌 칸: 지금 보정·가변저항·찾은 끝, 지금 위치를 가운데로 / 왼쪽 끝 찾기 / 오른쪽 끝 찾기 / 적용(여유) / 기본값으로, 진행·결과, STOP) (2026-11-16, ESP32-S3 `CAL_RUNTIME` 펌웨어) | 주행 제어 패널, 조향 가변저항 바로 아래 | `steerCalPanel`, `static/steer/steer-calibration.mjs`(칸을 처음 열 때 읽음), `POST /api/rover/calibrate` |
 | 한 번 눌러 자율 시작, STOP, heartbeat (UI-08) | 주행 제어 패널 맨 아래 '자율주행 · 열 따라가기' | `autoPanel` |
 | 온라인 배율(LiDAR 속도 ÷ 표 속도, 최근 주행 20 s)과 주행 뒤 전체 배율 저장 묻기 (PW-10) | 자율 칸 안, 버튼·안내 줄 아래(실행기가 보낼 때만, 묻기는 run이 끝난 뒤만) | 줄 `autoScale`, 묻기 `autoScaleOffer`(`autoScaleAccept`, `autoScaleDismiss`) |
 | 현장 조정 값(기본·고급·잠금 묶음, 프리셋, 변경 기록) (UI-12) | 주행 제어 다음의 '현장 조정 값' 패널, 접힌 칸 | `tuningPanel`, 접힘 `tuningDetails`, 폼 `tuneForm` |
@@ -82,7 +83,7 @@ Rover Control에 패널이 다시 모였으므로, 느린 연결에서 페이지
   시작은 관찰기(IntersectionObserver)의 첫 보고를 기다린다. 카메라의 NET-08 규칙을 LiDAR·IMU에 그대로 썼다(`static/app/05-live-lidar-camera.js`).
   GPS 소켓도 GPS 지도 칸이 화면에 있을 때만 연다(`static/gps-map.js`). 지도 라이브러리는 전처럼 그 칸이 가까워질 때 받는다.
 - **주기적으로 묻는 것도 보일 때만.** 실시간 점유 격자 지도와 실행기 국소 격자는 지도 칸이 화면에 있을 때만 묻는다(`static/live-map.js`, `static/steer/local-grid.mjs`).
-  현장 조정 값은 접힌 칸을 열었을 때만 묻는다(`static/steer/tuning-page.mjs`). 조향 가변저항 줄은 조향 패널이 받은 상태 답을 같이 쓰고, 그 답이 1초보다 오래됐을 때만 따로 묻는다.
+  현장 조정 값과 조향 보정은 접힌 칸을 열었을 때만 묻는다(`static/steer/tuning-page.mjs`, `static/steer/steer-calibration.mjs`). 조향 가변저항 줄은 조향 패널이 받은 상태 답을 같이 쓰고, 그 답이 1초보다 오래됐을 때만 따로 묻는다.
 - **모듈도 필요할 때 받는다.** 조정 값 모듈은 접힌 칸을 처음 열 때, 국소 격자 모듈은 지도 칸이 처음 화면에 들어올 때 받는다(`static/app/14-steer.js`).
   모의 서버에서 Rover Control 첫 열기의 정적 파일은 39개로 화면 6개 판(a92cfec)의 주행 화면과 같다(고치기 전 42개, 느린 연결 측정: `docs/slow_link.md` 13절).
 - **자율 heartbeat는 스크롤과 무관하다.** 자율 run 중에는 Rover Control이 열려 있고 탭이 보이면 heartbeat가 계속 나간다. 지도를 보려고 스크롤해도 차가 서지 않는다.
