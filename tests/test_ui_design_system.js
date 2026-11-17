@@ -224,6 +224,41 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
   assert.match(read('css/base.css'), /font-variant-numeric: tabular-nums;/, 'read-outs keep their width while digits change');
 }
 
+// The first font file covers every Hangul syllable of the screen sources (the page, its scripts and styles, the
+// server's messages), so opening a screen never downloads the second file. When screen text gains a syllable, run
+// tools/fonts/split_ui_font.py (2026-11-17: 37 syllables of the steering, distance and Wi-Fi parts had made every
+// first visit of Rover Control download the second file, 241 kB).
+{
+  const css = stripComments(tokens);
+  const face = [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map(match => match[1]).find(body => body.includes('ubts-sans-ui.woff2'));
+  assert.ok(face, 'first font face');
+  const covered = new Set();
+  for (const item of face.match(/unicode-range:\s*([^;]+);/)[1].split(',')) {
+    const [from, to] = item.trim().replace(/^U\+/i, '').split('-').map(hex => parseInt(hex, 16));
+    for (let code = from; code <= (to ?? from); code += 1) covered.add(code);
+  }
+  const root = path.join(__dirname, '..');
+  const sources = [];
+  const walk = (dir, keep) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { if (entry.name !== 'vendor' && entry.name !== '__pycache__') walk(full, keep); }
+      else if (keep(entry.name)) sources.push(full);
+    }
+  };
+  walk(staticDir, name => /\.(html|js|mjs|css)$/.test(name));
+  walk(path.join(root, 'dashboard_server'), name => name.endsWith('.py'));
+  const missing = new Map();
+  for (const file of sources) {
+    for (const char of fs.readFileSync(file, 'utf8')) {
+      const code = char.codePointAt(0);
+      // U+D7A3 is only the end of a character class in a slug pattern (09-docs.js); the font has no glyph for it.
+      if (code >= 0xAC00 && code < 0xD7A3 && !covered.has(code) && !missing.has(char)) missing.set(char, path.relative(root, file));
+    }
+  }
+  assert.deepEqual([...missing].slice(0, 20), [], 'syllables of the screen sources missing from the first font file: run tools/fonts/split_ui_font.py');
+}
+
 // Pages load nothing from outside the dashboard (it must work from the vehicle's own access point),
 // and the dashboard page requests exactly these files when it opens: adding a request needs a reason.
 {

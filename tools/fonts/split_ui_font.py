@@ -5,8 +5,9 @@
 
 Input: static/vendor/ubts-sans/ubts-sans-var.woff2 (made by make_ui_font.py, kept as the source of the split).
 Output, next to it:
-- ubts-sans-ui.woff2: Latin, punctuation and symbols, Hangul jamo, and every Hangul syllable that appears in the
-  page, its scripts and styles (static/, without vendor/) or in the server's Python files (messages shown on screen);
+- ubts-sans-ui.woff2: printable ASCII, and every other character that appears in the page, its scripts and styles
+  (static/, without vendor/) or in the server's Python files (messages shown on screen): the Hangul syllables and the
+  few symbols the screens use (degree, plus-minus, arrows, dashes ...);
 - ubts-sans-ko.woff2: the other Hangul syllables of the font;
 - ubts-sans-split.json: what went where, sizes and hashes.
 It also rewrites the two @font-face rules between the markers in static/css/tokens.css: the second file covers the
@@ -14,6 +15,11 @@ whole Hangul syllable block and is written first, the small file lists its chara
 ranges overlap the last rule is tried first). A browser downloads the second file only when the screen shows a
 syllable that is not in the first one (for example a recording name or a document page). Both files are the same variable font (weights 400..700) and the
 same family name, so the text looks the same as with the single file.
+The other characters of the font (Hangul jamo, accented Latin letters, symbols no screen text uses) are in neither
+file and show in the device font when a value from outside (a recording name, an SSID) has one: the first file has
+to stay under 100 kB (tests/test_ui_design_system.js, docs/slow_link.md target 나-3) while the screens gain text.
+Run it again whenever screen text changes; tests/test_ui_design_system.js fails while a syllable of the sources is
+missing from the first file (which would make every first visit download the second file).
 """
 import hashlib
 import json
@@ -32,13 +38,18 @@ BEGIN, END = '/* ubts-sans faces: made by tools/fonts/split_ui_font.py */', '/* 
 HANGUL = range(0xAC00, 0xD7A4)
 
 
-def used_syllables():
+ASCII = range(0x20, 0x7F)
+
+
+def used_characters():
+    """Every character above ASCII in the screen sources (Hangul syllables and symbols)."""
     files = [p for p in (ROOT / 'static').rglob('*') if p.suffix in ('.html', '.js', '.mjs', '.css') and 'vendor' not in p.parts]
     files += list((ROOT / 'dashboard_server').rglob('*.py'))
     found = set()
     for path in sorted(files):
-        found |= {ord(c) for c in path.read_text(encoding='utf-8', errors='ignore') if 0xAC00 <= ord(c) <= 0xD7A3}
+        found |= {ord(c) for c in path.read_text(encoding='utf-8', errors='ignore') if ord(c) > 0x7E}
     return found
+
 
 
 def ranges(codepoints):
@@ -87,8 +98,9 @@ def main(argv):
     check = '--check' in argv
     whole = set(TTFont(str(SOURCE)).getBestCmap())
     syllables = {cp for cp in whole if cp in HANGUL}
-    used = used_syllables() & syllables
-    ui_set = (whole - syllables) | used
+    characters = used_characters()
+    used = characters & syllables
+    ui_set = ((set(ASCII) | characters) & (whole - syllables)) | used
     ko_set = syllables - used
     css = CSS.read_text(encoding='utf-8')
     pattern = re.compile(re.escape(BEGIN) + '.*?' + re.escape(END), re.S)
