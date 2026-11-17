@@ -1,7 +1,7 @@
 // Autonomy section of the drive panel (UI-08): one press to start, STOP, the operator heartbeat while the screen is
 // visible, and the state from GET /api/executor/status (docs/STEERING_SERVER_KO.md 6). Loaded by static/app/14-steer.js
 // on a front-steer dashboard. Requests use the page's postJson/getJson. The page never sees the executor token.
-import { HEARTBEAT_MS, STATUS_MS, autoView, heartbeatWanted, newSession, prepareRun, primaryAction, runActive, scaleLine, scaleOffer } from './auto-model.mjs';
+import { HEARTBEAT_MS, STATUS_MS, autoView, heartbeatWanted, modeChip, newSession, prepareRun, primaryAction, runActive, scaleLine, scaleOffer } from './auto-model.mjs';
 import { ERROR_TEXT } from './tuning-model.mjs';
 
 const HTTP_TEXT = { 403: '대시보드 세션 없음: 화면을 새로 고친다', 409: '실행기가 거절했다', 502: '실행기 연결 안 됨',
@@ -121,6 +121,12 @@ export function initAutoPanel(page) {
     const view = autoView(reply);
     const chip = $('autoState');
     if (chip) { chip.className = `status-chip${view.chip[0] ? ` ${view.chip[0]}` : ''}`; chip.textContent = view.chip[1]; }
+    const mode = $('autoMode');
+    const modeView = modeChip(reply);
+    if (mode) {
+      mode.hidden = !modeView;
+      if (modeView) { mode.className = `status-chip${modeView[0] ? ` ${modeView[0]}` : ''}`; mode.textContent = modeView[1]; }
+    }
     const button = $('autoPrimary');
     const action = primaryAction(reply);
     if (button) { button.textContent = busy ? '보내는 중…' : action.text; button.disabled = busy || !action.enabled; }

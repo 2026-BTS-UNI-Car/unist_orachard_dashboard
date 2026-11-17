@@ -51,9 +51,9 @@
 | --- | --- | --- |
 | 앞바퀴 조향 수동 조종(구동 W/S, 조향 A/D·가운데, 계기) (UI-07) | 주행 제어 패널, 차동 부분(자율 순항속도 줄, 활성화, 속도, 패드) 다음 | `steerDrive` |
 | 끌어서 조향 각(왼쪽·오른쪽으로 끄는 동안 그 각, 값 표시, 놓으면 0°) (2026-11-16, ESP32-S3) | 조향 패드 바로 아래, 계기 위 | 막대 `steerDrag`, 값 `steerDragValue` |
-| 조향 가변저항(측정 각도·원값·보정·결함) | 주행 제어 패널, 자율 칸 바로 아래 | `steerPotPanel` |
+| 조향 가변저항(측정 각도·원값·보정·조향 펌웨어 SMOOTH/PULSE·결함) | 주행 제어 패널, 자율 칸 바로 아래 | `steerPotPanel`, 펌웨어 줄 `firmwareText`(`static/steer/steer-sensor.mjs`) |
 | 조향 보정(접힌 칸: 지금 보정·가변저항·찾은 끝, 지금 위치를 가운데로 / 왼쪽 끝 찾기 / 오른쪽 끝 찾기 / 적용(여유) / 기본값으로, 진행·결과, STOP) (2026-11-16, ESP32-S3 `CAL_RUNTIME` 펌웨어) | 주행 제어 패널, 조향 가변저항 바로 아래 | `steerCalPanel`, `static/steer/steer-calibration.mjs`(칸을 처음 열 때 읽음), `POST /api/rover/calibrate` |
-| 한 번 눌러 자율 시작, STOP, heartbeat (UI-08) | 주행 제어 패널, 조향 조종 바로 아래 '자율주행 · 열 따라가기'(2026-11-17부터. 그 전에는 패널 맨 아래). | `autoPanel` |
+| 한 번 눌러 자율 시작, STOP, heartbeat (UI-08) | 주행 제어 패널, 조향 조종 바로 아래 '자율주행 · 열 따라가기'(2026-11-17부터. 그 전에는 패널 맨 아래). 칸 머리에 실행기 모드 칩(SHADOW · 모터 안 씀 / MOTOR · 차를 몬다)과 run 상태 칩 | `autoPanel`, 모드 칩 `autoMode` |
 | 온라인 배율(LiDAR 속도 ÷ 표 속도, 최근 주행 20 s)과 주행 뒤 전체 배율 저장 묻기 (PW-10) | 자율 칸 안, 버튼·안내 줄 아래(실행기가 보낼 때만, 묻기는 run이 끝난 뒤만) | 줄 `autoScale`, 묻기 `autoScaleOffer`(`autoScaleAccept`, `autoScaleDismiss`) |
 | 현장 조정 값(기본·고급·잠금 묶음, 프리셋, 변경 기록) (UI-12) | 주행 제어 다음의 '현장 조정 값' 패널, 접힌 칸 | `tuningPanel`, 접힘 `tuningDetails`, 폼 `tuneForm` |
 | 실행기 국소 격자와 열 선·중심선 (UI-09) | LiDAR 패널 안 실시간 점유 격자 지도 바로 아래(격자가 올 때만 보임) | `localGridPanel`, 지도 칸 `liveMapPanel` |

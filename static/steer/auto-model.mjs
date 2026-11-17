@@ -173,6 +173,16 @@ export function autoView(reply, nowMs = Date.now()) {
   return { chip: isStale ? ['bad', '끊김'] : [level, text], notice, rows, stale: isStale };
 }
 
+// The executor's motor mode as a chip next to the run state (2026-11-17): SHADOW runs never move the vehicle, so the
+// operator sees it before pressing start, not only in the collapsed details. null while the status is missing or stale.
+export function modeChip(reply, nowMs = Date.now()) {
+  const s = reply && reply.ok && reply.status ? reply.status : null;
+  if (!s || !s.mode || stale(reply, nowMs)) return null;
+  if (s.mode === 'SHADOW') return ['', 'SHADOW · 모터 안 씀'];
+  if (s.mode === 'MOTOR') return ['warn', 'MOTOR · 차를 몬다'];
+  return ['', String(s.mode)];
+}
+
 // PW-10: "LiDAR 속도 ÷ 표 속도" of the last ~20 s of driving, or why there is none / why it does not change. The line
 // of the autonomy section (shown only when the executor sends the block: a front-steer executor with its monitor).
 export function scaleLine(reply, nowMs = Date.now()) {

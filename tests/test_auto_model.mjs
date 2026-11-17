@@ -2,8 +2,8 @@
 // heartbeat goes, the "끊김" rule and the Korean labels. No browser. Run: node tests/test_auto_model.mjs
 import assert from 'node:assert/strict';
 import {
-  HEARTBEAT_MS, STALE_MS, GO_BLOCKER, STOP_REASON, SCALE_HOLD, autoView, heartbeatWanted, newSession, prepareRun, primaryAction,
-  runActive, scaleLine, scaleOffer, scaleText,
+  HEARTBEAT_MS, STALE_MS, GO_BLOCKER, STOP_REASON, SCALE_HOLD, autoView, heartbeatWanted, modeChip, newSession, prepareRun,
+  primaryAction, runActive, scaleLine, scaleOffer, scaleText,
 } from '../static/steer/auto-model.mjs';
 
 const now = 1_800_000_000_000;
@@ -162,5 +162,16 @@ assert.equal(scaleOffer(reply({ run_state: 'running', online_scale: scale({ offe
 assert.equal(scaleOffer(reply({ run_state: 'ended', online_scale: scale() })), null);
 assert.equal(scaleOffer(reply({ run_state: 'ended' })), null);
 assert.equal(scaleOffer(null), null);
+
+// The motor mode chip (2026-11-17): SHADOW and MOTOR in the section head; nothing while the status is missing or stale.
+assert.deepEqual(modeChip(reply({ run_state: 'idle', mode: 'SHADOW' }), now), ['', 'SHADOW · 모터 안 씀']);
+assert.deepEqual(modeChip(reply({ run_state: 'running', mode: 'MOTOR' }), now), ['warn', 'MOTOR · 차를 몬다']);
+assert.deepEqual(modeChip(reply({ run_state: 'idle', mode: 'mock_mode' }), now), ['', 'mock_mode']);
+assert.equal(modeChip(reply({ run_state: 'idle' }), now), null, 'no mode reported');
+assert.equal(modeChip(reply({ run_state: 'idle', mode: 'MOTOR' }), now + STALE_MS + 1), null, 'stale status');
+assert.equal(modeChip({ ok: false, error: 'executor_unreachable' }, now), null);
+assert.equal(modeChip(null, now), null);
+// autoView keeps the mode row of the details as before.
+assert.equal(Object.fromEntries(autoView(reply({ run_state: 'idle', mode: 'SHADOW' }), now).rows)['모드'], 'SHADOW · 차를 몰지 않음');
 
 console.log('PASS: autonomy button per run state, heartbeat states, stale rule, labels, session ids, the prepare sequence, the online scale row and its question');
