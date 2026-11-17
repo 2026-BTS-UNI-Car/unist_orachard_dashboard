@@ -140,7 +140,8 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
     assert.ok(ranges <= 6 * 1024, `font unicode-range lists are ${ranges} bytes (limit 6 kB)`);
     assert.ok(total - ranges <= 100 * 1024, `style sheets are ${total - ranges} bytes together without the font ranges (limit 100 kB)`);
   }
-  // Solid red is STOP only: the status bar STOP, the drive panel STOP and the pad STOP. A danger button is tinted.
+  // Solid red is STOP only: the status bar STOP, the drive panel STOP (its rule also has the STOP of the steering
+  // calibration and of the distance move, 2026-11-17) and the pad STOP. A danger button is tinted.
   {
     const all = [...systemSheets, ...pageSheets].map(name => stripComments(read(name))).join('\n');
     const solid = [...all.matchAll(/([^{}]+)\{[^{}]*background(?:-color)?:\s*var\(--color-(?:stop|danger)\);/g)].map(match => match[1].trim().split(/\s*,\s*/).pop());

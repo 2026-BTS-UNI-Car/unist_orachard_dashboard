@@ -1,8 +1,6 @@
-/* Screens and panels of the dashboard. Loaded after the design system sheets
-   (css/tokens.css, base.css, components.css, frame.css): colours, sizes and the
-   look of buttons, inputs, badges, panels and notices come from there. This
-   sheet places things inside the pages. No raw colours, no gradients, no
-   shadows here. */
+/* Screens and panels, loaded after css/tokens.css, base.css, components.css and
+   frame.css (colours, sizes, the look of the parts). This sheet places things
+   in the pages: no raw colours, gradients or shadows. */
 
 /* ---- Page grids -------------------------------------------------------- */
 .dashboard-grid,
@@ -548,6 +546,8 @@
 }
 
 /* Every STOP has the STOP red, in both themes. */
+#steerCalStop,
+#steerDistStop,
 .drive-head-actions .action-button.danger {
   border-color: var(--color-stop);
   background: var(--color-stop);
@@ -557,12 +557,16 @@
 }
 
 @media (hover: hover) {
+  #steerCalStop:hover,
+  #steerDistStop:hover,
   .drive-head-actions .action-button.danger:not(:disabled):hover {
     border-color: var(--color-stop-hover);
     background: var(--color-stop-hover);
   }
 }
 
+#steerCalStop:active,
+#steerDistStop:active,
 .drive-head-actions .action-button.danger:not(:disabled):active,
 .rover-pad button[data-rover-drive="stop"]:active {
   border-color: var(--color-stop);
@@ -586,9 +590,8 @@
   min-width: 0;
 }
 
-/* The arm button is the first step of driving: as tall as a touch control
-   everywhere. While driving is armed it has the tint of the armed badge in
-   the status bar. */
+/* The arm button: touch height everywhere; armed, the tint of the armed
+   badge of the status bar. */
 .rover-arm-controls .action-button {
   min-height: 44px;
 }
@@ -852,9 +855,8 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   width: 100%;
 }
 
-/* Three equal buttons while every label fits. A button is never narrower than
-   its label ("LiDAR+Camera" is one word): the others give way first, and in a
-   very narrow panel the last button moves to a second row. */
+/* Three equal buttons; none narrower than its label ("LiDAR+Camera"): in a
+   very narrow panel the last one moves to a second row. */
 .record-button-grid {
   display: flex;
   flex-wrap: wrap;
@@ -2066,6 +2068,11 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
 @media (max-width: 900px) {
   .archive-imu-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The drive panel first (from 900px it is in the first row anyway). */
+  .rover-drive-panel {
+    order: -1;
   }
 }
 

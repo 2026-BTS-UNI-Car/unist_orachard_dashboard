@@ -264,7 +264,9 @@ test('page: hiding the page while a scan runs sends STOP', async () => {
 test('markup: the folded section is inside Rover Control with the five buttons, no new menu', () => {
   const html = readFileSync(path.join(here, '..', 'static', 'index.html'), 'utf8');
   const start = html.indexOf('id="steerCalPanel"');
-  assert.ok(start > html.indexOf('id="steerPotPanel"') && start < html.indexOf('id="autoPanel"'), 'next to the potentiometer rows');
+  // Right after the potentiometer rows; the autonomy section is above both since 2026-11-17 (docs/SCREENS_KO.md 2).
+  assert.ok(start > html.indexOf('id="steerPotPanel"') && start < html.indexOf('id="steerDistPanel"'), 'next to the potentiometer rows');
+  assert.ok(html.indexOf('id="autoPanel"') < html.indexOf('id="steerPotPanel"'), 'the autonomy section comes first');
   const section = html.slice(start, html.indexOf('</section>', start));
   assert.match(section, /<details id="steerCalDetails">/);
   assert.match(html.slice(html.lastIndexOf('<section', start), start), /data-vehicle="front_steer"/);
