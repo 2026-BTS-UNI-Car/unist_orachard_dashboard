@@ -51,6 +51,7 @@ const state = {
   telemetry: null,
   plan: null,
   docs: [],
+  docsRequested: false,
   activeDoc: null,
   history: Object.fromEntries(HISTORY_KEYS.map((key) => [key, []])),
   visualHistory: Object.fromEntries(HISTORY_KEYS.map((key) => [key, []])),

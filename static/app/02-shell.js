@@ -46,7 +46,10 @@ function renderRoute() {
   document.querySelectorAll("[data-route]").forEach((link) => {
     link.classList.toggle("active", link.dataset.route === route);
   });
-  if (route === "/docs") renderDocsRoute();
+  if (route === "/docs") {
+    ensureDocs();
+    renderDocsRoute();
+  }
   if (route === "/docker" && state.telemetry?.docker) {
     renderContainers(state.telemetry.docker);
     maybeRefreshContainerDetail(true);

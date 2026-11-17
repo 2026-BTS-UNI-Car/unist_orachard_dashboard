@@ -7,6 +7,17 @@ async function loadDocs() {
   renderDocsRoute();
 }
 
+// The document list is used by the Docs page only: it is asked for when that page is first shown, not on the first
+// load of every page (one request less on a slow link). A failed request is asked again on the next visit.
+function ensureDocs() {
+  if (state.docsRequested) return;
+  state.docsRequested = true;
+  loadDocs().catch((error) => {
+    state.docsRequested = false;
+    console.error(error);
+  });
+}
+
 async function tick() {
   if (document.hidden) return;
   const interval = telemetryIntervalMs();
