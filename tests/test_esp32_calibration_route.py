@@ -21,7 +21,7 @@ from tests.test_steer_routes import Client, dashboard_modules  # noqa: E402  (st
 
 
 class Stack:
-    def __init__(self, pot=1925.0):
+    def __init__(self, pot=1925.0, motor_options=None):
         self.mods = mods = dashboard_modules()
         from scripts import esp32_abs_hold as esp
         from scripts.esp32_steer_bridge import Esp32Bridge
@@ -34,14 +34,15 @@ class Stack:
                    ROVER_BRIDGE_STATUS_FILE=str(self.tmp / 'rover_bridge_status.json'),
                    DATA_RECORDER_STATUS_FILE=str(self.tmp / 'data_recorder_status.json'),
                    CAMERA_SETTINGS_FILE=str(self.tmp / 'camera_settings.json'),
-                   DOCKER_SOCKET=str(self.tmp / 'no-docker.sock'))
+                   DOCKER_SOCKET=str(self.tmp / 'no-docker.sock'),
+                   UBTS_DRIVE_DISTANCE_FILE=str(self.tmp / 'drive_distance_corrections.json'))
         for key, value in env.items():
             self._env[key] = os.environ.get(key)
             os.environ[key] = value
         self.lock = threading.RLock()
         self.fake = FakeEsp32(time.monotonic, cal_runtime=True, drive_watchdog_ms=300, pot=pot, rate_counts_s=390.0,
                               stop_left=2320.0, stop_right=1460.0)
-        self.motor = esp.Esp32SteerMotor(FakeTransport(self.fake), time.monotonic)
+        self.motor = esp.Esp32SteerMotor(FakeTransport(self.fake), time.monotonic, **(motor_options or {}))
         self.bridge = Esp32Bridge(self.motor, time.monotonic)
         self.relayed = []
         self.stop_event = threading.Event()

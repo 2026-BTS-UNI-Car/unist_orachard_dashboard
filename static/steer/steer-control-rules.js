@@ -57,6 +57,9 @@
  * one continuous run (a page ramp slower than the wheel would make the firmware reach each step, stop and start again);
  * the drag uses dragStepSmoothDeg steps at most every dragPeriodSmoothMs. Without steer_control.smooth true (older
  * firmware, or 'SM OFF') the drag keeps dragStepDeg / dragPeriodMs.
+ * A distance move (2026-11-17, drive-distance.mjs): beginExternal() hands the lease chain to the server, which drives
+ * with it while the button is held; meanwhile tick() sends nothing and keys, C and the drag are ignored (STOP works as
+ * always); endExternal(chain) takes the chain back, or drops the lease locally when the server lost it.
  * W/S are never disabled by the page beyond the lease, a fresh status and the speed cap: the bridge's own drive cap
  * (status drive.max_pwm, its install flag --max-drive-pwm) is shown, and with a cap of 0 a W/S press says so.
  * The fault and latch catalogues carry the short Korean labels a screen shows. Placeholder-based SIM results only
@@ -175,6 +178,10 @@
     esp32_not_ready: 'ESP32 준비 중(배너·STOP 확인 전)',
     mcu_drive_watchdog: '펌웨어 구동 감시가 멈춤',
     calibrating: '조향 보정 중: 끝난 뒤 조종 활성화',
+    distance_move_running: '거리 이동 중: 끝난 뒤',
+    distance_move_lost: '거리 이동 뒤 조종권을 되찾지 못함',
+    distance_move_failed: '거리 이동 중 브리지 오류',
+    distance_move_unclaimed: '거리 이동 뒤 화면이 조종권을 가져가지 않음',
   };
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -264,6 +271,7 @@
     this.message = { kind: 'info', text: '조종 활성화를 눌러 시작한다.', at: null };
     this.requests = [];            // recent requests (bounded), for the display and the tests
     this.stopReplies = 0;
+    this.external = false;         // a distance move holds the lease chain on the server (beginExternal)
   }
 
   SteerController.prototype._emit = function () { try { this.onChange(this); } catch (err) { /* display only */ } };
@@ -421,7 +429,7 @@
   };
   SteerController.prototype.keyDown = function (key) {
     if (!(key in this.keys) || this.keys[key]) return;
-    if (this.releasing) return;
+    if (this.releasing || this.external) return;
     var steerKey = key === 'a' || key === 'd';
     if (steerKey && this.steerSource === 'drag') return;    // the drag owns the steering until it is released
     this.keys[key] = true;
@@ -465,7 +473,7 @@
   };
   SteerController.prototype.setCentre = function (held) {
     held = !!held;
-    if (held === this.centreHeld || this.releasing) return;
+    if (held === this.centreHeld || this.releasing || this.external) return;
     if (held && this.steerSource === 'drag') return;        // the drag owns the steering until it is released
     this.centreHeld = held;
     var now = this.now();
@@ -511,7 +519,7 @@
   };
   // Returns true when the drag took the steering (armed, not releasing, keys not holding it).
   SteerController.prototype.dragStart = function (deg) {
-    if (this.drag.active || this.releasing) return this.drag.active;
+    if (this.drag.active || this.releasing || this.external) return this.drag.active;
     if (this.steerSource === 'keys' || this.keys.a || this.keys.d || this.centreHeld) return false;
     if (!this.lease) { this._armedHint(); this._emit(); return false; }
     this.drag = { active: true, deg: this._dragDeg(deg), appliedAt: null };
@@ -664,7 +672,7 @@
       this.staleSince = null;
     }
     this._updateSteering(now);
-    if (!this.lease || this.inFlight || this.arming) return null;
+    if (!this.lease || this.inFlight || this.arming || this.external) return null;
     if (this.releasing) return this._releaseStep(now);
     var throttle = this.throttleCommand(now);
     var steer = this.steerCommand();
@@ -798,8 +806,38 @@
   };
 
   // STOP: always available (no lease needed). Drops the local lease at once and posts /api/rover/stop.
+  // Distance move: the lease chain {lease, ticket, seq} and the steering target to hold, or null when the page cannot
+  // hand it over now (not armed, arming, releasing, a request in flight: try again on the next tick).
+  SteerController.prototype.beginExternal = function () {
+    if (!this.lease || this.arming || this.releasing || this.inFlight || this.external) return null;
+    var lim = this.limits();
+    var steer = this.steerCommand();
+    if (steer === null) steer = isNum(this.lastSent.steer) ? this.lastSent.steer : this.measuredMrad();
+    if (!isNum(steer)) steer = 0;
+    if (lim) steer = clamp(steer, -lim.right, lim.left);
+    this._clearInputs();
+    this.external = true;
+    this._emit();
+    return { lease: this.lease, ticket: this.ticket, seq: this.seq, steer_mrad: Math.round(steer) };
+  };
+  // The server's chain after the move (it must carry this page's lease), or null: then the lease is dropped locally.
+  SteerController.prototype.endExternal = function (chain, reason) {
+    if (!this.external) return false;
+    this.external = false;
+    if (chain && this.lease && chain.lease === this.lease && typeof chain.ticket === 'string' && isNum(chain.seq)) {
+      this.ticket = chain.ticket;
+      this.seq = chain.seq;
+      this.lastSent = { at: this.now(), op: 'distance', throttle: 0, steer: this.lastSent.steer };
+      this.dirty = false;
+      this._emit();
+      return true;
+    }
+    if (this.lease) this.abandon(reason || 'distance_move_lost');
+    return false;
+  };
   SteerController.prototype.stop = function (reason) {
     var why = reason || 'operator_stop';
+    this.external = false;
     this.epoch += 1;
     this.lease = this.ticket = null;
     this.leaseAt = null;
@@ -816,6 +854,7 @@
   // without a second STOP request.
   SteerController.prototype.abandon = function (reason) {
     var why = reason || 'operator_stop';
+    this.external = false;
     this.epoch += 1;
     this.lease = this.ticket = null;
     this.leaseAt = null;

@@ -20,13 +20,15 @@ function adoptBridgeVehicle(bridge) {
   return true;
 }
 
-const steerScreens = { drive: null, auto: null, tuning: null, grid: null, pot: null, cal: null, driveScreen: null };
+const steerScreens = { drive: null, auto: null, tuning: null, grid: null, pot: null, cal: null, dist: null, driveScreen: null };
 
 function steerPageApi() {
   // controlRequest: the one transport for driving requests (NET-05): high priority, never queued, with a time limit.
   // driveStatus: the steering panel's latest /api/rover/status reply, so the potentiometer rows on the same page do
   // not ask for it again.
-  return { getJson, postJson, controlRequest, currentRoute, renderReadout, chartColors, driveStatus: steerDriveStatus };
+  // driveController: the steering panel's controller (the distance move hands its lease chain to the server).
+  return { getJson, postJson, controlRequest, currentRoute, renderReadout, chartColors, driveStatus: steerDriveStatus,
+           driveController: () => steerScreens.driveScreen?.controller || null };
 }
 
 function steerDriveStatus() {
@@ -53,6 +55,10 @@ function loadSteerScreens(route = currentRoute()) {
   if (steerVehicle() && (steerScreens.cal || (route === "/rover-control" && steerPartWanted.cal()))) {
     loadSteerScreen("cal", "/static/steer/steer-calibration.mjs", "initSteerCalibration");
   }
+  // The distance move section (2026-11-17): fetched when it is opened the first time.
+  if (steerVehicle() && (steerScreens.dist || (route === "/rover-control" && steerPartWanted.dist()))) {
+    loadSteerScreen("dist", "/static/steer/drive-distance.mjs", "initDriveDistance");
+  }
   // The field tuning values (UI-12) are a part of Rover Control on every dashboard; without an executor they say so.
   if (steerScreens.tuning || (route === "/rover-control" && steerPartWanted.tuning())) loadSteerScreen("tuning", "/static/steer/tuning-page.mjs", "initTuningPage");
   // The executor's local grid on the live occupancy grid map (UI-09): shown only when the executor sends one.
@@ -63,11 +69,13 @@ function loadSteerScreens(route = currentRoute()) {
 const steerPartWanted = {
   tuning: () => Boolean($("tuningDetails")?.open),
   cal: () => Boolean($("steerCalDetails")?.open),
+  dist: () => Boolean($("steerDistDetails")?.open),
   mapSeen: typeof IntersectionObserver !== "function" || !$("liveMapPanel"),
   grid: () => steerPartWanted.mapSeen,
 };
 $("tuningDetails")?.addEventListener("toggle", () => loadSteerScreens());
 $("steerCalDetails")?.addEventListener("toggle", () => loadSteerScreens());
+$("steerDistDetails")?.addEventListener("toggle", () => loadSteerScreens());
 if (!steerPartWanted.mapSeen) {
   const mapWatch = new IntersectionObserver((entries) => {
     if (!entries.some((entry) => entry.isIntersecting)) return;

@@ -144,6 +144,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
     executor_client = None
     # Change log of the tuning screen (dashboard_server/steer_tuning.py); create_server() sets it.
     tuning_log = None
+    # Distance moves (dashboard_server/drive_distance.py); create_server() sets the store and the runner.
+    distance_table = None
+    distance_store = None
+    distance_runner = None
     _last_telemetry_log_at = 0.0
 
     def do_HEAD(self):
@@ -154,6 +158,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = parsed.path
         if path.startswith('/api/live/') or path.startswith('/api/autonomy/'):
             self._live_request(parsed, action=True)
+        elif path.startswith("/api/rover/distance/"):
+            self._distance_action(path.removeprefix("/api/rover/distance/"))
         elif path.startswith("/api/rover/"):
             self._rover_action(path)
         elif path.startswith("/api/executor/"):
@@ -275,6 +281,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(payload)
         elif path == "/api/rover/status":
             self._send_json(self.provider.rover_status())
+        elif path == "/api/rover/distance":
+            self._distance_get()
         elif path == "/api/recordings/media-jobs":
             self._send_json(self.provider._recorder_get("/media-jobs"))
         elif path == "/api/recordings/status":
@@ -607,6 +615,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         supervisor=getattr(self,'autonomy_supervisor',None)
+        runner = self.distance_runner
+        if path == "/api/rover/stop" and runner is not None:
+            runner.abort(str(payload.get("reason") or "operator_stop")[:80])       # STOP wins over a distance move
+        elif runner is not None and runner.busy():
+            # A distance move owns the lease chain (dashboard_server/drive_distance.py): the page's own requests wait.
+            self._send_json({'ok': False, 'error': 'distance_move_running'}, 409); return
         if path == "/api/rover/calibrate":
             # Steering calibration (ESP32-S3 bridge op calibrate): never during an autonomy run, and no takeover for
             # it; only its own fields go to the bridge (the bridge itself refuses while armed or moving).
@@ -621,6 +635,94 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if path!='/api/rover/stop' and not handoff.get('loop_joined'):
                 self._send_json({'ok':False,'error':'autonomy_manual_handoff_cleanup_pending'},409);return
         self._send_json(request({**payload, "op": operations[path], "owner": session}))
+
+    # ---- distance moves (2026-11-17, dashboard_server/drive_distance.py, docs/esp_rover_control.md 1-6) ----------
+    def _distance_parts(self):
+        from dashboard_server import drive_distance
+        cls = DashboardHandler
+        if cls.distance_table is None:
+            cls.distance_table = drive_distance.load_table()
+        return drive_distance, cls.distance_table, cls.distance_store, cls.distance_runner
+
+    def _distance_get(self):
+        dd, table, store, runner = self._distance_parts()
+        session = self._ensure_session(create=False)
+        self._send_json({'ok': True, 'table': dd.table_view(table),
+                         'corrections': store.view() if store is not None else {},
+                         'move': runner.view(session) if runner is not None and session else None})
+
+    def _distance_bridge(self, request, plan, dd):
+        """Why the control bridge cannot run this plan now (front-steer ESP32-S3 bridge, armed, drive cap), or None."""
+        status = request({"op": "status"})
+        if not isinstance(status, dict) or not status.get("connected", status.get("ok")):
+            return "motor_bridge_unavailable", status if isinstance(status, dict) else {}
+        if status.get("vehicle_profile") != "front_steer" or status.get("esp_kind") != "esp32_abs_hold":
+            return "distance_needs_steer_bridge", status
+        drive = status.get("drive") if isinstance(status.get("drive"), dict) else {}
+        cap = drive.get("max_pwm")
+        if not isinstance(cap, int) or isinstance(cap, bool):
+            return "distance_drive_cap_unknown", status
+        if cap <= 0:
+            return "distance_drive_cap_zero", status
+        if plan is not None and plan.get("pwm", 0) > cap:
+            return "distance_duty_above_cap", status
+        return None, status
+
+    def _distance_action(self, action):
+        from dashboard_server import rover_api
+        payload = self._read_json_body()       # read first: a refused request still consumes its body
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host"):
+            self.send_error(403, "Origin mismatch"); return
+        session = self._ensure_session(create=False)
+        if not session:
+            self.send_error(403, "Dashboard session required"); return
+        if not isinstance(payload, dict):
+            self.send_error(400, "Object required"); return
+        dd, table, store, runner = self._distance_parts()
+        if store is None or runner is None:
+            self._send_json({'ok': False, 'error': 'distance_not_configured'}, 503); return
+        request = rover_api.request
+        if action in ("plan", "start"):
+            factor = store.factor(payload.get("terrain")) if isinstance(payload.get("terrain"), str) else 1.0
+            plan = dd.plan(table, payload.get("terrain"), payload.get("duty"), payload.get("distance_m"), factor)
+            refusal, status = self._distance_bridge(request, plan if plan.get("problem") is None else None, dd)
+            drive = status.get("drive") if isinstance(status.get("drive"), dict) else {}
+            bridge = {"refusal": refusal, "armed": bool(status.get("armed")), "max_pwm": drive.get("max_pwm")}
+            if action == "plan":
+                self._send_json({'ok': plan.get("problem") is None and refusal is None, 'plan': plan, 'bridge': bridge})
+                return
+            supervisor = getattr(self, 'autonomy_supervisor', None)
+            if supervisor is not None and (supervisor.status().get('active') or supervisor.status().get('loop_cleanup_pending')):
+                self._send_json({'ok': False, 'error': 'distance_needs_manual'}, 409); return
+            if plan.get("problem"):
+                self._send_json({'ok': False, 'error': plan["problem"], 'plan': plan}); return
+            if refusal:
+                self._send_json({'ok': False, 'error': refusal, 'plan': plan, 'bridge': bridge}); return
+            if not status.get("armed"):
+                self._send_json({'ok': False, 'error': 'distance_needs_arm', 'plan': plan}); return
+            chain = {key: payload.get(key) for key in ("lease", "ticket", "seq")}
+            steer = payload.get("steer_mrad")
+            if not isinstance(chain["lease"], str) or not isinstance(chain["ticket"], str) \
+                    or type(chain["seq"]) is not int or type(steer) is not int:
+                self._send_json({'ok': False, 'error': 'distance_needs_lease'}); return
+            result = runner.start(session, plan, chain, steer)
+            self._send_json({**result, 'plan': plan})
+            return
+        move_id = payload.get("move_id")
+        if action == "hold":
+            self._send_json(runner.hold(session, move_id))
+        elif action == "release":
+            self._send_json(runner.release(session, move_id))
+        elif action == "feedback":
+            self._send_json(runner.feedback(session, move_id, payload.get("actual_m"), store))
+        elif action == "reset":
+            terrain = payload.get("terrain")
+            if terrain is not None and dd.terrain_of(table, terrain) is None:
+                self._send_json({'ok': False, 'error': 'distance_terrain_unknown'}); return
+            self._send_json({'ok': True, 'corrections': store.reset(terrain)})
+        else:
+            self.send_error(404)
 
     def log_message(self, fmt, *args):
         if os.environ.get("DASHBOARD_ACCESS_LOG", "0") == "1":
@@ -1716,6 +1818,11 @@ def create_server(host: str, port: int, config: str | None = None, *, autonomy_b
     DashboardHandler.provider = extensions.load_provider(settings, config) or TelemetryProvider(config)
     DashboardHandler.executor_client = executor_from_env(os.environ, ROOT)
     DashboardHandler.tuning_log = TuningLog(os.environ.get("UBTS_EXECUTOR_TUNING_LOG") or ROOT / "runtime/executor_tuning_log.jsonl")
+    from dashboard_server import drive_distance, rover_api
+    DashboardHandler.distance_table = None
+    DashboardHandler.distance_store = drive_distance.CorrectionStore(
+        os.environ.get("UBTS_DRIVE_DISTANCE_FILE") or ROOT / "runtime/drive_distance_corrections.json")
+    DashboardHandler.distance_runner = drive_distance.MoveRunner(lambda payload: rover_api.request(payload))
     from dashboard_server.source_live_mapping import SourceLiveMapping as LiveMapping
     from dashboard_server.mapping_operations import ManagedArchiveMapping,MappingOperations
     from dashboard_server.autonomy_settings import AutonomySettings
