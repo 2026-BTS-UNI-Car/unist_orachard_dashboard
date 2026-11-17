@@ -47,7 +47,13 @@ class ProfilesTest(unittest.TestCase):
 
 class ScenariosTest(unittest.TestCase):
     def test_named_scenarios(self):
-        self.assertEqual(sorted(run_bench.SCENARIOS), ["drive", "drive_lidar", "drive_map", "hidden", "load", "map", "quick", "sensors", "session_expiry"])
+        self.assertEqual(sorted(run_bench.SCENARIOS), ["drive", "drive_lidar", "drive_map", "hidden", "load", "map", "quick", "sensors", "session_expiry",
+                                                       "two_viewers"])
+        # two viewers (NET-11 (6)): the first client is "drive" without the second open; the peer is on the very bad link
+        pair = dict(run_bench.SCENARIOS["two_viewers"])
+        self.assertEqual(pair.pop("peer_profile"), "very_bad")
+        self.assertIn("very_bad", run_bench.load_profiles())
+        self.assertEqual(pair, {**run_bench.SCENARIOS["drive"], "warm_load": False})
         self.assertEqual(run_bench.SCENARIOS["drive"]["live_s"], 120)
         # drive_lidar is drive with the LiDAR as the driving screen's big view (the six screens show one of camera and LiDAR)
         self.assertEqual({k: v for k, v in run_bench.SCENARIOS["drive_lidar"].items() if k != "drive_view"}, run_bench.SCENARIOS["drive"])
@@ -57,6 +63,24 @@ class ScenariosTest(unittest.TestCase):
         self.assertTrue(run_bench.SCENARIOS["map"]["start_live_map"] and "drive" not in run_bench.SCENARIOS["map"])
         self.assertEqual(run_bench.SCENARIOS["drive_map"]["live_s"], 600)
         self.assertTrue(run_bench.SCENARIOS["drive"]["cold_load"] and run_bench.SCENARIOS["drive"]["warm_load"])
+
+    def test_each_client_has_its_own_link(self):
+        import stack
+        slow, fast = {"rate_kbps": 200}, {"rate_kbps": 5000}
+        ports = dict(stack.DEFAULT_PORTS)
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        common = dict(python="py", app=".", scratch=".", out=Path(folder.name), inputs={}, ports=ports)
+        pair = stack.Stack(profile=fast, client_profiles=[fast, slow], **common)
+        self.assertEqual(pair.clients, 2)
+        self.assertEqual(pair.client_origins(), [f"http://127.0.0.1:{ports['link']}", f"http://127.0.0.1:{ports['link'] + 1}"])
+        self.assertEqual(pair.link_ports(), [ports["link"], ports["link"] + 1])
+        direct_and_slow = stack.Stack(profile=None, client_profiles=[None, slow], **common)
+        self.assertEqual(direct_and_slow.client_origins(), [f"http://127.0.0.1:{ports['dashboard']}", f"http://127.0.0.1:{ports['link'] + 1}"])
+        self.assertEqual(direct_and_slow.link_ports(), [ports["link"] + 1])
+        # as before: one profile for every client, or none at all
+        self.assertEqual(stack.Stack(profile=fast, clients=2, **common).link_ports(), [ports["link"], ports["link"] + 1])
+        self.assertEqual(stack.Stack(profile=None, clients=2, **common).client_origins(), [f"http://127.0.0.1:{ports['dashboard']}"] * 2)
 
     def test_drive_exercise_stays_far_below_the_owner_limit(self):
         cycle = run_bench.DRIVE_CYCLE

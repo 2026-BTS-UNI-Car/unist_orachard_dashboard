@@ -49,6 +49,10 @@ SCENARIOS = {
     "hidden": dict(cold_load=True, warm_load=False, live_s=120, sample_every_s=5, hidden_after_s=60),
     # the dashboard session expires after 50 s: what happens to the streams?
     "session_expiry": dict(cold_load=True, warm_load=False, live_s=150, sample_every_s=5, env={"DASHBOARD_SESSION_TTL_S": "50"}),
+    # two viewers at once (NET-11 (6)): the first client has the run's profile and drives as in "drive"; a second client on
+    # the "very_bad" link watches Rover Control. Compare the first client with a "drive" run of the same profile
+    # (two_viewers.py): a slow viewer must not slow the fast one down.
+    "two_viewers": dict(cold_load=True, warm_load=False, live_s=120, sample_every_s=5, drive=DRIVE_CYCLE, peer_profile="very_bad"),
     # short version of "drive" for a check after a change (first open is not timed apart from the page becoming usable)
     "quick": dict(cold_load=True, warm_load=False, live_s=40, sample_every_s=5, drive=DRIVE_CYCLE, load_timeout_s=300),
 }
@@ -179,12 +183,18 @@ def run_once(args, scenario_name, profile_name, source, inputs, out_root, work):
             stack_inputs["camera_original_dir"] = str(original_dir)
             run["camera_original"] = original_info
         ports = stack.shifted_ports(args.port_offset)
+        client_profiles = None
+        if scenario.get("peer_profile"):
+            client_profiles = [profile, dict(load_profiles(extra=True)[scenario["peer_profile"]])]
+            run["client_profiles"] = [profile_name, scenario["peer_profile"]]
         bench = stack.Stack(python=args.python, app=app, scratch=scratch, out=out, inputs=stack_inputs, profile=profile, clients=args.clients,
-                            ports=ports, map_publish_mark=bool(scenario.get("map_publish_mark")), extra_env=scenario.get("env"))
+                            ports=ports, map_publish_mark=bool(scenario.get("map_publish_mark")), extra_env=scenario.get("env"),
+                            client_profiles=client_profiles)
         bench.start()
         run["ports"] = ports
         run["listeners"] = {str(port): name for port, name in bench.listeners.items()}
-        phases = {key: value for key, value in scenario.items() if key not in ("env", "map_publish_mark", "hidden_after_s", "drive_view", "route")}
+        phases = {key: value for key, value in scenario.items()
+                  if key not in ("env", "map_publish_mark", "hidden_after_s", "drive_view", "route", "peer_profile")}
         clients = [dict(origin=origin, width=args.width, height=args.height, mobile=args.mobile) for origin in bench.client_origins()]
         if scenario.get("hidden_after_s") is not None:
             clients[0]["hidden_after_s"] = scenario["hidden_after_s"]

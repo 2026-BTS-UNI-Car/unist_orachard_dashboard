@@ -120,9 +120,13 @@ class Sampler(threading.Thread):
 
 
 class Stack:
-    def __init__(self, *, python, app, scratch, out, inputs, profile=None, clients=1, ports=None, map_publish_mark=False, extra_env=None):
+    def __init__(self, *, python, app, scratch, out, inputs, profile=None, clients=1, ports=None, map_publish_mark=False, extra_env=None,
+                 client_profiles=None):
         self.python, self.app, self.scratch, self.out = str(python), Path(app), Path(scratch), Path(out)
-        self.inputs, self.profile, self.clients = inputs, profile, int(clients)
+        # One link profile per client (None: straight to the dashboard). By default every client has `profile`; the
+        # two-viewer scenario gives the second client a slower one (NET-11 (6)).
+        self.client_profiles = list(client_profiles) if client_profiles is not None else [profile] * int(clients)
+        self.inputs, self.profile, self.clients = inputs, profile, len(self.client_profiles)
         self.ports = dict(ports or DEFAULT_PORTS)
         self.map_publish_mark, self.extra_env = map_publish_mark, dict(extra_env or {})
         self.procs, self.logs = {}, []
@@ -131,12 +135,11 @@ class Stack:
 
     # ------------------------------------------------------------ addresses
     def link_ports(self):
-        return [self.ports["link"] + index for index in range(self.clients)] if self.profile else []
+        return [self.ports["link"] + index for index, profile in enumerate(self.client_profiles) if profile]
 
     def client_origins(self):
-        if self.profile:
-            return [f"http://127.0.0.1:{port}" for port in self.link_ports()]
-        return [f"http://127.0.0.1:{self.ports['dashboard']}"] * self.clients
+        return [f"http://127.0.0.1:{self.ports['link'] + index if profile else self.ports['dashboard']}"
+                for index, profile in enumerate(self.client_profiles)]
 
     def all_ports(self):
         return [self.ports[name] for name in ("dashboard", "lidar", "camera", "imu", "gps", "recorder", "control")] + self.link_ports()
@@ -208,9 +211,9 @@ class Stack:
             self.spawn("bridge_imugps", [bridge, "--bridge", "imugps", "--drive-json", self.inputs["drive_json"]] + common)
             time.sleep(2.0)
             self.spawn("dashboard", ["-m", "dashboard_server"])
-            if self.profile:
-                specs = sum((["--link", link_emulator.link_spec(f"c{index}", port, self.profile)]
-                             for index, port in enumerate(self.link_ports())), [])
+            if any(self.client_profiles):
+                specs = sum((["--link", link_emulator.link_spec(f"c{index}", self.ports["link"] + index, profile)]
+                             for index, profile in enumerate(self.client_profiles) if profile), [])
                 self.spawn("link", [TOOL_DIR / "link_emulator.py", "--upstream", f"127.0.0.1:{ports['dashboard']}",
                                     "--stats", self.out / "link.json"] + specs)
             self.wait_for(self.dashboard_ready, 40, "dashboard did not become ready")

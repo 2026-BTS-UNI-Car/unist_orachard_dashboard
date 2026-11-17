@@ -46,6 +46,12 @@
 # 같은 조건을 세 번 (실행 사이 흔들림 보기)
 <py> -B run_bench.py --scenario drive --profile normal --source HEAD --repeat 3 --inputs <inputs.json> --out-root <결과 폴더>
 
+# 두 화면 동시 (NET-11 (6)): 첫 화면은 그 프로필로 조종 연습, 둘째 화면은 아주 나쁨 연결로 Rover Control 을 본다.
+# 같은 프로필의 drive 실행(혼자)과 견주어 첫 화면 수치가 10 % 안인지 본다
+<py> -B run_bench.py --scenario drive --profile normal --source HEAD --inputs <inputs.json> --out-root <결과 폴더>
+<py> -B run_bench.py --scenario two_viewers --profile normal --source HEAD --inputs <inputs.json> --out-root <결과 폴더>
+python -B two_viewers.py --alone <drive 실행 폴더> --pair <two_viewers 실행 폴더>
+
 # 표로 보기 (결과 폴더 하나 또는 여럿, 또는 그 위 폴더)
 python summarize.py <결과 폴더>
 python summarize.py <결과 폴더> --markdown
