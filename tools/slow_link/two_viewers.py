@@ -87,6 +87,9 @@ def render(result):
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--alone", required=True, help='run folder of scenario "drive" (one viewer)')
     parser.add_argument("--pair", required=True, help='run folder of scenario "two_viewers" with the same profile')
