@@ -2,16 +2,16 @@
  "schema": "ubts.ui_check.run",
  "schema_version": 1,
  "tool_version": "1.0.0",
- "created_at": "2026-11-14T14:31:28+09:00",
- "duration_s": 158.0,
- "label": "menu and pages of before the redesign (UI-16): eight menu pages, new parts inside Rover Control; light theme = the default",
+ "created_at": "2026-11-17T23:24:19+09:00",
+ "duration_s": 114.5,
+ "label": "dash polish 2026-11-17 (09aeb43): drive panel first below 900px, autonomy above the set-up parts, solid panel STOPs; light theme = the default",
  "static_dir": "static",
  "static_fingerprint": {
-  "files": 73,
-  "bytes": 4105854,
-  "sha256": "5decca5afa87c96292d8e75272ceb4180688505bab643a0c49b82d22b3dd5dd2"
+  "files": 76,
+  "bytes": 4198976,
+  "sha256": "b24a4724557a0b6b09ee755e18987175ab49b0513a7573c72072a896abc9ece2"
  },
- "static_git_head": "6825a7bfb6e2c3fb50723bcc4487f9f0e2c093c0",
+ "static_git_head": "09aeb430ddfee4e7f58b548897b020dc3889fe28",
  "browser": {
   "name": "chromium",
   "channel": "chrome",
@@ -141,44 +141,46 @@
   "requests": {
    "empty": {
     "api": {
-     "/api/autonomy": 5,
-     "/api/autonomy/observe": 22,
-     "/api/docs": 41,
+     "/api/autonomy": 1,
+     "/api/autonomy/observe": 12,
+     "/api/docs": 5,
      "/api/executor/status": 2,
-     "/api/live/map": 5,
-     "/api/ping": 235,
+     "/api/live/map": 3,
+     "/api/network/wifi": 5,
+     "/api/ping": 191,
      "/api/recordings": 5,
-     "/api/recordings/status": 12,
-     "/api/telemetry": 103
+     "/api/recordings/status": 5,
+     "/api/telemetry": 102
     },
     "unmocked": {},
     "writes": {},
     "websocket": {
-     "camera": 9,
-     "lidar": 17
+     "camera": 5,
+     "lidar": 15
     },
     "missing_static": {}
    },
    "stress": {
     "api": {
      "/api/autonomy": 1,
-     "/api/autonomy/observe": 15,
+     "/api/autonomy/observe": 14,
      "/api/docker/container/mock0000": 5,
      "/api/docker/container/mock0000/logs": 5,
-     "/api/docs": 40,
+     "/api/docs": 5,
      "/api/docs/mock-document-01": 5,
      "/api/executor/status": 5,
      "/api/live/map": 3,
-     "/api/ping": 241,
+     "/api/network/wifi": 5,
+     "/api/ping": 186,
      "/api/recordings": 5,
      "/api/recordings/status": 5,
-     "/api/telemetry": 103
+     "/api/telemetry": 96
     },
     "unmocked": {},
     "writes": {},
     "websocket": {
-     "camera": 10,
-     "lidar": 17
+     "camera": 5,
+     "lidar": 15
     },
     "missing_static": {}
    }
@@ -215,7 +217,7 @@
     "pages": 8,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 15.97,
+    "max_screens": 16.64,
     "stop_visible_pages": 8,
     "stop_in_first_viewport_pages": 8,
     "outside_viewport_elements": 0,
@@ -238,7 +240,7 @@
     "pages": 8,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 5.29,
+    "max_screens": 5.51,
     "stop_visible_pages": 8,
     "stop_in_first_viewport_pages": 8,
     "outside_viewport_elements": 0,
@@ -292,7 +294,7 @@
     "overflowing_elements_vertical": 0,
     "clipped_texts": 0,
     "overlaps": 0,
-    "small_targets": 147,
+    "small_targets": 148,
     "canvas_mismatches": 0,
     "canvas_stale_after_resize": 0,
     "console_errors": 0,
@@ -330,7 +332,7 @@
     "pages": 8,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 22.0,
+    "max_screens": 22.66,
     "stop_visible_pages": 8,
     "stop_in_first_viewport_pages": 8,
     "outside_viewport_elements": 0,
@@ -353,7 +355,7 @@
     "pages": 8,
     "pages_with_horizontal_overflow": 0,
     "max_horizontal_overflow_px": 0,
-    "max_screens": 7.74,
+    "max_screens": 7.95,
     "stop_visible_pages": 8,
     "stop_in_first_viewport_pages": 8,
     "outside_viewport_elements": 0,
@@ -407,7 +409,7 @@
     "overflowing_elements_vertical": 0,
     "clipped_texts": 0,
     "overlaps": 0,
-    "small_targets": 151,
+    "small_targets": 182,
     "canvas_mismatches": 0,
     "canvas_stale_after_resize": 0,
     "console_errors": 0,
@@ -432,9 +434,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 511,
+   "load_ms": 331,
    "settled": true,
-   "settle_ms": 1600,
+   "settle_ms": 1590,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -514,7 +516,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 125,
+     "not_visible": 154,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -602,7 +604,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -638,6 +640,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -727,9 +757,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 506,
+   "load_ms": 329,
    "settled": true,
-   "settle_ms": 1595,
+   "settle_ms": 1583,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -809,7 +839,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 125,
+     "not_visible": 154,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -897,7 +927,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -933,6 +963,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -1023,9 +1081,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 538,
+   "load_ms": 331,
    "settled": true,
-   "settle_ms": 1574,
+   "settle_ms": 1572,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -1105,7 +1163,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 125,
+     "not_visible": 154,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -1193,7 +1251,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -1229,6 +1287,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -1319,9 +1405,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 742,
+   "load_ms": 421,
    "settled": true,
-   "settle_ms": 1631,
+   "settle_ms": 1585,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -1401,7 +1487,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 117,
+     "not_visible": 146,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -1489,7 +1575,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -1525,6 +1611,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -1615,9 +1729,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 769,
+   "load_ms": 459,
    "settled": true,
-   "settle_ms": 1630,
+   "settle_ms": 1569,
    "pointer_coarse": false,
    "final_path": "/",
    "screenshots": {
@@ -1786,7 +1900,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 117,
+     "not_visible": 146,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -1874,7 +1988,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -1910,6 +2024,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -2000,9 +2142,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 763,
+   "load_ms": 439,
    "settled": true,
-   "settle_ms": 1613,
+   "settle_ms": 1573,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2082,7 +2224,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 110,
+     "not_visible": 139,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -2139,7 +2281,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -2175,6 +2317,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -2264,9 +2434,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 838,
+   "load_ms": 477,
    "settled": true,
-   "settle_ms": 1575,
+   "settle_ms": 1578,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2346,7 +2516,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 110,
+     "not_visible": 139,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -2403,7 +2573,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -2439,6 +2609,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -2529,9 +2727,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 813,
+   "load_ms": 342,
    "settled": true,
-   "settle_ms": 1605,
+   "settle_ms": 1578,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2611,7 +2809,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 110,
+     "not_visible": 139,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -2668,7 +2866,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -2704,6 +2902,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -2794,9 +3020,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 842,
+   "load_ms": 303,
    "settled": true,
-   "settle_ms": 1578,
+   "settle_ms": 1579,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -2876,7 +3102,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 102,
+     "not_visible": 131,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -2933,7 +3159,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -2969,6 +3195,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -3059,9 +3313,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 1102,
+   "load_ms": 450,
    "settled": true,
-   "settle_ms": 1615,
+   "settle_ms": 1600,
    "pointer_coarse": false,
    "final_path": "/connection",
    "screenshots": {
@@ -3350,7 +3604,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 102,
+     "not_visible": 131,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -3407,7 +3661,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -3443,6 +3697,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -3533,7 +3815,7 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 722,
+   "load_ms": 403,
    "settled": true,
    "settle_ms": 1594,
    "pointer_coarse": true,
@@ -3615,7 +3897,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 125,
+     "not_visible": 154,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -3796,7 +4078,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -3832,6 +4114,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -3922,9 +4232,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 711,
+   "load_ms": 239,
    "settled": true,
-   "settle_ms": 1615,
+   "settle_ms": 1576,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -4004,7 +4314,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 125,
+     "not_visible": 154,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -4185,7 +4495,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -4221,6 +4531,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -4311,9 +4649,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 828,
+   "load_ms": 506,
    "settled": true,
-   "settle_ms": 1583,
+   "settle_ms": 1601,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -4393,7 +4731,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 125,
+     "not_visible": 154,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -4574,7 +4912,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -4610,6 +4948,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -4700,9 +5066,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 527,
+   "load_ms": 362,
    "settled": true,
-   "settle_ms": 1595,
+   "settle_ms": 1590,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -4782,7 +5148,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 117,
+     "not_visible": 146,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -4963,7 +5329,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -4999,6 +5365,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -5089,9 +5483,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 500,
+   "load_ms": 299,
    "settled": true,
-   "settle_ms": 1575,
+   "settle_ms": 1587,
    "pointer_coarse": false,
    "final_path": "/system",
    "screenshots": {
@@ -5260,7 +5654,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 117,
+     "not_visible": 146,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -5441,7 +5835,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -5477,6 +5871,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -5567,9 +5989,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 830,
+   "load_ms": 522,
    "settled": true,
-   "settle_ms": 1627,
+   "settle_ms": 1588,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -5585,8 +6007,8 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 4,
-    "interactive_in_first_viewport": 4,
+    "interactive_total": 5,
+    "interactive_in_first_viewport": 5,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -5601,8 +6023,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1336,
-    "screens": 1.58,
+    "page_height_px": 1632,
+    "screens": 1.93,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -5624,14 +6046,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 390,
      "client_width": 390,
-     "scroll_height": 1336,
+     "scroll_height": 1632,
      "client_height": 844,
      "body_scroll_width": 390,
      "inner_width": 390,
      "inner_height": 844,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 81,
+     "visible_elements": 96,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -5649,7 +6071,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 125,
+     "not_visible": 153,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -5657,7 +6079,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 33,
-      "y": 795,
+      "y": 1091,
       "w": 324,
       "h": 170,
       "css_w": 324,
@@ -5706,7 +6128,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -5751,6 +6173,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -5761,25 +6211,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 123,
+      "scroll_y": 197,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 246,
+      "scroll_y": 394,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 369,
+      "scroll_y": 591,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 492,
+      "scroll_y": 788,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -5795,19 +6245,19 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 25,
+      "13px": 30,
       "16px": 6,
       "24px": 1,
-      "14px": 10,
+      "14px": 13,
       "20px": 1
      },
      "font_weights": {
-      "400": 20,
-      "500": 8,
-      "600": 13,
+      "400": 25,
+      "500": 9,
+      "600": 15,
       "700": 2
      },
-     "text_elements": 43,
+     "text_elements": 51,
      "heavy_text_elements": 0,
      "text_colors": 6,
      "background_colors": 10,
@@ -5832,9 +6282,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 590,
+   "load_ms": 365,
    "settled": true,
-   "settle_ms": 1633,
+   "settle_ms": 1568,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -5850,7 +6300,7 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 4,
+    "interactive_total": 5,
     "interactive_in_first_viewport": 4,
     "small_targets": 0,
     "tiny_targets": 0,
@@ -5866,8 +6316,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1162,
-    "screens": 2.98,
+    "page_height_px": 1458,
+    "screens": 3.74,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -5889,14 +6339,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 1162,
+     "scroll_height": 1458,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
      "inner_height": 390,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 81,
+     "visible_elements": 96,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -5914,7 +6364,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 125,
+     "not_visible": 153,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -5922,7 +6372,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 33,
-      "y": 613,
+      "y": 909,
       "w": 778,
       "h": 220,
       "css_w": 778,
@@ -5971,7 +6421,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -6016,6 +6466,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -6026,25 +6504,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 193,
+      "scroll_y": 267,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 386,
+      "scroll_y": 534,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 579,
+      "scroll_y": 801,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 772,
+      "scroll_y": 1068,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -6060,19 +6538,19 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 25,
+      "13px": 30,
       "16px": 4,
       "24px": 1,
       "20px": 3,
-      "14px": 10
+      "14px": 13
      },
      "font_weights": {
-      "400": 20,
-      "500": 8,
-      "600": 13,
+      "400": 25,
+      "500": 9,
+      "600": 15,
       "700": 2
      },
-     "text_elements": 43,
+     "text_elements": 51,
      "heavy_text_elements": 0,
      "text_colors": 6,
      "background_colors": 11,
@@ -6097,9 +6575,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 533,
+   "load_ms": 315,
    "settled": true,
-   "settle_ms": 1589,
+   "settle_ms": 1565,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -6115,8 +6593,8 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 4,
-    "interactive_in_first_viewport": 4,
+    "interactive_total": 5,
+    "interactive_in_first_viewport": 5,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -6131,8 +6609,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1226,
-    "screens": 1.04,
+    "page_height_px": 1522,
+    "screens": 1.29,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -6154,14 +6632,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 820,
      "client_width": 820,
-     "scroll_height": 1226,
+     "scroll_height": 1522,
      "client_height": 1180,
      "body_scroll_width": 820,
      "inner_width": 820,
      "inner_height": 1180,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 82,
+     "visible_elements": 97,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -6179,7 +6657,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 125,
+     "not_visible": 153,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -6187,7 +6665,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 33,
-      "y": 677,
+      "y": 973,
       "w": 754,
       "h": 220,
       "css_w": 754,
@@ -6236,7 +6714,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -6281,6 +6759,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -6291,25 +6797,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 12,
+      "scroll_y": 86,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 23,
+      "scroll_y": 171,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 35,
+      "scroll_y": 257,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 46,
+      "scroll_y": 342,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -6325,19 +6831,19 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 26,
+      "13px": 31,
       "16px": 4,
       "24px": 1,
       "20px": 3,
-      "14px": 10
+      "14px": 13
      },
      "font_weights": {
-      "400": 21,
-      "500": 8,
-      "600": 13,
+      "400": 26,
+      "500": 9,
+      "600": 15,
       "700": 2
      },
-     "text_elements": 44,
+     "text_elements": 52,
      "heavy_text_elements": 0,
      "text_colors": 6,
      "background_colors": 11,
@@ -6362,9 +6868,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 607,
+   "load_ms": 431,
    "settled": true,
-   "settle_ms": 1643,
+   "settle_ms": 1594,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -6380,8 +6886,8 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 12,
-    "interactive_in_first_viewport": 12,
+    "interactive_total": 13,
+    "interactive_in_first_viewport": 13,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -6396,8 +6902,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1204,
-    "screens": 1.47,
+    "page_height_px": 1482,
+    "screens": 1.81,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -6419,14 +6925,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 1180,
      "client_width": 1180,
-     "scroll_height": 1204,
+     "scroll_height": 1482,
      "client_height": 820,
      "body_scroll_width": 1180,
      "inner_width": 1180,
      "inner_height": 820,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 119,
+     "visible_elements": 134,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -6444,7 +6950,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 117,
+     "not_visible": 145,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -6452,7 +6958,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 269,
-      "y": 651,
+      "y": 929,
       "w": 866,
       "h": 220,
       "css_w": 866,
@@ -6501,7 +7007,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -6546,6 +7052,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -6556,25 +7090,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 88,
+      "scroll_y": 156,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 176,
+      "scroll_y": 311,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 264,
+      "scroll_y": 467,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 352,
+      "scroll_y": 622,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -6590,19 +7124,19 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 29,
+      "13px": 34,
       "16px": 5,
-      "14px": 19,
+      "14px": 22,
       "24px": 1,
       "20px": 3
      },
      "font_weights": {
-      "400": 24,
-      "500": 16,
-      "600": 14,
+      "400": 29,
+      "500": 17,
+      "600": 16,
       "700": 3
      },
-     "text_elements": 57,
+     "text_elements": 65,
      "heavy_text_elements": 0,
      "text_colors": 6,
      "background_colors": 13,
@@ -6627,9 +7161,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 636,
+   "load_ms": 385,
    "settled": true,
-   "settle_ms": 1596,
+   "settle_ms": 1598,
    "pointer_coarse": false,
    "final_path": "/network",
    "screenshots": {
@@ -6645,9 +7179,9 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 12,
-    "interactive_in_first_viewport": 12,
-    "small_targets": 11,
+    "interactive_total": 13,
+    "interactive_in_first_viewport": 13,
+    "small_targets": 12,
     "tiny_targets": 0,
     "small_inline_links": 0,
     "canvases": 1,
@@ -6661,8 +7195,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1192,
-    "screens": 1.32,
+    "page_height_px": 1462,
+    "screens": 1.62,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -6684,14 +7218,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 1440,
      "client_width": 1440,
-     "scroll_height": 1192,
+     "scroll_height": 1462,
      "client_height": 900,
      "body_scroll_width": 1440,
      "inner_width": 1440,
      "inner_height": 900,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 119,
+     "visible_elements": 134,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -6794,11 +7328,19 @@
       "h": 36,
       "hit_source": "self",
       "disabled": true
+     },
+     {
+      "sel": "button#wifiScanButton.action-button.secondary",
+      "text": "주변 검색",
+      "w": 81.8,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
      }
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 117,
+     "not_visible": 145,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -6806,7 +7348,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 269,
-      "y": 627,
+      "y": 897,
       "w": 1126,
       "h": 220,
       "css_w": 1126,
@@ -6855,7 +7397,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -6900,6 +7442,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -6910,25 +7480,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 73,
+      "scroll_y": 141,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 146,
+      "scroll_y": 281,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 219,
+      "scroll_y": 422,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 292,
+      "scroll_y": 562,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -6944,19 +7514,19 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 29,
+      "13px": 34,
       "16px": 5,
-      "14px": 19,
+      "14px": 22,
       "24px": 1,
       "20px": 3
      },
      "font_weights": {
-      "400": 24,
-      "500": 16,
-      "600": 14,
+      "400": 29,
+      "500": 17,
+      "600": 16,
       "700": 3
      },
-     "text_elements": 57,
+     "text_elements": 65,
      "heavy_text_elements": 0,
      "text_colors": 6,
      "background_colors": 13,
@@ -6981,9 +7551,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 368,
+   "load_ms": 264,
    "settled": true,
-   "settle_ms": 1577,
+   "settle_ms": 1580,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7063,7 +7633,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 126,
+     "not_visible": 155,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -7151,7 +7721,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -7187,6 +7757,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -7277,9 +7875,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 1013,
+   "load_ms": 421,
    "settled": true,
-   "settle_ms": 1617,
+   "settle_ms": 1587,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7359,7 +7957,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 126,
+     "not_visible": 155,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -7447,7 +8045,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -7483,6 +8081,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -7573,9 +8199,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 800,
+   "load_ms": 406,
    "settled": true,
-   "settle_ms": 1585,
+   "settle_ms": 1569,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7655,7 +8281,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 126,
+     "not_visible": 155,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -7743,7 +8369,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -7779,6 +8405,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -7869,9 +8523,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 677,
+   "load_ms": 237,
    "settled": true,
-   "settle_ms": 1592,
+   "settle_ms": 1575,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -7951,7 +8605,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 118,
+     "not_visible": 147,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -8039,7 +8693,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -8075,6 +8729,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -8165,9 +8847,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 607,
+   "load_ms": 445,
    "settled": true,
-   "settle_ms": 1630,
+   "settle_ms": 1610,
    "pointer_coarse": false,
    "final_path": "/docker",
    "screenshots": {
@@ -8328,7 +9010,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 118,
+     "not_visible": 147,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -8416,7 +9098,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -8452,6 +9134,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -8542,9 +9252,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 622,
+   "load_ms": 348,
    "settled": true,
-   "settle_ms": 1583,
+   "settle_ms": 1581,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -8624,7 +9334,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 123,
+     "not_visible": 152,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -8681,7 +9391,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -8717,6 +9427,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -8807,9 +9545,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 599,
+   "load_ms": 293,
    "settled": true,
-   "settle_ms": 1572,
+   "settle_ms": 1574,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -8889,7 +9627,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 123,
+     "not_visible": 152,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -8946,7 +9684,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -8982,6 +9720,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -9072,9 +9838,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 1120,
+   "load_ms": 394,
    "settled": true,
-   "settle_ms": 1615,
+   "settle_ms": 1577,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -9154,7 +9920,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 123,
+     "not_visible": 152,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -9211,7 +9977,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -9247,6 +10013,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -9337,9 +10131,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 702,
+   "load_ms": 382,
    "settled": true,
-   "settle_ms": 1587,
+   "settle_ms": 1562,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -9419,7 +10213,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 115,
+     "not_visible": 144,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -9476,7 +10270,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -9512,6 +10306,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -9602,9 +10424,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 712,
+   "load_ms": 368,
    "settled": true,
-   "settle_ms": 1570,
+   "settle_ms": 1584,
    "pointer_coarse": false,
    "final_path": "/fan",
    "screenshots": {
@@ -9789,7 +10611,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 115,
+     "not_visible": 144,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -9846,7 +10668,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -9882,6 +10704,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -9972,9 +10822,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 898,
+   "load_ms": 381,
    "settled": true,
-   "settle_ms": 1659,
+   "settle_ms": 1575,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -9991,7 +10841,7 @@
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
     "interactive_total": 55,
-    "interactive_in_first_viewport": 7,
+    "interactive_in_first_viewport": 10,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -10054,7 +10904,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 74,
+     "not_visible": 103,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -10062,7 +10912,7 @@
      {
       "sel": "canvas#roverLidarCanvas.lidar-map",
       "x": 33,
-      "y": 435,
+      "y": 1393,
       "w": 324,
       "h": 324,
       "css_w": 324,
@@ -10076,7 +10926,7 @@
      {
       "sel": "canvas#liveMapCanvas",
       "x": 33,
-      "y": 1425,
+      "y": 2383,
       "w": 324,
       "h": 300,
       "css_w": 324,
@@ -10090,7 +10940,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 33,
-      "y": 3486.4,
+      "y": 4444.4,
       "w": 324,
       "h": 220,
       "css_w": 324,
@@ -10235,7 +11085,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -10260,10 +11110,10 @@
       "text": "STOP",
       "visible": true,
       "layer": "flow",
-      "hit_test": null,
+      "hit_test": true,
       "disabled": false,
       "x": 265,
-      "y": 4037.4,
+      "y": 368,
       "w": 92,
       "h": 44
      },
@@ -10277,9 +11127,37 @@
       "hit_test": null,
       "disabled": false,
       "x": 143.7,
-      "y": 4693.4,
+      "y": 1024,
       "w": 102.7,
       "h": 56
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -10332,8 +11210,8 @@
      },
      "font_weights": {
       "400": 62,
-      "500": 65,
-      "600": 60,
+      "500": 66,
+      "600": 59,
       "700": 4
      },
      "text_elements": 191,
@@ -10361,9 +11239,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 825,
+   "load_ms": 471,
    "settled": true,
-   "settle_ms": 1685,
+   "settle_ms": 1571,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -10380,7 +11258,7 @@
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
     "interactive_total": 55,
-    "interactive_in_first_viewport": 5,
+    "interactive_in_first_viewport": 7,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -10395,8 +11273,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 6229,
-    "screens": 15.97,
+    "page_height_px": 6488,
+    "screens": 16.64,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -10418,7 +11296,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 6229,
+     "scroll_height": 6488,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
@@ -10443,14 +11321,14 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 74,
+     "not_visible": 103,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
     "canvases": [
      {
       "sel": "canvas#roverLidarCanvas.lidar-map",
-      "x": 33,
+      "x": 447,
       "y": 316,
       "w": 364,
       "h": 364,
@@ -10464,7 +11342,7 @@
      },
      {
       "sel": "canvas#liveMapCanvas",
-      "x": 33,
+      "x": 447,
       "y": 1244,
       "w": 364,
       "h": 350,
@@ -10479,7 +11357,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 33,
-      "y": 2513,
+      "y": 3111.8,
       "w": 364,
       "h": 220,
       "css_w": 364,
@@ -10493,7 +11371,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 162,
-      "y": 4723,
+      "y": 4981.8,
       "w": 520,
       "h": 520,
       "css_w": 520,
@@ -10507,7 +11385,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 33,
-      "y": 5712,
+      "y": 5970.8,
       "w": 778,
       "h": 420,
       "css_w": 778,
@@ -10624,7 +11502,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -10649,10 +11527,10 @@
       "text": "STOP",
       "visible": true,
       "layer": "flow",
-      "hit_test": null,
+      "hit_test": true,
       "disabled": false,
-      "x": 719,
-      "y": 2446,
+      "x": 305,
+      "y": 249,
       "w": 92,
       "h": 44
      },
@@ -10665,10 +11543,38 @@
       "layer": "flow",
       "hit_test": null,
       "disabled": false,
-      "x": 571,
-      "y": 3102,
+      "x": 157,
+      "y": 905,
       "w": 116,
       "h": 56
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -10679,25 +11585,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1460,
+      "scroll_y": 1525,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2920,
+      "scroll_y": 3049,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4379,
+      "scroll_y": 4574,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 5839,
+      "scroll_y": 6098,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -10721,14 +11627,14 @@
      },
      "font_weights": {
       "400": 62,
-      "500": 64,
-      "600": 61,
+      "500": 65,
+      "600": 60,
       "700": 4
      },
      "text_elements": 191,
      "heavy_text_elements": 0,
      "text_colors": 9,
-     "background_colors": 17,
+     "background_colors": 18,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -10750,9 +11656,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 797,
+   "load_ms": 461,
    "settled": true,
-   "settle_ms": 1624,
+   "settle_ms": 1581,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -10769,7 +11675,7 @@
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
     "interactive_total": 55,
-    "interactive_in_first_viewport": 15,
+    "interactive_in_first_viewport": 24,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -10784,8 +11690,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 6237,
-    "screens": 5.29,
+    "page_height_px": 6507,
+    "screens": 5.51,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -10807,7 +11713,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 820,
      "client_width": 820,
-     "scroll_height": 6237,
+     "scroll_height": 6507,
      "client_height": 1180,
      "body_scroll_width": 820,
      "inner_width": 820,
@@ -10832,14 +11738,14 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 74,
+     "not_visible": 103,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
     "canvases": [
      {
       "sel": "canvas#roverLidarCanvas.lidar-map",
-      "x": 33,
+      "x": 435,
       "y": 336,
       "w": 352,
       "h": 352,
@@ -10853,7 +11759,7 @@
      },
      {
       "sel": "canvas#liveMapCanvas",
-      "x": 33,
+      "x": 435,
       "y": 1252,
       "w": 352,
       "h": 350,
@@ -10868,7 +11774,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 33,
-      "y": 2539,
+      "y": 3131,
       "w": 352,
       "h": 220,
       "css_w": 352,
@@ -10882,7 +11788,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 150,
-      "y": 4731,
+      "y": 5001,
       "w": 520,
       "h": 520,
       "css_w": 520,
@@ -10896,7 +11802,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 33,
-      "y": 5720,
+      "y": 5990,
       "w": 754,
       "h": 420,
       "css_w": 754,
@@ -11013,7 +11919,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -11038,10 +11944,10 @@
       "text": "STOP",
       "visible": true,
       "layer": "flow",
-      "hit_test": null,
+      "hit_test": true,
       "disabled": false,
-      "x": 695,
-      "y": 2472,
+      "x": 293,
+      "y": 269,
       "w": 92,
       "h": 44
      },
@@ -11052,12 +11958,40 @@
       "text": "STOP",
       "visible": true,
       "layer": "flow",
-      "hit_test": null,
+      "hit_test": true,
       "disabled": false,
-      "x": 555,
-      "y": 3110,
+      "x": 153,
+      "y": 907,
       "w": 112,
       "h": 56
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -11068,25 +12002,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1264,
+      "scroll_y": 1332,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 2529,
+      "scroll_y": 2664,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3793,
+      "scroll_y": 3995,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 5057,
+      "scroll_y": 5327,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -11110,14 +12044,14 @@
      },
      "font_weights": {
       "400": 63,
-      "500": 64,
-      "600": 61,
+      "500": 65,
+      "600": 60,
       "700": 4
      },
      "text_elements": 192,
      "heavy_text_elements": 0,
      "text_colors": 9,
-     "background_colors": 17,
+     "background_colors": 18,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -11139,9 +12073,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 4793,
+   "load_ms": 471,
    "settled": true,
-   "settle_ms": 2644,
+   "settle_ms": 1579,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -11187,7 +12121,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 8,
+    "style_text_colors": 9,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -11221,7 +12155,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 66,
+     "not_visible": 95,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -11402,7 +12336,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -11444,9 +12378,37 @@
       "hit_test": null,
       "disabled": false,
       "x": 1004.8,
-      "y": 981,
+      "y": 999,
       "w": 61.1,
       "h": 56
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -11505,8 +12467,8 @@
      },
      "text_elements": 205,
      "heavy_text_elements": 0,
-     "text_colors": 8,
-     "background_colors": 17,
+     "text_colors": 9,
+     "background_colors": 18,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -11528,9 +12490,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 5761,
+   "load_ms": 469,
    "settled": true,
-   "settle_ms": 2322,
+   "settle_ms": 1577,
    "pointer_coarse": false,
    "final_path": "/rover-control",
    "screenshots": {
@@ -11576,7 +12538,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 8,
+    "style_text_colors": 9,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -12059,7 +13021,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 66,
+     "not_visible": 95,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -12240,7 +13202,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -12285,6 +13247,34 @@
       "y": 889,
       "w": 85.4,
       "h": 44
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -12343,8 +13333,8 @@
      },
      "text_elements": 205,
      "heavy_text_elements": 0,
-     "text_colors": 8,
-     "background_colors": 17,
+     "text_colors": 9,
+     "background_colors": 18,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -12366,9 +13356,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 3428,
+   "load_ms": 193,
    "settled": true,
-   "settle_ms": 2234,
+   "settle_ms": 1579,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -12448,7 +13438,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 126,
+     "not_visible": 155,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -12466,7 +13456,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -12502,6 +13492,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -12592,9 +13610,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 1366,
+   "load_ms": 164,
    "settled": true,
-   "settle_ms": 1706,
+   "settle_ms": 1575,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -12674,7 +13692,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 126,
+     "not_visible": 155,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -12692,7 +13710,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -12728,6 +13746,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -12818,9 +13864,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 1165,
+   "load_ms": 335,
    "settled": true,
-   "settle_ms": 1807,
+   "settle_ms": 1608,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -12900,7 +13946,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 126,
+     "not_visible": 155,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -12918,7 +13964,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -12954,6 +14000,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -13044,9 +14118,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 920,
+   "load_ms": 294,
    "settled": true,
-   "settle_ms": 1686,
+   "settle_ms": 1587,
    "pointer_coarse": true,
    "final_path": "/docs",
    "screenshots": {
@@ -13126,7 +14200,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 118,
+     "not_visible": 147,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -13144,7 +14218,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -13180,6 +14254,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -13270,9 +14372,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 1268,
+   "load_ms": 228,
    "settled": true,
-   "settle_ms": 1715,
+   "settle_ms": 1557,
    "pointer_coarse": false,
    "final_path": "/docs",
    "screenshots": {
@@ -13425,7 +14527,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 118,
+     "not_visible": 147,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -13443,7 +14545,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -13479,6 +14581,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -13569,9 +14699,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 792,
+   "load_ms": 519,
    "settled": true,
-   "settle_ms": 1571,
+   "settle_ms": 1583,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -13651,7 +14781,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 179,
+     "not_visible": 194,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -13739,7 +14869,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -13775,6 +14905,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -13864,9 +15022,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 1167,
+   "load_ms": 279,
    "settled": true,
-   "settle_ms": 1552,
+   "settle_ms": 1584,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -13946,7 +15104,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 179,
+     "not_visible": 194,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -14034,7 +15192,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -14070,6 +15228,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -14160,9 +15346,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 1712,
+   "load_ms": 220,
    "settled": true,
-   "settle_ms": 1697,
+   "settle_ms": 1575,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -14242,7 +15428,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 179,
+     "not_visible": 194,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -14330,7 +15516,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -14366,6 +15552,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -14456,9 +15670,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 1409,
+   "load_ms": 179,
    "settled": true,
-   "settle_ms": 1766,
+   "settle_ms": 1654,
    "pointer_coarse": true,
    "final_path": "/",
    "screenshots": {
@@ -14538,7 +15752,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 171,
+     "not_visible": 186,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -14626,7 +15840,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -14662,6 +15876,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -14752,9 +15994,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 626,
+   "load_ms": 280,
    "settled": true,
-   "settle_ms": 1898,
+   "settle_ms": 1614,
    "pointer_coarse": false,
    "final_path": "/",
    "screenshots": {
@@ -14923,7 +16165,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 171,
+     "not_visible": 186,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -15011,7 +16253,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -15047,6 +16289,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -15137,9 +16407,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 1005,
+   "load_ms": 269,
    "settled": true,
-   "settle_ms": 1593,
+   "settle_ms": 1571,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -15219,7 +16489,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 164,
+     "not_visible": 179,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -15276,7 +16546,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -15312,6 +16582,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -15401,9 +16699,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 2026,
+   "load_ms": 206,
    "settled": true,
-   "settle_ms": 1793,
+   "settle_ms": 1604,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -15449,7 +16747,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 8,
+    "style_text_colors": 7,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -15483,7 +16781,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 164,
+     "not_visible": 179,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -15540,7 +16838,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -15576,6 +16874,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -15643,8 +16969,8 @@
      },
      "text_elements": 139,
      "heavy_text_elements": 0,
-     "text_colors": 8,
-     "background_colors": 16,
+     "text_colors": 7,
+     "background_colors": 15,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -15666,9 +16992,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 1325,
+   "load_ms": 295,
    "settled": true,
-   "settle_ms": 1531,
+   "settle_ms": 1594,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -15748,7 +17074,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 164,
+     "not_visible": 179,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -15805,7 +17131,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -15841,6 +17167,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -15931,9 +17285,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 903,
+   "load_ms": 236,
    "settled": true,
-   "settle_ms": 1656,
+   "settle_ms": 1586,
    "pointer_coarse": true,
    "final_path": "/connection",
    "screenshots": {
@@ -16013,7 +17367,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 156,
+     "not_visible": 171,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -16070,7 +17424,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -16106,6 +17460,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -16196,9 +17578,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 786,
+   "load_ms": 201,
    "settled": true,
-   "settle_ms": 1663,
+   "settle_ms": 1618,
    "pointer_coarse": false,
    "final_path": "/connection",
    "screenshots": {
@@ -16487,7 +17869,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 156,
+     "not_visible": 171,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -16544,7 +17926,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -16580,6 +17962,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -16670,9 +18080,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 256,
+   "load_ms": 344,
    "settled": true,
-   "settle_ms": 1582,
+   "settle_ms": 1653,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -16752,7 +18162,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 179,
+     "not_visible": 194,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -16933,7 +18343,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -16969,6 +18379,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -17059,9 +18497,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 293,
+   "load_ms": 213,
    "settled": true,
-   "settle_ms": 1620,
+   "settle_ms": 1504,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -17141,7 +18579,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 179,
+     "not_visible": 194,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -17322,7 +18760,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -17358,6 +18796,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -17448,9 +18914,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 470,
+   "load_ms": 175,
    "settled": true,
-   "settle_ms": 1643,
+   "settle_ms": 1589,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -17530,7 +18996,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 179,
+     "not_visible": 194,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -17711,7 +19177,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -17747,6 +19213,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -17837,9 +19331,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 361,
+   "load_ms": 265,
    "settled": true,
-   "settle_ms": 1597,
+   "settle_ms": 1585,
    "pointer_coarse": true,
    "final_path": "/system",
    "screenshots": {
@@ -17919,7 +19413,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 171,
+     "not_visible": 186,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -18100,7 +19594,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -18136,6 +19630,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -18226,9 +19748,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 356,
+   "load_ms": 209,
    "settled": true,
-   "settle_ms": 1636,
+   "settle_ms": 1584,
    "pointer_coarse": false,
    "final_path": "/system",
    "screenshots": {
@@ -18397,7 +19919,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 171,
+     "not_visible": 186,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -18578,7 +20100,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -18614,6 +20136,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -18704,9 +20254,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 452,
+   "load_ms": 225,
    "settled": true,
-   "settle_ms": 1623,
+   "settle_ms": 1612,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -18722,7 +20272,7 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 4,
+    "interactive_total": 35,
     "interactive_in_first_viewport": 4,
     "small_targets": 0,
     "tiny_targets": 0,
@@ -18738,8 +20288,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 2144,
-    "screens": 2.54,
+    "page_height_px": 5746,
+    "screens": 6.81,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -18752,7 +20302,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 5,
+    "style_text_colors": 7,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -18761,14 +20311,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 390,
      "client_width": 390,
-     "scroll_height": 2144,
+     "scroll_height": 5746,
      "client_height": 844,
      "body_scroll_width": 390,
      "inner_width": 390,
      "inner_height": 844,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 164,
+     "visible_elements": 444,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -18786,7 +20336,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 179,
+     "not_visible": 191,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -18794,7 +20344,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 33,
-      "y": 903,
+      "y": 4505,
       "w": 324,
       "h": 170,
       "css_w": 324,
@@ -18843,7 +20393,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -18888,6 +20438,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -18898,25 +20476,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 325,
+      "scroll_y": 1226,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 650,
+      "scroll_y": 2451,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 975,
+      "scroll_y": 3677,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1300,
+      "scroll_y": 4902,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -18932,22 +20510,22 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 67,
+      "13px": 174,
       "16px": 6,
       "24px": 1,
-      "14px": 15,
+      "14px": 57,
       "20px": 1
      },
      "font_weights": {
-      "400": 37,
-      "500": 31,
-      "600": 20,
+      "400": 91,
+      "500": 107,
+      "600": 39,
       "700": 2
      },
-     "text_elements": 90,
+     "text_elements": 239,
      "heavy_text_elements": 0,
-     "text_colors": 5,
-     "background_colors": 12,
+     "text_colors": 7,
+     "background_colors": 14,
      "radius_kinds": 4,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -18969,9 +20547,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 391,
+   "load_ms": 284,
    "settled": true,
-   "settle_ms": 1709,
+   "settle_ms": 1582,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -18987,7 +20565,7 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 4,
+    "interactive_total": 35,
     "interactive_in_first_viewport": 4,
     "small_targets": 0,
     "tiny_targets": 0,
@@ -19003,8 +20581,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1428,
-    "screens": 3.66,
+    "page_height_px": 3190,
+    "screens": 8.18,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -19017,7 +20595,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 5,
+    "style_text_colors": 7,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -19026,14 +20604,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 1428,
+     "scroll_height": 3190,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
      "inner_height": 390,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 164,
+     "visible_elements": 444,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -19051,7 +20629,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 179,
+     "not_visible": 191,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -19059,7 +20637,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 33,
-      "y": 685,
+      "y": 2447,
       "w": 778,
       "h": 220,
       "css_w": 778,
@@ -19108,7 +20686,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -19153,6 +20731,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -19163,25 +20769,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 260,
+      "scroll_y": 700,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 519,
+      "scroll_y": 1400,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 779,
+      "scroll_y": 2100,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 1038,
+      "scroll_y": 2800,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -19197,22 +20803,22 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 67,
+      "13px": 174,
       "16px": 4,
       "24px": 1,
       "20px": 3,
-      "14px": 15
+      "14px": 57
      },
      "font_weights": {
-      "400": 37,
-      "500": 31,
-      "600": 20,
+      "400": 91,
+      "500": 107,
+      "600": 39,
       "700": 2
      },
-     "text_elements": 90,
+     "text_elements": 239,
      "heavy_text_elements": 0,
-     "text_colors": 5,
-     "background_colors": 12,
+     "text_colors": 7,
+     "background_colors": 14,
      "radius_kinds": 4,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -19234,9 +20840,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 366,
+   "load_ms": 219,
    "settled": true,
-   "settle_ms": 1619,
+   "settle_ms": 1575,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -19252,8 +20858,8 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 4,
-    "interactive_in_first_viewport": 4,
+    "interactive_total": 35,
+    "interactive_in_first_viewport": 9,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -19268,8 +20874,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1528,
-    "screens": 1.29,
+    "page_height_px": 3210,
+    "screens": 2.72,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -19282,7 +20888,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 5,
+    "style_text_colors": 7,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -19291,14 +20897,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 820,
      "client_width": 820,
-     "scroll_height": 1528,
+     "scroll_height": 3210,
      "client_height": 1180,
      "body_scroll_width": 820,
      "inner_width": 820,
      "inner_height": 1180,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 165,
+     "visible_elements": 445,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -19316,7 +20922,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 179,
+     "not_visible": 191,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -19324,7 +20930,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 33,
-      "y": 769,
+      "y": 2451,
       "w": 754,
       "h": 220,
       "css_w": 754,
@@ -19373,7 +20979,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -19418,6 +21024,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -19428,25 +21062,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 87,
+      "scroll_y": 508,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 174,
+      "scroll_y": 1015,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 261,
+      "scroll_y": 1523,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 348,
+      "scroll_y": 2030,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -19462,22 +21096,22 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 68,
+      "13px": 175,
       "16px": 4,
       "24px": 1,
       "20px": 3,
-      "14px": 15
+      "14px": 57
      },
      "font_weights": {
-      "400": 38,
-      "500": 31,
-      "600": 20,
+      "400": 92,
+      "500": 107,
+      "600": 39,
       "700": 2
      },
-     "text_elements": 91,
+     "text_elements": 240,
      "heavy_text_elements": 0,
-     "text_colors": 5,
-     "background_colors": 12,
+     "text_colors": 7,
+     "background_colors": 14,
      "radius_kinds": 4,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -19499,9 +21133,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 598,
+   "load_ms": 232,
    "settled": true,
-   "settle_ms": 1579,
+   "settle_ms": 1622,
    "pointer_coarse": true,
    "final_path": "/network",
    "screenshots": {
@@ -19517,8 +21151,8 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 12,
-    "interactive_in_first_viewport": 12,
+    "interactive_total": 43,
+    "interactive_in_first_viewport": 14,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -19533,8 +21167,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1508,
-    "screens": 1.84,
+    "page_height_px": 3128,
+    "screens": 3.81,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -19547,7 +21181,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 5,
+    "style_text_colors": 7,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -19556,14 +21190,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 1180,
      "client_width": 1180,
-     "scroll_height": 1508,
+     "scroll_height": 3128,
      "client_height": 820,
      "body_scroll_width": 1180,
      "inner_width": 1180,
      "inner_height": 820,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 202,
+     "visible_elements": 482,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -19581,7 +21215,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 171,
+     "not_visible": 183,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -19589,7 +21223,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 269,
-      "y": 723,
+      "y": 2343,
       "w": 866,
       "h": 220,
       "css_w": 866,
@@ -19638,7 +21272,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -19683,6 +21317,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -19693,25 +21355,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 164,
+      "scroll_y": 551,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 328,
+      "scroll_y": 1102,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 492,
+      "scroll_y": 1653,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 656,
+      "scroll_y": 2204,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -19727,22 +21389,22 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 71,
+      "13px": 178,
       "16px": 5,
-      "14px": 24,
+      "14px": 66,
       "24px": 1,
       "20px": 3
      },
      "font_weights": {
-      "400": 41,
-      "500": 39,
-      "600": 21,
+      "400": 95,
+      "500": 115,
+      "600": 40,
       "700": 3
      },
-     "text_elements": 104,
+     "text_elements": 253,
      "heavy_text_elements": 0,
-     "text_colors": 5,
-     "background_colors": 13,
+     "text_colors": 7,
+     "background_colors": 15,
      "radius_kinds": 4,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -19764,9 +21426,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 397,
+   "load_ms": 294,
    "settled": true,
-   "settle_ms": 1547,
+   "settle_ms": 1586,
    "pointer_coarse": false,
    "final_path": "/network",
    "screenshots": {
@@ -19782,9 +21444,9 @@
     "ellipsis_truncations": 0,
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
-    "interactive_total": 12,
-    "interactive_in_first_viewport": 12,
-    "small_targets": 11,
+    "interactive_total": 43,
+    "interactive_in_first_viewport": 15,
+    "small_targets": 42,
     "tiny_targets": 0,
     "small_inline_links": 0,
     "canvases": 1,
@@ -19798,8 +21460,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 1442,
-    "screens": 1.6,
+    "page_height_px": 2722,
+    "screens": 3.02,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -19812,7 +21474,7 @@
     "style_shadow_kinds": 0,
     "style_font_size_kinds": 5,
     "style_font_weight_kinds": 4,
-    "style_text_colors": 5,
+    "style_text_colors": 7,
     "style_heavy_text_percent": 0.0
    },
    "details": {
@@ -19821,14 +21483,14 @@
      "title": "UBTS Dashboard",
      "scroll_width": 1440,
      "client_width": 1440,
-     "scroll_height": 1442,
+     "scroll_height": 2722,
      "client_height": 900,
      "body_scroll_width": 1440,
      "inner_width": 1440,
      "inner_height": 900,
      "visual_scale": 1,
      "device_pixel_ratio": 1,
-     "visible_elements": 202,
+     "visible_elements": 482,
      "elements_hidden_by_clipping": 0
     },
     "outside_viewport": [],
@@ -19931,11 +21593,259 @@
       "h": 36,
       "hit_source": "self",
       "disabled": false
+     },
+     {
+      "sel": "button#wifiTrialConfirm.action-button.primary",
+      "text": "이 연결 유지",
+      "w": 97.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": false
+     },
+     {
+      "sel": "button#wifiTrialRevert.action-button.secondary",
+      "text": "지금 되돌리기",
+      "w": 106,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": false
+     },
+     {
+      "sel": "button#wifiScanButton.action-button.secondary",
+      "text": "주변 검색",
+      "w": 81.8,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiScanList button.action-button.secondary[data-wifi-action=\"pick-scan\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiScanList button.action-button.secondary[data-wifi-action=\"pick-scan\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiScanList button.action-button.secondary[data-wifi-action=\"pick-scan\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiScanList button.action-button.secondary[data-wifi-action=\"pick-scan\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiScanList button.action-button.secondary[data-wifi-action=\"pick-scan\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList input[data-wifi-field=\"autoconnect\"][type=checkbox]",
+      "text": "on",
+      "w": 79.9,
+      "h": 36,
+      "hit_source": "label",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList input.input.wifi-priority[data-wifi-field=\"priority\"][type=number]",
+      "text": "999",
+      "w": 96,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"save-profile\"]",
+      "text": "저장",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList input[data-wifi-field=\"autoconnect\"][type=checkbox]",
+      "text": "on",
+      "w": 79.9,
+      "h": 36,
+      "hit_source": "label",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList input.input.wifi-priority[data-wifi-field=\"priority\"][type=number]",
+      "text": "-999",
+      "w": 96,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"save-profile\"]",
+      "text": "저장",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"pick-saved\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList input[data-wifi-field=\"autoconnect\"][type=checkbox]",
+      "text": "on",
+      "w": 79.9,
+      "h": 36,
+      "hit_source": "label",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList input.input.wifi-priority[data-wifi-field=\"priority\"][type=number]",
+      "text": "200",
+      "w": 96,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"save-profile\"]",
+      "text": "저장",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"pick-saved\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList input[data-wifi-field=\"autoconnect\"][type=checkbox]",
+      "text": "on",
+      "w": 79.9,
+      "h": 36,
+      "hit_source": "label",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList input.input.wifi-priority[data-wifi-field=\"priority\"][type=number]",
+      "text": "100",
+      "w": 96,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"save-profile\"]",
+      "text": "저장",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"pick-saved\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList input[data-wifi-field=\"autoconnect\"][type=checkbox]",
+      "text": "on",
+      "w": 79.9,
+      "h": 36,
+      "hit_source": "label",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList input.input.wifi-priority[data-wifi-field=\"priority\"][type=number]",
+      "text": "0",
+      "w": 96,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"save-profile\"]",
+      "text": "저장",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"pick-saved\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList input[data-wifi-field=\"autoconnect\"][type=checkbox]",
+      "text": "on",
+      "w": 79.9,
+      "h": 36,
+      "hit_source": "label",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList input.input.wifi-priority[data-wifi-field=\"priority\"][type=number]",
+      "text": "0",
+      "w": 96,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": false
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"save-profile\"]",
+      "text": "저장",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
+     },
+     {
+      "sel": "#wifiSavedList button.action-button.secondary[data-wifi-action=\"pick-saved\"]",
+      "text": "연결",
+      "w": 54.2,
+      "h": 36,
+      "hit_source": "self",
+      "disabled": true
      }
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 171,
+     "not_visible": 183,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -19943,7 +21853,7 @@
      {
       "sel": "canvas#chartNetwork.resource-chart",
       "x": 269,
-      "y": 683,
+      "y": 1963,
       "w": 1126,
       "h": 220,
       "css_w": 1126,
@@ -19992,7 +21902,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -20037,6 +21947,34 @@
       "y": 0,
       "w": 0,
       "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -20047,25 +21985,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 136,
+      "scroll_y": 456,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 271,
+      "scroll_y": 911,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 407,
+      "scroll_y": 1367,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 542,
+      "scroll_y": 1822,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -20081,22 +22019,22 @@
     "blocked_external": [],
     "style": {
      "font_sizes": {
-      "13px": 71,
+      "13px": 178,
       "16px": 5,
-      "14px": 24,
+      "14px": 66,
       "24px": 1,
       "20px": 3
      },
      "font_weights": {
-      "400": 41,
-      "500": 39,
-      "600": 21,
+      "400": 95,
+      "500": 115,
+      "600": 40,
       "700": 3
      },
-     "text_elements": 104,
+     "text_elements": 253,
      "heavy_text_elements": 0,
-     "text_colors": 5,
-     "background_colors": 13,
+     "text_colors": 7,
+     "background_colors": 15,
      "radius_kinds": 4,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -20118,9 +22056,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 742,
+   "load_ms": 234,
    "settled": true,
-   "settle_ms": 1689,
+   "settle_ms": 1564,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -20200,7 +22138,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 140,
+     "not_visible": 155,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -20288,7 +22226,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -20324,6 +22262,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -20414,9 +22380,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 478,
+   "load_ms": 199,
    "settled": true,
-   "settle_ms": 1603,
+   "settle_ms": 1585,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -20496,7 +22462,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 140,
+     "not_visible": 155,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -20584,7 +22550,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -20620,6 +22586,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -20710,9 +22704,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 415,
+   "load_ms": 261,
    "settled": true,
-   "settle_ms": 1683,
+   "settle_ms": 1619,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -20792,7 +22786,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 140,
+     "not_visible": 155,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -20880,7 +22874,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -20916,6 +22910,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -21006,9 +23028,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 298,
+   "load_ms": 233,
    "settled": true,
-   "settle_ms": 1673,
+   "settle_ms": 1600,
    "pointer_coarse": true,
    "final_path": "/docker",
    "screenshots": {
@@ -21088,7 +23110,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 132,
+     "not_visible": 147,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -21176,7 +23198,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -21212,6 +23234,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -21302,9 +23352,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 446,
+   "load_ms": 198,
    "settled": true,
-   "settle_ms": 1657,
+   "settle_ms": 1604,
    "pointer_coarse": false,
    "final_path": "/docker",
    "screenshots": {
@@ -21489,7 +23539,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 132,
+     "not_visible": 147,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -21577,7 +23627,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -21613,6 +23663,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -21703,7 +23781,7 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 330,
+   "load_ms": 194,
    "settled": true,
    "settle_ms": 1656,
    "pointer_coarse": true,
@@ -21785,7 +23863,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 177,
+     "not_visible": 192,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -21842,7 +23920,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -21878,6 +23956,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -21968,9 +24074,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 371,
+   "load_ms": 169,
    "settled": true,
-   "settle_ms": 1641,
+   "settle_ms": 1577,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -22050,7 +24156,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 177,
+     "not_visible": 192,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -22107,7 +24213,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -22143,6 +24249,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -22233,9 +24367,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 730,
+   "load_ms": 145,
    "settled": true,
-   "settle_ms": 1656,
+   "settle_ms": 1603,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -22315,7 +24449,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 177,
+     "not_visible": 192,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -22372,7 +24506,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -22408,6 +24542,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -22498,9 +24660,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 575,
+   "load_ms": 242,
    "settled": true,
-   "settle_ms": 1696,
+   "settle_ms": 1585,
    "pointer_coarse": true,
    "final_path": "/fan",
    "screenshots": {
@@ -22580,7 +24742,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 169,
+     "not_visible": 184,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -22637,7 +24799,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -22673,6 +24835,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -22763,9 +24953,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 333,
+   "load_ms": 180,
    "settled": true,
-   "settle_ms": 1571,
+   "settle_ms": 1576,
    "pointer_coarse": false,
    "final_path": "/fan",
    "screenshots": {
@@ -22950,7 +25140,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 169,
+     "not_visible": 184,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -23007,7 +25197,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -23043,6 +25233,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -23133,9 +25351,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 965,
+   "load_ms": 283,
    "settled": true,
-   "settle_ms": 1547,
+   "settle_ms": 1569,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -23152,7 +25370,7 @@
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
     "interactive_total": 85,
-    "interactive_in_first_viewport": 7,
+    "interactive_in_first_viewport": 10,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -23215,7 +25433,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 128,
+     "not_visible": 143,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -23223,7 +25441,7 @@
      {
       "sel": "canvas#roverLidarCanvas.lidar-map",
       "x": 33,
-      "y": 435,
+      "y": 1393,
       "w": 324,
       "h": 324,
       "css_w": 324,
@@ -23237,7 +25455,7 @@
      {
       "sel": "canvas#liveMapCanvas",
       "x": 33,
-      "y": 1479,
+      "y": 2437,
       "w": 324,
       "h": 300,
       "css_w": 324,
@@ -23251,7 +25469,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 33,
-      "y": 3540.4,
+      "y": 4498.4,
       "w": 324,
       "h": 220,
       "css_w": 324,
@@ -23396,7 +25614,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -23421,10 +25639,10 @@
       "text": "STOP",
       "visible": true,
       "layer": "flow",
-      "hit_test": null,
+      "hit_test": true,
       "disabled": false,
       "x": 265,
-      "y": 4091.4,
+      "y": 368,
       "w": 92,
       "h": 44
      },
@@ -23438,9 +25656,37 @@
       "hit_test": null,
       "disabled": false,
       "x": 143.7,
-      "y": 4747.4,
+      "y": 1024,
       "w": 102.7,
       "h": 56
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -23493,8 +25739,8 @@
      },
      "font_weights": {
       "400": 121,
-      "500": 64,
-      "600": 91,
+      "500": 65,
+      "600": 90,
       "700": 4
      },
      "text_elements": 280,
@@ -23522,9 +25768,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 787,
+   "load_ms": 289,
    "settled": true,
-   "settle_ms": 1593,
+   "settle_ms": 1594,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -23541,7 +25787,7 @@
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
     "interactive_total": 85,
-    "interactive_in_first_viewport": 5,
+    "interactive_in_first_viewport": 7,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -23556,8 +25802,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 8579,
-    "screens": 22.0,
+    "page_height_px": 8838,
+    "screens": 22.66,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -23579,7 +25825,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 844,
      "client_width": 844,
-     "scroll_height": 8579,
+     "scroll_height": 8838,
      "client_height": 390,
      "body_scroll_width": 844,
      "inner_width": 844,
@@ -23604,14 +25850,14 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 128,
+     "not_visible": 143,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
     "canvases": [
      {
       "sel": "canvas#roverLidarCanvas.lidar-map",
-      "x": 33,
+      "x": 447,
       "y": 316,
       "w": 364,
       "h": 364,
@@ -23625,7 +25871,7 @@
      },
      {
       "sel": "canvas#liveMapCanvas",
-      "x": 33,
+      "x": 447,
       "y": 1280,
       "w": 364,
       "h": 350,
@@ -23640,7 +25886,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 33,
-      "y": 2549,
+      "y": 3147.8,
       "w": 364,
       "h": 220,
       "css_w": 364,
@@ -23654,7 +25900,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 162,
-      "y": 7073,
+      "y": 7331.8,
       "w": 520,
       "h": 520,
       "css_w": 520,
@@ -23668,7 +25914,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 33,
-      "y": 8062,
+      "y": 8320.8,
       "w": 778,
       "h": 420,
       "css_w": 778,
@@ -23785,7 +26031,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -23810,10 +26056,10 @@
       "text": "STOP",
       "visible": true,
       "layer": "flow",
-      "hit_test": null,
+      "hit_test": true,
       "disabled": false,
-      "x": 719,
-      "y": 2482,
+      "x": 305,
+      "y": 249,
       "w": 92,
       "h": 44
      },
@@ -23826,10 +26072,38 @@
       "layer": "flow",
       "hit_test": null,
       "disabled": false,
-      "x": 571,
-      "y": 3138,
+      "x": 157,
+      "y": 905,
       "w": 116,
       "h": 56
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -23840,25 +26114,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 2047,
+      "scroll_y": 2112,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 4095,
+      "scroll_y": 4224,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 6142,
+      "scroll_y": 6336,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 8189,
+      "scroll_y": 8448,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -23882,14 +26156,14 @@
      },
      "font_weights": {
       "400": 121,
-      "500": 63,
-      "600": 92,
+      "500": 64,
+      "600": 91,
       "700": 4
      },
      "text_elements": 280,
      "heavy_text_elements": 0,
      "text_colors": 8,
-     "background_colors": 16,
+     "background_colors": 17,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -23911,9 +26185,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 765,
+   "load_ms": 290,
    "settled": true,
-   "settle_ms": 1628,
+   "settle_ms": 1582,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -23930,7 +26204,7 @@
     "overlaps": 0,
     "overlaps_pinned_vs_flow": 0,
     "interactive_total": 85,
-    "interactive_in_first_viewport": 15,
+    "interactive_in_first_viewport": 24,
     "small_targets": 0,
     "tiny_targets": 0,
     "small_inline_links": 0,
@@ -23945,8 +26219,8 @@
     "stop_height_px": 44,
     "stop_in_first_viewport": true,
     "stop_always_in_viewport": true,
-    "page_height_px": 9133,
-    "screens": 7.74,
+    "page_height_px": 9385,
+    "screens": 7.95,
     "console_errors": 0,
     "page_errors": 0,
     "failed_requests": 0,
@@ -23968,7 +26242,7 @@
      "title": "UBTS Dashboard",
      "scroll_width": 820,
      "client_width": 820,
-     "scroll_height": 9133,
+     "scroll_height": 9385,
      "client_height": 1180,
      "body_scroll_width": 820,
      "inner_width": 820,
@@ -23993,14 +26267,14 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 128,
+     "not_visible": 143,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
     "canvases": [
      {
       "sel": "canvas#roverLidarCanvas.lidar-map",
-      "x": 33,
+      "x": 435,
       "y": 336,
       "w": 352,
       "h": 352,
@@ -24014,7 +26288,7 @@
      },
      {
       "sel": "canvas#liveMapCanvas",
-      "x": 33,
+      "x": 435,
       "y": 1288,
       "w": 352,
       "h": 350,
@@ -24028,7 +26302,7 @@
      },
      {
       "sel": "canvas#localGridCanvas",
-      "x": 33,
+      "x": 435,
       "y": 1816,
       "w": 352,
       "h": 350,
@@ -24043,7 +26317,7 @@
      {
       "sel": "canvas#roverImuCanvas.imu-attitude-canvas",
       "x": 33,
-      "y": 3103,
+      "y": 3695,
       "w": 352,
       "h": 220,
       "css_w": 352,
@@ -24057,7 +26331,7 @@
      {
       "sel": "canvas#roverArchiveLidarCanvas.lidar-map",
       "x": 150,
-      "y": 7627,
+      "y": 7879,
       "w": 520,
       "h": 520,
       "css_w": 520,
@@ -24071,7 +26345,7 @@
      {
       "sel": "canvas#liveArchiveCanvas",
       "x": 33,
-      "y": 8616,
+      "y": 8868,
       "w": 754,
       "h": 420,
       "css_w": 754,
@@ -24205,7 +26479,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -24230,10 +26504,10 @@
       "text": "STOP",
       "visible": true,
       "layer": "flow",
-      "hit_test": null,
+      "hit_test": true,
       "disabled": false,
-      "x": 695,
-      "y": 3036,
+      "x": 293,
+      "y": 269,
       "w": 92,
       "h": 44
      },
@@ -24244,12 +26518,40 @@
       "text": "STOP",
       "visible": true,
       "layer": "flow",
-      "hit_test": null,
+      "hit_test": true,
       "disabled": false,
-      "x": 555,
-      "y": 3692,
+      "x": 153,
+      "y": 925,
       "w": 112,
       "h": 56
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -24260,25 +26562,25 @@
       "in_viewport": true
      },
      {
-      "scroll_y": 1988,
+      "scroll_y": 2051,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 3977,
+      "scroll_y": 4103,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 5965,
+      "scroll_y": 6154,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
      },
      {
-      "scroll_y": 7953,
+      "scroll_y": 8205,
       "top": 5.5,
       "bottom": 49.5,
       "in_viewport": true
@@ -24302,14 +26604,14 @@
      },
      "font_weights": {
       "400": 124,
-      "500": 64,
-      "600": 93,
+      "500": 65,
+      "600": 92,
       "700": 4
      },
      "text_elements": 285,
      "heavy_text_elements": 0,
      "text_colors": 8,
-     "background_colors": 16,
+     "background_colors": 17,
      "radius_kinds": 5,
      "shadow_kinds": 0,
      "shadow_elements": 0,
@@ -24331,9 +26633,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 747,
+   "load_ms": 273,
    "settled": true,
-   "settle_ms": 1626,
+   "settle_ms": 1668,
    "pointer_coarse": true,
    "final_path": "/rover-control",
    "screenshots": {
@@ -24413,7 +26715,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 120,
+     "not_visible": 135,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -24594,7 +26896,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -24639,6 +26941,34 @@
       "y": 999,
       "w": 61.1,
       "h": 56
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -24720,9 +27050,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 912,
+   "load_ms": 377,
    "settled": true,
-   "settle_ms": 1641,
+   "settle_ms": 1669,
    "pointer_coarse": false,
    "final_path": "/rover-control",
    "screenshots": {
@@ -25251,7 +27581,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 120,
+     "not_visible": 135,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -25432,7 +27762,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 3
     },
     "stop_candidates": [
@@ -25477,6 +27807,34 @@
       "y": 889,
       "w": 85.4,
       "h": 44
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
      }
     ],
     "stop_scroll_samples": [
@@ -25558,9 +27916,9 @@
     "height": 844,
     "mobile": true
    },
-   "load_ms": 493,
+   "load_ms": 349,
    "settled": true,
-   "settle_ms": 1598,
+   "settle_ms": 1567,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -25660,7 +28018,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 166,
+     "not_visible": 195,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -25678,7 +28036,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -25714,6 +28072,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -25804,9 +28190,9 @@
     "height": 390,
     "mobile": true
    },
-   "load_ms": 536,
+   "load_ms": 193,
    "settled": true,
-   "settle_ms": 1627,
+   "settle_ms": 1567,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -25906,7 +28292,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 166,
+     "not_visible": 195,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -25924,7 +28310,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -25960,6 +28346,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -26050,9 +28464,9 @@
     "height": 1180,
     "mobile": true
    },
-   "load_ms": 447,
+   "load_ms": 192,
    "settled": true,
-   "settle_ms": 1674,
+   "settle_ms": 1603,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -26152,7 +28566,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 172,
+     "not_visible": 201,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -26170,7 +28584,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -26206,6 +28620,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -26296,9 +28738,9 @@
     "height": 820,
     "mobile": true
    },
-   "load_ms": 676,
+   "load_ms": 250,
    "settled": true,
-   "settle_ms": 1600,
+   "settle_ms": 1607,
    "pointer_coarse": true,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -26378,7 +28820,7 @@
     "small_targets": [],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 168,
+     "not_visible": 197,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -26396,7 +28838,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -26432,6 +28874,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
@@ -26522,9 +28992,9 @@
     "height": 900,
     "mobile": false
    },
-   "load_ms": 461,
+   "load_ms": 206,
    "settled": true,
-   "settle_ms": 1590,
+   "settle_ms": 1601,
    "pointer_coarse": false,
    "final_path": "/docs/mock-document-01",
    "screenshots": {
@@ -26691,7 +29161,7 @@
     ],
     "small_inline_links": [],
     "interactive_skipped": {
-     "not_visible": 166,
+     "not_visible": 195,
      "pointer_events_none": 0,
      "off_canvas": 0
     },
@@ -26709,7 +29179,7 @@
      "in_first_viewport": true,
      "always_in_viewport": true,
      "hit_test": true,
-     "candidates": 3,
+     "candidates": 5,
      "visible_candidates": 1
     },
     "stop_candidates": [
@@ -26745,6 +29215,34 @@
       "source": "selector",
       "selector": "[data-rover-drive='stop']",
       "sel": "#roverLayout button[data-rover-drive=\"stop\"]",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerCalStop.action-button.danger",
+      "text": "STOP",
+      "visible": false,
+      "layer": "flow",
+      "hit_test": null,
+      "disabled": false,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+     },
+     {
+      "source": "text",
+      "selector": "",
+      "sel": "button#steerDistStop.action-button.danger",
       "text": "STOP",
       "visible": false,
       "layer": "flow",
