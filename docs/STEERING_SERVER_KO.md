@@ -127,7 +127,7 @@ flowchart LR
 | 화면 → 대시보드 | 본문(넘기는 칸) | 실행기 | 비고 |
 | --- | --- | --- | --- |
 | `GET /api/executor/status` | — | `GET /api/status` | 아래 칸만 골라 넘긴다 |
-| `POST /api/executor/start` | `{row_len_m: 수 또는 null}` | `POST /api/start` | 새 run |
+| `POST /api/executor/start` | `{row_len_m: 수 또는 null, gnss_mode?}` | `POST /api/start` | 새 run. `gnss_mode`(2026-11-19): `off`·`log_only`·`geofence`·`weak_constraint` 가운데 하나, 없거나 null 이면 보내지 않는다(실행기 설정값). 그 밖의 값은 400 `invalid_gnss_mode` |
 | `POST /api/executor/arm` | `{}` | `POST /api/arm` | 브리지 권한(MOTOR만) |
 | `POST /api/executor/go` | `{session}` | `POST /api/go` | 한 번 눌러 시작 |
 | `POST /api/executor/heartbeat` | `{session}` | `POST /api/heartbeat` | 운영자 연결 확인 |
@@ -146,9 +146,12 @@ flowchart LR
   `tuning {preset, revision, editable, not_editable_because, modified, presets, writable, unsaved, basic [{name, value, low, high, unit}], values {basic, advanced, locked}}`(파일 경로·digest는 넘기지 않는다),
   `mode`(SHADOW/MOTOR), `state`, `reason`, `end_reason`, `controller_mode`, `profile`, `vehicle_control`, `lidar_age`, `imu_age`,
   `single_row {phase, lateral_error_m, heading_error_deg, distance_m, speed_m_s, target_speed_m_s, stop_reason, stop_category, confidence.level}`,
-  `gnss {state, fix, age_s, h_acc_m, used}`, `bridge_detail {state, latch_reason}`, `lease_lost {where, error, bridge_reason, bridge_latches, steering_fault}`(규약 개정 3, 없으면 칸 없음),
+  `gnss {mode, configured_mode, requested_mode, state, fix, fix_type, present, outcome, age_s, h_acc_m, hacc_m, used, accepted, rejected, aligned, fence_tripped, fence_inside, reason, counts {...}, rtk {state, fix_type, fix_age_s, fix_hacc_m, correction_m, fix_reason}}`(2026-11-19: run 의 GPS 방식과 상태, 좌표·`rel_m` 은 넘기지 않음),
+  `run, T, S, width, corridor, steer {meas, age, sat}`(front_steer 실행기의 틱 기록: 구동 %, 조향 목표 mrad, 측정 mrad), `single_row` 에 더해 `throttle_pct, steer_mrad, end_remaining_m, lookahead_error_deg, lateral_reference_m`,
+  `metrics {...}`(2026-11-19: 기준 중심선 대 실제 경로 비교. 이름이 바뀔 수 있어 짧은 snake_case 이름의 수·참거짓·짧은 글을 64개까지 그대로 넘긴다),
+  `bridge_detail {state, latch_reason}`, `lease_lost {where, error, bridge_reason, bridge_latches, steering_fault}`(규약 개정 3, 없으면 칸 없음),
   `online_scale {enabled, run_id, value, window_s, target_s, min_s, frozen, hold, age_s, mismatch, speed_scale, prior_scale, offer {run_id, value, window_s, end_reason, speed_scale_now, speed_scale_new, ok, why_not}}`(규약 개정 6, PW-10: 온라인 배율 = LiDAR 속도 ÷ 표 속도, 최근 주행 20 s. front_steer 실행기만, 없으면 칸 없음. 뜻은 시뮬레이션 레포 `docs/steering/OPERATOR_API_KO.md` 6.1). 화면: Rover Control 자율 칸(`autoPanel`) 안 '온라인 배율' 줄과 run 뒤의 저장 묻기(아래 화면 규칙, `docs/SCREENS_KO.md` 2절).
-- `GET /api/executor/status?grid=1`(Rover Control의 실시간 지도 칸이 화면에 있을 때)만 실행기의 국소 격자 `local_grid_map`(스키마 `ubts.row_executor.local_grid.v1`, 시뮬레이션 레포 `docs/steering/LOCAL_GRID_KO.md`)을 더 넘긴다:
+- `GET /api/executor/status?grid=1`(Rover Control 자율주행 탭의 격자 칸이 화면에 있을 때, 1초에 한 번)만 `single_row_geometry {frame, base, band {heading_rad, centre_m, width_m, end_left_m, end_right_m}, path(최근 200점), lookahead?, target?, footprint_m}`(run 주행 거리 좌표)와 실행기의 국소 격자 `local_grid_map`(스키마 `ubts.row_executor.local_grid.v1`, 시뮬레이션 레포 `docs/steering/LOCAL_GRID_KO.md`)을 더 넘긴다:
   `schema, frame, updates, axis_rad, origin_uv, occupied, encoding, age_s, cell_m, shape, bits(24 KiB 이하), cells(2,000개 이하), truncated, lines {left, right, centre, quality, stamp}, base_pose`.
   run 주행 거리 좌표이고 GNSS가 아니다. 실행기가 내지 않으면 칸이 없고 화면은 그 층을 숨긴다.
 

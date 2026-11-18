@@ -134,42 +134,41 @@ assert.match(route, /if \(routeSupportsImuLive\(route\)\) \{\n    watchSensorPan
   assert.deepEqual(streams('/connection'), [true, true, false], 'Connection: its LiDAR map and camera, no IMU picture');
   for (const page of ['/', '/system', '/network', '/docker', '/fan', '/docs']) assert.deepEqual(streams(page), [false, false, false], page);
 }
-// ---- Modules of the new parts: the tuning values when opened, the local grid when the live map part is seen ----
+// ---- Modules of the new parts: the tuning values when opened, the tab parts when their tab is shown (2026-11-19) ----
 {
   const fs = require('node:fs');
   const path = require('node:path');
   const steer = fs.readFileSync(path.join(__dirname, '..', 'static', 'app', '14-steer.js'), 'utf8').replace(/\bimport\(url\)/, 'fakeImport(url)');
   for (const vehicle of ['differential', 'front_steer']) {
-    const fetched = [], listeners = {}, observers = [];
+    const fetched = [], listeners = {}, events = {};
     const details = { open: false, addEventListener: (type, fn) => { listeners[type] = fn; } };
-    const mapPart = { id: 'liveMapPanel' };
-    class FakeObserver {
-      constructor(callback) { this.callback = callback; observers.push(this); }
-      observe(target) { this.target = target; }
-      disconnect() { this.done = true; }
-    }
+    let tab = 'manual';
     const context = {
       document: { documentElement: { dataset: { vehicleKind: vehicle } } },
-      window: { addEventListener() {} }, IntersectionObserver: FakeObserver, console,
-      $: (id) => ({ tuningDetails: details, liveMapPanel: mapPart }[id] || null),
+      window: { addEventListener(type, fn) { (events[type] ||= []).push(fn); } }, console,
+      $: (id) => ({ tuningDetails: details }[id] || null),
+      roverTab: () => tab, roverPartShown: () => true,
       currentRoute: () => '/rover-control', getJson() {}, postJson() {}, controlRequest() {}, renderReadout() {}, chartColors() {},
       fakeImport: (url) => { fetched.push(url.split('/').pop()); return Promise.resolve(new Proxy({}, { get: () => () => ({ routeChanged() {} }) })); },
     };
     vm.createContext(context);
     vm.runInContext(`${steer}\nthis.loadSteerScreens = loadSteerScreens;`, context);
+    const showTab = (name) => { tab = name; for (const fn of events['ubts:rover-tab'] || []) fn({ detail: { tab: name } }); };
     context.loadSteerScreens('/rover-control');
     const drive = vehicle === 'front_steer' ? ['steer-drive.mjs', 'auto-panel.mjs', 'steer-sensor.mjs'] : [];
-    assert.deepEqual(fetched, drive, `${vehicle}: opening Rover Control fetches no tuning or local grid module`);
+    assert.deepEqual(fetched, drive, `${vehicle}: opening Rover Control (수동 조종) fetches no tuning, grid or set-up module`);
     details.open = true; listeners.toggle();
     assert.deepEqual(fetched, [...drive, 'tuning-page.mjs'], `${vehicle}: opening the tuning part fetches its module`);
-    assert.equal(observers.length, 1); assert.equal(observers[0].target, mapPart);
-    observers[0].callback([{ isIntersecting: false }]);
-    assert.ok(!fetched.includes('local-grid.mjs'), `${vehicle}: not while the live map part is off screen`);
-    observers[0].callback([{ isIntersecting: true }]);
-    assert.deepEqual(fetched, [...drive, 'tuning-page.mjs', 'local-grid.mjs'], `${vehicle}: the live map part on screen fetches the local grid`);
-    assert.equal(observers[0].done, true, 'watched once');
+    showTab('record');
+    assert.equal(fetched.length, drive.length + 1, `${vehicle}: 기록 fetches nothing`);
+    showTab('auto');
+    assert.deepEqual(fetched, [...drive, 'tuning-page.mjs', 'local-grid.mjs'], `${vehicle}: 자율주행 fetches the local grid`);
+    showTab('setup');
+    const setup = vehicle === 'front_steer' ? ['steer-calibration.mjs', 'drive-distance.mjs'] : [];
+    assert.deepEqual(fetched, [...drive, 'tuning-page.mjs', 'local-grid.mjs', ...setup], `${vehicle}: 보정·설정 fetches the calibration and the tape part`);
+    showTab('manual');
     context.loadSteerScreens('/rover-control');
-    assert.equal(fetched.length, drive.length + 2, 'each module once');
+    assert.equal(fetched.length, drive.length + 2 + setup.length, 'each module once');
   }
 }
-console.log('PASS: LiDAR and IMU sockets follow their pictures like the camera; starts wait for the first report; the tuning and local grid modules when wanted; menu addresses and aliases');
+console.log('PASS: LiDAR and IMU sockets follow their pictures like the camera; starts wait for the first report; the tuning, local grid and set-up modules when wanted (tabs); menu addresses and aliases');

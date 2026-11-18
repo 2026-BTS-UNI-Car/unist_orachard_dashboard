@@ -30,7 +30,22 @@ export const STOP_DETAIL = {
 };
 export const LEASE_LOST_TEXT = '브리지가 권한을 거뒀다: Arm을 다시 누른다';
 export const GNSS_STATE = {
-  none: '수신 없음', no_fix: '미확정', fix: '확정', rtk: 'RTK', stale: '오래됨', unused: '쓰지 않음',
+  none: '수신 없음', no_fix: '미확정', fix: '확정', rtk: 'RTK', stale: '오래됨', unused: '쓰지 않음', off: '꺼짐',
+  absent: '수신 없음', waiting: '기다림', ok: '정상', accepted: '받아들임', rejected: '거부', fence_tripped: '범위 벗어남',
+  fixed: 'RTK FIXED', float: 'RTK FLOAT',
+};
+// The run's GPS mode (2026-11-19, tools/row_executor/config.py gnss_mode): the choice of the autonomy start.
+export const GNSS_MODES = ['off', 'log_only', 'geofence', 'weak_constraint'];
+export const GNSS_MODE_TEXT = {
+  off: 'GPS 안 씀', log_only: 'GPS 기록만', geofence: 'GPS 범위 감시', weak_constraint: 'RTK 약한 보정',
+};
+// Refusals of a start (the executor's own codes, and the dashboard's 400) as the operator reads them.
+export const START_ERROR = {
+  invalid_gnss_mode: 'GPS 방식 값이 틀림', invalid_row_len: '열 길이는 0보다 크고 1000 m 이하',
+  unknown_parameter: '이 실행기는 GPS 방식 선택을 모름(실행기 업데이트 필요)',
+  gnss_mode_not_supported: '이 실행기는 GPS 방식 선택을 모름(실행기 업데이트 필요)',
+  gnss_rtk_not_fixed: 'RTK FIXED 가 아님: RTK 약한 보정을 쓸 수 없다', gnss_needs_rtk_fixed: 'RTK FIXED 가 아님: RTK 약한 보정을 쓸 수 없다',
+  gnss_not_available: 'GPS 수신이 없음', gnss_mode_needs_front_steer: '이 방식은 앞바퀴 조향 실행기에서만',
 };
 export const LIMIT_REASON = {
   target: '목표 속도', corridor: '통로 신뢰도', lateral_error: '횡 오차', heading_error: '방향 오차',
@@ -84,9 +99,12 @@ export function primaryAction(reply, nowMs = Date.now()) {
 // itself makes (ready, armed) counts; idle or ended means "not yet". Returns { ok, step, runState }.
 export const PREPARE_WAIT_MS = 3000;
 export const PREPARE_STEP_MS = 150;
-export async function prepareRun({ send, readStatus, sleep, rowLen = null, waitMs = PREPARE_WAIT_MS, stepMs = PREPARE_STEP_MS,
-                                   now = () => Date.now() }) {
-  const started = await send('start', { row_len_m: rowLen });
+// gnssMode (2026-11-19): the run's GPS mode (GNSS_MODES); null = the executor's configured mode (the field is not sent).
+export async function prepareRun({ send, readStatus, sleep, rowLen = null, gnssMode = null, waitMs = PREPARE_WAIT_MS,
+                                   stepMs = PREPARE_STEP_MS, now = () => Date.now() }) {
+  const body = { row_len_m: rowLen };
+  if (gnssMode) body.gnss_mode = gnssMode;
+  const started = await send('start', body);
   if (!started.ok) return { ok: false, step: 'start', runState: null };
   const t0 = now();
   let status = started.reply && typeof started.reply.status === 'object' ? started.reply.status : null;
@@ -155,7 +173,8 @@ export function autoView(reply, nowMs = Date.now()) {
     ['속도 제한', num(speed.limit_mps) === null ? '--'
       : `${fixed(speed.limit_mps, 2, ' m/s')} · ${label(LIMIT_REASON, speed.limit_reason) || '--'}`],
     ['진행 거리', fixed(sr.distance_m, 1, ' m')],
-    ['GNSS', gnss.state ? `${label(GNSS_STATE, gnss.state)}${num(gnss.h_acc_m) !== null ? ` · ±${gnss.h_acc_m.toFixed(1)} m` : ''}` : '정보 없음'],
+    ['GNSS', gnss.state || gnss.mode ? [gnss.mode ? GNSS_MODE_TEXT[gnss.mode] || gnss.mode : null, gnss.state ? label(GNSS_STATE, gnss.state) : null,
+      num(num(gnss.hacc_m) ?? gnss.h_acc_m) !== null ? `±${(num(gnss.hacc_m) ?? gnss.h_acc_m).toFixed(1)} m` : null].filter(Boolean).join(' · ') : '정보 없음'],
     ['화면 연결', link.fresh === true ? `연결됨 · ${fixed(link.age_s, 2, ' s')}`
       : link.fresh === false ? '끊김' : '--'],
   ];
@@ -233,4 +252,121 @@ export function newSession(random = globalThis.crypto) {
   const bytes = new Uint8Array(12);
   random.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ---- Monitoring view of the 자율주행 tab (2026-11-19) ---------------------------------------------------------------
+// User: "자율주행시에 occupancy grid map을 그리면서 하고있는거니? ... 모니터링이 쉽게 되도록". One tile per value: run state and
+// reason, lateral / heading error, distance, speed, the steering command against the measured angle, the drive duty, the
+// steering motor PWM (bridge status steering.pwm / pwm_peak, 16f9d5c), recording and GPS. The executor status is the
+// autonomy panel's own poll; the bridge status is the steering panel's (shared, no request of its own).
+const DEG = 180 / Math.PI / 1000;
+const mradDeg = (mrad) => (num(mrad) === null ? null : mrad * DEG);
+const signedDeg = (deg) => (deg === null ? '--' : `${Math.abs(deg) < 0.05 ? '' : deg > 0 ? '왼 ' : '오 '}${Math.abs(deg).toFixed(1)}°`);
+
+// The GPS words of a run: [value, sub, level]. requested: the mode the page sent ('' = the executor's setting).
+export function gnssTile(status, requested = '') {
+  const g = status && typeof status.gnss === 'object' && status.gnss ? status.gnss : null;
+  if (!g) return [requested ? GNSS_MODE_TEXT[requested] || requested : '--', '실행기가 GPS 상태를 보내지 않음', ''];
+  const mode = typeof g.mode === 'string' ? g.mode : null;
+  const value = mode ? GNSS_MODE_TEXT[mode] || mode : '방식 모름';
+  const hacc = num(g.hacc_m) ?? num(g.h_acc_m);
+  const counts = g.counts && typeof g.counts === 'object' ? g.counts : {};
+  const accepted = num(g.accepted) ?? num(counts.accepted);
+  const rejectedOf = Object.entries(counts).filter(([k]) => !['accepted', 'restarted', 'reanchored'].includes(k));
+  const rejected = num(g.rejected) ?? (rejectedOf.length ? rejectedOf.reduce((a, [, v]) => a + (num(v) || 0), 0) : null);
+  const state = g.rtk?.state || g.state || g.outcome || null;
+  const parts = [state ? label(GNSS_STATE, state) : null, hacc === null ? null : `±${hacc.toFixed(2)} m`,
+                 accepted === null ? null : `받음 ${accepted}${rejected === null ? '' : ` · 거부 ${rejected}`}`].filter(Boolean);
+  let level = '';
+  if (g.fence_tripped === true) { parts.unshift('범위 벗어남'); level = 'bad'; }
+  if (requested && mode && requested !== mode) { parts.unshift(`요청한 ${GNSS_MODE_TEXT[requested] || requested}과 다름`); level = level || 'warn'; }
+  return [value, parts.join(' · ') || '정보 없음', level];
+}
+
+// The tiles: [label, value, sub, level]. bridge: the bridge status reply of the steering panel (or null);
+// recording: {known, active, tag, auto} (auto = started by this panel for the run).
+export function monitorView(reply, bridge = null, recording = null, requestedGnss = '', nowMs = Date.now()) {
+  const s = reply && reply.ok && reply.status ? reply.status : null;
+  const isStale = stale(reply, nowMs);
+  const tiles = [];
+  if (!s) {
+    tiles.push(['상태', reply && reply.configured === false ? '실행기 없음' : reply ? '연결 안 됨' : '확인 중', '', reply ? 'bad' : '']);
+  } else {
+    const [level, text] = RUN_STATE[s.run_state] || ['', String(s.run_state || '알 수 없음')];
+    const sr = s.single_row || {};
+    const stopText = label(STOP_REASON, s.stop_reason || sr.stop_category || null);
+    const why = stopText ? `${stopText}${s.stop_detail ? ` · ${STOP_DETAIL[s.stop_detail] || s.stop_detail}` : ''}` : sr.phase ? `단계 ${sr.phase}` : '';
+    tiles.push(['상태', isStale ? '끊김' : text, why, isStale ? 'bad' : level]);
+    tiles.push(['횡 오차', fixed(num(sr.lateral_error_m) ?? num(s.lat), 2, ' m'), '+ = 왼쪽', '']);
+    tiles.push(['방향 오차', fixed(num(sr.heading_error_deg) ?? num(s.head), 1, '°'), '', '']);
+    const remaining = num(sr.end_remaining_m);
+    tiles.push(['진행 거리', fixed(num(sr.distance_m) ?? num(s.dist), 1, ' m'), remaining === null ? '' : `남은 ${remaining.toFixed(1)} m`, '']);
+    const speed = s.speed || {};
+    const limit = num(speed.limit_mps) === null ? '' : ` · 제한 ${speed.limit_mps.toFixed(2)} (${label(LIMIT_REASON, speed.limit_reason) || '--'})`;
+    tiles.push(['속도', fixed(num(sr.speed_m_s) ?? num(s.v), 2, ' m/s'), `목표 ${fixed(num(speed.target_mps) ?? num(sr.target_speed_m_s), 2, '')}${limit}`, '']);
+  }
+  // Steering command against the measured angle: the executor's own numbers, else the bridge's.
+  const steering = bridge && typeof bridge.steering === 'object' && bridge.steering ? bridge.steering : {};
+  const host = bridge && typeof bridge.steering_host === 'object' && bridge.steering_host ? bridge.steering_host : {};
+  const cmd = mradDeg(num(s?.S) ?? num(s?.single_row?.steer_mrad) ?? num(host.target_mrad));
+  const meas = mradDeg(num(s?.steer?.meas) ?? num(steering.measured_mrad));
+  tiles.push(['조향 명령 / 측정', `${signedDeg(cmd)} / ${signedDeg(meas)}`, cmd !== null && meas !== null ? `차이 ${Math.abs(cmd - meas).toFixed(1)}°` : '', '']);
+  const drive = bridge && typeof bridge.drive === 'object' && bridge.drive ? bridge.drive : {};
+  const acked = [drive.left?.acked, drive.right?.acked].map(num);
+  const throttle = num(s?.T) ?? num(s?.single_row?.throttle_pct);
+  const board = acked.some((v) => v !== null) ? `보드 PWM ${acked.map((v) => (v === null ? '--' : v)).join(' / ')}` : '';
+  tiles.push(['구동 duty', throttle === null ? '--' : `${throttle} %`, `${board}${num(drive.max_pwm) === null ? '' : `${board ? ' · ' : ''}상한 ${drive.max_pwm}`}`, '']);
+  const pwm = num(steering.pwm), peak = num(steering.pwm_peak);
+  tiles.push(['조향 모터 PWM', pwm === null ? '--' : String(pwm), peak === null ? (bridge ? 'TRACE 값 없음' : '조향 상태 없음') : `최근 최대 ${peak}`, '']);
+  if (recording) {
+    const rec = !recording.known ? ['확인 중', '', ''] : recording.active
+      ? ['기록 중', recording.auto ? 'run 자동 기록(모든 센서)' : recording.tag === 'autonomy' ? '자율주행 기록' : '손으로 시작한 기록', 'ok']
+      : ['기록 안 함', '', 'warn'];
+    tiles.push(['기록', ...rec]);
+  }
+  tiles.push(['GPS', ...gnssTile(s, requestedGnss)]);
+  return { tiles, stale: isStale };
+}
+
+// status.metrics: the executor's comparison of its reference centreline with the travelled path (names read
+// defensively; grid_* = the same against the centreline of the local grid). Returns {tiles, source} or null.
+const METRICS = [
+  ['lat_rms_m', '횡 RMS', 'm', 3], ['lat_mean_m', '횡 평균', 'm', 3], ['lat_max_abs_m', '횡 최대', 'm', 3],
+  ['within_0_05_pct', '±5 cm 안', '%', 1], ['within_0_10_pct', '±10 cm 안', '%', 1],
+  ['head_rms_deg', '방향 RMS', '°', 2], ['head_max_abs_deg', '방향 최대', '°', 2],
+];
+export function metricsView(reply) {
+  const m = reply && reply.ok && reply.status && reply.status.metrics && typeof reply.status.metrics === 'object' ? reply.status.metrics : null;
+  if (!m) return null;
+  const unit = (value, u, digits) => (num(value) === null ? '--' : `${value.toFixed(digits)}${u === '°' ? '°' : ` ${u}`}`);
+  const tiles = [];
+  for (const [key, name, u, digits] of METRICS) {
+    const grid = m[`grid_${key}`];
+    if (num(m[key]) === null && num(grid) === null) continue;
+    tiles.push([name, unit(m[key], u, digits), num(grid) === null ? '' : `격자 중심선 ${unit(grid, u, digits)}`, '']);
+  }
+  const samples = num(m.samples), distance = num(m.distance_m);
+  if (samples !== null || distance !== null) {
+    tiles.push(['표본', samples === null ? '--' : String(samples), distance === null ? '' : `${distance.toFixed(1)} m 동안`, '']);
+  }
+  const known = new Set(['samples', 'distance_m', ...METRICS.flatMap(([k]) => [k, `grid_${k}`])]);
+  for (const [key, value] of Object.entries(m).filter(([k, v]) => !known.has(k) && num(v) !== null).slice(0, 6)) {
+    tiles.push([key, String(Math.round(value * 1000) / 1000), '', '']);
+  }
+  return tiles.length ? { tiles, source: typeof m.reference === 'string' ? m.reference : '기준 중심선 대 실제 경로' } : null;
+}
+
+// Recording of a run (2026-11-19, user: "자율주행시에는 반드시 모든 센서가 녹화되도록"). Before a go: start one (every sensor,
+// tag autonomy) unless one is running; after the run ended or was stopped: stop only the one this panel started.
+export const RUN_RECORD_SENSORS = ['lidar', 'camera', 'imu', 'gps', 'drive', 'steering', 'executor', 'tf'];
+export const RUN_OVER_STATES = new Set(['ended', 'idle', 'latched']);
+export function recordBeforeGo(recording, wanted) {
+  if (!wanted) return 'skip';
+  if (!recording || !recording.known) return 'unknown';
+  return recording.active ? 'keep' : 'start';
+}
+export function recordAfterRun(reply, autoId, recording) {
+  const s = reply && reply.ok && reply.status ? reply.status : null;
+  if (!autoId || !s || !RUN_OVER_STATES.has(s.run_state)) return false;
+  return Boolean(recording && recording.known && recording.active && recording.id === autoId);
 }

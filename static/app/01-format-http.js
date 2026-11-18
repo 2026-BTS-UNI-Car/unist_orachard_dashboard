@@ -120,6 +120,15 @@ async function getJson(path, options = {}) {
   }
 }
 
+// A refused request: the same message as before ("<path>: <status>"), and the reply body when it is JSON
+// (err.status, err.body: the autonomy panel shows the executor's own refusal, 2026-11-19).
+async function httpError(path, res) {
+  const err = new Error(`${path}: ${res.status}`);
+  err.status = res.status;
+  try { err.body = typeof res.json === "function" ? await res.json() : null; } catch (_) { err.body = null; }
+  return err;
+}
+
 async function postJson(path, payload = {}) {
   const res = await fetch(path, {
     method: "POST",
@@ -127,7 +136,7 @@ async function postJson(path, payload = {}) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {}),
   });
-  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  if (!res.ok) throw await httpError(path, res);
   return res.json();
 }
 
@@ -173,7 +182,7 @@ async function controlRequest(path, payload = {}, options = {}) {
     });
     // The control round trip is also a link sample (NET-10), without the server's own time.
     window.LinkGrade?.note?.(performance.now() - started - serverTimeMs(res), res.ok, "control");
-    if (!res.ok) throw new Error(`${path}: ${res.status}`);
+    if (!res.ok) throw await httpError(path, res);
     return await res.json();
   } catch (err) {
     if (err?.name === "AbortError") throw new Error(`${path}: 응답 없음 ${Math.round(timeoutMs / 1000)}초`);

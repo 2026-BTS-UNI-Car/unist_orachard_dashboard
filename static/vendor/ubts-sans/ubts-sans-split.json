@@ -5,18 +5,18 @@
  "tool": "fontTools 4.58.0 subset",
  "ui": {
   "file": "ubts-sans-ui.woff2",
-  "bytes": 92828,
-  "sha256": "21e3c2406fdd81adf49d96640c575ac733e610202d65431e62a51633a13e1ad5",
+  "bytes": 93612,
+  "sha256": "d5b943c54bc4c5dbb5bb727c41e978dea6b09e4998f94c2478e91d5e8828a4bf",
   "codepoints": 652,
-  "hangul_syllables": 536,
+  "hangul_syllables": 538,
   "missing": []
  },
  "ko": {
   "file": "ubts-sans-ko.woff2",
-  "bytes": 237492,
-  "sha256": "5292b146b53bbfd05ab31ee8f24cd65a4316aa628410d46235fc1015f4693478",
-  "codepoints": 1814,
-  "hangul_syllables": 1814,
+  "bytes": 236724,
+  "sha256": "9fb60aa888583925b7a9c7b477adbe7b693a55be8cec56535c7d5abdfab3ebe4",
+  "codepoints": 1812,
+  "hangul_syllables": 1812,
   "missing": []
  }
 }

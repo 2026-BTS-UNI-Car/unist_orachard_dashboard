@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = require('./helpers/app_source').readAppSource();
-const code = source.slice(source.indexOf('function setRoverSpeed('), source.indexOf('function setRecordingKind('))
+const code = source.slice(source.indexOf('function setRoverSpeed('), source.indexOf('const ROVER_TABS = '))
   + source.slice(source.indexOf('function roverKeyFromEvent('), source.indexOf('function setRoverCommandStatus('));
 function setup() {
   const c = {activeKeys: new Set(), speedKeys: new Set(), activeButton: '', speedPct: 30, lease: 'lease', ticket: 'one', seq: 0, epoch: 0};
@@ -35,7 +35,7 @@ const wheels = call => [call.payload.left, call.payload.right];
   }
   {
     const {context, calls, c, slider} = setup();
-    context.setRoverDrivePanelCollapsed(true, false);
+    // (2026-11-19: the panel switch is gone; the in-page tabs show and hide the parts.)
     context.handleRoverKeyDown(key('w')); await flush();
     context.handleRoverKeyDown(key('a')); await flush();
     context.handleRoverKeyUp(key('a')); await flush();

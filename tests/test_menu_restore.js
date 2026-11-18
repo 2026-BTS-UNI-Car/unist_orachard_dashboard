@@ -84,7 +84,9 @@ const html = fs.readFileSync(path.join(ROOT, 'static', 'index.html'), 'utf8');
 // ---- Pages: every old page is there with its titles in the old order; Research is not ----
 // The only new titles are those of the new parts of Rover Control.
 const NEW_TITLES = {
-  '/rover-control': ['조향 가변저항', '조향 보정', '거리 이동', '자율주행 · 열 따라가기', '현장 조정 값', '기본 묶음', '고급 묶음', '변경 기록'],
+  '/rover-control': ['조향 가변저항', '조향 보정', '거리 이동', '자율주행 · 열 따라가기', '현장 조정 값', '기본 묶음', '고급 묶음', '변경 기록',
+    // 2026-11-19: in-page tabs of Rover Control (the menu is unchanged)
+    '주행 감시', '중심선 대비 오차', '실행기 국소 격자', '거리 이동 줄자 보정', '기록된 자율 계산'],
 };
 {
   const now = pageTitlesOf(html);
@@ -101,7 +103,9 @@ const NEW_TITLES = {
   assert.doesNotMatch(html, /data-page="\/(map|sensors|records|tuning)"|data-system-panel|system-tabs|driveViewSwitch|data-view=/);
 }
 
-// ---- New features: inside Rover Control, in or next to the drive panel; the tuning values collapsed ----
+// ---- New features: inside Rover Control, in its in-page tabs (2026-11-19, user request: "보정관련된 영역을 좀 분리해서
+// 보여주면 좋겠음 아예 탭을 따로 만들던가", "자율주행 관련 영역을 따로 만들던지 탭을 새로 만들던지"). The menu is unchanged; the
+// tabs only show and hide the parts of the one Rover Control page. ----
 {
   const page = (route) => {
     const start = html.indexOf(`data-page="${route}"`);
@@ -109,35 +113,61 @@ const NEW_TITLES = {
     return html.slice(start, end < 0 ? html.length : end);
   };
   const rover = page('/rover-control');
-  const drive = rover.slice(rover.indexOf('<article class="panel rover-drive-panel">'), rover.indexOf('<article class="panel rover-tuning-panel"'));
+  // The tab row: four tabs after the status strip, before the parts; no link, no route.
+  const tabs = rover.match(/<div aria-label="Rover Control 구역" class="tabs rover-tabs" id="roverTabs" role="tablist">([\s\S]*?)<\/div>\n/);
+  assert.ok(tabs, 'the tab row');
+  assert.deepEqual([...tabs[1].matchAll(/data-rover-tab-button="([a-z]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]),
+    [['manual', '수동 조종'], ['auto', '자율주행'], ['setup', '보정·설정'], ['record', '기록']]);
+  assert.ok(!/href=|data-route=/.test(tabs[1]), 'tabs are buttons, not menu entries');
+  assert.ok(rover.indexOf('<section class="status-strip">') < rover.indexOf('id="roverTabs"'));
+  assert.ok(rover.indexOf('id="roverTabs"') < rover.indexOf('<section class="rover-layout"'));
+  // Every part of the layout names its tab(s).
+  const layout = rover.slice(rover.indexOf('<section class="rover-layout"'));
+  const parts = [...layout.matchAll(/<article class="([^"]*)" data-rover-tab="([a-z ]+)"([^>]*)>/g)].map((m) => {
+    const id = m[3].match(/ id="([^"]+)"/);
+    return [id ? id[1] : m[1].split(' ').filter((c) => c.startsWith('rover-')).pop(), m[2]];
+  });
+  assert.deepEqual(Object.fromEntries(parts), {
+    'rover-lidar-panel': 'manual', liveMapPanel: 'manual auto', 'rover-camera-panel': 'manual', 'rover-gps-panel': 'manual',
+    'rover-imu-panel': 'manual', 'rover-drive-panel': 'manual',
+    autoPanel: 'auto', autoMonitor: 'auto', steerPotPanel: 'setup', steerCalPanel: 'setup', steerDistTapePanel: 'setup',
+    tuningPanel: 'setup', roverRecordPanel: 'record', 'rover-links-panel': 'setup', 'rover-archive-panel': 'record auto',
+  }, 'the parts of each tab');
+  assert.equal((layout.match(/<article /g) || []).length, parts.length, 'no part without a tab');
+  // 수동 조종: the drive panel with the manual steering and the distance move (forward and backward).
+  const drive = rover.slice(rover.indexOf('<article class="panel rover-drive-panel"'), rover.indexOf('id="autoPanel"'));
   assert.ok(drive.includes('<h2>주행 제어</h2>'), 'the drive panel');
-  for (const id of ['steerDrive', 'steerPotPanel', 'steerCalPanel', 'steerDistPanel', 'autoPanel', 'roverArmButton', 'roverStopButton']) {
+  for (const id of ['steerDrive', 'steerDistPanel', 'roverArmButton', 'roverStopButton', 'steerDistDirection']) {
     assert.ok(drive.includes(`id="${id}"`), `${id} is in the drive panel`);
   }
   assert.ok(drive.indexOf('id="hardwareAutonomyPanel"') < drive.indexOf('id="roverArmButton"'), 'old order: autonomy row, arm, speed, pad');
   assert.ok(drive.indexOf('id="roverSpeedSlider"') < drive.indexOf('data-rover-drive="forward"'));
   assert.ok(drive.indexOf('data-rover-drive="forward"') < drive.indexOf('id="steerDrive"'), 'the steering panel after the differential parts');
-  // The autonomy section (one press to start, the goal of the work) comes right after the manual steering, before the
-  // potentiometer rows and the collapsed set-up parts (2026-11-17; before that it was the last part of the panel).
-  assert.ok(drive.indexOf('id="steerDrive"') < drive.indexOf('id="autoPanel"') && drive.indexOf('id="autoPanel"') < drive.indexOf('id="steerPotPanel"'));
-  // The steering calibration (2026-11-16) is a collapsed part of the steering panel, after the potentiometer rows.
-  assert.match(drive, /<section class="panel-section" data-vehicle="front_steer" id="steerCalPanel">\n<div class="panel-head mini"><h3>조향 보정<\/h3>[^\n]*\n<details id="steerCalDetails">\n/,
-    'the steering calibration is a collapsed part (no open attribute)');
-  assert.ok(drive.indexOf('id="steerPotPanel"') < drive.indexOf('id="steerCalPanel"'));
-  // The distance move (2026-11-17) is a collapsed part after the calibration.
   assert.match(drive, /<section class="panel-section" data-vehicle="front_steer" id="steerDistPanel">\n<div class="panel-head mini"><h3>거리 이동<\/h3>[^\n]*\n<details id="steerDistDetails">\n/,
     'the distance move is a collapsed part (no open attribute)');
-  assert.ok(drive.indexOf('id="steerCalPanel"') < drive.indexOf('id="steerDistPanel"'));
-  assert.match(rover, /<article class="panel rover-tuning-panel" id="tuningPanel">\n<div class="panel-head"><h2>현장 조정 값<\/h2><span class="status-chip" id="tuneState">[^<]*<\/span><\/div>\n<details id="tuningDetails">\n/,
+  assert.match(drive, /data-dist-direction="forward"[^>]*>앞으로<\/button><button[^>]*data-dist-direction="backward"[^>]*>뒤로<\/button>/);
+  assert.ok(!drive.includes('id="steerDistFeedback"'), 'the tape entry is in 보정·설정');
+  // 자율주행: start panel with the GPS choice and the recording switch, then the monitoring view with the local grid.
+  const auto = rover.slice(rover.indexOf('id="autoPanel"'), rover.indexOf('id="steerPotPanel"'));
+  assert.deepEqual([...auto.matchAll(/<option[^>]* value="([a-z_]*)">([^<]+)</g)].map((m) => [m[1], m[2]]),
+    [['', '실행기 설정대로'], ['off', 'GPS 안 씀'], ['log_only', 'GPS 기록만'], ['geofence', 'GPS 범위 감시'], ['weak_constraint', 'RTK 약한 보정']]);
+  for (const id of ['autoPrimary', 'autoEnd', 'autoStopButton', 'autoRecordRuns', 'autoRecordButton', 'autoMonitorGrid', 'autoMetricsGrid',
+    'localGridPanel', 'localGridCanvas', 'autoGridBlock']) assert.ok(auto.includes(`id="${id}"`), `${id} in the autonomy tab`);
+  assert.match(auto, /<div class="sim-map-stage" hidden="" id="localGridPanel">/, 'the grid picture shows when the executor sends one');
+  // 보정·설정: potentiometer, calibration (not folded any more: the tab is the fold), tape corrections, tuning (folded).
+  assert.match(rover, /<article class="panel rover-setup-panel" data-rover-tab="setup" data-vehicle="front_steer" id="steerCalPanel">\n<div class="panel-head"><h2>조향 보정<\/h2>/);
+  assert.ok(!rover.includes('id="steerCalDetails"'));
+  for (const id of ['steerDistActual', 'steerDistFeedback', 'steerDistReset']) assert.ok(rover.slice(rover.indexOf('id="steerDistTapePanel"')).includes(`id="${id}"`), id);
+  assert.match(rover, /<article class="panel rover-tuning-panel" data-rover-tab="setup" id="tuningPanel">\n<div class="panel-head"><h2>현장 조정 값<\/h2><span class="status-chip" id="tuneState">[^<]*<\/span><\/div>\n<details id="tuningDetails">\n/,
     'the tuning values are a collapsed part (no open attribute)');
   for (const id of ['tuneForm', 'tuneBasic', 'tuneAdvanced', 'tuneLocked', 'tuneLogBody', 'tuneApply', 'tunePreset']) {
     assert.ok(rover.includes(`id="${id}"`), `${id} on Rover Control`);
   }
-  // The executor's local grid sits on the live occupancy grid map, which is inside the LiDAR panel (old place).
-  const lidar = rover.slice(rover.indexOf('<article class="panel rover-live-panel rover-lidar-panel">'), rover.indexOf('<article class="panel rover-live-panel rover-camera-panel">'));
-  const liveMap = lidar.slice(lidar.indexOf('id="liveMapPanel"'));
-  assert.ok(liveMap.includes('id="liveMapCanvas"') && liveMap.indexOf('id="liveMapCanvas"') < liveMap.indexOf('id="localGridPanel"'), 'local grid under the live map');
-  assert.match(liveMap, /<div class="local-grid-block" hidden="" id="localGridPanel">/, 'shown only when the executor sends a grid');
+  // 기록: one check box per sensor.
+  const record = rover.slice(rover.indexOf('id="roverRecordPanel"'), rover.indexOf('rover-links-panel'));
+  assert.deepEqual([...record.matchAll(/data-record-sensor="([a-z]+)"/g)].map((m) => m[1]),
+    ['lidar', 'camera', 'imu', 'gps', 'drive', 'steering', 'executor', 'tf']);
+  assert.ok(!record.includes('data-record-kind'), 'the kind buttons are gone');
   // The status strip of Rover Control comes first again, as the KPI row did.
   assert.ok(rover.indexOf('<section class="status-strip">') < rover.indexOf('<section class="rover-layout"'));
 }
@@ -167,4 +197,4 @@ const NEW_TITLES = {
   assert.ok(calls.includes('renderRoute') && calls.includes('initRoverControl'));
   for (const name of calls) assert.match(app, new RegExp(`function ${name}\\(`), `99-main.js calls ${name}()`);
 }
-console.log('PASS: menu and page titles as before the redesign (becfc6d) without Research; new parts inside Rover Control; aliases');
+console.log('PASS: menu and page titles as before the redesign (becfc6d) without Research; new parts inside Rover Control in its in-page tabs; aliases');

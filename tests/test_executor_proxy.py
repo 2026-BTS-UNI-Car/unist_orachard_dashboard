@@ -151,6 +151,8 @@ class FakeHandler(BaseHTTPRequestHandler):
         state = self.server.state
         route = self.path
         if route == "/api/start":
+            if body.get("gnss_mode") == "weak_constraint":      # the executor's own rule (RTK FIXED needed)
+                return self.reply(409, {"ok": False, "error": "gnss_rtk_not_fixed"})
             state["run_state"] = "ready" if state["mode"] == "MOTOR" else "armed"
             return self.reply(200, {"ok": True, "run_state": state["run_state"], "status": self.server.status_body()})
         elif route == "/api/arm" and state["run_state"] == "ready":
@@ -264,6 +266,53 @@ class RelayUnitTest(unittest.TestCase):
         with self.assertRaises(ExecutorError):
             parse_action_body("stop", [])
 
+    def test_gnss_mode_per_run(self):
+        """2026-11-19: the page may choose the run's GPS mode; absent or null = the executor's configured mode."""
+        for mode in proxy.GNSS_MODES:
+            self.assertEqual(parse_action_body("start", {"row_len_m": 40.0, "gnss_mode": mode}),
+                             {"row_len_m": 40.0, "gnss_mode": mode})
+        self.assertEqual(parse_action_body("start", {"row_len_m": None, "gnss_mode": None}), {"row_len_m": None})
+        self.assertEqual(parse_action_body("start", {}), {"row_len_m": None}, "an old page: the old body")
+        for bad in ("rtk", "OFF", "", 1, True, ["off"], {"mode": "off"}):
+            with self.subTest(mode=bad), self.assertRaises(ExecutorError) as caught:
+                parse_action_body("start", {"row_len_m": None, "gnss_mode": bad})
+            self.assertEqual((caught.exception.status, caught.exception.error), (400, "invalid_gnss_mode"))
+        with self.assertRaises(ExecutorError) as caught:            # the row length rule is checked as before
+            parse_action_body("start", {"row_len_m": 0, "gnss_mode": "off"})
+        self.assertEqual(caught.exception.error, "invalid_row_len")
+        self.assertEqual(parse_action_body("go", {"session": "ab12", "gnss_mode": "off"}), {"session": "ab12"})
+
+    def test_monitoring_fields_metrics_and_geometry(self):
+        raw = dict(SAMPLE, T=35, S=-12, run=4, width=2.6, corridor=True, steer={"meas": -10, "age": 0.04, "faults": ["x"]},
+                   gnss={"mode": "log_only", "configured_mode": "off", "state": "fix", "hacc_m": 1.4, "accepted": 12,
+                         "rejected": 3, "rel_m": [12.0, 3.0], "lat": 35.1, "counts": {"accepted": 12, "jump": 2, "x": 1},
+                         "rtk": {"state": "fixed", "correction_m": 0.02, "frame": "f"}},
+                   metrics={"lat_rms_m": 0.041, "within_0_10_pct": 97.5, "samples": 120, "grid_lat_rms_m": 0.05,
+                            "ok": True, "Bad-Key": 1, "nested": {"a": 1}, "path": [[1, 2]], "note": "x" * 90},
+                   single_row_geometry={"frame": "estimator_odometry_run_start", "base": [1.0, 0.1, 0.02],
+                                        "band": {"heading_rad": 0.01, "centre_m": 0.05, "width_m": 2.5, "end_left_m": None},
+                                        "path": [[0, 0]] * 250 + [[1, "x"]], "lookahead": [3.0, 0.1],
+                                        "footprint_m": [1.1, 0.7]})
+        out = page_status(raw)
+        self.assertEqual((out["T"], out["S"], out["run"], out["width"], out["corridor"]), (35, -12, 4, 2.6, True))
+        self.assertEqual(out["steer"], {"meas": -10, "age": 0.04})
+        gnss = out["gnss"]
+        self.assertEqual((gnss["mode"], gnss["configured_mode"], gnss["hacc_m"], gnss["accepted"], gnss["rejected"]),
+                         ("log_only", "off", 1.4, 12, 3))
+        self.assertNotIn("rel_m", gnss, "no position, not even run-local")
+        self.assertNotIn("lat", gnss)
+        self.assertEqual(gnss["counts"], {"accepted": 12, "jump": 2})
+        self.assertEqual(gnss["rtk"], {"state": "fixed", "correction_m": 0.02})
+        self.assertEqual(out["metrics"], {"lat_rms_m": 0.041, "within_0_10_pct": 97.5, "samples": 120,
+                                          "grid_lat_rms_m": 0.05, "ok": True, "note": "x" * 40})
+        self.assertNotIn("single_row_geometry", out, "the geometry only with the grid read")
+        geo = page_status(raw, grid=True)["single_row_geometry"]
+        self.assertEqual(geo["base"], [1.0, 0.1, 0.02])
+        self.assertEqual(geo["band"], {"heading_rad": 0.01, "centre_m": 0.05, "width_m": 2.5})
+        self.assertEqual(len(geo["path"]), proxy.MAX_PATH_POINTS - 1, "the last points, a broken one dropped")
+        self.assertEqual((geo["lookahead"], geo["footprint_m"]), ([3.0, 0.1], [1.1, 0.7]))
+        json.dumps(out, allow_nan=False)
+
     def test_url_and_configuration(self):
         self.assertIsNone(ExecutorClient.from_env({}))
         for url in ("https://10.77.0.1:8097", "http://10.77.0.1", "http://10.77.0.1:8097/page", "http://u:p@h:1"):
@@ -319,6 +368,17 @@ class RelayHttpTest(FakeExecutorCase):
         with self.assertRaises(ExecutorError) as caught:
             self.client.action("hold", {})
         self.assertEqual(caught.exception.status, 404)
+
+    def test_gnss_mode_is_relayed_and_the_executor_decides(self):
+        self.assertEqual(self.client.action("start", {"row_len_m": 30, "gnss_mode": "log_only"})[0], 200)
+        self.assertEqual(self.client.action("start", {"row_len_m": 30, "gnss_mode": "weak_constraint"}),
+                         (409, {"ok": False, "error": "gnss_rtk_not_fixed"}), "the executor's refusal reaches the page")
+        with self.assertRaises(ExecutorError) as caught:
+            self.client.action("start", {"row_len_m": 30, "gnss_mode": "rtk"})
+        self.assertEqual((caught.exception.status, caught.exception.error), (400, "invalid_gnss_mode"))
+        posts = [body for method, path, body in self.fake.calls if method == "POST" and path == "/api/start"]
+        self.assertEqual(posts, [{"row_len_m": 30, "gnss_mode": "log_only"}, {"row_len_m": 30, "gnss_mode": "weak_constraint"}],
+                         "an invalid mode never reaches the executor")
 
     def test_refusal_token_and_unreachable(self):
         code, body = self.client.action("go", {"session": "abcd"})

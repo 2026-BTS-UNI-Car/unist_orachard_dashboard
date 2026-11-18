@@ -701,8 +701,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if action in ("plan", "start"):
             # duty: the speed of the move (an integer % in the terrain's table range; missing = the terrain's default),
             # with the tape correction of that duty or the nearest measured one (dashboard_server/drive_distance.py).
+            # direction: 'forward' (missing) or 'backward' (2026-11-19: negative throttle, at most 2 m, own corrections).
             plan = dd.plan(table, payload.get("terrain"), payload.get("duty"), payload.get("distance_m"),
-                           correction=store.correction)
+                           correction=store.correction, direction=payload.get("direction"))
             refusal, status = self._distance_bridge(request, plan if plan.get("problem") is None else None, dd)
             drive = status.get("drive") if isinstance(status.get("drive"), dict) else {}
             bridge = {"refusal": refusal, "armed": bool(status.get("armed")), "max_pwm": drive.get("max_pwm"),
@@ -738,7 +739,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             terrain = payload.get("terrain")
             if terrain is not None and dd.terrain_of(table, terrain) is None:
                 self._send_json({'ok': False, 'error': 'distance_terrain_unknown'}); return
-            self._send_json({'ok': True, 'corrections': store.reset(terrain)})
+            direction = payload.get("direction")           # missing: every direction of the terrain (as before)
+            if direction is not None and (terrain is None or dd.direction_of(direction) is None):
+                self._send_json({'ok': False, 'error': 'distance_direction_invalid'}); return
+            self._send_json({'ok': True, 'corrections': store.reset(terrain, direction)})
         else:
             self.send_error(404)
 

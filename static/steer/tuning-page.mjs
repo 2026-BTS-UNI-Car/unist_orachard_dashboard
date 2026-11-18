@@ -25,7 +25,9 @@ export function initTuningPage(page) {
   const LOG_FIRST = 10;                 // rows shown before "전체 보기" (the dashboard keeps the last 50)
   // Asked for only while the collapsed part (#tuningDetails) is open on a visible Rover Control.
   const details = $('tuningDetails');
-  const active = () => page.currentRoute() === '/rover-control' && !document.hidden && (!details || details.open);
+  // ... and its tab (보정·설정, 2026-11-19) is shown.
+  const active = () => page.currentRoute() === '/rover-control' && !document.hidden && (!details || details.open)
+    && (page.shown ? page.shown('tuningPanel') : true);
 
   async function load() {
     try { view = await page.getJson('/api/executor/tuning'); } catch (_) { view = view ? { ...view, reachable: false } : null; }

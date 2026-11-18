@@ -261,21 +261,45 @@ test('page: hiding the page while a scan runs sends STOP', async () => {
   p.close();
 });
 
-test('markup: the folded section is inside Rover Control with the seven buttons, no new menu', () => {
+test('markup: a part of the 보정·설정 tab of Rover Control with the seven buttons, no new menu', () => {
   const html = readFileSync(path.join(here, '..', 'static', 'index.html'), 'utf8');
   const start = html.indexOf('id="steerCalPanel"');
-  // Right after the potentiometer rows; the autonomy section is above both since 2026-11-17 (docs/SCREENS_KO.md 2).
-  assert.ok(start > html.indexOf('id="steerPotPanel"') && start < html.indexOf('id="steerDistPanel"'), 'next to the potentiometer rows');
-  assert.ok(html.indexOf('id="autoPanel"') < html.indexOf('id="steerPotPanel"'), 'the autonomy section comes first');
-  const section = html.slice(start, html.indexOf('</section>', start));
-  assert.match(section, /<details id="steerCalDetails">/);
-  assert.match(html.slice(html.lastIndexOf('<section', start), start), /data-vehicle="front_steer"/);
+  // 2026-11-19: in-page tabs. The calibration is a part of the 보정·설정 tab (the tab is the fold), after the
+  // potentiometer rows and before the tape corrections of the distance move.
+  assert.ok(start > html.indexOf('id="steerPotPanel"') && start < html.indexOf('id="steerDistTapePanel"'), 'next to the potentiometer rows');
+  assert.ok(html.indexOf('id="autoPanel"') < html.indexOf('id="steerPotPanel"'), 'the autonomy parts come first');
+  const section = html.slice(start, html.indexOf('</article>', start));
+  assert.ok(!section.includes('<details'), 'not folded: its tab shows it');
+  assert.match(html.slice(html.lastIndexOf('<article', start), start), /data-rover-tab="setup" data-vehicle="front_steer"/);
   const labels = [...section.matchAll(/data-steer-cal="([a-z_]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(labels, [['set_center', '지금 위치를 가운데로'], ['trim_left', '영점 ← 왼쪽 0.2°'],
     ['trim_right', '영점 → 오른쪽 0.2°'], ['find_left', '왼쪽 끝 찾기'], ['find_right', '오른쪽 끝 찾기'],
     ['apply', '적용'], ['default', '기본값으로']]);
-  assert.match(section, /<h3>조향 보정<\/h3>/);
+  assert.match(section, /<h2>조향 보정<\/h2>/);
   assert.ok(!/nav-item|data-route=/.test(section), 'no navigation entry');
   const raw = readFileSync(path.join(here, '..', 'static', 'steer', 'steer-calibration.mjs'));
   assert.ok(!raw.includes(Buffer.from('\r\n')) && raw[0] !== 0xef, 'UTF-8 LF without BOM');
+});
+
+test('page: a part of the 보정·설정 tab (no fold): it asks only while its tab is shown; leaving the tab during a scan sends STOP', async () => {
+  const p = page(reply({ state: 'running', blocker: 'calibration_busy',
+    job: { action: 'find_left', id: 1, phase: 'waiting', step: 'CAL FIND LEFT', elapsed_s: 2 } }));
+  p.close();                                                   // the folded page of before: closed, quiet
+  const doc = { ...p.doc, getElementById: (id) => (id === 'steerCalDetails' ? null : p.doc.getElementById(id)) };   // no fold
+  let shown = true;
+  const api = { currentRoute: () => '/rover-control', getJson: async () => { p.log.gets += 1; return p.state.reply; },
+    postJson: async () => ({ ok: true }), controlRequest: async (route, body) => { p.log.controls.push([route, body]); return { ok: true }; },
+    driveStatus: () => null, shown: (id) => id === 'steerCalPanel' && shown };
+  const screen = initSteerCalibration(api, { document: doc, confirm: () => true });
+  opened.push(() => { shown = false; screen.routeChanged(); });
+  await flush();
+  const gets = p.log.gets;
+  assert.ok(gets >= 1, 'shown: asked for');
+  assert.equal(p.els.steerCalState.textContent, '보정 중');
+  shown = false; screen.routeChanged();
+  await flush();
+  assert.deepEqual(p.log.controls.at(-1), ['/api/rover/stop', { reason: 'page_inactive' }], 'a scan does not go on behind another tab');
+  const after = p.log.gets;
+  await new Promise((done) => setTimeout(done, 600));
+  assert.equal(p.log.gets, after, 'hidden tab: no more status reads');
 });
