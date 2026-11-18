@@ -155,6 +155,9 @@ class RecordingState:
         self.next_gps_pvt_sample_at = 0.0
         self.gps_log = None
         self.motor_timeline = MotorTimeline(args.rover_status_topic)
+        self.executor_log = None          # executor_state.jsonl (sensor 'executor', 2026-11-19)
+        self.executor_frame_count = 0
+        self.next_executor_sample_at = 0.0
         self.mapping_writer = None
         self.media_queue = None
         self.finalizing = False
@@ -446,6 +449,13 @@ class RecordingState:
                 if include_gps
                 else None
             )
+            self.executor_frame_count = 0
+            self.next_executor_sample_at = 0.0
+            self.executor_log = (
+                (root / "executor_state.jsonl").open("w", encoding="utf-8")
+                if "executor" in chosen
+                else None
+            )
             self.imu_recording_raw_count = 0
             self.imu_timeline_count = 0
             self.next_imu_sample_at = 0.0
@@ -476,7 +486,7 @@ class RecordingState:
             rosbag_pid=self.process.pid if self.process else None,
         )
         self.write_status("start_recording")
-        return {"ok": True, "state": "recording", "status": self.status()}
+        return {"ok": True, "state": "recording", "recording_id": recording_id, "status": self.status()}
 
     def stop(self) -> dict[str, Any]:
         with self.lock:
@@ -505,6 +515,14 @@ class RecordingState:
             if self.gps_log is not None:
                 self.gps_log.close()
                 self.gps_log = None
+            if self.executor_log is not None:
+                try:
+                    self.executor_log.flush()
+                    os.fsync(self.executor_log.fileno())
+                except OSError:
+                    pass
+                self.executor_log.close()
+                self.executor_log = None
         if proc and proc.poll() is None:
             proc.send_signal(signal.SIGINT)
             try:
@@ -749,6 +767,36 @@ class RecordingState:
             self.motor_timeline.observe(
                 msg.data, received_at=received_at, received_steady=received_steady
             )
+
+    def observe_executor_state(self, msg) -> None:
+        """/row_executor/state (std_msgs/String JSON): executor_state.jsonl {t_s, state} at most 5 Hz while a
+        recording with the 'executor' sensor runs (2026-11-19: autonomy playback draws the executor's internals)."""
+        received = time.time()
+        with self.lock:
+            active = self.active
+            log_file = self.executor_log
+            if not active or active.get("stopping") or log_file is None:
+                return
+            now = time.monotonic()
+            if now < self.next_executor_sample_at:
+                return
+            self.next_executor_sample_at = now + 0.2
+            started = float(active.get("started_monotonic", received))
+            if received < started:
+                return
+            try:
+                state = json.loads(getattr(msg, "data", "") or "{}")
+            except ValueError:
+                return
+            if not isinstance(state, dict):
+                return
+            frame = {"t_s": round(received - started, 3), "state": state}
+            try:
+                log_file.write(json.dumps(frame, allow_nan=False, separators=(",", ":")) + "\n")
+                log_file.flush()
+                self.executor_frame_count += 1
+            except (OSError, ValueError):
+                return
 
     def observe_gps(self, msg, *, status=False):
         try:
@@ -1204,6 +1252,10 @@ class RecorderNode(Node):
             String, args.rover_status_topic, self.state.observe_motor, 10
         )
         self.create_subscription(
+            String, getattr(args, "executor_state_topic", "/row_executor/state"),
+            self.state.observe_executor_state, 10
+        )
+        self.create_subscription(
             String,
             "/gps/driver_status",
             lambda msg: self.state.observe_gps(msg, status=True),
@@ -1354,6 +1406,10 @@ def main() -> int:
     )
     parser.add_argument(
         "--cmd-topic", default=os.environ.get("ROVER_CMD_TOPIC", "/cmd_vel")
+    )
+    parser.add_argument(
+        "--executor-state-topic",
+        default=os.environ.get("ROVER_EXECUTOR_STATE_TOPIC", "/row_executor/state"),
     )
     parser.add_argument(
         "--rover-status-topic",

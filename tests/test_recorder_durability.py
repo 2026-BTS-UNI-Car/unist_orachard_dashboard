@@ -297,3 +297,23 @@ class RecordingSensorChoiceTests(unittest.TestCase):
             self.assertNotIn(state.args.imu_raw_topic, topics)
             self.assertEqual(state.start("lidar", sensors=["imu"])["state"], "invalid_sensors")
             self.assertEqual(state.start("lidar", tag="field")["state"], "invalid_tag")
+
+
+    def test_executor_sidecar_written_at_most_5_hz(self):
+        ns = recorder_namespace()
+        with tempfile.TemporaryDirectory() as temp:
+            state = ns['RecordingState'](state_args(Path(temp)))
+            reply = state.start("lidar", sensors=["lidar", "executor"], tag="autonomy")
+            self.assertTrue(reply["ok"], reply)
+            self.assertTrue(reply.get("recording_id"))
+            msg = type("M", (), {"data": '{"schema": "ubts.row_executor.state.v1", "lat_m": 0.01}'})()
+            for _ in range(5):
+                state.observe_executor_state(msg)
+            self.assertEqual(state.executor_frame_count, 1, "at most one frame per 0.2 s")
+            root = Path(state.active["path"])
+            state.stop()
+            lines = (root / "executor_state.jsonl").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(json.loads(lines[0])["state"]["lat_m"], 0.01)
+            meta = json.loads((root / "metadata.json").read_text(encoding="utf-8"))
+            self.assertEqual((meta["tag"], meta["sensors"]), ("autonomy", ["lidar", "executor"]))
