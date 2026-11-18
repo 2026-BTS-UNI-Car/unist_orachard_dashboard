@@ -340,6 +340,33 @@ class RelayHttpTest(FakeExecutorCase):
         self.assertEqual((status["ok"], status["reachable"], status["error"]), (False, False, "executor_unreachable"))
 
 
+class HandOverManualLeaseTest(unittest.TestCase):
+    """MOTOR 준비 (2026-11-19 corridor): a manual Arm of the page is handed over to the executor's arm."""
+
+    def run_with(self, status):
+        sent = []
+
+        def request_fn(payload):
+            sent.append(payload)
+            return status if payload["op"] == "status" else {"ok": True}
+        return proxy.hand_over_manual_lease(request_fn, sleep=lambda s: None), [p["op"] for p in sent], sent
+
+    def test_manual_arm_is_released(self):
+        result, ops, sent = self.run_with({"armed": True, "state": "armed_manual", "moving": False})
+        self.assertEqual((result, ops), ("released", ["status", "stop"]))
+        self.assertEqual(sent[1]["reason"], "executor_takeover")
+
+    def test_moving_or_not_manual_is_left_alone(self):
+        self.assertEqual(self.run_with({"armed": True, "state": "armed_manual", "moving": True})[:2],
+                         ("moving", ["status"]))
+        self.assertEqual(self.run_with({"armed": False, "state": "disarmed"})[:2], (None, ["status"]))
+        self.assertEqual(self.run_with({"armed": True, "state": "armed_auto"})[:2], (None, ["status"]))
+
+        def broken(payload):
+            raise OSError("no socket")
+        self.assertIsNone(proxy.hand_over_manual_lease(broken, sleep=lambda s: None))
+
+
 try:
     from dashboard_server import app as app_module  # needs Linux (fcntl)
 except ImportError:  # pragma: no cover - Windows

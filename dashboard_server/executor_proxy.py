@@ -303,6 +303,27 @@ class ExecutorClient:
         return code, reply
 
 
+def hand_over_manual_lease(request_fn, sleep=None) -> str | None:
+    """MOTOR '준비' (executor arm, 2026-11-19 corridor): the executor takes the bridge lease, and a manual Arm of the
+    drive page holds it (the bridge answers control_in_use). The operator's press hands it over: when the bridge is
+    armed_manual and not moving, a bridge stop of that lease first. A moving vehicle is left alone (the arm is then
+    refused as before). Returns 'released', 'moving' or None (nothing to do / bridge not reachable)."""
+    try:
+        status = request_fn({"op": "status"})
+    except Exception:
+        return None
+    if not isinstance(status, dict) or not status.get("armed") or status.get("state") != "armed_manual":
+        return None
+    if status.get("moving"):
+        return "moving"
+    try:
+        request_fn({"op": "stop", "reason": "executor_takeover"})
+    except Exception:
+        return None
+    (sleep or time.sleep)(0.3)
+    return "released"
+
+
 LINK_SCHEMA = "ubts.row_executor.dashboard_link.v1"
 LINK_FILE = "runtime/row_executor/dashboard_link.json"
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")

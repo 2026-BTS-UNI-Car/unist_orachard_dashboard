@@ -371,6 +371,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     raise proxy.ExecutorError(503, "tuning_log_not_configured")
                 status, reply = steer_tuning.apply(client, body, self.tuning_log, session[:8])
             else:
+                if name == "arm":
+                    from dashboard_server import rover_api
+                    handed = proxy.hand_over_manual_lease(rover_api.request)
+                    if handed:
+                        dashboard_log("executor.manual_lease", result=handed)
                 status, reply = client.action(name, body)
         except proxy.ExecutorError as exc:
             if name == "stop":
