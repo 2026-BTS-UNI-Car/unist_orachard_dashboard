@@ -73,15 +73,17 @@ export function sceneFromState(msg, earlier = []) {
   if (!msg || typeof msg !== 'object') return null;
   const base = pose(msg.pose);
   const ref = msg.reference || msg.centreline || msg.reference_line || msg.ref;
-  const reference = polyline(ref) || polyline(ref?.line) || polyline(msg.reference_polyline) || null;
+  // ubts.row_executor.state.v1 (sim 9298b6e): centreline / grid_centreline / lookahead carry {odom, base}; the
+  // scene is in the run's odometry frame, so the odom form is used.
+  const reference = polyline(ref) || polyline(ref?.odom) || polyline(ref?.line) || polyline(msg.reference_polyline) || null;
   const path = earlier.map((m) => pose(m?.pose)).filter(Boolean).map((p) => [p[0], p[1]]);
   if (base) path.push([base[0], base[1]]);
   const rows = msg.rows || msg.row_lines || {};
   const scene = {
     grid: null, pose: base, path: path.length >= 2 ? path : [],
     rows: { left: polyline(rows.left), right: polyline(rows.right) },
-    centre: polyline(msg.centre) || polyline(msg.estimated_centre) || null,
-    reference, lookahead: point(msg.lookahead) || point(msg.target) || point(msg.lookahead_point),
+    centre: polyline(msg.centre) || polyline(msg.estimated_centre) || polyline(msg.grid_centreline?.odom) || null,
+    reference, lookahead: point(msg.lookahead) || point(msg.lookahead?.odom) || point(msg.target) || point(msg.lookahead_point),
     axis: null, width: num(msg.width_m),
   };
   const line = scene.reference || scene.centre;

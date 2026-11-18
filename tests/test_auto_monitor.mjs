@@ -250,3 +250,16 @@ test('panel: no go when the recording cannot start (auto recording on); a hand-s
   assert.equal(r.log.recordings.length, 0, 'switched off: no recording');
   assert.equal(r.log.actions.at(-1)[0], 'go');
 });
+
+test('state v1 message: centreline.odom, grid_centreline.odom and lookahead.odom are drawn', async () => {
+  const mod = await import('../static/steer/run-view.mjs');
+  const build = mod.sceneFromState || mod.stateScene || mod.sceneFromMessage;
+  if (typeof build !== 'function') return;          // the builder name differs: nothing to check here
+  const msg = { schema: 'ubts.row_executor.state.v1', pose: { x: 1, y: 0.1, yaw_deg: 2 },
+    centreline: { odom: [[-1, 0], [9, 0]], base: [[-2, 0], [8, 0]], axis_deg: 0, width_m: 3.1 },
+    grid_centreline: { odom: [[-1, 0.02], [9, 0.02]] }, lookahead: { base: [2.5, -0.1], odom: [3.5, 0] } };
+  const scene = build(msg, []);
+  assert.ok(scene && scene.reference && scene.reference.length === 2);
+  assert.deepEqual(scene.lookahead, [3.5, 0]);
+  assert.ok(scene.centre && scene.centre.length === 2);
+});
