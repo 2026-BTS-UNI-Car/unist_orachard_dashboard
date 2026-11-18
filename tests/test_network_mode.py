@@ -160,5 +160,45 @@ class NetworkModeContractTests(unittest.TestCase):
         self.assertEqual(status["controls_locked_reason"], "ethernet_keeps_ap_active")
 
 
+class RosDiscoveryRefreshTests(unittest.TestCase):
+    """2026-11-19: after a network change the idle data recorder is restarted (ROS discovery), never while recording."""
+
+    def load(self):
+        import importlib.util
+        path = Path(__file__).resolve().parents[1] / "deploy" / "offline_ap" / "ubts_network_mode.py"
+        spec = importlib.util.spec_from_file_location("ubts_network_mode_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def run_with(self, status_json):
+        module = self.load()
+        calls = []
+
+        class Done:
+            def __init__(self, out="", code=0):
+                self.stdout, self.returncode = out, code
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd[:2])
+            return Done(status_json) if cmd[0] == "curl" else Done()
+        module.run = fake_run
+        return module.refresh_ros_discovery("test"), calls
+
+    def test_idle_recorder_is_restarted(self):
+        result, calls = self.run_with('{"ok": true, "state": "idle", "active": false}')
+        self.assertEqual(result, "restarted")
+        self.assertIn(["docker", "restart"], calls)
+
+    def test_recording_is_left_alone(self):
+        result, calls = self.run_with('{"ok": true, "state": "recording", "active": true}')
+        self.assertEqual(result, "busy")
+        self.assertNotIn(["docker", "restart"], calls)
+
+    def test_unreachable_recorder(self):
+        result, calls = self.run_with("not json")
+        self.assertEqual(result, "unknown")
+
+
 if __name__ == "__main__":
     unittest.main()

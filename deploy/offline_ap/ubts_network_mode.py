@@ -128,6 +128,29 @@ def run(
     return result
 
 
+RECORDER_CONTAINER = "unist-orachard-ros2-data-recorder"
+RECORDER_STATUS_URL = "http://127.0.0.1:8790/status"
+
+
+def refresh_ros_discovery(reason: str) -> str:
+    """After the Wi-Fi interface changed (AP up, or a known Wi-Fi joined): the data recorder's ROS participant may keep
+    seeing only part of the topics (2026-11-18 field: 9 of 17 after the AP switch until it was restarted). Restart the
+    recorder container, but only while it is idle (never during a recording). Returns 'restarted', 'busy', 'unknown'
+    or 'failed'; never raises."""
+    try:
+        answer = run(["curl", "-fsS", "--max-time", "3", RECORDER_STATUS_URL], check=False)
+        status = json.loads(answer.stdout or "{}")
+    except Exception:
+        return "unknown"
+    if status.get("active") or status.get("state") not in ("idle", None):
+        return "busy"
+    try:
+        done = run(["docker", "restart", "-t", "20", RECORDER_CONTAINER], timeout=40, check=False)
+    except Exception:
+        return "failed"
+    return "restarted" if getattr(done, "returncode", 1) == 0 else "failed"
+
+
 def write_private(path: Path, data: bytes, mode: int = 0o600) -> None:
     """Replace a file atomically. The temporary file has its final mode from the start."""
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1163,6 +1186,7 @@ class Controller:
         self.ap_idle_since = time.monotonic()
         self.scan_deadline = None
         self.snapshot()
+        self.last_ros_refresh = refresh_ros_discovery("ap_started")
 
     def stop_ap(self) -> None:
         self.stop_ap_services()
@@ -1231,6 +1255,7 @@ class Controller:
                     self.last_reason = "known_wifi_connected"
                     self.scan_deadline = None
                     self.snapshot()
+                    self.last_ros_refresh = refresh_ros_discovery("known_wifi_connected")
                     return True
             self.snapshot()
             time.sleep(min(5.0, max(0.2, self.scan_deadline - time.monotonic())))

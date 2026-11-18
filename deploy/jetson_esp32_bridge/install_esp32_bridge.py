@@ -47,6 +47,7 @@ from pathlib import Path
 MANIFEST_SCHEMA = 'ubts.esp32_bridge_kit.manifest.v1'
 RECEIPT_SCHEMA = 'ubts.esp32_bridge_kit.receipt.v1'
 OLD_NAME = 'unist-orachard-ros2-esp-rover-bridge'
+CONTROL_CPU_SHARES = 4096          # 2026-11-19: CPU weight of the bridge (default 1024)
 NEW_NAME = 'unist-orachard-ros2-esp32-bridge'
 DASHBOARD_NAME = 'unist-orachard-dashboard'
 DEVICE = '/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00'
@@ -415,6 +416,9 @@ def new_spec(old_inspect, image_id, options, device_path, commit):
             'Devices': [{'PathOnHost': device_path, 'PathInContainer': CONTAINER_DEVICE, 'CgroupPermissions': 'rwm'}],
             'LogConfig': hc.get('LogConfig') or {'Type': 'json-file', 'Config': {}},
             'Privileged': False,
+            # 2026-11-19 field: the drive heartbeat must not starve when the camera / recorder load the CPU
+            # (CFS weight; the default is 1024, the camera and the recorder run at 512)
+            'CpuShares': CONTROL_CPU_SHARES,
         },
     }
 

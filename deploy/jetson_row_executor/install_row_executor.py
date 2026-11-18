@@ -72,6 +72,7 @@ CONTROL_DIR = '/run/ubts-rover'
 TOKEN_NAME = 'operator_token.txt'
 LINK_NAME = 'dashboard_link.json'
 DASH_RUNTIME_IN = '/app/runtime'
+CONTROL_CPU_SHARES = 4096          # 2026-11-19: CPU weight of the executor (default 1024)
 MODES = ('shadow', 'motor')
 MEMORY_BYTES = 1024 * 1024 * 1024
 MAX_LOG_MB = 1000
@@ -391,6 +392,7 @@ def container_spec(image_id, options, p, ros_domain, commit, config_digest):
             'SecurityOpt': ['no-new-privileges:true'],
             'RestartPolicy': {'Name': 'unless-stopped', 'MaximumRetryCount': 0},
             'Memory': MEMORY_BYTES,
+            'CpuShares': CONTROL_CPU_SHARES,   # 2026-11-19 field: control loops first under CPU load
             'LogConfig': {'Type': 'json-file', 'Config': {'max-size': '10m', 'max-file': '3'}},
             'Privileged': False,
         },

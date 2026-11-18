@@ -284,6 +284,7 @@ class KitTest(unittest.TestCase):
         self.assertEqual(spec['Image'], IMAGE, 'the old image, no build or pull')
         self.assertEqual(spec['HostConfig']['Binds'], old_inspect()['HostConfig']['Binds'])
         self.assertEqual(spec['HostConfig']['NetworkMode'], 'host')
+        self.assertEqual(spec['HostConfig']['CpuShares'], inst.CONTROL_CPU_SHARES)   # 2026-11-19 CPU weight
         self.assertEqual(spec['HostConfig']['Devices'], [{'PathOnHost': inst.DEVICE, 'PathInContainer': '/dev/ubts-motor',
                                                           'CgroupPermissions': 'rwm'}])
         self.assertEqual(spec['HostConfig']['RestartPolicy']['Name'], 'unless-stopped')

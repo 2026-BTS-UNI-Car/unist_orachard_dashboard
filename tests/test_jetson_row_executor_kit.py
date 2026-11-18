@@ -300,6 +300,7 @@ class Install(KitCase):
         self.assertIn('/home/unist/ws/runtime/row_executor:/run/ubts-row-executor-link:rw', binds)
         self.assertTrue(any(b.endswith(':/opt/ubts/row_executor:ro') for b in binds))
         self.assertEqual((spec['HostConfig']['NetworkMode'], spec['HostConfig']['IpcMode']), ('host', 'host'))
+        self.assertEqual(spec['HostConfig']['CpuShares'], inst.CONTROL_CPU_SHARES)   # 2026-11-19 CPU weight
         self.assertIn('ROS_DOMAIN_ID=0', spec['Env'])
         link = json.loads(self.host.files[self.link()])
         self.assertEqual((link['url'], link['token_file']),
