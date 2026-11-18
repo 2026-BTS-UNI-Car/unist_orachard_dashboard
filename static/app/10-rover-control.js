@@ -270,7 +270,12 @@ async function armEspRover() {
   const epoch = c.epoch || 0;
   try {
     const result = await controlRequest("/api/rover/arm");
-    if (!result.ok) throw new Error(result.error);
+    if (!result.ok && result.error === "steer_profile_required") {
+      // The bridge is the front-steer one: this pad cannot drive it. Take the steering panel instead (14-steer.js).
+      if (typeof adoptBridgeVehicle === "function") adoptBridgeVehicle("front_steer");
+      throw new Error(result.message || "조향 차량 브리지다: 조향 패널로 전환. 조향 패널에서 다시 조종 활성화");
+    }
+    if (!result.ok) throw new Error(result.message || result.error);
     if (epoch !== (c.epoch || 0)) { await controlRequest("/api/rover/stop", {reason: "cancelled_arm"}); return; }
     c.lease = result.lease; c.ticket = result.ticket; c.seq = result.seq;
     c.pendingRelease = false;

@@ -184,7 +184,7 @@ sudo python3 install_esp32_bridge.py --max-drive-pwm 0 --apply   # 4. 이 묶음
 
 ## 9. SMOOTH 펌웨어 (FW 줄 `SMOOTH=1`, 2026-11-16 저녁)
 
-이 묶음(브랜치 bridge-smooth-20261116 이후)의 브리지는 FW 줄의 `SMOOTH=1` 을 보면 조향 목표를 0.2 s 간격, 0.25 명령 도 단위로 나누지 않고 보낸다
+이 묶음(브랜치 bridge-smooth-20261116 이후)의 브리지는 FW 줄의 `SMOOTH=1` 을 보면 조향 목표를 0.1 s 간격(2026-11-18 전에는 0.2 s), 0.25 명령 도 단위로 나누지 않고 보낸다
 (A/D 한 번 = 펌웨어의 끊김 없는 구동 한 번). `SMOOTH` 가 없거나 `SMOOTH=0` 이면 옛 규칙 그대로다. 새 설치 옵션은 없다. 구동 상한은 지금처럼
 설치 때 `--max-drive-pwm` 으로 정하고(조향 시험 동안 0), 화면 '구동 duty' 칸 아래에 그 값이 보인다. 하드 한계는 CAL 줄의 `GUARD=` 를 읽고
 (SMOOTH 판 1300..2600), 가운데 범위는 r2 의 1850..2150 이다. 설명: [`docs/esp_rover_control.md`](../../docs/esp_rover_control.md) 1-5절.

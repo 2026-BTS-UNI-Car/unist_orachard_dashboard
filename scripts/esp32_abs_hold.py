@@ -96,7 +96,7 @@ MAX_LINE_BYTES = 8192
 STAGE_MAX_COUNTS = 280
 # SMOOTH=1 firmware (FW token; 'SM OFF' prints SMOOTH=0 and brings the pulse hold back): no budget, no settle before a
 # new target and a same-direction target taken over while running, so targets go faster, finer and unstaged [proposal].
-ANGLE_MIN_INTERVAL_SMOOTH_S = 0.2
+ANGLE_MIN_INTERVAL_SMOOTH_S = 0.1          # 2026-11-18: 0.2 -> 0.1 s, the drag follows the finger closer
 # 0.25 command deg = about 6-7 pot counts at the 2026-11-16 marks (1475/2029/2513); the smooth hold stops within
 # STOP_TOL 6 counts and restarts a reached target only above RESTART_TOL 16. Written with two decimals.
 ANGLE_QUANTUM_SMOOTH_DEG = 0.25

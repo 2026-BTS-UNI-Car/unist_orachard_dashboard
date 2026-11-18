@@ -57,7 +57,7 @@ export const CAL_MESSAGES = {
   device_unavailable: '장치 연결 끊김',
   firmware_mismatch: '펌웨어 이름이 ABS-HOLD 가 아님',
   steering_status_stale: '조향 상태 줄 끊김',
-  pot_invalid: '가변저항 값 무효',
+  pot_invalid: '가변저항 값 무효(배선 확인)',
   stop_unconfirmed: 'STOP 확인 실패',
   operator_required: '조종자 세션 없음',
   motor_bridge_unavailable: '브리지에 연결할 수 없음',

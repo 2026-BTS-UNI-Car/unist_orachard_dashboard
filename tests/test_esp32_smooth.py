@@ -1,6 +1,6 @@
 """The ESP32-S3 bridge with the SMOOTH firmware (FW token SMOOTH=1, runs/steer_smooth_20261116, r2: BRAKE_MS, centre
 guard 1850..2150) against the fake board (tests/fake_esp32.py, smooth=True). No hardware, no socket, no ROS; injected
-clock. Checks: the new lines, the pacing (one target per 0.2 s at most, 0.25-degree steps, no staging), a held A/D key
+clock. Checks: the new lines, the pacing (one target per 0.1 s at most, 0.25-degree steps, no staging), a held A/D key
 as one target and one continuous run, the pulse-hold rules again after 'SM OFF', the one 'SM' read, TRACE lines counted,
 a stall cancel not forced again, and the calibration with the 2026-11-16 values (centre 2029, left end above 2500,
 CAL FIND with 60 ms pulses).
@@ -111,7 +111,7 @@ class SmoothStatus(unittest.TestCase):
         self.assertIs(rig.motor.smooth, True)
         sc = snap['steer_control']
         self.assertEqual((sc['smooth'], sc['angle_min_interval_ms'], sc['angle_quantum_deg'], sc['angle_max_jump_deg'],
-                          sc['stage_max_counts'], sc['keys']), (True, 200, 0.25, 40.0, None, 'full_limit'))
+                          sc['stage_max_counts'], sc['keys']), (True, 100, 0.25, 40.0, None, 'full_limit'))
         smooth = snap['steering']['smooth']
         self.assertEqual((smooth['firmware'], smooth['mode'], smooth['store']), (True, 'SMOOTH', 'DEFAULT'))
         self.assertEqual(smooth['params']['BRAKE_MS'], 40)
@@ -184,7 +184,7 @@ class SmoothSteering(unittest.TestCase):
         writes = rig.angle_writes()[start:]
         gaps = [b[0] - a[0] for a, b in zip(writes, writes[1:])]
         self.assertTrue(all(g >= esp.ANGLE_MIN_INTERVAL_SMOOTH_S - 1e-9 for g in gaps), gaps)
-        self.assertGreaterEqual(len(writes), 12, 'about one target per 0.2 s while dragging: %r' % writes)
+        self.assertGreaterEqual(len(writes), 12, 'about one target per 0.1 s while dragging: %r' % writes)
         for _, text in writes:
             value = float(text.split()[1])
             self.assertEqual(len(text.split()[1].split('.')[1]), 2, text)

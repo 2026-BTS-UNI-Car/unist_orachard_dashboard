@@ -39,6 +39,27 @@ export const DEVICE_TEXT = {
   unknown: ['', '확인 중', ''],
 };
 
+const AD_RATE_KEY = 'ubts-steer-ad-rate';
+// The A/D steering speed as the operator reads it: the top of the range means the wheel's own speed (no ramp).
+export const adRateText = (degS, max) => (degS >= max ? '최대(바퀴 속도)' : `${degS} °/s`);
+
+// Why the bridge would refuse Arm now (status steering_host.not_ready of the ESP32-S3 bridge), or null.
+export function boardNotReady(status) {
+  const host = status && typeof status === 'object' ? status.steering_host : null;
+  return host && typeof host === 'object' && typeof host.not_ready === 'string' && host.not_ready ? host.not_ready : null;
+}
+export function armBlockText(code) {
+  const why = {
+    pot_invalid: '가변저항 값 무효(배선 확인): 값이 범위 밖(예: 4095)이다. 배선을 확인하면 저절로 돌아온다.',
+    device_unavailable: '보드 다시 연결 중(전원·USB): 보드가 돌아오면 저절로 준비된다.',
+    esp32_not_ready: '보드 다시 연결 중: 시작 줄·STOP 확인을 기다린다.',
+    steering_status_stale: '조향 상태 줄이 끊김(보드·USB 확인): 돌아오면 저절로 준비된다.',
+    firmware_mismatch: '펌웨어 이름이 다름: 보드 펌웨어 확인',
+    stop_unconfirmed: 'STOP 확인이 없어 다시 연결 중',
+  };
+  return `조종 활성화 불가 · ${why[code] || R.messageFor?.(code) || code}`;
+}
+
 // Short labels of the faults in the status (MCU bits and host latches), from the rules' catalogues.
 export function faultLabels(names) {
   const table = new Map(R.MCU_FAULTS.map(([code, label, level]) => [code, [label, level]]));
@@ -184,6 +205,13 @@ export function initSteerDrive(page) {
   const drag = dragEl ? bindSteerDrag(dragEl, ctl) : null;
   const slider = $('steerSpeedSlider');
   slider?.addEventListener('input', () => ctl.setSpeedCap(Number(slider.value)));
+  // A/D steering speed (2026-11-18): kept in this browser.
+  const adRate = $('steerAdRate');
+  try { const kept = Number(localStorage.getItem(AD_RATE_KEY)); if (kept) ctl.setAdRate(kept); } catch (_) { /* no storage */ }
+  adRate?.addEventListener('input', () => {
+    ctl.setAdRate(Number(adRate.value));
+    try { localStorage.setItem(AD_RATE_KEY, String(ctl.adRateDegS)); } catch (_) { /* this load only */ }
+  });
   root.querySelectorAll('[data-steer-angle]').forEach((button) => {
     button.addEventListener('click', () => ctl.setAngle(Number(button.dataset.steerAngle)));
   });
@@ -234,14 +262,19 @@ export function initSteerDrive(page) {
   function draw() {
     const now = Date.now();
     const v = steerView(ctl, now);
-    const [level, text, explain] = DEVICE_TEXT[v.device] || DEVICE_TEXT.unknown;
+    let [level, text, explain] = DEVICE_TEXT[v.device] || DEVICE_TEXT.unknown;
+    const notReady = boardNotReady(ctl.lastStatus);
+    if (v.device === 'present' && notReady) {
+      [level, text, explain] = ['warn', notReady === 'pot_invalid' ? '가변저항 확인' : '보드 준비 중', armBlockText(notReady)];
+    }
     const device = $('steerDevice');
     if (device) { device.className = `status-chip${level ? ` ${level}` : ''}`; setText('steerDevice', text); }
     const arm = $('steerArmButton');
     if (arm) {
       arm.textContent = ctl.arming ? '활성화 중…' : ctl.releasing ? '감속 뒤 해제 중…' : ctl.lease ? '조종 활성화 ON' : '조종 활성화 OFF';
       arm.setAttribute('aria-pressed', String(Boolean(ctl.lease)));
-      arm.disabled = ctl.arming || ctl.releasing || (!ctl.lease && v.device !== 'present');
+      arm.disabled = ctl.arming || ctl.releasing || (!ctl.lease && (v.device !== 'present' || Boolean(notReady)));
+      arm.title = !ctl.lease && notReady ? armBlockText(notReady) : '';
     }
     const gauge = (id, pos) => { const el = $(id); if (el) { el.hidden = pos === null; if (pos !== null) el.style.left = `${pos}%`; } };
     gauge('steerGaugeTarget', v.targetPos);
@@ -255,6 +288,8 @@ export function initSteerDrive(page) {
       { label: '입력 기한', value: v.deadlineMs === null ? '--' : `${Math.round(v.deadlineMs)} ms`, sub: v.saturated ? '조향 포화' : '0.75 s · Esc 즉시 정지', color: colours.good },
     ]);
     setText('steerSpeedValue', `${ctl.speedCapPct}%`);
+    setText('steerAdRateValue', adRateText(ctl.adRateDegS, ctl.cfg.adRateMaxDegS));
+    if (adRate && document.activeElement !== adRate && Number(adRate.value) !== ctl.adRateDegS) adRate.value = String(ctl.adRateDegS);
     if (slider && document.activeElement !== slider && Number(slider.value) !== ctl.speedCapPct) slider.value = String(ctl.speedCapPct);
     if (dragEl) {
       const thumb = $('steerDragThumb');

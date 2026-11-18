@@ -53,7 +53,7 @@
  *   - The status age limit is the bridge's steering.age_limit_ms when it gives one (150..500 ms), else statusAgeMaxMs.
  * The SMOOTH firmware (2026-11-16 evening, status steer_control.smooth true): the firmware drives one continuous run per
  * target (no 1000 ms budget, no settle before a new target, a target ahead in the running direction taken over while
- * running) and the bridge no longer stages targets (0.25 deg, one per 0.2 s). A/D stay one full-limit target, which is
+ * running) and the bridge no longer stages targets (0.25 deg, one per 0.1 s). A/D stay one full-limit target, which is
  * one continuous run (a page ramp slower than the wheel would make the firmware reach each step, stop and start again);
  * the drag uses dragStepSmoothDeg steps at most every dragPeriodSmoothMs. Without steer_control.smooth true (older
  * firmware, or 'SM OFF') the drag keeps dragStepDeg / dragPeriodMs.
@@ -94,8 +94,13 @@
     sampleKeepMs: 2000,
     dragPeriodMs: 250,           // drag: at most one new target per this time (the bridge spaces ANGLE >= 0.5 s)
     dragStepDeg: 0.5,            // drag targets in this step
-    dragPeriodSmoothMs: 100,     // SMOOTH firmware: the bridge spaces ANGLE >= 0.2 s (newest wins) [proposal]
+    dragPeriodSmoothMs: 50,      // SMOOTH firmware: the bridge spaces ANGLE >= 0.1 s (newest wins) [proposal]
     dragStepSmoothDeg: 0.25,     // SMOOTH firmware: about 6-7 pot counts (STOP_TOL 6, RESTART_TOL 16) [proposal]
+    // A/D steering speed of an absolute-target bridge (2026-11-18, operator setting, per browser): the target ramps at
+    // this rate while A/D is held; adRateMaxDegS = the full limit at once (the wheel's own speed, as before).
+    adRateMinDegS: 3,
+    adRateMaxDegS: 20,
+    defaultAdRateDegS: 20,
     ageLimitMaxMs: 500,          // upper bound of a bridge-given steering.age_limit_ms
   });
 
@@ -122,7 +127,7 @@
   ];
   // Faults of the ESP32-S3 'ABS-HOLD' bridge (scripts/esp32_abs_hold.py) with a short Korean label and a display class.
   var ESP32_FAULTS = [
-    ['pot_invalid', '가변저항 값 무효', 'bad'], ['steer_hold_cancelled', '조향 유지 취소(펌웨어)', 'warn'],
+    ['pot_invalid', '가변저항 값 무효(배선 확인)', 'bad'], ['steer_hold_cancelled', '조향 유지 취소(펌웨어)', 'warn'],
     ['steer_stop', '조향 정지(펌웨어)', 'warn'], ['firmware_mismatch', '펌웨어 이름 다름', 'bad'],
     ['mcu_drive_watchdog', '구동 감시 정지(펌웨어)', 'bad'],
   ];
@@ -173,7 +178,8 @@
     escape: 'Esc: STOP',
     http_failed: 'HTTP 요청 실패',
     bad_reply: '응답 형식 오류',
-    pot_invalid: '가변저항 값 무효',
+    pot_invalid: '가변저항 값 무효(배선 확인): 값이 범위 밖(예: 4095)이면 조향·조종 활성화를 막는다',
+    steering_status_stale: '조향 상태 줄 끊김(보드·USB 확인)',
     firmware_mismatch: '펌웨어 이름이 ABS-HOLD 가 아님',
     esp32_not_ready: 'ESP32 준비 중(배너·STOP 확인 전)',
     mcu_drive_watchdog: '펌웨어 구동 감시가 멈춤',
@@ -272,6 +278,7 @@
     this.requests = [];            // recent requests (bounded), for the display and the tests
     this.stopReplies = 0;
     this.external = false;         // a distance move holds the lease chain on the server (beginExternal)
+    this.adRateDegS = this.cfg.defaultAdRateDegS;
   }
 
   SteerController.prototype._emit = function () { try { this.onChange(this); } catch (err) { /* display only */ } };
@@ -583,7 +590,7 @@
     if (!this.lease || this.hostTarget === null) return;
     var lim = this.limits();
     if (!lim || !this.fresh(now)) return;             // stale: the target stays (no ramp, no centre return)
-    if (this.absoluteMode()) { this._updateAbsolute(now, lim); return; }
+    if (this.absoluteMode()) { this._updateAbsolute(now, lim, dtMs); return; }
     var moving = this.moving(now);
     var goal = null, rate = moving ? this.cfg.movingRateDegS : this.cfg.standstillRateDegS;
     var steerKey = this.keys.a || this.keys.d;
@@ -630,7 +637,13 @@
     }
   };
   // Absolute-target bridge: no ramp, no standstill step; the drag at most every dragPeriodMs.
-  SteerController.prototype._updateAbsolute = function (now, lim) {
+  SteerController.prototype.setAdRate = function (degS) {
+    if (!isNum(degS)) return false;
+    this.adRateDegS = Math.round(clamp(degS, this.cfg.adRateMinDegS, this.cfg.adRateMaxDegS));
+    this._emit();
+    return true;
+  };
+  SteerController.prototype._updateAbsolute = function (now, lim, dtMs) {
     var goal = null;
     if (this.drag.active) {
       if (this.drag.appliedAt !== null && now - this.drag.appliedAt < this.dragPeriodMs()) return;
@@ -642,6 +655,10 @@
     } else if (this.keys.a || this.keys.d) {
       var dir = (this.keys.a ? 1 : 0) - (this.keys.d ? 1 : 0);
       goal = dir > 0 ? lim.left : dir < 0 ? -lim.right : this.hostTarget;
+      if (dir !== 0 && this.hostTarget !== null && this.adRateDegS < this.cfg.adRateMaxDegS) {
+        var step = degToMrad(this.adRateDegS) * (isNum(dtMs) ? dtMs : 0) / 1000;    // ramp while held
+        goal = this.hostTarget + clamp(goal - this.hostTarget, -step, step);
+      }
     } else if (this.centreReturn) {
       goal = 0;
       this.centreReturn = false;

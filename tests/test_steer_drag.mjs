@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { bindSteerDrag, dragPosition, dragText, driveCapText, faultLabels, steerView, HELP_TEXT } from '../static/steer/steer-drive.mjs';
+import { adRateText, armBlockText, bindSteerDrag, boardNotReady, dragPosition, dragText, driveCapText, faultLabels, steerView, HELP_TEXT } from '../static/steer/steer-drive.mjs';
 
 const R = globalThis.UbtsSteerRules;
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -127,12 +127,12 @@ test('drag: a precise angle, rate limited, and 0 when released', async () => {
 const SMOOTH_CONTROL = { kind: 'esp32_abs_hold', keys: 'full_limit', ramp: false, angle_quantum_deg: 0.25,
   angle_min_interval_ms: 200, angle_max_jump_deg: 40, stage_max_counts: null, smooth: true };
 
-test('SMOOTH firmware: A/D stay one full-limit target; the drag goes in 0.25 deg steps at most every 100 ms', async () => {
+test('SMOOTH firmware: A/D stay one full-limit target; the drag goes in 0.25 deg steps at most every 50 ms', async () => {
   const r = rig({ steer_control: SMOOTH_CONTROL });
   await r.arm();
   assert.equal(r.ctl.smoothMode(), true);
   assert.equal(r.ctl.dragStepDeg(), 0.25);
-  assert.equal(r.ctl.dragPeriodMs(), 100);
+  assert.equal(r.ctl.dragPeriodMs(), 50);
   r.ctl.keyDown('a');
   for (let i = 0; i < 10; i += 1) await r.step(100);    // A held for a second: the same target every time
   assert.deepEqual([...new Set(r.bridge.drives.map((d) => d.steer))], [LIMIT], 'one full-limit target, no page ramp');
@@ -152,7 +152,7 @@ test('SMOOTH firmware: A/D stay one full-limit target; the drag goes in 0.25 deg
   }
   const gaps = changes.slice(1).map((at, i) => at - changes[i]);
   assert.ok(changes.length >= 8, `the target follows the drag in fine steps: ${changes.length}`);
-  assert.ok(gaps.every((gap) => gap >= 100), `at most one new target per 100 ms: ${gaps}`);
+  assert.ok(gaps.every((gap) => gap >= 50), `at most one new target per 50 ms: ${gaps}`);
   for (const d of r.bridge.drives.slice(-5)) {
     const deg = R.mradToDeg(d.steer);
     // integer mrad on the wire (0.057 deg); the bridge rounds back to the 0.25 deg grid
@@ -255,7 +255,7 @@ test('the status age limit comes from the bridge when it gives one', () => {
 
 test('labels, positions and help text', () => {
   assert.deepEqual(faultLabels(['pot_invalid', 'steer_hold_cancelled', 'mcu_reset_detected']).map((f) => [f.label, f.level]),
-    [['가변저항 값 무효', 'bad'], ['조향 유지 취소(펌웨어)', 'warn'], ['MCU 리셋 감지', 'bad']]);
+    [['가변저항 값 무효(배선 확인)', 'bad'], ['조향 유지 취소(펌웨어)', 'warn'], ['MCU 리셋 감지', 'bad']]);
   assert.equal(dragText(0), '0°');
   assert.equal(dragText(12.5), '왼쪽 12.5°');
   assert.equal(dragText(-3), '오른쪽 3.0°');
@@ -336,4 +336,72 @@ test('a differential page takes the steering panel when the bridge says front_st
   assert.deepEqual(fetched.slice(before).filter((name) => name.startsWith('steer') || name === 'auto-panel.mjs'),
     ['steer-drive.mjs', 'auto-panel.mjs', 'steer-sensor.mjs']);
   assert.equal(context.adoptBridgeVehicle('front_steer'), false, 'once');
+});
+
+test('a front-steer bridge is remembered: the next load takes the steering panel at once (2026-11-18 battery swap)', () => {
+  const source = readFileSync(path.join(here, '..', 'static', 'app', '14-steer.js'), 'utf8').replace(/\bimport\(url\)/, 'fakeImport(url)');
+  const make = (stored) => {
+    const store = new Map(stored ? [['ubts-vehicle-kind-seen', stored]] : []);
+    const dataset = {};
+    const fetched = [];
+    const context = {
+      document: { documentElement: { dataset } }, window: { addEventListener() {} }, IntersectionObserver: undefined, console,
+      localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v) },
+      $: () => null, currentRoute: () => '/rover-control', getJson() {}, postJson() {}, controlRequest() {}, renderReadout() {}, chartColors() {},
+      fakeImport: (url) => { fetched.push(url.split('/').pop()); return Promise.resolve(new Proxy({}, { get: () => () => ({ routeChanged() {} }) })); },
+    };
+    vm.createContext(context);
+    vm.runInContext(`${source}
+this.adoptBridgeVehicle = adoptBridgeVehicle;`, context);
+    return { context, dataset, store, fetched };
+  };
+  const first = make(null);
+  assert.equal(first.dataset.vehicleKind, undefined, 'nothing known yet: the page as served');
+  assert.equal(first.context.adoptBridgeVehicle({ vehicle_profile: 'front_steer' }), true);
+  assert.equal(first.store.get('ubts-vehicle-kind-seen'), 'front_steer');
+  const next = make('front_steer');
+  assert.equal(next.dataset.vehicleKind, 'front_steer', 'a later load (bridge or board still restarting) never shows the differential pad');
+  assert.equal(next.dataset.vehicleKindFrom, 'remembered');
+  assert.ok(next.fetched.includes('steer-drive.mjs'));
+  assert.equal(next.context.adoptBridgeVehicle(undefined), false, 'a status without a profile changes nothing');
+  assert.equal(next.dataset.vehicleKind, 'front_steer');
+});
+
+test('board not ready: the reason and a clear text (pot_invalid = wiring)', () => {
+  assert.equal(boardNotReady({ steering_host: { not_ready: 'pot_invalid' } }), 'pot_invalid');
+  assert.equal(boardNotReady({ steering_host: { not_ready: null } }), null);
+  assert.equal(boardNotReady(null), null);
+  assert.match(armBlockText('pot_invalid'), /가변저항 값 무효\(배선 확인\)/);
+  assert.match(armBlockText('device_unavailable'), /보드 다시 연결 중/);
+  assert.match(R.messageFor('pot_invalid'), /배선 확인/);
+});
+
+test('the differential Arm on a front-steer bridge adopts the steering panel and says so in Korean', () => {
+  const source = readFileSync(path.join(here, '..', 'static', 'app', '10-rover-control.js'), 'utf8');
+  assert.match(source, /!result\.ok && result\.error === "steer_profile_required"/);
+  assert.doesNotMatch(source, /vehicle_profile/, 'the old screen still never sends (or reads) a vehicle profile');
+  assert.match(source, /adoptBridgeVehicle\("front_steer"\)/);
+  assert.match(source, /throw new Error\(result\.message \|\| result\.error\)/);
+});
+
+test('A/D steering speed: the target ramps at the chosen rate while held; release goes to the centre at once', async () => {
+  const r = rig();
+  await r.arm();
+  assert.equal(r.ctl.adRateDegS, 20, 'default: the full limit at once (as before)');
+  assert.equal(r.ctl.setAdRate(5), true);
+  assert.equal(r.ctl.setAdRate(99) && r.ctl.adRateDegS, 20, 'bounded 3..20');
+  r.ctl.setAdRate(5);
+  r.ctl.keyDown('a');
+  for (let i = 0; i < 20; i += 1) await r.step(50);           // A held for 1 s at 5 deg/s
+  const deg = R.mradToDeg(r.lastSteer());
+  assert.ok(deg > 4 && deg < 6, `about 5 deg after 1 s: ${deg}`);
+  r.ctl.keyUp('a');
+  await r.step();
+  assert.equal(r.lastSteer(), 0, 'release: the centre at once (unchanged)');
+  r.ctl.setAdRate(20);
+  r.ctl.keyDown('d');
+  await r.step();
+  assert.equal(r.lastSteer(), -LIMIT, 'the top of the range: the full limit at once');
+  assert.equal(adRateText(20, 20), '최대(바퀴 속도)');
+  assert.equal(adRateText(7, 20), '7 °/s');
 });

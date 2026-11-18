@@ -12,7 +12,7 @@ one-use ticket, seq + 1, deadman, input deadline 0.75 s, ticket 1.5 s, idle owne
 
 Mapping to the firmware (esp32_abs_hold.Esp32SteerMotor):
   steer_mrad (left +)  -> 'ANGLE -deg' (the firmware's + is RIGHT), rounded to 1 command degree, at most every 0.5 s,
-                          staged by counts; on the SMOOTH=1 firmware rounded to 0.25 degree, at most every 0.2 s,
+                          staged by counts; on the SMOOTH=1 firmware rounded to 0.25 degree, at most every 0.1 s,
                           never staged (scripts/esp32_abs_hold.py, 'Smooth hold')
   throttle             -> '2 F/R pwm' + '3 F/R pwm' (pwm = (|t| * 255 + 50) // 100, host cap), or '2 S' / '3 S'
   stop / disarm / input expiry / lease loss / shutdown / serial error / MCU reset -> 'STOP' (all three motors)
@@ -27,13 +27,19 @@ written again until acknowledged and zero is refreshed every second. SIGTERM, SI
 before the port closes. If this process is killed (SIGKILL) or hangs while the board stays powered, the last drive
 command keeps running: the firmware drive watchdog proposal (runs/esp32_bridge_20261116) closes that gap.
 
+Control events (2026-11-18, field: "the Arm keeps turning off"): every arm, disarm (with the stop reason: input_expired,
+stale_input, page_status_stale, page_hidden, device_unavailable, pot_invalid, ...), board link change and not-ready
+reason change is kept (last CONTROL_EVENTS_KEEP in memory, the last 10 in status 'control_events', identical events at
+most once per CONTROL_EVENT_REPEAT_S) and appended to ROVER_CONTROL_EVENT_LOG (default rover_control_events.jsonl next
+to the status file, the last CONTROL_LOG_KEEP lines kept). The owner (a dashboard session) is never written.
+
 ROS (optional, lazy import): /rover/status, /rover/control/requested, /rover/control/applied (2 Hz) and
 /rover/steering/state (each STATUS line). The status file (ROVER_BRIDGE_STATUS_FILE) is written every 0.5 s.
 Environment (defaults in brackets): ROVER_SERIAL_PORT [/dev/ubts-motor], ROVER_ESP_IDENTITY (udev ID_SERIAL, required),
 ROVER_CONTROL_SOCKET [/run/ubts-rover/control.sock], ROVER_BRIDGE_STATUS_FILE, ROVER_ESP32_LEFT_FORWARD [F],
 ROVER_ESP32_RIGHT_FORWARD [F], ROVER_ESP32_DIRECTION_VERIFIED [0], ROVER_ESP32_MAX_DRIVE_PWM [255],
 ROVER_ESP32_DRIVE_TTL_S [0.75], ROVER_ESP32_STATUS_PERIOD_S [0.1], ROVER_ESP32_ANGLE_MIN_INTERVAL_S [0.5],
-ROVER_ESP32_ANGLE_QUANTUM_DEG [1.0] (the last two for the pulse hold; the SMOOTH=1 firmware uses 0.2 s and 0.25 deg).
+ROVER_ESP32_ANGLE_QUANTUM_DEG [1.0] (the last two for the pulse hold; the SMOOTH=1 firmware uses 0.1 s and 0.25 deg).
 Run from the dashboard root: python3 -m scripts.esp32_steer_bridge --help
 """
 import argparse
@@ -59,6 +65,9 @@ REQUEST_EXPIRY_S = 0.25
 MAX_REQUEST_BYTES = 4096
 DEFAULT_SOCKET = '/run/ubts-rover/control.sock'
 DEFAULT_DEVICE = '/dev/ubts-motor'
+CONTROL_EVENTS_KEEP = 50
+CONTROL_EVENT_REPEAT_S = 2.0
+CONTROL_LOG_KEEP = 1000
 STATE_SCHEMA = 'ubts.esp32_steer_state.v1'
 
 
@@ -76,6 +85,11 @@ class Esp32Bridge:
         self.emergency = threading.Event()
         self.emergency_reason = 'operator_stop'
         self.internal_errors = 0
+        self.control_events = []        # dicts, newest last (CONTROL_EVENTS_KEEP)
+        self.events_unwritten = []      # not yet appended to the event log file
+        self._event_state = None
+        self._event_last = {}           # (event, reason) -> monotonic time (repeat limit)
+        self.events_suppressed = 0
         self.snapshot = {'ok': True, 'connected': False, 'state': 'starting', 'armed': False,
                          'vehicle_profile': 'front_steer', 'esp_kind': esp.ESP_KIND, 'updated_at': wall_clock()}
 
@@ -147,8 +161,49 @@ class Esp32Bridge:
                         result = {'ok': False, 'error': reason}
                 if not future.done():
                     future.set_result(result)
-        self.snapshot = {**self.control.status(), 'updated_at': self.wall_clock(), 'mode': 'manual',
-                         'internal_errors': self.internal_errors}
+        status = self.control.status()
+        self._track_events(status)
+        self.snapshot = {**status, 'updated_at': self.wall_clock(), 'mode': 'manual',
+                         'internal_errors': self.internal_errors,
+                         'control_events': self.control_events[-10:], 'control_events_suppressed': self.events_suppressed}
+
+    def _track_events(self, status):
+        """Arm / disarm (with why), board link and not-ready changes as control events."""
+        host = status.get('steering_host') if isinstance(status.get('steering_host'), dict) else {}
+        state = {'armed': bool(status.get('armed')), 'reason': status.get('reason'), 'link': host.get('link'),
+                 'not_ready': host.get('not_ready')}
+        before, self._event_state = self._event_state, state
+        if before is None:
+            self._control_event('bridge_start', state, None)
+            return
+        if state['armed'] and not before['armed']:
+            self._control_event('armed', state, None)
+        elif before['armed'] and not state['armed']:
+            self._control_event('disarmed', state, state['reason'])
+        if state['link'] != before['link']:
+            detail = host.get('last_open_error') if state['link'] == 'closed' else None
+            self._control_event('board_link', state, detail)
+        elif state['not_ready'] != before['not_ready']:
+            self._control_event('not_ready' if state['not_ready'] else 'ready', state, state['not_ready'])
+
+    def _control_event(self, event, state, reason):
+        now = self.clock()
+        key = (event, reason, state.get('link'))
+        last = self._event_last.get(key)
+        if last is not None and now - last < CONTROL_EVENT_REPEAT_S:
+            self.events_suppressed += 1
+            return
+        self._event_last[key] = now
+        item = {'at': round(self.wall_clock(), 3), 'event': event, 'reason': reason, 'armed': state['armed'],
+                'link': state['link'], 'not_ready': state['not_ready']}
+        self.control_events.append(item)
+        del self.control_events[:-CONTROL_EVENTS_KEEP]
+        self.events_unwritten.append(item)
+        del self.events_unwritten[:-CONTROL_LOG_KEEP]
+
+    def take_unwritten_events(self):
+        items, self.events_unwritten = self.events_unwritten, []
+        return items
 
     def _calibration_refusal(self):
         """Why the control side refuses a calibration action now (the motor adds its own reasons), or None."""
@@ -268,6 +323,8 @@ def build_parser():
                    help='udev ID_SERIAL of the ESP32 (required)')
     p.add_argument('--socket', default=os.environ.get('ROVER_CONTROL_SOCKET', DEFAULT_SOCKET))
     p.add_argument('--status-file', default=os.environ.get('ROVER_BRIDGE_STATUS_FILE'))
+    p.add_argument('--event-log', default=os.environ.get('ROVER_CONTROL_EVENT_LOG'),
+                   help='control event log (default: rover_control_events.jsonl next to the status file)')
     p.add_argument('--left-forward', choices=('F', 'R'), default=os.environ.get('ROVER_ESP32_LEFT_FORWARD', 'F'))
     p.add_argument('--right-forward', choices=('F', 'R'), default=os.environ.get('ROVER_ESP32_RIGHT_FORWARD', 'F'))
     p.add_argument('--direction-verified', action='store_true',
@@ -340,6 +397,32 @@ class Runner:
             with open(tmp, 'w', encoding='utf-8', newline='\n') as handle:
                 handle.write(json.dumps(snapshot, allow_nan=False, default=str))
             os.replace(tmp, target)
+        self.write_events()
+
+    def event_log_path(self):
+        if self.args.event_log:
+            return self.args.event_log
+        return os.path.join(os.path.dirname(self.args.status_file), 'rover_control_events.jsonl') \
+            if self.args.status_file else None
+
+    def write_events(self):
+        """Append the new control events to the event log (the last CONTROL_LOG_KEEP lines kept)."""
+        items = self.bridge.take_unwritten_events()
+        path = self.event_log_path()
+        if not items or not path:
+            return
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        lines = []
+        try:
+            with open(path, 'r', encoding='utf-8') as handle:
+                lines = [line.rstrip('\n') for line in handle if line.strip()]
+        except OSError:
+            pass
+        lines += [json.dumps(item, ensure_ascii=False, allow_nan=False, default=str) for item in items]
+        tmp = path + '.tmp'
+        with open(tmp, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write('\n'.join(lines[-CONTROL_LOG_KEEP:]) + '\n')
+        os.replace(tmp, path)
 
     def publish_state(self):
         seq = self.motor.status_seq

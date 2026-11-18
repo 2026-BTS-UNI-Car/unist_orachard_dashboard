@@ -340,7 +340,10 @@ class RoutesBase:
         before = len(self.stack.rx())
         status, reply = old.post('/api/rover/arm', {})                 # app.js: postJson("/api/rover/arm")
         self.assertEqual(status, 200)
-        self.assertEqual(reply, {'ok': False, 'error': 'steer_profile_required'})
+        self.assertEqual((reply['ok'], reply['error']), (False, 'steer_profile_required'))
+        # 2026-11-18: the dashboard says why in Korean and names the profile (the page then takes the steering panel)
+        self.assertEqual(reply['vehicle_profile'], 'front_steer')
+        self.assertIn('조향 패널', reply['message'])
         time.sleep(0.2)
         sent = self.stack.rx()[before:]
         self.assertFalse([line for line in sent if line.startswith(b'ARM')], 'no ARM reached the MCU')

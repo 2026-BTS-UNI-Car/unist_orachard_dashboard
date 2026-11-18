@@ -9,15 +9,26 @@
 // A dashboard started without DASHBOARD_VEHICLE (differential) takes the steering panel when the control bridge says
 // vehicle_profile "front_steer" (the ESP32-S3 bridge, 2026-11-16): the differential pad cannot drive such a bridge (it
 // refuses left/right), so showing it would only mislead. The menu and the page groups do not change.
+// 2026-11-18 (battery swap in the field): while the board or the bridge restarted, the status had no vehicle_profile,
+// the page kept the differential pad, and its Arm (no vehicle_profile) got 'steer_profile_required'. A front-steer
+// bridge is now remembered in this browser (STEER_KIND_KEY) and taken at once on the next load, and every status or
+// refusal that names the profile is used; the page never goes back to the differential pad by itself.
 const steerVehicle = () => document.documentElement.dataset.vehicleKind === "front_steer";
+const STEER_KIND_KEY = "ubts-vehicle-kind-seen";
 
 function adoptBridgeVehicle(bridge) {
   const profile = bridge && typeof bridge === "object" ? bridge.vehicle_profile : bridge;
-  if (profile !== "front_steer" || steerVehicle()) return false;
+  if (profile !== "front_steer") return false;
+  try { localStorage.setItem(STEER_KIND_KEY, "front_steer"); } catch (_) { /* private mode: this load only */ }
+  if (steerVehicle()) return false;
   document.documentElement.dataset.vehicleKind = "front_steer";
   document.documentElement.dataset.vehicleKindFrom = "bridge";
   loadSteerScreens();
   return true;
+}
+
+function rememberedSteerVehicle() {
+  try { return localStorage.getItem(STEER_KIND_KEY) === "front_steer"; } catch (_) { return false; }
 }
 
 const steerScreens = { drive: null, auto: null, tuning: null, grid: null, pot: null, cal: null, dist: null, driveScreen: null };
@@ -87,3 +98,8 @@ if (!steerPartWanted.mapSeen) {
 }
 
 window.addEventListener("ubts:route", (event) => loadSteerScreens(event.detail?.route));
+if (!steerVehicle() && rememberedSteerVehicle()) {
+  document.documentElement.dataset.vehicleKind = "front_steer";
+  document.documentElement.dataset.vehicleKindFrom = "remembered";
+  loadSteerScreens();
+}

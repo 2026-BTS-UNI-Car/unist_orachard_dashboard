@@ -93,7 +93,7 @@ class CorruptFwLine(unittest.TestCase):
         motor = rig.motor
         self.assertEqual((motor.drive_wd_ms, motor.cal_runtime, motor.smooth), (300, True, True))
         self.assertEqual(motor.counts['fw_line_tokens_once'], 1)
-        self.assertEqual(rig.bridge.snapshot['steer_control']['angle_min_interval_ms'], 200)
+        self.assertEqual(rig.bridge.snapshot['steer_control']['angle_min_interval_ms'], 100)
 
 
 class ConfirmPhase(unittest.TestCase):

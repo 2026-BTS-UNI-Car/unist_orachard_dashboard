@@ -162,6 +162,18 @@ class CalibrateRouteTest(unittest.TestCase):
         self.page.post('/api/rover/stop', {'reason': 'operator_stop'})
         self.assertEqual(self.stack.fake.drive_on_ms, 0)
 
+    def test_differential_arm_on_the_steer_bridge_gets_a_korean_reason(self):
+        # 2026-11-18: after a battery swap the page showed the differential pad; its Arm has no vehicle_profile.
+        status, reply = self.page.post('/api/rover/arm', {})
+        self.assertEqual(status, 200)
+        self.assertEqual((reply['ok'], reply['error'], reply['vehicle_profile']),
+                         (False, 'steer_profile_required', 'front_steer'))
+        self.assertIn('조향 패널', reply['message'])
+        self.assertEqual(self.stack.relayed, [], 'not forwarded to the bridge')
+        status, reply = self.page.post('/api/rover/arm', {'vehicle_profile': 'front_steer'})
+        self.assertTrue(reply['ok'], 'the steering panel arms as before')
+        self.page.post('/api/rover/stop', {'reason': 'operator_stop'})
+
     def test_no_calibration_during_an_autonomy_run(self):
         app = self.stack.mods['app']
 

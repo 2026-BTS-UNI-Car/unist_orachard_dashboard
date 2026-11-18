@@ -630,6 +630,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                       if key in payload}
             self._send_json(request({**fields, "op": "calibrate", "owner": session}))
             return
+        if path == "/api/rover/arm" and payload.get("vehicle_profile") is None:
+            # The differential pad's Arm (no vehicle_profile): a front-steer bridge refuses it with
+            # 'steer_profile_required'; say why in Korean and name the profile so the page takes the steering panel.
+            status = request({"op": "status"})
+            if isinstance(status, dict) and status.get("vehicle_profile") == "front_steer":
+                self._send_json({'ok': False, 'error': 'steer_profile_required', 'vehicle_profile': 'front_steer',
+                                 'message': '조향 차량 브리지다: 이 화면은 차동 조종판이다. 조향 패널로 바꾼 뒤 다시 조종 활성화'})
+                return
         if supervisor is not None and (supervisor.status().get('active') or supervisor.status().get('loop_cleanup_pending')):
             handoff=supervisor.manual_takeover()
             if path!='/api/rover/stop' and not handoff.get('loop_joined'):
