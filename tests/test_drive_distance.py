@@ -93,13 +93,9 @@ class Planner(unittest.TestCase):
         self.assertEqual(dd.plan(TABLE, 'road_paved', 100, 1.0)['min_distance_m'], 1.2)
         self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 3.5)['problem'], 'distance_out_of_range')
         self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 0.1)['problem'], 'distance_out_of_range')
-        self.assertEqual(dd.plan(TABLE, 'road_paved', 50, 1.0)['problem'], 'distance_duty_without_data',
-                         'no interpolated duty is offered')
-        self.assertEqual(dd.plan(TABLE, 'road_paved', 50, 1.0)['duties'], [40, 58, 88, 90, 95, 100])
         self.assertEqual(dd.plan(TABLE, 'moon', 40, 1.0)['problem'], 'distance_terrain_unknown')
         for bad in (True, '1.0', float('nan')):
             self.assertEqual(dd.plan(TABLE, 'road_paved', 40, bad)['problem'], 'distance_invalid')
-        self.assertEqual(dd.plan(TABLE, 'road_paved', True, 1.0)['problem'], 'distance_duty_without_data')
         p = dd.plan(TABLE, 'orchard_row_1010', 100, 2.0)
         self.assertEqual((p['speed']['grade'], p['lag']['grade'], p['coast']['grade'], p['grade']),
                          ('측정', '측정', '측정', '측정'))
@@ -108,10 +104,93 @@ class Planner(unittest.TestCase):
                           p['grade']), ('참고', 'GNSS', '가정', '모델', '가정'))
         json.dumps(p, allow_nan=False)
 
-    def test_table_view_offers_only_duties_with_data(self):
+    def test_speed_choice_bounds(self):
+        """The speed is an integer duty from the terrain's lowest to its highest table duty; None = the lowest."""
+        for bad in (True, False, 40.0, 40.5, '40', [40], float('nan')):
+            p = dd.plan(TABLE, 'road_paved', bad, 1.0)
+            self.assertEqual(p['problem'], 'distance_duty_invalid', bad)
+            self.assertFalse(p['ok'])
+        for duty in (0, 39, 101, -40):
+            p = dd.plan(TABLE, 'road_paved', duty, 1.0)
+            self.assertEqual(p['problem'], 'distance_duty_out_of_range', duty)
+            self.assertEqual((p['duty_min'], p['duty_max'], p['default_duty']), (40, 100, 40))
+            self.assertEqual(p['duties'], [40, 58, 88, 90, 95, 100])
+        self.assertEqual(dd.plan(TABLE, 'orchard_row_1010', 89, 2.0)['problem'], 'distance_duty_out_of_range')
+        self.assertEqual(dd.plan(TABLE, 'orchard_1003', 44, 1.0)['problem'], 'distance_duty_out_of_range')
+        default = dd.plan(TABLE, 'road_paved', None, 1.0)
+        self.assertEqual(default, dd.plan(TABLE, 'road_paved', 40, 1.0), 'no duty = the lowest table duty')
+        self.assertEqual(dd.plan(TABLE, 'orchard_row_1010', None, 2.0)['duty'], 90)
+
+    def test_interpolated_speed_between_table_rows(self):
+        p = dd.plan(TABLE, 'road_paved', 50, 1.0)
+        self.assertIsNone(p['problem'])
+        self.assertEqual(p['speed'], {'value': round(0.373 + (0.537 - 0.373) * 10 / 18, 3), 'grade': '모델',
+                                      'reference': 'LiDAR', 'segments': None, 'interpolated': True,
+                                      'between': [40, 58]})
+        self.assertEqual((p['grade'], p['pwm'], p['throttle']), ('가정', 128, 50))
+        self.assertEqual(dd.plan(TABLE, 'orchard_1003', 60, 1.0)['speed']['reference'], 'GNSS')
+        for terrain in TABLE['terrains']:
+            lo, hi = dd.duty_range(terrain)
+            rows = {r['duty']: r for r in terrain['speeds']}
+            speeds = []
+            for duty in range(lo, hi + 1):
+                s = dd.speed_at(terrain, duty)
+                speeds.append(s['value'])
+                self.assertEqual(s['interpolated'], duty not in rows)
+                if duty in rows:
+                    self.assertEqual((s['value'], s['grade'], s['segments']),
+                                     (rows[duty]['speed_m_s'], rows[duty]['grade'], rows[duty]['segments']))
+                p = dd.plan(TABLE, terrain['key'], duty, 2.0)
+                if p['problem'] is None:
+                    self.assertAlmostEqual(p['expected_m'], 2.0, places=2)
+            self.assertEqual(speeds, sorted(speeds), '%s: faster with the duty' % terrain['key'])
+            self.assertIsNone(dd.speed_at(terrain, lo - 1))
+            self.assertIsNone(dd.speed_at(terrain, hi + 1))
+
+    def test_default_speed_plans_as_before(self):
+        """At the table duties (so at the default) the plan is the one of 3dba62c: the operator's calibration holds."""
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 1.0)['drive_s'], 2.897)          # 3dba62c planner values
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 1.0, factor=1.02)['drive_s'], 2.844)
+        self.assertEqual(dd.plan(TABLE, 'orchard_1003', 45, 2.0, factor=1.1)['drive_s'], 4.465)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = dd.CorrectionStore(Path(tmp) / 'corr.json')
+            for ratio in (1.31, 1.27, 1.29):                     # tape samples of 2026-11-18 style, all at the default
+                store.add('road_paved', {'ratio': ratio, 'duty': 40})
+            old_factor = 1.29                                     # 3dba62c: median of the terrain's last 5 samples
+            p = dd.plan(TABLE, 'road_paved', None, 1.0, correction=store.correction)
+            self.assertEqual(p['drive_s'], dd.plan(TABLE, 'road_paved', 40, 1.0, factor=old_factor)['drive_s'])
+            self.assertEqual(p['correction'], {'factor': 1.29, 'samples': 3, 'from_duty': 40, 'exact': True})
+            store.add('road_paved', {'ratio': 0.8, 'duty': 88})   # another speed's sample leaves the default alone
+            self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 1.0, correction=store.correction)['drive_s'], p['drive_s'])
+
+    def test_borrowed_correction_is_named(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = dd.CorrectionStore(Path(tmp) / 'corr.json')
+            store.add('road_paved', {'ratio': 1.2, 'duty': 40})
+            p = dd.plan(TABLE, 'road_paved', 70, 1.5, correction=store.correction)
+            self.assertEqual(p['correction'], {'factor': 1.2, 'samples': 1, 'from_duty': 40, 'exact': False})
+            self.assertEqual(p['factor'], 1.2)
+            self.assertAlmostEqual(p['expected_m'], 1.5, places=2)
+            none = dd.plan(TABLE, 'orchard_row_1010', 90, 2.0, correction=store.correction)
+            self.assertEqual(none['correction'], {'factor': 1.0, 'samples': 0, 'from_duty': None, 'exact': False})
+
+    def test_cap_duty(self):
+        self.assertEqual([dd.cap_duty(c) for c in (255, 153, 120, 102, 0)], [100, 60, 47, 40, 0])
+        self.assertIsNone(dd.cap_duty(None))
+        self.assertIsNone(dd.cap_duty(True))
+        for cap in range(0, 256):
+            d = dd.cap_duty(cap)
+            self.assertLessEqual(dd.duty_pwm(d), cap)
+            if d < 100:
+                self.assertGreater(dd.duty_pwm(d + 1), cap)
+
+    def test_table_view_offers_the_duty_range(self):
         view = dd.table_view(TABLE)
         road = next(t for t in view['terrains'] if t['key'] == 'road_paved')
         self.assertEqual([d['duty'] for d in road['duties']], [40, 58, 88, 90, 95, 100])
+        self.assertEqual((road['duty_min'], road['duty_max'], road['default_duty']), (40, 100, 40))
+        row = next(t for t in view['terrains'] if t['key'] == 'orchard_row_1010')
+        self.assertEqual((row['duty_min'], row['duty_max'], row['default_duty']), (90, 100, 90))
         self.assertEqual(view['limits']['distance_default_m'], 1.0)
         self.assertIn('not been measured', view['not_measured'])
 
@@ -120,24 +199,79 @@ class Store(unittest.TestCase):
     def test_factor_median_clamp_reset(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = dd.CorrectionStore(Path(tmp) / 'sub' / 'corr.json')
-            self.assertEqual(store.factor('road_paved'), 1.0)
+            self.assertEqual(store.factor('road_paved', 40), 1.0)
             for ratio in (1.2, 1.1, 1.3):
-                store.add('road_paved', {'ratio': ratio})
-            self.assertEqual(store.factor('road_paved'), 1.2)
+                store.add('road_paved', {'ratio': ratio, 'duty': 40})
+            self.assertEqual(store.factor('road_paved', 40), 1.2)
             for _ in range(6):
-                store.add('road_paved', {'ratio': 3.0})
-            self.assertEqual(store.factor('road_paved'), dd.FACTOR_MAX, 'clamped')
+                store.add('road_paved', {'ratio': 3.0, 'duty': 40})
+            self.assertEqual(store.factor('road_paved', 40), dd.FACTOR_MAX, 'clamped')
             self.assertEqual(store.view()['road_paved']['samples'], 9)
-            store.add('orchard_row_1010', {'ratio': 0.9})
+            store.add('orchard_row_1010', {'ratio': 0.9, 'duty': 90})
             raw = (Path(tmp) / 'sub' / 'corr.json').read_bytes()
             self.assertNotIn(b'\r', raw)
             self.assertEqual(json.loads(raw)['schema'], dd.STORE_SCHEMA)
             store.reset('road_paved')
-            self.assertEqual((store.factor('road_paved'), store.factor('orchard_row_1010')), (1.0, 0.9))
+            self.assertEqual((store.factor('road_paved', 40), store.factor('orchard_row_1010', 90)), (1.0, 0.9))
             store.reset()
             self.assertEqual(store.view(), {})
             (Path(tmp) / 'sub' / 'corr.json').write_bytes(b'not json')
-            self.assertEqual(store.factor('road_paved'), 1.0, 'a damaged file reads as empty')
+            self.assertEqual(store.factor('road_paved', 40), 1.0, 'a damaged file reads as empty')
+
+    def test_per_duty_and_the_nearest_measured_duty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = dd.CorrectionStore(Path(tmp) / 'corr.json')
+            for ratio in (1.1, 1.2, 1.3):
+                store.add('road_paved', {'ratio': ratio, 'duty': 40})
+            store.add('road_paved', {'ratio': 0.9, 'duty': 88})
+            store.add('road_paved', {'ratio': 2.0})                      # no duty: kept, not used
+            c = store.correction
+            self.assertEqual(c('road_paved', 40), {'factor': 1.2, 'samples': 3, 'from_duty': 40, 'exact': True})
+            self.assertEqual(c('road_paved', 88), {'factor': 0.9, 'samples': 1, 'from_duty': 88, 'exact': True})
+            self.assertEqual(c('road_paved', 70)['from_duty'], 88, '18 % away against 30 %')
+            self.assertEqual(c('road_paved', 50)['from_duty'], 40)
+            self.assertEqual(c('road_paved', 64)['from_duty'], 40, 'a tie goes to the duty with more samples')
+            self.assertEqual(c('road_paved', 100), {'factor': 0.9, 'samples': 1, 'from_duty': 88, 'exact': False})
+            self.assertEqual(c('orchard_1003', 70), dd.no_correction())
+            self.assertEqual(c('road_paved', True), dd.no_correction())
+            self.assertEqual(c(None, 40), dd.no_correction())
+            store.add('orchard_1003', {'ratio': 1.1, 'duty': 45})
+            store.add('orchard_1003', {'ratio': 1.3, 'duty': 55})
+            self.assertEqual(c('orchard_1003', 50)['from_duty'], 45, 'an even tie goes to the lower duty')
+            view = store.view()['road_paved']
+            self.assertEqual(view['samples'], 5)
+            self.assertEqual(view['duties'], [{'duty': 40, 'factor': 1.2, 'samples': 3},
+                                              {'duty': 88, 'factor': 0.9, 'samples': 1}])
+            raw = json.loads((Path(tmp) / 'corr.json').read_bytes())
+            raw['terrains']['road_paved']['samples'].append({'ratio': None, 'duty': 58})   # a damaged sample
+            (Path(tmp) / 'corr.json').write_bytes(json.dumps(raw).encode('utf-8'))
+            self.assertEqual(c('road_paved', 58)['from_duty'], 40, 'a sample without a usable ratio is not used')
+
+    def test_each_duty_keeps_its_own_samples(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = dd.CorrectionStore(Path(tmp) / 'corr.json')
+            store.add('road_paved', {'ratio': 0.9, 'duty': 88})
+            for i in range(dd.SAMPLES_KEEP + 5):
+                store.add('road_paved', {'ratio': 1.0 + i / 100, 'duty': 40})
+            duties = {d['duty']: d for d in store.view()['road_paved']['duties']}
+            self.assertEqual((duties[40]['samples'], duties[88]['samples']), (dd.SAMPLES_KEEP, 1),
+                             'a busy speed does not push out the samples of another')
+            self.assertEqual(store.factor('road_paved', 40), round(1.0 + (dd.SAMPLES_KEEP + 2) / 100, 3))
+
+    def test_a_file_of_2026_11_17_reads_per_duty(self):
+        """The 11-17 feedback wrote every sample with its duty: those files need no change."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'corr.json'
+            samples = [{'at': 1763460000.0 + i, 'ratio': r, 'actual_m': 1.0, 'model_m': round(1.0 / r, 3),
+                        'drive_s': 2.897, 'elapsed_s': 2.9, 'duty': 40, 'requested_m': 1.0}
+                       for i, r in enumerate((1.25, 1.31, 1.28, 1.30, 1.27, 1.29))]
+            path.write_bytes(json.dumps({'schema': dd.STORE_SCHEMA, 'terrains': {'road_paved': {'samples': samples}}},
+                                        ensure_ascii=False, indent=1).encode('utf-8'))
+            store = dd.CorrectionStore(path)
+            self.assertEqual(store.correction('road_paved', 40),
+                             {'factor': 1.29, 'samples': 6, 'from_duty': 40, 'exact': True},
+                             'the median of the last 5, as the 3dba62c terrain factor')
+            self.assertEqual(store.correction('road_paved', 58)['from_duty'], 40)
 
 
 class MoveRig(Rig):
@@ -267,8 +401,22 @@ class Runner(unittest.TestCase):
             self.assertTrue(reply['ok'], reply)
             self.assertAlmostEqual(reply['sample']['ratio'], 1.2 / reply['sample']['model_m'], places=3)
             self.assertEqual(store.view()['road_paved']['samples'], 1)
+            self.assertEqual((reply['sample']['duty'], reply['sample']['factor']), (40, 1.0))
+            self.assertEqual(reply['correction']['from_duty'], 40)
+            self.assertTrue(reply['correction']['exact'])
             self.assertEqual(rig.runner.feedback(rig.session, move_id, 1.2, store)['error'], 'distance_feedback_done')
-            self.assertGreater(store.factor('road_paved'), 1.0)
+            self.assertGreater(store.factor('road_paved', 40), 1.0)
+
+    def test_a_chosen_speed_drives_its_pwm_for_its_planned_time(self):
+        rig = self.rig
+        reply = rig.start(duty=50, distance=1.5)                   # between the 40 % and 58 % rows
+        self.assertTrue(reply['ok'], reply)
+        self.assertTrue(rig.plan['speed']['interpolated'])
+        self.assertEqual(rig.fake.drive(), {2: 128, 3: 128}, 'duty 50 % -> PWM 128')
+        final = rig.drive(rig.plan['drive_s'] + 0.5)
+        self.assertEqual((final['move']['reason'], final['move']['duty']), ('planned', 50))
+        self.assertAlmostEqual(rig.drive_s(), rig.plan['drive_s'], delta=0.05)
+        self.assertLess(rig.plan['drive_s'], dd.plan(TABLE, 'road_paved', 40, 1.5)['drive_s'], 'faster: shorter')
 
     def test_a_stale_chain_is_refused_by_the_bridge(self):
         rig = self.rig

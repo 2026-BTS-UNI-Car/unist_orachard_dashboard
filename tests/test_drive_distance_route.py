@@ -59,10 +59,31 @@ class Routes(DistanceRoutes):
         self.assertEqual(status, 200)
         self.assertTrue(reply['ok'], reply)
         self.assertEqual((reply['bridge']['refusal'], reply['bridge']['max_pwm'], reply['plan']['pwm']), (None, 255, 102))
+        self.assertEqual(reply['bridge']['max_duty'], 100)
         status, reply = self.page.post('/api/rover/distance/plan', {'terrain': 'road_paved', 'duty': 40, 'distance_m': 3.5})
         self.assertEqual(reply['plan']['problem'], 'distance_out_of_range')
         self.assertFalse(reply['ok'])
         self.assertEqual(self.stack.relayed, [], 'planning sends nothing but status reads')
+
+    def test_the_speed_field(self):
+        road = next(t for t in self.page.get_json('/api/rover/distance')[1]['table']['terrains'] if t['key'] == 'road_paved')
+        self.assertEqual((road['duty_min'], road['duty_max'], road['default_duty']), (40, 100, 40))
+        plan = lambda body: self.page.post('/api/rover/distance/plan', {'terrain': 'road_paved', 'distance_m': 1, **body})[1]
+        default, forty = plan({}), plan({'duty': 40})
+        self.assertTrue(default['ok'], default)
+        self.assertEqual(default['plan'], forty['plan'], 'no duty: the lowest table duty, as the 11-17 page')
+        reply = plan({'duty': 64})
+        self.assertTrue(reply['ok'], reply)
+        self.assertEqual((reply['plan']['duty'], reply['plan']['pwm'], reply['plan']['speed']['between']), (64, 163, [58, 88]))
+        self.assertLess(reply['plan']['drive_s'], forty['plan']['drive_s'])
+        for bad, problem in ((39, 'distance_duty_out_of_range'), (101, 'distance_duty_out_of_range'),
+                             (40.5, 'distance_duty_invalid'), ('60', 'distance_duty_invalid'), (True, 'distance_duty_invalid')):
+            reply = plan({'duty': bad})
+            self.assertFalse(reply['ok'], bad)
+            self.assertEqual(reply['plan']['problem'], problem, bad)
+        status, reply = self.start({'lease': 'x', 'ticket': 'y', 'seq': 0}, duty=101)
+        self.assertEqual(reply['error'], 'distance_duty_out_of_range')
+        self.assertEqual(self.drive_ms(), 0)
 
     def test_session_origin_and_arm_rules(self):
         stranger = Client(self.stack.base)
@@ -103,8 +124,15 @@ class Routes(DistanceRoutes):
         self.assertTrue(reply['ok'], 'the page drives on with the returned chain')
         status, reply = self.page.post('/api/rover/distance/feedback', {'move_id': move['id'], 'actual_m': 1.1})
         self.assertTrue(reply['ok'], reply)
+        self.assertEqual((reply['correction']['from_duty'], reply['correction']['exact']), (40, True))
         status, view = self.page.get_json('/api/rover/distance')
         self.assertEqual(view['corrections']['road_paved']['samples'], 1)
+        self.assertEqual([d['duty'] for d in view['corrections']['road_paved']['duties']], [40])
+        # the tape sample of 40 % is this speed's own correction and is borrowed (and named) by another speed
+        for duty, exact in ((40, True), (58, False)):
+            status, reply = self.page.post('/api/rover/distance/plan', {'terrain': 'road_paved', 'duty': duty, 'distance_m': 1})
+            self.assertEqual((reply['plan']['correction']['from_duty'], reply['plan']['correction']['exact']), (40, exact))
+            self.assertGreater(reply['plan']['factor'], 1.0)
         status, reply = self.page.post('/api/rover/distance/reset', {'terrain': 'road_paved'})
         self.assertEqual(reply['corrections'], {})
 
@@ -138,7 +166,11 @@ class CappedBridge(DistanceRoutes):
         self.assertEqual(reply['error'], 'distance_duty_above_cap')
         self.assertEqual(self.drive_ms(), 0)
         status, reply = self.page.post('/api/rover/distance/plan', {'terrain': 'road_paved', 'duty': 40, 'distance_m': 1})
-        self.assertEqual((reply['ok'], reply['bridge']['max_pwm']), (True, 120))
+        self.assertEqual((reply['ok'], reply['bridge']['max_pwm'], reply['bridge']['max_duty']), (True, 120, 47))
+        status, reply = self.page.post('/api/rover/distance/plan', {'terrain': 'road_paved', 'duty': 47, 'distance_m': 1})
+        self.assertEqual((reply['ok'], reply['plan']['pwm']), (True, 120), 'the highest speed within the cap')
+        status, reply = self.page.post('/api/rover/distance/plan', {'terrain': 'road_paved', 'duty': 48, 'distance_m': 1})
+        self.assertEqual((reply['ok'], reply['bridge']['refusal']), (False, 'distance_duty_above_cap'))
 
 
 class ZeroCapBridge(DistanceRoutes):

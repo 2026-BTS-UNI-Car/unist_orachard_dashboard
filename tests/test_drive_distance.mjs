@@ -6,7 +6,7 @@
 // Run: node --test tests/test_drive_distance.mjs
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { distView, initDriveDistance, message } from '../static/steer/drive-distance.mjs';
+import { distView, initDriveDistance, message, speedAt, dutyRange } from '../static/steer/drive-distance.mjs';
 import '../static/steer/steer-control-rules.js';
 
 const R = globalThis.UbtsSteerRules;
@@ -14,33 +14,40 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 const TABLE = {
   version: '202610', terrains: [
-    { key: 'road_paved', label: '도로·포장', day: '2026-10-03', note: '', duties: [
+    { key: 'road_paved', label: '도로·포장', day: '2026-10-03', note: '', duty_min: 40, duty_max: 88, default_duty: 40, duties: [
       { duty: 40, speed_m_s: 0.373, grade: '참고', reference: 'LiDAR', segments: 1 },
       { duty: 88, speed_m_s: 0.771, grade: '측정', reference: 'LiDAR', segments: 5 }] },
-    { key: 'orchard_row_1010', label: '과수원 열 안', day: '2026-10-10', note: '', duties: [
+    { key: 'orchard_row_1010', label: '과수원 열 안', day: '2026-10-10', note: '', duty_min: 90, duty_max: 90, default_duty: 90, duties: [
       { duty: 90, speed_m_s: 0.706, grade: '측정', reference: 'LiDAR', segments: 12 }] }],
   limits: { distance_default_m: 1.0 },
 };
+const NO_CORRECTION = { factor: 1.0, samples: 0, from_duty: null, exact: false };
 const PLAN = {
   ok: true, problem: null, terrain: 'road_paved', duty: 40, throttle: 40, pwm: 102, distance_m: 1.0, drive_s: 2.897,
-  expected_m: 1.0, min_distance_m: 0.4, max_distance_m: 3.0, factor: 1.0, grade: '모델',
-  speed: { value: 0.373, grade: '참고', reference: 'LiDAR', segments: 1 }, lag: { value: 0.61, grade: '가정' },
-  coast: { value: 0.147, grade: '모델' },
+  expected_m: 1.0, min_distance_m: 0.4, max_distance_m: 3.0, factor: 1.0, grade: '모델', correction: NO_CORRECTION,
+  duty_min: 40, duty_max: 88, default_duty: 40,
+  speed: { value: 0.373, grade: '참고', reference: 'LiDAR', segments: 1, interpolated: false, between: null },
+  lag: { value: 0.61, grade: '가정' }, coast: { value: 0.147, grade: '모델' },
 };
 const rows = (view) => Object.fromEntries(view.rows);
 
 test('view: rows with grades and source, the button off with its reason', () => {
-  const base = { table: TABLE, corrections: {}, plan: PLAN, bridge: { refusal: null, max_pwm: 255 }, armed: true, fresh: true };
+  const base = { table: TABLE, corrections: {}, plan: PLAN, bridge: { refusal: null, max_pwm: 255, max_duty: 100 }, armed: true, fresh: true };
   let v = distView(base);
   assert.equal(v.go.enabled, true);
   assert.equal(rows(v)['계획 시간'], '2.90 s · duty 40 % (PWM 102)');
   assert.equal(rows(v)['예상 거리'], '1.00 m · 등급 모델');
   assert.match(rows(v)['속도'], /0\.373 m\/s \[참고, LiDAR, 구간 1\]/);
   assert.match(rows(v)['출발 지연'], /가정: 100 % 출발 값을 씀/);
-  assert.equal(rows(v)['보정 배율'], '1.00 (줄자 기록 없음)');
+  assert.equal(rows(v)['보정 배율'], '1.00 (이 지형 줄자 기록 없음)');
+  assert.equal(rows(v)['줄자 기록 있는 속도'], undefined);
+  assert.equal(rows(v)['표에 있는 duty'], '40 · 88 % (그 사이는 직선 보간)');
+  assert.equal(rows(v)['구동 상한'], 'PWM 255 (duty 100 %까지)');
   assert.match(rows(v)['자료'], /2026-10 기록, 조향 장치 전 차\(ESP8266\)\. 지금 차는 재지 않음/);
-  v = distView({ ...base, corrections: { road_paved: { factor: 1.12, samples: 3 } } });
-  assert.match(rows(v)['보정 배율'], /^1\.12 \(줄자 3번/);
+  v = distView({ ...base, plan: { ...PLAN, factor: 1.12, correction: { factor: 1.12, samples: 3, from_duty: 40, exact: true } },
+    corrections: { road_paved: { samples: 4, duties: [{ duty: 40, factor: 1.12, samples: 3 }, { duty: 88, factor: 0.95, samples: 1 }] } } });
+  assert.match(rows(v)['보정 배율'], /^1\.12 \(이 속도 40 %에서 줄자 3번/);
+  assert.equal(rows(v)['줄자 기록 있는 속도'], '40 % ×1.12 (3번) · 88 % ×0.95 (1번)');
   assert.equal(distView({ ...base, armed: false }).go.title, message('distance_needs_arm'));
   assert.equal(distView({ ...base, fresh: false }).go.enabled, false);
   assert.match(distView({ ...base, plan: { ...PLAN, problem: 'distance_too_short_for_duty' } }).go.title, /너무 짧다/);
@@ -58,6 +65,37 @@ test('view: rows with grades and source, the button off with its reason', () => 
   v = distView({ ...base, result: { state: 'closed', reason: 'released', planned_s: 2.9, elapsed_s: 0.8, expected_m: 1.0, feedback_open: false } });
   assert.equal(v.feedback.enabled, false);
   assert.equal(v.status.kind, 'warn');
+});
+
+test('view: the speed readout, an interpolated speed and a borrowed correction', () => {
+  const base = { table: TABLE, corrections: {}, plan: PLAN, bridge: { refusal: null, max_pwm: 120, max_duty: 47 }, armed: true, fresh: true };
+  assert.equal(distView({ ...base, input: { terrain: 'road_paved', duty: 40 } }).speed, '40 % · 0.37 m/s · 2.90 s');
+  // the slider moved: the table speed at once (as the server interpolates), the time once the plan is for this duty
+  assert.equal(distView({ ...base, input: { terrain: 'road_paved', duty: 64 } }).speed, '64 % · 0.57 m/s · 계산 중');
+  assert.equal(distView({ ...base, input: { terrain: 'road_paved', duty: 64 }, planError: 'http_failed' }).speed, '64 % · 0.57 m/s · --');
+  assert.equal(distView({ ...base, input: { terrain: 'road_paved', duty: 40 }, plan: { ...PLAN, problem: 'distance_too_short_for_duty' } }).speed,
+    '40 % · 0.37 m/s · 이 거리 안 됨');
+  assert.equal(distView({ ...base }).speed, '--');
+  assert.equal(rows(distView(base))['구동 상한'], 'PWM 120 (duty 47 %까지)');
+  const plan = { ...PLAN, duty: 64, pwm: 163, drive_s: 2.1, factor: 1.12, grade: '가정',
+    speed: { value: 0.572, grade: '모델', reference: 'LiDAR', segments: null, interpolated: true, between: [40, 88] },
+    correction: { factor: 1.12, samples: 3, from_duty: 40, exact: false } };
+  const v = distView({ ...base, plan, input: { terrain: 'road_paved', duty: 64 } });
+  assert.equal(v.speed, '64 % · 0.57 m/s · 2.10 s');
+  assert.equal(rows(v)['속도'], '0.572 m/s [모델: 표의 40 %·88 % 사이 직선 보간, LiDAR]');
+  assert.match(rows(v)['보정 배율'], /^1\.12 \(40 %에서 잰 배율을 빌려 씀: 64 %는 줄자 기록 없음/);
+  assert.match(rows(v)['이 속도로 갈 수 있는 거리'], /m$/);
+});
+
+test('speedAt and dutyRange follow the server (straight line between rows, nothing outside)', () => {
+  const road = TABLE.terrains[0];
+  assert.equal(speedAt(road, 40), 0.373);
+  assert.equal(speedAt(road, 88), 0.771);
+  assert.ok(Math.abs(speedAt(road, 64) - (0.373 + (0.771 - 0.373) * 24 / 48)) < 1e-12);
+  assert.equal(speedAt(road, 39), null);
+  assert.equal(speedAt(road, 89), null);
+  assert.deepEqual(dutyRange(road), { min: 40, max: 88, def: 40 });
+  assert.deepEqual(dutyRange({ duties: [{ duty: 58 }, { duty: 45 }] }), { min: 45, max: 58, def: 45 }, 'a view without the range fields');
 });
 
 class El {
@@ -90,10 +128,11 @@ after(() => { for (const close of opened) close(); });
 function page() {
   const els = {};
   const ids = ['steerDistPanel', 'steerDistDetails', 'steerDistState', 'steerDistRows', 'steerDistStatus', 'steerDistStop',
-    'steerDistMeters', 'steerDistGo', 'steerDistActual', 'steerDistFeedback', 'steerDistReset'];
+    'steerDistMeters', 'steerDistGo', 'steerDistActual', 'steerDistFeedback', 'steerDistReset', 'steerDistSpeed'];
   for (const id of ids) els[id] = new El(id, id === 'steerDistGo' ? 'button' : 'div');
   els.steerDistTerrain = new El('steerDistTerrain', 'select');
-  els.steerDistDuty = new El('steerDistDuty', 'select');
+  els.steerDistDuty = new El('steerDistDuty', 'input');               // <input type="range">
+  els.steerDistDuty.value = '40';
   els.steerDistMeters.value = '1.0';
   els.steerDistDetails.open = true;
   const docListeners = {};
@@ -111,7 +150,7 @@ function page() {
       return { ok: true, move: state.move };
     }
     if (route.endsWith('/release')) return { ok: true, move: { ...state.move, state: 'closed', reason: 'released', elapsed_s: 0.5, feedback_open: false }, chain: { lease: 'L1', ticket: 'T9', seq: 9 } };
-    if (route.endsWith('/feedback')) return { ok: true, sample: { model_m: 1.0, ratio: 1.1 }, corrections: { road_paved: { factor: 1.1, samples: 1 } } };
+    if (route.endsWith('/feedback')) return { ok: true, sample: { model_m: 1.0, ratio: 1.1, duty: 40 }, corrections: { road_paved: { samples: 1, duties: [{ duty: 40, factor: 1.1, samples: 1 }] } }, correction: { factor: 1.1, samples: 1, from_duty: 40, exact: true } };
     if (route.endsWith('/reset')) return { ok: true, corrections: {} };
     return { ok: true };
   };
@@ -136,18 +175,40 @@ function page() {
   return { els, doc, win, docListeners, ctl, log, state, screen, tickHold, holdTimers, routes, settle };
 }
 
-test('page: the terrain fills the duties with data only; inputs re-plan', async () => {
+test('page: the speed slider spans the terrain table, starts at its lowest duty; inputs re-plan', async () => {
   const p = page();
   await p.settle();
+  const slider = () => [p.els.steerDistDuty.min, p.els.steerDistDuty.max, p.els.steerDistDuty.step, p.els.steerDistDuty.value];
+  const lastPlan = () => p.log.posts.filter(([route]) => route.endsWith('/plan')).at(-1)[1];
   assert.deepEqual(p.els.steerDistTerrain.children.map((o) => o.value), ['road_paved', 'orchard_row_1010']);
-  assert.deepEqual(p.els.steerDistDuty.children.map((o) => o.value), ['40', '88']);
+  assert.deepEqual(slider(), ['40', '88', '1', '40']);
+  assert.deepEqual(lastPlan(), { terrain: 'road_paved', duty: 40, distance_m: 1 }, 'the default speed is the 11-17 default');
+  assert.equal(p.els.steerDistSpeed.textContent, '40 % · 0.37 m/s · 2.90 s');
   p.els.steerDistTerrain.value = 'orchard_row_1010';
   p.els.steerDistTerrain.fire('change');
   await p.settle();
-  assert.deepEqual(p.els.steerDistDuty.children.map((o) => o.value), ['90']);
-  const plans = p.log.posts.filter(([route]) => route.endsWith('/plan'));
-  assert.deepEqual(plans.at(-1)[1], { terrain: 'orchard_row_1010', duty: 90, distance_m: 1 });
+  assert.deepEqual(slider(), ['90', '90', '1', '90']);
+  assert.deepEqual(lastPlan(), { terrain: 'orchard_row_1010', duty: 90, distance_m: 1 });
   assert.equal(p.els.steerDistGo.disabled, false);
+  p.els.steerDistTerrain.value = 'road_paved';
+  p.els.steerDistTerrain.fire('change');
+  await p.settle();
+  assert.equal(p.els.steerDistDuty.value, '40', 'not touched: the terrain default again');
+  p.els.steerDistDuty.value = '64';
+  p.els.steerDistDuty.fire('input');
+  assert.equal(p.els.steerDistSpeed.textContent, '64 % · 0.57 m/s · 계산 중', 'the readout follows the slider at once');
+  await p.settle();
+  assert.deepEqual(lastPlan(), { terrain: 'road_paved', duty: 64, distance_m: 1 });
+  assert.equal(p.els.steerDistSpeed.textContent, '64 % · 0.57 m/s · 2.90 s');
+  p.els.steerDistGo.fire('pointerdown', { pointerId: 4 });
+  await p.settle();
+  assert.equal(p.log.posts.find(([route]) => route.endsWith('/start'))[1].duty, 64, 'the chosen speed goes with the start');
+  p.els.steerDistGo.fire('pointerup', { pointerId: 4 });
+  await p.settle();
+  p.els.steerDistTerrain.value = 'orchard_row_1010';
+  p.els.steerDistTerrain.fire('change');
+  await p.settle();
+  assert.equal(p.els.steerDistDuty.value, '90', '64 % is outside 90..90: the terrain default');
 });
 
 test('page: held -> start with the lease chain, heartbeats, release stops and the chain comes back', async () => {

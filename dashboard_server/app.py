@@ -694,11 +694,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json({'ok': False, 'error': 'distance_not_configured'}, 503); return
         request = rover_api.request
         if action in ("plan", "start"):
-            factor = store.factor(payload.get("terrain")) if isinstance(payload.get("terrain"), str) else 1.0
-            plan = dd.plan(table, payload.get("terrain"), payload.get("duty"), payload.get("distance_m"), factor)
+            # duty: the speed of the move (an integer % in the terrain's table range; missing = the terrain's default),
+            # with the tape correction of that duty or the nearest measured one (dashboard_server/drive_distance.py).
+            plan = dd.plan(table, payload.get("terrain"), payload.get("duty"), payload.get("distance_m"),
+                           correction=store.correction)
             refusal, status = self._distance_bridge(request, plan if plan.get("problem") is None else None, dd)
             drive = status.get("drive") if isinstance(status.get("drive"), dict) else {}
-            bridge = {"refusal": refusal, "armed": bool(status.get("armed")), "max_pwm": drive.get("max_pwm")}
+            bridge = {"refusal": refusal, "armed": bool(status.get("armed")), "max_pwm": drive.get("max_pwm"),
+                      "max_duty": dd.cap_duty(drive.get("max_pwm"))}
             if action == "plan":
                 self._send_json({'ok': plan.get("problem") is None and refusal is None, 'plan': plan, 'bridge': bridge})
                 return

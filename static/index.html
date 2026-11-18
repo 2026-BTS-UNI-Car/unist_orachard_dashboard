@@ -750,11 +750,16 @@
 <div class="panel-head mini"><h3>거리 이동</h3><span class="status-chip" id="steerDistState">열면 확인</span></div>
 <details id="steerDistDetails">
 <summary>지형·거리 고르고 누르고 있기</summary>
-<p class="help-text">지형과 거리(앞으로 0.2~3.0 m)를 고르면 그 지형의 duty→속도 표로 구동 시간을 정한다. 버튼을 누르고 있는 동안만 가고, 놓으면 바로 선다. 조향은 지금 목표에 머문다. 표는 2026-10 조향 장치를 달기 전 차(ESP8266)의 기록이라 지금 차와 다를 수 있다: 줄자로 잰 거리를 넣으면 지형별 보정 배율(0.5~1.5)이 다음 계획에 들어간다. 조종 활성화가 켜져 있어야 하고, 브리지 구동 상한이 0 이면 가지 않는다.</p>
+<p class="help-text">지형과 거리(앞으로 0.2~3.0 m)와 속도를 고르면 그 지형의 duty→속도 표로 구동 시간을 정한다. 속도는 그 지형 표의 가장 낮은 duty부터 가장 높은 duty까지 1 % 단위로 고르고(처음 값은 가장 낮은 duty), 표에 없는 duty는 이웃한 두 값 사이를 직선으로 보간한다. 버튼을 누르고 있는 동안만 가고, 놓으면 바로 선다. 조향은 지금 목표에 머문다. 표는 2026-10 조향 장치를 달기 전 차(ESP8266)의 기록이라 지금 차와 다를 수 있다: 줄자로 잰 거리를 넣으면 그 지형·속도의 보정 배율(0.5~1.5)이 다음 계획에 들어간다. 브리지의 서서히 출발·멈춤은 계획 식에 없어서 속도마다 몫이 다르므로, 기록 없는 속도는 가장 가까운 속도의 배율을 빌려 쓰고 그렇다고 보인다. 조종 활성화가 켜져 있어야 하고, 브리지 구동 상한이 0 이면 가지 않는다.</p>
+<div class="tune-stack">
 <div class="tune-fields">
 <label class="field" for="steerDistTerrain">지형<select class="input" id="steerDistTerrain"></select></label>
 <label class="field" for="steerDistMeters">거리 m (앞으로)<input class="input" id="steerDistMeters" inputmode="decimal" max="3" min="0.2" step="0.1" type="number" value="1.0"/></label>
-<label class="field" for="steerDistDuty">duty (자료 있는 값만)<select class="input" id="steerDistDuty"></select></label>
+</div>
+<div class="rover-speed-control">
+<label for="steerDistDuty"><span>속도 (duty %)</span><strong><output for="steerDistDuty" id="steerDistSpeed">--</output></strong></label>
+<input id="steerDistDuty" max="100" min="40" step="1" type="range" value="40"/>
+</div>
 </div>
 <dl class="detail-list" id="steerDistRows"></dl>
 <div class="sim-map-actions">

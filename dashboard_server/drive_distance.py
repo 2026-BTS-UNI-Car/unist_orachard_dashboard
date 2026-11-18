@@ -3,19 +3,29 @@
 Data: config/drive_terrain_table_202610.json, copied with its provenance from the October 2026 drive records
 (simulation repository docs/drive_response/: T3 speed by ground, T4s starts, T5s stops, T6 distance from a stop). They
 are the values of the vehicle BEFORE the steering unit (ESP8266, differential drive, firmware drive ramp 100 %/s); the
-steering vehicle has not been measured. Only duties with data for the chosen terrain are offered (no interpolation).
+steering vehicle has not been measured.
+
+Speed (2026-11-19, user request '거리 이동하는거 속도 조절 되게'): the operator picks any integer duty from the terrain's
+lowest to its highest table duty. A table duty uses its row; a duty between two rows uses the straight line between
+them (grade '모델', never outside the table: no extrapolation). Without a duty the move uses the terrain's lowest table
+duty, the first choice of the 2026-11-17 page (where the operator's tape corrections so far were taken).
 
 Planner (docs/esp_rover_control.md 1-6). For terrain g and duty d with steady speed v (T3), a hold of T seconds from a
 stop followed by a cut of the drive is expected to move
-    E(T) = c_g * (v * (T - L) + C(v)),   valid for T >= DRIVE_MIN_S
+    E(T) = c_gd * (v * (T - L) + C(v)),   valid for T >= DRIVE_MIN_S
   L    start lag = 2 s - s100(2 s) / v100 = 2 - 1.29 / 0.928 = 0.61 s: the distance after 2 s from a stop at 100 % (T6,
        9 events) against the steady 100 % speed (T2). Measured at 100 % only; other duties use it as an assumption.
   C(v) coast after the cut: 0.55 m measured at 100 % (T6, 7 key releases); otherwise the analysis model
        v * 0.25 + v^2 / 2.6 (T5s; measured/model p50 0.97).
-  c_g  correction factor of the terrain from the operator's tape measurements (median of the last FACTOR_SAMPLES
-       ratios actual / model, clamped FACTOR_MIN..FACTOR_MAX; 1.0 without any).
-Inverted: T = L + (D / c_g - C(v)) / v. Refused when T < DRIVE_MIN_S (1.3 s, T4s: 90 % of the steady speed after
+  c_gd correction factor of terrain g at duty d from the operator's tape measurements (median of the last
+       FACTOR_SAMPLES ratios actual / model taken at that duty, clamped FACTOR_MIN..FACTOR_MAX). A duty without its
+       own measurement borrows the nearest measured duty of the terrain (the plan says which); 1.0 without any.
+Inverted: T = L + (D / c_gd - C(v)) / v. Refused when T < DRIVE_MIN_S (1.3 s, T4s: 90 % of the steady speed after
 p50 1.28 s; the start itself is outside the data) or T > DRIVE_MAX_S, and when the distance is outside 0.2..3.0 m.
+The ESP32-S3 bridge's soft start and release (since 3dba62c, scripts/esp32_abs_hold.py DRIVE_RAMP_*: a start jumps to
+PWM 60 and rises 150 PWM/s, a drive of 0 falls 320 PWM/s) are NOT in E(T): L and C are the old vehicle's. How much of a
+move is spent ramping depends on the duty, so a correction only holds at the duty it was measured at; that is why the
+corrections are kept per duty and a borrowed one is shown as borrowed.
 
 Move (MoveRunner): the page holds the button (deadman) and its own lease; the server drives with that lease through the
 bridge's normal 'drive' op (owner, lease, one-use ticket, seq + 1, deadman, input TTL 0.75 s, the bridge's max_pwm cap
@@ -57,6 +67,13 @@ def duty_pwm(duty: int) -> int:
     return (abs(int(duty)) * 255 + 50) // 100
 
 
+def cap_duty(max_pwm) -> int | None:
+    """The highest duty % whose PWM is within the bridge's drive cap (None for an unknown cap)."""
+    if not isinstance(max_pwm, int) or isinstance(max_pwm, bool):
+        return None
+    return max((d for d in range(0, 101) if duty_pwm(d) <= max_pwm), default=0)
+
+
 def load_table(path=None) -> dict:
     data = json.loads(Path(path or DEFAULT_TABLE).read_bytes().decode("utf-8"))
     if data.get("schema") != TABLE_SCHEMA or not data.get("terrains"):
@@ -86,6 +103,36 @@ def terrain_of(table: dict, key) -> dict | None:
     return next((t for t in table["terrains"] if t["key"] == key), None)
 
 
+def duty_range(terrain: dict) -> tuple[int, int]:
+    """The lowest and the highest table duty of a terrain: the speeds the operator can choose."""
+    duties = [r["duty"] for r in terrain["speeds"]]
+    return min(duties), max(duties)
+
+
+def default_duty(terrain: dict) -> int:
+    """The duty of a request without one: the lowest of the terrain (the 2026-11-17 page's first choice)."""
+    return duty_range(terrain)[0]
+
+
+def speed_at(terrain: dict, duty: int) -> dict | None:
+    """The table speed at a duty: its own row, or the straight line between the two rows around it (grade '모델');
+    None outside the table (no extrapolation)."""
+    rows = sorted(terrain["speeds"], key=lambda r: r["duty"])
+    for row in rows:
+        if row["duty"] == duty:
+            return {"value": row["speed_m_s"], "grade": row["grade"], "reference": row["reference"],
+                    "segments": row["segments"], "interpolated": False, "between": None}
+    for lo, hi in zip(rows, rows[1:]):
+        if lo["duty"] < duty < hi["duty"]:
+            w = (duty - lo["duty"]) / (hi["duty"] - lo["duty"])
+            reference = lo["reference"] if lo["reference"] == hi["reference"] else \
+                "%s/%s" % (lo["reference"], hi["reference"])
+            return {"value": round(lo["speed_m_s"] + w * (hi["speed_m_s"] - lo["speed_m_s"]), 3), "grade": "모델",
+                    "reference": reference, "segments": None, "interpolated": True,
+                    "between": [lo["duty"], hi["duty"]]}
+    return None
+
+
 def _worst(*grades: str) -> str:
     return max(grades, key=lambda g: GRADE_ORDER.index(g) if g in GRADE_ORDER else len(GRADE_ORDER))
 
@@ -94,22 +141,36 @@ def model_distance(v: float, lag: float, coast: float, drive_s: float) -> float:
     return v * (drive_s - lag) + coast
 
 
-def plan(table: dict, terrain, duty, distance_m, factor: float = 1.0) -> dict:
-    """The plan of one move (pure). 'problem' is None when it may run; the numbers are given either way."""
+def no_correction(factor: float = 1.0) -> dict:
+    return {"factor": factor, "samples": 0, "from_duty": None, "exact": False}
+
+
+def plan(table: dict, terrain, duty, distance_m, factor: float = 1.0, correction=None) -> dict:
+    """The plan of one move (pure). 'problem' is None when it may run; the numbers are given either way.
+    duty: an integer % within the terrain's table range, None for the terrain's default. correction: a callable
+    (terrain key, duty) -> the correction of that duty (CorrectionStore.correction); without it 'factor' applies."""
     t = terrain_of(table, terrain)
     if t is None:
         return {"ok": False, "problem": "distance_terrain_unknown"}
-    row = next((r for r in t["speeds"] if type(duty) is int and r["duty"] == duty), None)
-    if row is None:
-        return {"ok": False, "problem": "distance_duty_without_data", "terrain": t["key"],
-                "duties": [r["duty"] for r in t["speeds"]]}
+    lo, hi = duty_range(t)
+    span = {"terrain": t["key"], "duty_min": lo, "duty_max": hi, "default_duty": default_duty(t),
+            "duties": [r["duty"] for r in t["speeds"]]}
+    if duty is None:
+        duty = default_duty(t)
+    if type(duty) is not int:
+        return {"ok": False, "problem": "distance_duty_invalid", **span}
+    if not lo <= duty <= hi:
+        return {"ok": False, "problem": "distance_duty_out_of_range", "duty": duty, **span}
     if isinstance(distance_m, bool) or not isinstance(distance_m, (int, float)) or not math.isfinite(distance_m):
-        return {"ok": False, "problem": "distance_invalid", "terrain": t["key"], "duty": duty}
-    v = row["speed_m_s"]
+        return {"ok": False, "problem": "distance_invalid", "duty": duty, **span}
+    speed = speed_at(t, duty)
+    v = speed["value"]
     lag = start_lag_s(table)
     coast, coast_grade = coast_m(table, duty, v)
     lag_grade = _lag_point(table)["grade"] if duty == 100 else "가정"
-    factor = min(FACTOR_MAX, max(FACTOR_MIN, float(factor)))
+    corr = dict(correction(t["key"], duty)) if correction is not None else no_correction(float(factor))
+    factor = min(FACTOR_MAX, max(FACTOR_MIN, float(corr["factor"])))
+    corr["factor"] = round(factor, 3)
     drive_s = lag + (float(distance_m) / factor - coast) / v
     min_m = factor * model_distance(v, lag, coast, DRIVE_MIN_S)
     max_m = min(DISTANCE_MAX_M, factor * model_distance(v, lag, coast, DRIVE_MAX_S))
@@ -122,25 +183,26 @@ def plan(table: dict, terrain, duty, distance_m, factor: float = 1.0) -> dict:
         problem = "distance_too_long_for_duty"
     return {
         "ok": problem is None, "problem": problem,
-        "terrain": t["key"], "terrain_label": t["label"], "day": t["day"],
+        **span, "terrain_label": t["label"], "day": t["day"],
         "duty": duty, "throttle": duty, "pwm": duty_pwm(duty), "distance_m": round(float(distance_m), 3),
         "drive_s": round(drive_s, 3), "expected_m": round(factor * model_distance(v, lag, coast, drive_s), 3),
         "min_distance_m": round(min_m, 2), "max_distance_m": round(max_m, 2),
-        "factor": round(factor, 3),
-        "speed": {"value": v, "grade": row["grade"], "reference": row["reference"], "segments": row["segments"]},
+        "factor": round(factor, 3), "correction": corr,
+        "speed": speed,
         "lag": {"value": lag, "grade": lag_grade},
         "coast": {"value": coast, "grade": coast_grade},
-        "grade": _worst(row["grade"], lag_grade, coast_grade),
+        "grade": _worst(speed["grade"], lag_grade, coast_grade),
         "source": "2026-10 기록(조향 장치 전 차, ESP8266): %s %s" % (t["label"], t["day"]),
     }
 
 
 def table_view(table: dict) -> dict:
-    """What the page needs to offer the choices (only duties with data)."""
+    """What the page needs to offer the choices: the table rows (measured duties) and the duty range of each terrain."""
     return {
         "version": table["version"], "title": table["title"], "vehicle": table["source"]["vehicle"],
         "not_measured": table["source"]["not_measured"],
         "terrains": [{"key": t["key"], "label": t["label"], "day": t["day"], "note": t["note"],
+                      "duty_min": duty_range(t)[0], "duty_max": duty_range(t)[1], "default_duty": default_duty(t),
                       "duties": [{k: r[k] for k in ("duty", "speed_m_s", "grade", "reference", "segments")}
                                  for r in t["speeds"]]} for t in table["terrains"]],
         "limits": {"distance_min_m": DISTANCE_MIN_M, "distance_max_m": DISTANCE_MAX_M,
@@ -151,7 +213,10 @@ def table_view(table: dict) -> dict:
 
 
 class CorrectionStore:
-    """Per-terrain correction factors from the operator's tape measurements (a small JSON file, like the tuning log)."""
+    """Correction factors from the operator's tape measurements per terrain and duty (a small JSON file, like the
+    tuning log). The file format is the one of 2026-11-17: a list of samples per terrain, each with the duty it was
+    taken at; the factor of a duty uses only that duty's samples (2026-11-19). A sample without an integer duty is
+    kept in the file but not used. Each duty keeps its last SAMPLES_KEEP samples."""
 
     def __init__(self, path):
         self.path = Path(path)
@@ -179,22 +244,69 @@ class CorrectionStore:
             return 1.0
         return round(min(FACTOR_MAX, max(FACTOR_MIN, statistics.median(ratios))), 3)
 
-    def factor(self, terrain: str) -> float:
+    @staticmethod
+    def _duty_of(sample) -> int | None:
+        duty = sample.get("duty") if isinstance(sample, dict) else None
+        return duty if type(duty) is int else None
+
+    @classmethod
+    def _by_duty(cls, samples: list) -> dict:
+        """The usable samples of one terrain by duty (an integer duty and a finite positive ratio)."""
+        out = {}
+        for s in samples:
+            ratio = s.get("ratio") if isinstance(s, dict) else None
+            if cls._duty_of(s) is None or isinstance(ratio, bool) or not isinstance(ratio, (int, float)) \
+                    or not math.isfinite(ratio) or ratio <= 0:
+                continue
+            out.setdefault(s["duty"], []).append(s)
+        return out
+
+    @classmethod
+    def correction_of(cls, samples: list, duty) -> dict:
+        """The correction at a duty: its own samples, else the nearest measured duty's (a tie goes to the duty with
+        more samples, then the lower one), else 1.0. from_duty names the duty whose samples were used."""
+        by = cls._by_duty(samples)
+        if type(duty) is not int or not by:
+            return no_correction()
+        source = min(by, key=lambda d: (abs(d - duty), -len(by[d]), d))
+        return {"factor": cls._factor(by[source]), "samples": len(by[source]), "from_duty": source,
+                "exact": source == duty}
+
+    def _samples(self, terrain) -> list:
+        entry = self._read()["terrains"].get(terrain) if isinstance(terrain, str) else None
+        return entry.get("samples", []) if isinstance(entry, dict) else []
+
+    def correction(self, terrain, duty) -> dict:
         with self._lock:
-            return self._factor(self._read()["terrains"].get(terrain, {}).get("samples", []))
+            samples = self._samples(terrain)
+        return self.correction_of(samples, duty)
+
+    def factor(self, terrain, duty) -> float:
+        return self.correction(terrain, duty)["factor"]
 
     def view(self) -> dict:
         with self._lock:
             data = self._read()
-        return {key: {"factor": self._factor(entry.get("samples", [])), "samples": len(entry.get("samples", [])),
-                      "last": entry.get("samples", [])[-FACTOR_SAMPLES:]}
-                for key, entry in data["terrains"].items()}
+        out = {}
+        for key, entry in data["terrains"].items():
+            samples = entry.get("samples", []) if isinstance(entry, dict) else []
+            out[key] = {"samples": len(samples), "last": samples[-FACTOR_SAMPLES:],
+                        "duties": [{"duty": duty, "factor": self._factor(rows), "samples": len(rows)}
+                                   for duty, rows in sorted(self._by_duty(samples).items())]}
+        return out
 
     def add(self, terrain: str, sample: dict) -> dict:
         with self._lock:
             data = self._read()
             entry = data["terrains"].setdefault(terrain, {"samples": []})
-            entry["samples"] = (entry.get("samples", []) + [sample])[-SAMPLES_KEEP:]
+            samples = entry.get("samples", []) + [sample]
+            count, keep = {}, []
+            for s in reversed(samples):                 # the last SAMPLES_KEEP of each duty
+                duty = self._duty_of(s)
+                count[duty] = count.get(duty, 0) + 1
+                if count[duty] <= SAMPLES_KEEP:
+                    keep.append(s)
+            entry["samples"] = keep[::-1]
             self._write(data)
         return self.view()
 
@@ -322,10 +434,11 @@ class MoveRunner:
             sample = {"at": round(time.time(), 1), "ratio": round(float(actual_m) / model, 4),
                       "actual_m": round(float(actual_m), 3), "model_m": round(model, 3),
                       "drive_s": p["drive_s"], "elapsed_s": round(elapsed, 3), "duty": p["duty"],
-                      "requested_m": p["distance_m"]}
+                      "requested_m": p["distance_m"], "factor": p["factor"]}
             m["feedback_done"] = True
         view = store.add(p["terrain"], sample)
-        return {"ok": True, "sample": sample, "corrections": view}
+        return {"ok": True, "sample": sample, "corrections": view,
+                "correction": store.correction(p["terrain"], p["duty"])}
 
     def _own(self, session, move_id):
         m = self.move
