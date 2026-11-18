@@ -44,6 +44,7 @@
 | [STEERING_HOST_PORT_KO.md](STEERING_HOST_PORT_KO.md) | 시뮬레이션 레포에서 옮긴 조향 V3 호스트 브리지의 출처와 시험 | 현재 |
 | [FIELD_STEER_AUTONOMY_TEST_KO.md](FIELD_STEER_AUTONOMY_TEST_KO.md) | ESP32-S3 차량의 현장 첫 조향 시험(바퀴 든 상태, 잴 값 표), 그림자 주행, 구동 측정, 결정할 것, 첫 자율 시험 순서 | 현재(2026-11-16, 차에서 하기 전) |
 | [CORRIDOR_TEST_KO.md](CORRIDOR_TEST_KO.md) | 건물 복도에서 처음 땅에 놓고 하는 시험의 준비물과 당일 순서: 채울 값(조향 극성·범위, 출발 duty, 속도, 정지 거리, 직진 휨, 거리 명령 보정), 안전 규칙 | 현재(2026-11-17, 시험 전 점검표) |
+| [ORCHARD_DAY_20261120_KO.md](ORCHARD_DAY_20261120_KO.md) | 건물 복도에서 처음 땅에 놓고 하는 시험의 준비물과 당일 순서: 채울 값(조향 극성·범위, 출발 duty, 속도, 정지 거리, 직진 휨, 거리 명령 보정), 안전 규칙 | 현재(2026-11-17, 시험 전 점검표) |
 
 ## 설치
 
