@@ -247,7 +247,8 @@ class Esp32Bridge:
         return {'schema': STATE_SCHEMA, 'stamp': self.wall_clock(), 'esp_kind': esp.ESP_KIND,
                 'armed': self.snapshot.get('armed'), 'requested': self.snapshot.get('requested'),
                 'steering': {k: steering.get(k) for k in ('measured_mrad', 'command_equiv_deg', 'raw', 'hold',
-                                                          'hold_target_command_deg', 'age_ms', 'seq', 'faults')},
+                                                          'hold_target_command_deg', 'age_ms', 'seq', 'faults',
+                                                          'pwm', 'pwm_peak')},
                 'drive': self.snapshot.get('drive')}
 
     def shutdown(self, reason='shutdown'):
@@ -330,6 +331,9 @@ def build_parser():
     p.add_argument('--direction-verified', action='store_true',
                    default=os.environ.get('ROVER_ESP32_DIRECTION_VERIFIED', '0') == '1')
     p.add_argument('--max-drive-pwm', type=int, default=int(os.environ.get('ROVER_ESP32_MAX_DRIVE_PWM', '255')))
+    p.add_argument('--no-steer-trace', dest='steer_trace', action='store_false',
+                   default=os.environ.get('ROVER_ESP32_STEER_TRACE', '1') != '0',
+                   help='do not keep the firmware TRACE on (steering PWM in the status and the recordings)')
     p.add_argument('--no-drive-ramp', dest='drive_ramp', action='store_false',
                    default=os.environ.get('ROVER_ESP32_DRIVE_RAMP', '1') != '0',
                    help='write drive steps at once (default: soft start and soft release)')
@@ -360,7 +364,7 @@ class Runner:
             max_drive_pwm=args.max_drive_pwm, drive_ttl_s=args.drive_ttl_s, status_period_s=args.status_period_s,
             angle_min_interval_s=args.angle_min_interval_s, angle_quantum_deg=args.angle_quantum_deg,
             direction_verified=args.direction_verified, boot_wait_s=args.boot_wait_s,
-            drive_ramp=args.drive_ramp)
+            drive_ramp=args.drive_ramp, steer_trace=args.steer_trace)
         self.bridge = Esp32Bridge(self.motor, clock)
         self.server = None
         self.lock = None

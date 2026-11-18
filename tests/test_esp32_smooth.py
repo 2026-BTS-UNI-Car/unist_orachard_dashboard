@@ -83,7 +83,7 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(esp.parse_line('SM WARNING: STORED VALUES IGNORED (VERSION)')[0], 'sm_warning')
         self.assertEqual(esp.parse_line('DATA,756,1899,1911,0,455,0,1900'),
                          ('data', {'ms': 756, 'raw': 1899, 'filtered': 1911, 'steer_on': 0, 'age_ms': 455,
-                                   'steer_pwm': 0, 'target': 1900}))
+                                   'steer_pwm': 0, 'target': 1900, 'quiet': None}))
         self.assertEqual(esp.parse_line('DATA,broken')[0], 'data')
         self.assertEqual(esp.parse_line('OK: TRACE ON 25000 MS (DATA,ms,raw)')[0], 'ok_trace')
         self.assertEqual(esp.parse_line('Smooth: SM / SM ON / SM OFF')[0], 'help')

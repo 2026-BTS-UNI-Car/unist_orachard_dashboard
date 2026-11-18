@@ -55,5 +55,34 @@ class DriveRamp(unittest.TestCase):
         self.assertEqual(self.rig.fake.drive(), {2: 0, 3: 0})
 
 
+
+class SteerTrace(unittest.TestCase):
+    def test_eight_field_data_line(self):
+        kind, f = esp.parse_line('DATA,1961,623,-1,0,1961,0,2017,-1')
+        self.assertEqual((kind, f['steer_pwm'], f['target'], f['quiet']), ('data', 0, 2017, -1))
+        kind, f = esp.parse_line('DATA,10,2000,2000,1,3,95,2100')
+        self.assertEqual((kind, f['steer_pwm'], f['quiet']), ('data', 95, None))
+
+    def test_trace_is_kept_on_and_the_pwm_reaches_the_status(self):
+        rig = Rig(dict(smooth=True), steer_trace=True)
+        rig.ready()
+        rig.run(1.0)
+        self.assertTrue(rig.written('TRACE ON 30000'))
+        block = rig.motor.steering_block()
+        self.assertIn('pwm', block)
+        self.assertIsNotNone(block['pwm'], 'DATA lines arrive while the trace is on')
+        self.assertIn('pwm_peak', block)
+        n = len(rig.written('TRACE ON'))
+        rig.run(esp.STEER_TRACE_RENEW_S + 0.5)
+        self.assertGreater(len(rig.written('TRACE ON')), n, 'renewed before the 30 s trace ends')
+
+    def test_off_by_default(self):
+        rig = Rig(dict(smooth=True))
+        rig.ready()
+        rig.run(1.0)
+        self.assertFalse(rig.written('TRACE'))
+        self.assertIsNone(rig.motor.steering_block()['pwm'])
+
+
 if __name__ == '__main__':
     unittest.main()

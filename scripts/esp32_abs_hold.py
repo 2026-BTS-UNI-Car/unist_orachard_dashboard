@@ -53,6 +53,7 @@ No ROS, socket or thread code here; the clock is injected.
 """
 import math
 import os
+import collections
 import re
 import stat
 import time
@@ -120,6 +121,10 @@ CAL_MARGIN_RANGE = (10, 120)
 POT_INVALID_GRACE_S = 0.6        # armed: a POT blip shorter than this keeps the lease (2026-11-18 field: loose
                                  # contact / motor noise made 100 ms invalid blips end every drive); steering
                                  # waits, the target is sent again once STATUS is valid. Disarmed: arm refused at once.
+STEER_TRACE_LINE = b'TRACE ON 30000\n'   # 2026-11-19: steering motor PWM for the recordings (DATA every 10 ms)
+STEER_TRACE_RENEW_S = 20.0           # sent again before the 30 s trace ends (never during a calibration job)
+STEER_PWM_FRESH_S = 0.2              # a DATA line older than this: the PWM is unknown (None)
+STEER_PWM_PEAK_S = 0.15              # pwm_peak = the largest |PWM| of the DATA lines within this window
 CAL_TRIM_RANGE = (-40, 40)       # trim_center: CAL CENTER moves by this many counts at most per action
 CAL_USABLE_REASONS = ('REBOUND', 'NO_PROGRESS')   # the scan stopped at a stop; other endings are not applied
 CAL_MIN_TRAVEL = 20               # a found end must lie this far outward of where its scan started
@@ -145,7 +150,7 @@ _RE = {
     'smooth': re.compile(r'(?:^|\s)SMOOTH=([01])(?:\s|$)'),
     'sm': re.compile(r'^SM: MODE=([A-Z]+)((?:\s+[A-Z_]+=\S+)*)\s*$'),
     'sm_pair': re.compile(r'([A-Z_]+)=(\S+)'),
-    'data': re.compile(r'^DATA,(\d+),(-?\d+),(-?\d+),(-?\d+),(\d+),(-?\d+),(-?\d+)\s*$'),
+    'data': re.compile(r'^DATA,(\d+),(-?\d+),(-?\d+),(-?\d+),(\d+),(-?\d+),(-?\d+)(?:,(-?\d+))?\s*$'),
     'cal_find_start': re.compile(r'^CAL FIND START: SIDE=(LEFT|RIGHT) POT=(-?\d+)'),
     'cal_sample': re.compile(r'^CAL SAMPLE: SIDE=(LEFT|RIGHT) N=(\d+) BEFORE=(-?\d+) PEAK=(-?\d+) SETTLED=(-?\d+) '
                              r'PROGRESS=(-?\d+) REBOUND=(-?\d+) DRIVE_MS=(\d+)'),
@@ -175,7 +180,8 @@ def parse_line(text):
         m = _RE['data'].match(line)
         if m:
             return 'data', dict(ms=int(m[1]), raw=int(m[2]), filtered=int(m[3]), steer_on=int(m[4]),
-                                age_ms=int(m[5]), steer_pwm=int(m[6]), target=int(m[7]))
+                                age_ms=int(m[5]), steer_pwm=int(m[6]), target=int(m[7]),
+                                quiet=int(m[8]) if m[8] is not None else None)
         return 'data', dict(text=line)
     m = _RE['status'].match(line)
     if m:
@@ -496,7 +502,7 @@ class Esp32SteerMotor:
     def __init__(self, transport, clock=time.monotonic, *, left_forward='F', right_forward='F', max_drive_pwm=255,
                  drive_ttl_s=DRIVE_TTL_S, status_period_s=STATUS_PERIOD_S, angle_min_interval_s=ANGLE_MIN_INTERVAL_S,
                  angle_quantum_deg=ANGLE_QUANTUM_DEG, angle_max_jump_deg=ANGLE_MAX_JUMP_DEG, boot_wait_s=BOOT_WAIT_S,
-                 direction_verified=False, drive_ramp=False):
+                 direction_verified=False, drive_ramp=False, steer_trace=False):
         for name, value in (('left_forward', left_forward), ('right_forward', right_forward)):
             if value not in ('F', 'R'):
                 raise ValueError('%s must be F or R' % name)
@@ -524,6 +530,10 @@ class Esp32SteerMotor:
         self.boot_wait_s = float(boot_wait_s)
         self.direction_verified = bool(direction_verified)
         self.drive_ramp = bool(drive_ramp)   # soft start / soft release; safety stops stay immediate
+        self.steer_trace = bool(steer_trace)  # TRACE ON while the link is ready: steering PWM in the status
+        self.trace_sent_at = None
+        self.trace_data = None               # the newest DATA line: dict(at, pwm, on, raw, target, quiet)
+        self.trace_pwms = collections.deque(maxlen=64)
         self.port = getattr(transport, 'port', None)
         self.identity = getattr(transport, 'identity', None)
         # link
@@ -770,6 +780,7 @@ class Esp32SteerMotor:
                     if self.link == 'ready':
                         self._service_angle(now)
                         self._service_status(now)
+                        self._service_trace(now)
                         self._service_sm_query(now)
             if self.link == 'ready' and self.status_at is not None and self._status_stale(now):
                 self._request_stop('steering_status_stale')
@@ -923,7 +934,11 @@ class Esp32SteerMotor:
                     self._reconfirm(now)       # a late setup banner: ask again after it
             return
         if kind == 'data':
-            self.counts['data_lines'] += 1      # TRACE output (not from this bridge): counted, otherwise ignored
+            self.counts['data_lines'] += 1
+            if 'steer_pwm' in f:                # the steering motor PWM of the SMOOTH hold (TRACE output)
+                self.trace_data = dict(at=now, pwm=f['steer_pwm'], on=f['steer_on'], raw=f['raw'],
+                                       target=f['target'], quiet=f.get('quiet'))
+                self.trace_pwms.append((now, f['steer_pwm']))
             return
         if kind == 'fw':
             if f['name'] != FIRMWARE_NAME:
@@ -1048,6 +1063,7 @@ class Esp32SteerMotor:
 
     def _reconfirm(self, now):
         self.link = 'confirming'
+        self.trace_sent_at = None
         self.link_since = now
         self.acked = {2: None, 3: None}
         self.angle_sent = self.angle_sent_at = self.angle_stage = self.angle_blocked = None
@@ -1238,6 +1254,24 @@ class Esp32SteerMotor:
         if self.status_sent_at is None or now - self.status_sent_at >= self.status_period_s:
             self._write(STATUS_LINE)
             self.status_sent_at = now
+
+    def _service_trace(self, now):
+        """steer_trace (SMOOTH firmware): TRACE ON 30000 now and every STEER_TRACE_RENEW_S while the link is ready, so
+        the DATA lines (steering PWM every 10 ms) never stop. Not during a calibration job (a write ends a CAL FIND)."""
+        if not self.steer_trace or not self.smooth or self.cal_job is not None:
+            return
+        if self.trace_sent_at is None or now - self.trace_sent_at >= STEER_TRACE_RENEW_S:
+            self._write(STEER_TRACE_LINE)
+            self.trace_sent_at = now
+
+    def steer_pwm(self, now=None):
+        """(pwm, pwm_peak): the newest DATA PWM and the largest |PWM| within STEER_PWM_PEAK_S, or (None, None)."""
+        now = self.clock() if now is None else now
+        d = self.trace_data
+        if d is None or now - d['at'] > STEER_PWM_FRESH_S:
+            return None, None
+        recent = [abs(p) for t, p in self.trace_pwms if now - t <= STEER_PWM_PEAK_S]
+        return d['pwm'], (max(recent) if recent else abs(d['pwm']))
 
     def _service_sm_query(self, now):
         """'SM' (read only: the firmware prints its SM line) once per link, on a SMOOTH firmware whose banner did not
@@ -1578,7 +1612,7 @@ class Esp32SteerMotor:
             'servo_state': 'hold' if hold else 'idle',
             'steer_en': hold,
             'drive_en': bool(self.signed_acked(2) or self.signed_acked(3)),
-            'pwm': None, 'cmd_permille': None, 'applied_q': None, 'ttl_remaining_ms': None,
+            'pwm': self.steer_pwm(now)[0], 'pwm_peak': self.steer_pwm(now)[1], 'cmd_permille': None, 'applied_q': None, 'ttl_remaining_ms': None,
             'hold_remaining_ms': None, 'stop_mode': None,
             'cal': dict(self.cal) if self.cal else None,
             'last_event': list(self.steer_event[1:]) if self.steer_event else None,
