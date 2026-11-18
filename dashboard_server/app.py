@@ -188,6 +188,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self.provider.zero_imu(), status=410)
         elif path == "/api/link-log":
             self._link_log()
+        elif path == "/api/session/reset":
+            self._session_reset()
         elif path == "/api/network/mode":
             if self._network_request_allowed():
                 payload = self._read_json_body()
@@ -1042,7 +1044,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             content_type = "text/html; charset=utf-8"
         self.send_response(200)
         self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", served.cache_control)
+        self.send_header("Cache-Control", "no-store" if suffix == ".html" else served.cache_control)
         self.send_header("ETag", served.etag)
         self.send_header("Vary", "Accept-Encoding")
         if served.gzip:
@@ -1117,8 +1119,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except CookieError:
             cookie = SimpleCookie()
         token = cookie.get(SESSION_COOKIE_NAME).value if SESSION_COOKIE_NAME in cookie else None
+        # 2026-11-18 (a phone that never armed again): a browser may send several cookies of this name (an old one
+        # with another path or from before a restart); the first one the server knows wins, not the last one.
+        sent = [part.split("=", 1)[1].strip() for part in self.headers.get("Cookie", "").split(";")
+                if "=" in part and part.split("=", 1)[0].strip() == SESSION_COOKIE_NAME]
         with _SESSION_LOCK:
             _prune_sessions(now)
+            token = next((value for value in sent if value in _SESSIONS), token)
             if token and token in _SESSIONS:
                 # NET-11: a session in use slides. Past half of its lifetime it is
                 # extended and the cookie sent again, so an open page (and its
@@ -1135,6 +1142,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._session_created = token
         dashboard_log("session.created", session=token[:8], remote=self.client_address[0])
         return token
+
+    def _session_reset(self):
+        """'화면 초기화' (Rover Control): forget this browser's session (the page stopped first) and expire its cookie."""
+        self._read_json_body()
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host"):
+            self.send_error(403, "Origin mismatch"); return
+        try:
+            cookie = SimpleCookie(self.headers.get("Cookie", ""))
+        except CookieError:
+            cookie = SimpleCookie()
+        sent = [part.split("=", 1)[1].strip() for part in self.headers.get("Cookie", "").split(";")
+                if "=" in part and part.split("=", 1)[0].strip() == SESSION_COOKIE_NAME]
+        with _SESSION_LOCK:
+            for value in sent:
+                _SESSIONS.pop(value, None)
+        body = json.dumps({"ok": True, "cleared": len(sent)}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Set-Cookie", f"{SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+        self.send_header("Content-Length", str(len(body)))
+        self.close_connection = True
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_session_cookie(self, token: str | None):
         # The cookie is sent when the session is created (NET-06). The session

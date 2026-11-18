@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -173,6 +174,32 @@ class CalibrateRouteTest(unittest.TestCase):
         status, reply = self.page.post('/api/rover/arm', {'vehicle_profile': 'front_steer'})
         self.assertTrue(reply['ok'], 'the steering panel arms as before')
         self.page.post('/api/rover/stop', {'reason': 'operator_stop'})
+
+    def test_stale_phone_state(self):
+        # 2026-11-18: a phone kept failing while a fresh browser armed. HTML is never stored; a valid session among
+        # several cookies of the same name wins; '화면 초기화' forgets the session and expires the cookie.
+        import urllib.request
+        with urllib.request.urlopen(self.stack.base + '/rover-control', timeout=5) as res:
+            self.assertEqual(res.headers.get('Cache-Control'), 'no-store')
+        valid = next(c.value for c in self.page.jar if c.name == 'ubts_session')
+
+        def post(path, body, cookie):
+            req = urllib.request.Request(self.stack.base + path, data=json.dumps(body).encode(), method='POST',
+                                         headers={'Content-Type': 'application/json', 'Cookie': cookie})
+            with urllib.request.urlopen(req, timeout=5) as res:
+                return res.status, json.loads(res.read()), res.headers
+        status, reply, _ = post('/api/rover/arm', {'vehicle_profile': 'front_steer'},
+                                'ubts_session=stale-from-before; ubts_session=%s' % valid)
+        self.assertTrue(reply['ok'], reply)
+        self.page.post('/api/rover/stop', {'reason': 'operator_stop'})
+        status, reply, headers = post('/api/session/reset', {}, 'ubts_session=%s' % valid)
+        self.assertEqual((reply['ok'], reply['cleared']), (True, 1))
+        self.assertIn('Max-Age=0', headers.get('Set-Cookie'))
+        try:
+            post('/api/rover/arm', {'vehicle_profile': 'front_steer'}, 'ubts_session=%s' % valid)
+            self.fail('a forgotten session must not arm')
+        except urllib.error.HTTPError as exc:
+            self.assertEqual(exc.code, 403)
 
     def test_no_calibration_during_an_autonomy_run(self):
         app = self.stack.mods['app']

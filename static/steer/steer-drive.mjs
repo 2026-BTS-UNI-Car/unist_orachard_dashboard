@@ -40,6 +40,20 @@ export const DEVICE_TEXT = {
 };
 
 const AD_RATE_KEY = 'ubts-steer-ad-rate';
+
+// '화면 초기화' (2026-11-18, a phone that never armed again while a fresh browser did): STOP first, then forget the
+// server session and everything this page stored in the browser, then load the page again.
+export async function resetScreen(ctl, page, env = {}) {
+  const ask = env.confirm || ((text) => globalThis.confirm(text));
+  if (!ask('이 브라우저의 화면 상태(저장 값, 세션)를 지우고 페이지를 다시 불러옵니다. 조종 중이면 먼저 STOP 합니다. 계속할까요?')) return false;
+  if (ctl.lease) await Promise.resolve(ctl.stop('screen_reset')).catch(() => null);
+  await Promise.resolve((page.controlRequest || page.postJson)('/api/session/reset', {})).catch(() => null);
+  for (const store of [env.localStorage || globalThis.localStorage, env.sessionStorage || globalThis.sessionStorage]) {
+    try { store?.clear(); } catch (_) { /* nothing stored */ }
+  }
+  (env.reload || (() => globalThis.location.reload()))();
+  return true;
+}
 // The A/D steering speed as the operator reads it: the top of the range means the wheel's own speed (no ramp).
 export const adRateText = (degS, max) => (degS >= max ? '최대(바퀴 속도)' : `${degS} °/s`);
 
@@ -201,6 +215,7 @@ export function initSteerDrive(page) {
     button.addEventListener('contextmenu', (event) => event.preventDefault());
   });
   $('steerArmButton')?.addEventListener('click', () => (ctl.lease ? ctl.release() : ctl.arm()));
+  $('screenResetButton')?.addEventListener('click', () => resetScreen(ctl, page));
   const dragEl = $('steerDrag');
   const drag = dragEl ? bindSteerDrag(dragEl, ctl) : null;
   const slider = $('steerSpeedSlider');

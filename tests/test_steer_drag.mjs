@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { adRateText, armBlockText, bindSteerDrag, boardNotReady, dragPosition, dragText, driveCapText, faultLabels, steerView, HELP_TEXT } from '../static/steer/steer-drive.mjs';
+import { resetScreen, adRateText, armBlockText, bindSteerDrag, boardNotReady, dragPosition, dragText, driveCapText, faultLabels, steerView, HELP_TEXT } from '../static/steer/steer-drive.mjs';
 
 const R = globalThis.UbtsSteerRules;
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -404,4 +404,22 @@ test('A/D steering speed: the target ramps at the chosen rate while held; releas
   assert.equal(r.lastSteer(), -LIMIT, 'the top of the range: the full limit at once');
   assert.equal(adRateText(20, 20), '최대(바퀴 속도)');
   assert.equal(adRateText(7, 20), '7 °/s');
+});
+
+test('화면 초기화: STOP first, forget the session, clear the stored state, load again; nothing without a yes', async () => {
+  const calls = [];
+  const store = () => { const m = new Map([['ubts-steer-ad-rate', '7'], ['ubts-vehicle-kind-seen', 'front_steer']]); return { m, clear: () => m.clear() }; };
+  const local = store(), session = store();
+  const ctl = { lease: 'L', stop: async (why) => { calls.push(['stop', why]); } };
+  const page = { controlRequest: async (route) => { calls.push(['post', route]); return { ok: true }; } };
+  let reloaded = 0;
+  assert.equal(await resetScreen(ctl, page, { confirm: () => false, localStorage: local, sessionStorage: session, reload: () => { reloaded += 1; } }), false);
+  assert.deepEqual(calls, []);
+  assert.equal(local.m.size, 2);
+  assert.equal(await resetScreen(ctl, page, { confirm: () => true, localStorage: local, sessionStorage: session, reload: () => { reloaded += 1; } }), true);
+  assert.deepEqual(calls, [['stop', 'screen_reset'], ['post', '/api/session/reset']]);
+  assert.equal(local.m.size + session.m.size, 0);
+  assert.equal(reloaded, 1);
+  const html = readFileSync(path.join(here, '..', 'static', 'index.html'), 'utf8');
+  assert.match(html, /id="screenResetButton"[^>]*>화면 초기화<\/button>/);
 });

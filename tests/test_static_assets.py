@@ -242,7 +242,7 @@ class HttpTest(unittest.TestCase):
     def test_page_and_versioned_file(self):
         status, headers, page = self.get("/rover-control")
         self.assertEqual(status, 200)
-        self.assertEqual(headers["Cache-Control"], REVALIDATE)
+        self.assertEqual(headers["Cache-Control"], "no-store", 'pages are never stored (2026-11-18: a phone kept an old page)')
         rel, version = re.search(r'src="/static/(app/02-shell\.js)\?v=([0-9a-f]+)"', page.decode("utf-8")).groups()
         status, headers, body = self.get(f"/static/{rel}?v={version}")
         self.assertEqual((status, headers["Cache-Control"]), (200, LONG_CACHE))
