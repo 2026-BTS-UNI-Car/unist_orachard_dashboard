@@ -1,5 +1,6 @@
 // UI-16: the parts of Rover Control that ask the server on a timer do so only while they are wanted:
-// the live occupancy grid map and the executor's local grid while the map part is on screen, the field tuning
+// the live occupancy grid map while the map part is on screen, the executor's local grid while its block of the
+// 자율주행 tab is on screen (2026-11-19, at most once a second), the field tuning
 // values while their collapsed part is open, the potentiometer rows from the steering panel's own status reply.
 // Fake DOM, observers and requests only.
 import assert from 'node:assert/strict';
@@ -77,10 +78,10 @@ function pageApi(route = '/rover-control') {
     getJson: (url) => { calls.push(url); return Promise.reject(new Error('offline')); } };
 }
 
-// Executor's local grid: asked for only while the live map part is on screen.
+// Executor's local grid: asked for only while its block in the 자율주행 tab is on screen, once a second.
 {
   FakeObserver.all = [];
-  byId('localGridPanel'); byId('localGridCanvas'); const mapPart = byId('liveMapPanel');
+  byId('localGridPanel'); byId('localGridCanvas'); const mapPart = byId('autoGridBlock');
   const { initLocalGrid } = await import('../static/steer/local-grid.mjs');
   const page = pageApi();
   const screen = initLocalGrid(page);
@@ -89,6 +90,8 @@ function pageApi(route = '/rover-control') {
   const watch = FakeObserver.all.find((o) => o.targets.includes(mapPart));
   watch.report(true); await settle();
   assert.deepEqual(page.calls, ['/api/executor/status?grid=1'], 'on screen: asked for');
+  const { POLL_MS } = await import('../static/steer/local-grid.mjs');
+  assert.ok(POLL_MS >= 1000, 'at most once a second (the Jetson is CPU-limited)');
   watch.report(false); screen.routeChanged(); await settle();
   assert.equal(page.calls.length, 1, 'off screen: the timer stops');
 }
@@ -127,4 +130,4 @@ function pageApi(route = '/rover-control') {
   assert.deepEqual(page.calls, ['/api/rover/status'], 'an old shared reply: the rows ask themselves');
   page.route = '/connection'; screen.routeChanged();
 }
-console.log('PASS: live map and local grid only while the map part is on screen; tuning only while open; potentiometer rows share the steering reply');
+console.log('PASS: live map while the map part is on screen, local grid while its tab block is on screen; tuning only while open; potentiometer rows share the steering reply');

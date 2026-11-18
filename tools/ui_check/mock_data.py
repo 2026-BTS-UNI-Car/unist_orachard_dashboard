@@ -599,6 +599,7 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
             "/api/executor/status": _executor_status(dataset, now),
             "/api/executor/tuning": _tuning_view(dataset),
             "/api/executor/tuning/log": _tuning_log(dataset, now),
+            "/api/rover/distance": _distance_view(dataset),
         }
     checks = [{"id": key, "passed": index % 3 == 0} for index, key in enumerate(PREPARATION_CHECK_IDS)]
     return {
@@ -678,8 +679,30 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
         "/api/executor/status": _executor_status(dataset, now),
         "/api/executor/tuning": _tuning_view(dataset),
         "/api/executor/tuning/log": _tuning_log(dataset, now),
+        "/api/rover/distance": _distance_view(dataset),
         "/api/network/wifi": _stress_wifi(),
     }
+
+
+def _distance_view(dataset: str) -> dict:
+    """GET /api/rover/distance (dashboard_server/drive_distance.py table_view; 2026-11-19 forward and backward limits).
+    empty: one terrain and no tape corrections; stress: long labels and corrections in both directions."""
+    road = {"key": "road_paved", "label": "도로·포장", "day": "2026-10-03", "note": "", "duty_min": 40, "duty_max": 100,
+            "default_duty": 40, "duties": [{"duty": d, "speed_m_s": v, "grade": "측정", "reference": "LiDAR", "segments": 5}
+                                           for d, v in ((40, 0.373), (58, 0.537), (88, 0.771), (100, 0.942))]}
+    limits = {"distance_min_m": 0.2, "distance_max_m": 3.0, "distance_max_backward_m": 2.0, "directions": ["forward", "backward"],
+              "distance_default_m": 1.0, "drive_min_s": 1.3, "drive_max_s": 10.0, "factor_min": 0.5, "factor_max": 1.5,
+              "hold_timeout_s": 0.4}
+    table = {"version": "202610", "title": "mock", "vehicle": "mock", "not_measured": "mock", "terrains": [road],
+             "limits": limits, "start_lag_s": 0.61}
+    if dataset == "empty":
+        return {"ok": True, "table": table, "corrections": {}, "move": None}
+    long_terrain = dict(road, key="orchard_long", label="과수원_열_안_아주_긴_지형_이름_배치_점검용_" * 2, day="2099-12-31")
+    table["terrains"] = [road, long_terrain]
+    corrections = {"road_paved": {"samples": 9, "last": [],
+                                  "duties": [{"duty": d, "factor": 1.234, "samples": 20} for d in (40, 58, 88, 100)],
+                                  "backward_duties": [{"duty": 40, "factor": 0.876, "samples": 3}]}}
+    return {"ok": True, "table": table, "corrections": corrections, "move": None}
 
 
 def _stress_wifi() -> dict:

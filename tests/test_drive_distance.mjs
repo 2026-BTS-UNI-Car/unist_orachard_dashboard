@@ -6,7 +6,7 @@
 // Run: node --test tests/test_drive_distance.mjs
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { distView, initDriveDistance, message, speedAt, dutyRange } from '../static/steer/drive-distance.mjs';
+import { distView, initDriveDistance, message, speedAt, dutyRange, sliderRange, distanceLimit, tapeView, MAIN_ROWS } from '../static/steer/drive-distance.mjs';
 import '../static/steer/steer-control-rules.js';
 
 const R = globalThis.UbtsSteerRules;
@@ -19,7 +19,7 @@ const TABLE = {
       { duty: 88, speed_m_s: 0.771, grade: '측정', reference: 'LiDAR', segments: 5 }] },
     { key: 'orchard_row_1010', label: '과수원 열 안', day: '2026-10-10', note: '', duty_min: 90, duty_max: 90, default_duty: 90, duties: [
       { duty: 90, speed_m_s: 0.706, grade: '측정', reference: 'LiDAR', segments: 12 }] }],
-  limits: { distance_default_m: 1.0 },
+  limits: { distance_default_m: 1.0, distance_max_m: 3.0, distance_max_backward_m: 2.0 },
 };
 const NO_CORRECTION = { factor: 1.0, samples: 0, from_duty: null, exact: false };
 const PLAN = {
@@ -108,6 +108,8 @@ class El {
   fire(name, event = {}) { for (const fn of this.listeners[name] || []) fn({ preventDefault() {}, ...event }); }
   replaceChildren(...items) { this.children = items; if (this.tagName === 'SELECT' && items.length && !items.some((o) => o.value === this.value)) this.value = items[0].value; }
   append(...items) { this.children.push(...items); }
+  setAttribute(name, value) { this[name] = value; }
+  querySelectorAll(selector) { return selector === '[data-dist-direction]' ? this.directionButtons || [] : []; }
   setPointerCapture(id) { this.captured.add(id); }
   releasePointerCapture(id) { this.captured.delete(id); }
 }
@@ -128,8 +130,14 @@ after(() => { for (const close of opened) close(); });
 function page() {
   const els = {};
   const ids = ['steerDistPanel', 'steerDistDetails', 'steerDistState', 'steerDistRows', 'steerDistStatus', 'steerDistStop',
-    'steerDistMeters', 'steerDistGo', 'steerDistActual', 'steerDistFeedback', 'steerDistReset', 'steerDistSpeed'];
+    'steerDistMeters', 'steerDistGo', 'steerDistActual', 'steerDistFeedback', 'steerDistReset', 'steerDistSpeed',
+    // 2026-11-19: the folded plan details, the direction, and the tape part of the 보정·설정 tab
+    'steerDistMore', 'steerDistMetersLabel', 'steerDistToTape', 'steerDistTapePanel', 'steerDistTapeState', 'steerDistLast',
+    'steerDistTapeRows', 'steerDistTapeStatus'];
   for (const id of ids) els[id] = new El(id, id === 'steerDistGo' ? 'button' : 'div');
+  els.steerDistPanel.directionButtons = ['forward', 'backward'].map((way) => {
+    const button = new El(null, 'button'); button.dataset.distDirection = way; return button;
+  });
   els.steerDistTerrain = new El('steerDistTerrain', 'select');
   els.steerDistDuty = new El('steerDistDuty', 'input');               // <input type="range">
   els.steerDistDuty.value = '40';
@@ -143,7 +151,7 @@ function page() {
   const state = { move: null, finishOn: null };
   const timers = [];
   const answer = (route, body) => {
-    if (route.endsWith('/plan')) return { ok: true, plan: { ...PLAN, terrain: body.terrain, duty: body.duty }, bridge: { refusal: null, max_pwm: 255 } };
+    if (route.endsWith('/plan')) return { ok: true, plan: { ...PLAN, terrain: body.terrain, duty: body.duty, direction: body.direction || 'forward' }, bridge: state.bridge || { refusal: null, max_pwm: 255 } };
     if (route.endsWith('/start')) { state.move = { id: 7, state: 'driving', elapsed_s: 0, planned_s: 2.897, terrain: body.terrain }; return { ok: true, move: state.move, plan: PLAN }; }
     if (route.endsWith('/hold')) {
       if (state.finishOn === 'hold') return { ok: true, move: { ...state.move, state: 'closed', reason: 'planned', elapsed_s: 2.9, expected_m: 1, feedback_open: true }, chain: { lease: 'L1', ticket: 'T40', seq: 40 } };
@@ -261,10 +269,12 @@ test('page: blur and a hidden page release a held move; a finished move hands ba
   await p.settle();
   const feedback = p.log.posts.find(([route]) => route.endsWith('/feedback'))[1];
   assert.deepEqual(feedback, { move_id: 7, actual_m: 1.1 });
-  assert.match(p.els.steerDistStatus.textContent, /보정 배율 1\.1/);
+  assert.match(p.els.steerDistTapeStatus.textContent, /보정 배율 1\.1/, 'the answer shows in the tape part (보정·설정)');
+  assert.equal(p.els.steerDistTapeStatus.hidden, false);
   p.els.steerDistReset.fire('click');
   await p.settle();
-  assert.deepEqual(p.log.posts.find(([route]) => route.endsWith('/reset'))[1], { terrain: 'road_paved' });
+  assert.deepEqual(p.log.posts.find(([route]) => route.endsWith('/reset'))[1], { terrain: 'road_paved', direction: 'forward' },
+    'the reset of the chosen direction');
 });
 
 test('page: STOP drops the lease and ends the heartbeats', async () => {
@@ -317,4 +327,91 @@ test('rules: the controller hands its chain over and takes it back; nothing is s
   ctl.beginExternal();
   assert.equal(ctl.endExternal(null, 'distance_move_lost'), false);
   assert.equal(ctl.lease, null, 'a lost chain drops the lease locally');
+});
+
+// ---- 2026-11-19: backward, the bridge cap on the slider, the folded plan rows and the tape part ----
+test('view: backward plans, its limits and its own corrections; the rows under the controls', () => {
+  assert.equal(distanceLimit(TABLE, 'forward'), 3.0);
+  assert.equal(distanceLimit(TABLE, 'backward'), 2.0);
+  assert.equal(distanceLimit(null, 'backward'), 2.0, 'without a table view: 2 m');
+  const base = { table: TABLE, corrections: { road_paved: { duties: [{ duty: 40, factor: 1.2, samples: 3 }],
+    backward_duties: [{ duty: 40, factor: 0.9, samples: 1 }] } }, bridge: { refusal: null, max_pwm: 255, max_duty: 100 }, armed: true, fresh: true };
+  let v = distView({ ...base, plan: PLAN });
+  assert.equal(v.go.text, '앞으로 이동 (누르고 있기)');
+  assert.deepEqual(v.main.map(([name]) => name), MAIN_ROWS);
+  assert.ok(v.more.every(([name]) => !MAIN_ROWS.includes(name)) && v.more.length + v.main.length === v.rows.length);
+  assert.equal(Object.fromEntries(v.rows)['줄자 기록 있는 속도'], '40 % ×1.20 (3번)');
+  // the direction moved and the plan is still the forward one: no go until the backward plan is back
+  v = distView({ ...base, plan: PLAN, direction: 'backward' });
+  assert.equal(v.go.enabled, false);
+  assert.equal(v.go.text, '뒤로 이동 (누르고 있기)');
+  const back = { ...PLAN, direction: 'backward', throttle: -40, grade: '가정',
+    correction: { factor: 0.9, samples: 1, from_duty: 40, exact: true, direction: 'backward' } };
+  v = distView({ ...base, plan: back, direction: 'backward' });
+  assert.equal(v.go.enabled, true);
+  const r = Object.fromEntries(v.rows);
+  assert.match(r['예상 거리'], /뒤로$/);
+  assert.match(r['보정 배율'], /^0\.90 \(이 속도 40 %에서 뒤로 줄자 1번/);
+  assert.equal(r['줄자 기록 있는 속도'], '40 % ×0.90 (1번)', 'the backward corrections');
+  assert.match(r['자료'], /뒤로는 앞으로 잰 표를 그대로 씀/);
+  assert.match(distView({ ...base, plan: { ...back, problem: 'distance_out_of_range_backward' }, direction: 'backward' }).go.title, /뒤로는 0\.2~2\.0 m/);
+  assert.match(distView({ ...base, plan: { ...back, correction: { factor: 1, samples: 0, from_duty: null } }, direction: 'backward' }).rows
+    .find(([name]) => name === '보정 배율')[1], /이 지형 뒤로 줄자 기록 없음/);
+});
+
+test('sliderRange: the terrain table range, its top cut at the bridge cap', () => {
+  const road = TABLE.terrains[0];
+  assert.deepEqual(sliderRange(road, null), { min: 40, max: 88, def: 40 });
+  assert.deepEqual(sliderRange(road, { max_duty: 100 }), { min: 40, max: 88, def: 40 }, 'cap 255 (100 %): the table');
+  assert.deepEqual(sliderRange(road, { max_duty: 47 }), { min: 40, max: 47, def: 40 }, 'cap 120');
+  assert.deepEqual(sliderRange(road, { max_duty: 20 }), { min: 40, max: 40, def: 40 }, 'below the table: the lowest (the plan refuses)');
+});
+
+test('tapeView: the last move of this page and both directions of the terrain', () => {
+  const s = { table: TABLE, input: { terrain: 'road_paved' }, corrections: { road_paved: { duties: [{ duty: 40, factor: 1.2, samples: 3 }], backward_duties: [] } },
+    result: { id: 3, direction: 'backward', distance_m: 1.5, duty: 40, reason: 'planned', feedback_open: true } };
+  let v = tapeView(s);
+  assert.equal(v.last, '마지막 이동: 뒤로 1.5 m · 40 % · 계획 시간 끝 · 줄자 거리를 넣을 수 있다');
+  assert.deepEqual(v.rows, [['지형', '도로·포장 (2026-10-03)'], ['앞으로 줄자 배율', '40 % ×1.20 (3번)'], ['뒤로 줄자 배율', '기록 없음']]);
+  assert.equal(v.feedback.enabled, true);
+  v = tapeView({ ...s, result: { ...s.result, feedback_open: false } });
+  assert.equal(v.feedback.enabled, false);
+  assert.equal(tapeView({ table: TABLE, input: { terrain: 'road_paved' } }).last, '이 화면에서 끝난 이동 없음');
+});
+
+test('page: backward goes with plan and start, the distance follows its limit, the slider follows the bridge cap', async () => {
+  const p = page();
+  p.state.bridge = { refusal: null, max_pwm: 120, max_duty: 47 };
+  await p.settle();
+  assert.deepEqual([p.els.steerDistDuty.min, p.els.steerDistDuty.max], ['40', '47'], 'the bridge cap cuts the slider');
+  assert.equal(p.els.steerDistGo.textContent, '앞으로 이동 (누르고 있기)');
+  assert.equal(p.els.steerDistMetersLabel.textContent, '거리 m (0.2~3.0)');
+  p.els.steerDistMeters.value = '2.5';
+  const [forward, backward] = p.els.steerDistPanel.directionButtons;
+  backward.fire('click');
+  await p.settle();
+  assert.equal(p.els.steerDistMeters.value, '2', 'cut to the 2 m of a backward move');
+  assert.equal(p.els.steerDistMeters.max, '2');
+  assert.equal(p.els.steerDistMetersLabel.textContent, '거리 m (0.2~2.0, 뒤로)');
+  assert.equal(p.els.steerDistGo.textContent, '뒤로 이동 (누르고 있기)');
+  assert.equal(backward['aria-pressed'], 'true');
+  const lastPlan = () => p.log.posts.filter(([route]) => route.endsWith('/plan')).at(-1)[1];
+  assert.deepEqual(lastPlan(), { terrain: 'road_paved', duty: 40, distance_m: 2, direction: 'backward' });
+  p.els.steerDistGo.fire('pointerdown', { pointerId: 8 });
+  await p.settle();
+  const start = p.log.posts.find(([route]) => route.endsWith('/start'))[1];
+  assert.equal(start.direction, 'backward', 'the direction goes with the start');
+  forward.fire('click');
+  assert.equal(p.log.posts.filter(([route]) => route.endsWith('/plan')).at(-1)[1].direction, 'backward', 'no direction change while held');
+  // leaving the tab while held lets go
+  p.win.dispatchEvent(new Event('ubts:rover-tab'));
+  await p.settle();
+  assert.ok(p.routes().includes('release'));
+  forward.fire('click');
+  await p.settle();
+  assert.deepEqual(lastPlan(), { terrain: 'road_paved', duty: 40, distance_m: 2 }, 'forward again: the old body');
+  p.state.bridge = { refusal: null, max_pwm: 255, max_duty: 100 };
+  p.els.steerDistMeters.fire('input');
+  await p.settle();
+  assert.equal(p.els.steerDistDuty.max, '88', 'the cap raised to 100 %: the whole table');
 });

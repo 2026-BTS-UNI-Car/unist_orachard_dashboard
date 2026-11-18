@@ -26,10 +26,12 @@ function routeSupportsImuLive(route = currentRoute()) {
   return route === "/rover-control";
 }
 
-// After an alias of a part of Rover Control (/map, /records, /tuning): show that part once.
+// After an alias of a part of Rover Control (/map, /records, /tuning): show that part once (its in-page tab first).
 function focusRoutePart(id) {
   const element = $(id);
   if (!element) return;
+  const tab = typeof roverTabOf === "function" ? roverTabOf(id) : null;
+  if (tab && typeof setRoverTab === "function") setRoverTab(tab, { persist: false });
   if (id === "tuningPanel" && $("tuningDetails")) $("tuningDetails").open = true;
   window.requestAnimationFrame(() => element.scrollIntoView({ block: "start" }));
 }

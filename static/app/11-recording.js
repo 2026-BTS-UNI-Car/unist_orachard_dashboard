@@ -51,40 +51,96 @@ function maybeRefreshRecordingStatus() {
   refreshRecordingStatus().catch((err) => debugLog("recording", "status refresh failed", err));
 }
 
-async function startRecording(kind) {
-  if (state.recordings.actionInFlight) return;
+// The sensors of a recording request (2026-11-19: one check box per sensor). A state without the list (an older
+// caller) asks for what its kind and switches said.
+const RECORDING_SENSOR_LABEL = { lidar: "LiDAR", camera: "카메라", imu: "IMU", gps: "GPS", drive: "구동", steering: "조향",
+  executor: "실행기", tf: "TF" };
+const RECORDING_ALL_SENSORS = Object.keys(RECORDING_SENSOR_LABEL);
+const RECORDING_ERROR_TEXT = {
+  sensors_need_lidar_or_camera: "LiDAR 또는 카메라 하나는 골라야 한다",
+  recording_busy: "기록 요청이 이미 진행 중",
+};
+
+function recordingSensorsOf(recordings) {
+  if (Array.isArray(recordings?.sensors)) return recordings.sensors.filter((name) => RECORDING_ALL_SENSORS.includes(name));
+  const kind = recordings?.kind || "both";
+  return RECORDING_ALL_SENSORS.filter((name) => (name === "lidar" && kind !== "camera") || (name === "camera" && kind !== "lidar")
+    || (name === "imu" && recordings?.includeImu !== false) || (name === "gps" && recordings?.includeGps !== false));
+}
+
+// The request body: the new fields (sensors, tag) and the old ones (kind, include_imu, include_gps) for a recorder that
+// does not know the list yet. A recorder that knows "sensors" uses it.
+function recordingStartBody(sensors, tag = "manual") {
+  const lidar = sensors.includes("lidar"), camera = sensors.includes("camera");
+  return { sensors: [...sensors], tag: tag === "autonomy" ? "autonomy" : "manual",
+    kind: lidar && camera ? "both" : camera ? "camera" : "lidar",
+    include_imu: sensors.includes("imu"), include_gps: sensors.includes("gps") };
+}
+
+function recordingSensorsLabel(sensors) {
+  const list = (sensors || []).filter((name) => RECORDING_SENSOR_LABEL[name]);
+  if (list.length === RECORDING_ALL_SENSORS.length) return "모든 센서";
+  return list.map((name) => RECORDING_SENSOR_LABEL[name]).join("+") || "센서 없음";
+}
+
+// The recorder state as the panels read it: known only within the 5 s freshness gate.
+function recordingStatusView() {
+  const status = state.recordings.status || {};
+  const ageMs = performance.now() - state.recordings.lastStatusSteadyAt;
+  const known = status.ok === true && status.status_fresh !== false
+    && typeof status.active === "boolean"
+    && Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= 5000;
+  return { known, active: known && status.active, status, busy: Boolean(state.recordings.actionInFlight),
+           id: known && status.active ? status.recording_id || null : null, tag: status.tag || null };
+}
+
+// options: {sensors, tag} (the autonomy panel: every sensor, tag "autonomy"); without them the check boxes.
+async function startRecording(options = {}) {
+  if (state.recordings.actionInFlight) return { ok: false, error: "recording_busy" };
+  const sensors = Array.isArray(options?.sensors) ? options.sensors : recordingSensorsOf(state.recordings);
+  if (!sensors.includes("lidar") && !sensors.includes("camera")) {
+    state.recordings.lastError = RECORDING_ERROR_TEXT.sensors_need_lidar_or_camera;
+    renderRecordingStatus();
+    return { ok: false, error: "sensors_need_lidar_or_camera" };
+  }
   state.recordings.actionInFlight = true;
+  state.recordings.lastError = "";
   invalidateRecordingStatusRead();
   const requestedAt = performance.now();
   renderRecordingStatus("기록 시작 중");
+  let payload = null;
   try {
-	    const payload = await postJson("/api/recordings/start", {
-	      kind: kind || state.recordings.kind,
-	      include_imu: state.recordings.includeImu,
-	      include_gps: state.recordings.includeGps,
-	    });
+	    payload = await postJson("/api/recordings/start", recordingStartBody(sensors, options?.tag));
 	    state.recordings.status = payload.status || payload;
 	    state.recordings.lastStatusAt = Date.now();
     state.recordings.lastStatusSteadyAt = requestedAt;
+    if (payload && payload.ok === false) {
+      state.recordings.lastError = `기록 시작 거절: ${RECORDING_ERROR_TEXT[payload.error] || payload.error || payload.state || "이유 모름"}`;
+    }
     renderRecordingStatus();
     await loadRecordings();
   } catch (err) {
     state.recordings.status = { ok: false, state: "start_failed", error: err.message };
+    payload = { ok: false, error: err.message };
     renderRecordingStatus();
   } finally {
     state.recordings.actionInFlight = false;
     renderRecordingStatus();
   }
+  return payload || { ok: false, error: "no_reply" };
 }
 
 async function stopRecording() {
-  if (state.recordings.actionInFlight) return;
+  if (state.recordings.actionInFlight) return { ok: false, error: "recording_busy" };
+  let result = null;
   state.recordings.actionInFlight = true;
+  state.recordings.lastError = "";
   invalidateRecordingStatusRead();
   const requestedAt = performance.now();
   renderRecordingStatus("기록 중지 중");
   try {
     const payload = await postJson("/api/recordings/stop", {});
+    result = payload;
     state.recordings.status = payload.status || payload;
     state.recordings.lastStatusAt = Date.now();
     state.recordings.lastStatusSteadyAt = requestedAt;
@@ -92,11 +148,13 @@ async function stopRecording() {
     await loadRecordings();
   } catch (err) {
     state.recordings.status = { ok: false, state: "stop_failed", error: err.message };
+    result = { ok: false, error: err.message };
     renderRecordingStatus();
   } finally {
     state.recordings.actionInFlight = false;
     renderRecordingStatus();
   }
+  return result || { ok: false, error: "no_reply" };
 }
 
 function recordingKindLabel(kind) {
@@ -113,6 +171,8 @@ function recordingImuFrameCount(payload) {
 }
 
 function recordingSensorLabel(payload) {
+  const listed = payload?.sensors || payload?.metadata?.sensors;
+  if (Array.isArray(listed) && listed.length) return recordingSensorsLabel(listed);
   const kind = payload?.kind || payload?.metadata?.kind;
   const label = recordingKindLabel(kind);
   const sensors = recordingImuFrameCount(payload) > 0 ? `${label}+IMU` : label;
@@ -121,12 +181,7 @@ function recordingSensorLabel(payload) {
 }
 
 function renderRecordingStatus(override) {
-  const status = state.recordings.status || {};
-  const ageMs = performance.now() - state.recordings.lastStatusSteadyAt;
-  const known = status.ok === true && status.status_fresh !== false
-    && typeof status.active === "boolean"
-    && Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= 5000;
-  const active = known && status.active;
+  const { status, known, active } = recordingStatusView();
   // This secondary row shares the exact primary freshness gate. It must age
   // locally even when general telemetry and recorder requests stop arriving.
   const detail = $("roverRecorderDetail");
@@ -139,42 +194,39 @@ function renderRecordingStatus(override) {
       : !known ? "상태 미확인"
       : active ? `${recordingKindLabel(status.kind)} 기록 중` : status.state || "ready";
   }
-  const kind = recordingKindLabel(active ? status.kind : state.recordings.kind);
-  const includeImu = active ? status.include_imu !== false : state.recordings.includeImu;
-  const includeGps = active ? status.include_gps !== false : state.recordings.includeGps;
-  const sensorLabel = `${kind}${includeImu ? "+IMU" : ""}${includeGps ? "+GPS" : ""}`;
+  const chosen = recordingSensorsOf(state.recordings);
+  const shown = active ? (Array.isArray(status.sensors) ? status.sensors : recordingSensorsOf({
+    kind: status.kind, includeImu: status.include_imu !== false, includeGps: status.include_gps !== false })) : chosen;
+  const sensorLabel = recordingSensorsLabel(shown);
+  const noImage = !chosen.includes("lidar") && !chosen.includes("camera");
   const duration = recordingDurationSeconds(status);
   const message = override || (!known && status.state !== "disabled"
     ? "기록 상태 확인 중 · 연결을 확인하세요"
     : active
-    ? `${sensorLabel} 기록 중 · ${status.recording_id || ""}`
-    : status.error || status.state || `${sensorLabel} 기록 대기`);
+    ? `${sensorLabel} 기록 중${status.tag === "autonomy" ? " (자율주행)" : ""} · ${status.recording_id || ""}`
+    : state.recordings.lastError || status.error || (noImage ? RECORDING_ERROR_TEXT.sensors_need_lidar_or_camera : "")
+      || status.state || `${sensorLabel} 기록 대기`);
   const target = $("roverRecordingStatus");
   if (target) {
-    target.className = `test-result ${known ? "ok" : status.error ? "bad" : "testing"}`;
+    target.className = `test-result ${known && !state.recordings.lastError ? "ok" : status.error || state.recordings.lastError ? "bad" : "testing"}`;
     target.textContent = message;
   }
-  document.querySelectorAll("[data-record-kind]").forEach((button) => {
-    button.disabled = state.recordings.actionInFlight || active || !known;
-    button.classList.toggle("active", (active ? status.kind : state.recordings.kind) === button.dataset.recordKind);
+  document.querySelectorAll("[data-record-sensor]").forEach((box) => {
+    box.checked = shown.includes(box.dataset.recordSensor);
+    box.disabled = state.recordings.actionInFlight || active || !known;
   });
   const start = $("roverRecordStartButton");
   if (start) {
-    start.disabled = state.recordings.actionInFlight || active || !known || status.state === "disabled";
-    start.textContent = status.state === "disabled" ? "녹화는 후속 단계에서 활성화" : active ? "기록 중" : `${recordingKindLabel(state.recordings.kind)} 기록 시작`;
+    start.disabled = state.recordings.actionInFlight || active || !known || status.state === "disabled" || noImage;
+    start.title = noImage ? RECORDING_ERROR_TEXT.sensors_need_lidar_or_camera : "";
+    start.textContent = status.state === "disabled" ? "녹화는 후속 단계에서 활성화" : active ? "기록 중"
+      : `기록 시작 (${chosen.length > 3 && chosen.length < RECORDING_ALL_SENSORS.length ? `센서 ${chosen.length}개` : recordingSensorsLabel(chosen)})`;
   }
   const stop = $("roverRecordStopButton");
   if (stop) stop.disabled = state.recordings.actionInFlight || (known && !active) || status.state === "disabled";
   text("roverRecordingTimer", !known ? "--:--" : active ? fmtClock(duration) : "00:00");
   text("roverRecorderState", !known ? "상태 미확인" : active ? "recording" : "ready");
   text("roverRecorderKind", active ? sensorLabel : status.archive_count !== undefined ? `${status.archive_count} archives` : "대기");
-  const imuToggle = $("roverRecordImuToggle");
-  const gpsToggle = $("roverRecordGpsToggle");
-  if (gpsToggle) { gpsToggle.checked = includeGps; gpsToggle.disabled = state.recordings.actionInFlight || active || !known; }
-  if (imuToggle) {
-    imuToggle.checked = includeImu;
-    imuToggle.disabled = state.recordings.actionInFlight || active || !known;
-  }
   renderFrameRecordState(known, active);
 }
 

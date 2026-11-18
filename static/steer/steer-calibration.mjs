@@ -1,5 +1,6 @@
-// Steering calibration part of Rover Control's steering panel (2026-11-16, ESP32-S3 bridge op 'calibrate',
-// firmware token CAL_RUNTIME=1; docs/esp_rover_control.md 1-4). A folded section: current CAL marks and the measured
+// Steering calibration part of Rover Control (2026-11-16, ESP32-S3 bridge op 'calibrate', firmware token
+// CAL_RUNTIME=1; docs/esp_rover_control.md 1-4). Since 2026-11-19 a part of the 보정·설정 tab (before: a folded section
+// of the steering panel; a page with the folded <details id="steerCalDetails"> still works): current CAL marks and the measured
 // potentiometer, the buttons 지금 위치를 가운데로 / 왼쪽 끝 찾기 / 오른쪽 끝 찾기 / 적용 (with the margins) / 기본값으로,
 // the progress of a running scan and the results. Every action is refused by the bridge while armed or moving and
 // needs the firmware update; the buttons show the same reason. Actions that move the wheels or change the stored
@@ -196,9 +197,11 @@ export function initSteerCalibration(page, options = {}) {
   const $ = (id) => doc.getElementById(id);
   const root = $('steerCalPanel');
   const details = $('steerCalDetails');
-  if (!root || !details) return null;
+  if (!root) return null;
   let timer = null, busy = false, posting = false, reply = null, notice = null, view = null;
-  const active = () => page.currentRoute() === '/rover-control' && !doc.hidden && details.open;
+  // Asked only while the part is on screen: its tab is shown (and a folded part of an older page is open).
+  const active = () => page.currentRoute() === '/rover-control' && !doc.hidden && (!details || details.open)
+    && (page.shown ? page.shown('steerCalPanel') : true);
   const marginInputs = { left: $('steerCalMarginLeft'), right: $('steerCalMarginRight') };
   const margins = () => {
     const read = (el) => { const v = Number(el?.value); return Number.isFinite(v) ? v : NaN; };
@@ -310,7 +313,7 @@ export function initSteerCalibration(page, options = {}) {
   });
   $('steerCalStop')?.addEventListener('click', () => stopNow('calibration_stop'));
   for (const el of Object.values(marginInputs)) el?.addEventListener('input', () => { notice = null; draw(); });
-  details.addEventListener('toggle', () => routeChanged());
+  details?.addEventListener('toggle', () => routeChanged());
   doc.addEventListener('visibilitychange', () => {
     // A scan moves the wheels without an armed operator: a hidden page stops it, as it stops driving.
     if (doc.hidden && view?.running) stopNow('page_hidden');
@@ -326,7 +329,8 @@ export function initSteerCalibration(page, options = {}) {
     if (active()) { if (!timer) { timer = setInterval(poll, STATUS_MS); poll(); } }
     else {
       clearInterval(timer); timer = null;
-      if (view?.running && page.currentRoute() !== '/rover-control') stopNow('page_inactive');
+      // A scan moves the wheels: leaving the page or its tab stops it, as a hidden page does.
+      if (view?.running && (page.currentRoute() !== '/rover-control' || (page.shown && !page.shown('steerCalPanel')))) stopNow('page_inactive');
     }
   }
   routeChanged();

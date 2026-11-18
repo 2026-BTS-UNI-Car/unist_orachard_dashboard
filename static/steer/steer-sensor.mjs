@@ -49,7 +49,8 @@ export function initSteerSensor(page) {
   const list = $('steerPotDetails');
   if (!list) return null;
   let timer = null, busy = false, reply;
-  const active = () => page.currentRoute() === '/rover-control' && !document.hidden;
+  // Only while its part is in the shown tab (보정·설정, 2026-11-19).
+  const active = () => page.currentRoute() === '/rover-control' && !document.hidden && (page.shown ? page.shown('steerPotPanel') : true);
 
   async function poll() {
     if (busy) return;

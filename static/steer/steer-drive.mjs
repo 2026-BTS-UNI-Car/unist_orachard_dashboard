@@ -19,10 +19,11 @@ const deg = (mrad) => (typeof mrad === 'number' && isFinite(mrad) ? R.mradToDeg(
 const fmtDeg = (value) => (value === null ? '--' : `${value >= 0 ? '' : '−'}${Math.abs(value).toFixed(1)}°`);
 // Drag value (deg, left positive as steer_mrad) as the operator reads it.
 export const dragText = (deg) => (!deg ? '0°' : `${deg > 0 ? '왼쪽' : '오른쪽'} ${Math.abs(deg).toFixed(1)}°`);
+// One short line under the pad (2026-11-19: "글씨도 쓸데없는 안내가 너무 많고"); the full rules are in Docs.
 export const HELP_TEXT = {
-  ramp: '조종 활성화 뒤 W/S는 누르는 동안 구동, A/D는 고른 각까지 조향, C는 누르는 동안 가운데로. A/D를 놓으면 가운데로 돌아온다(정지 중에는 한 번 5°까지, ‘각 유지’를 고르면 그대로). 막대를 끌면 그 각으로, 놓으면 0°로. STOP·Esc는 언제나.',
-  absolute: '조종 활성화 뒤 W/S는 누르는 동안 구동, A/D는 누르는 동안 왼쪽·오른쪽 끝까지, 놓으면 가운데로(‘각 유지’를 고르면 그대로), C는 가운데로. 막대를 끌면 그 각으로 가고 놓으면 0°로 돌아온다. 키와 막대는 먼저 잡은 쪽만 듣는다. STOP·Esc는 언제나.',
-  smooth: '조종 활성화 뒤 W/S는 누르는 동안 구동, A/D는 누르는 동안 왼쪽·오른쪽 끝까지 끊김 없이 한 번에(SMOOTH 펌웨어), 놓으면 가운데로(‘각 유지’를 고르면 그대로), C는 가운데로. 막대를 끌면 0.25° 단위로 그 각을 따라가고 놓으면 0°로 돌아온다. 키와 막대는 먼저 잡은 쪽만 듣는다. STOP·Esc는 언제나.',
+  ramp: 'W/S 누르는 동안 구동 · A/D 고른 각까지(정지 중 한 번 5°) · 놓으면 가운데로 · 막대: 놓으면 0° · STOP·Esc 즉시 정지',
+  absolute: 'W/S 누르는 동안 구동 · A/D 누르는 동안 끝까지 · 놓으면 가운데로 · 막대: 놓으면 0° · STOP·Esc 즉시 정지',
+  smooth: 'W/S 누르는 동안 구동 · A/D 끝까지 끊김 없이(SMOOTH) · 놓으면 가운데로 · 막대 0.25° 단위, 놓으면 0° · STOP·Esc 즉시 정지',
 };
 // The drive readout's second line: what the MCU reports and the bridge's own drive cap (its install flag).
 export function driveCapText(cap) {
@@ -258,9 +259,15 @@ export function initSteerDrive(page) {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { drag?.end('page_hidden'); if (ctl.lease) ctl.stop('page_hidden'); stopLoop(); } else startLoop();
   });
-  for (const id of ['frameStopButton', 'roverStopButton']) {
+  for (const id of ['frameStopButton', 'roverStopButton', 'autoStopButton']) {
     $(id)?.addEventListener('click', () => ctl.abandon('operator_stop'));   // their own handler sends the STOP
   }
+  // Leaving the 수동 조종 tab (2026-11-19) with the Arm held: the pad is no longer on screen, so STOP as a hidden page does.
+  window.addEventListener('ubts:rover-tab', (event) => {
+    if (event.detail?.before !== 'manual' || event.detail?.tab === 'manual') return;
+    drag?.end('tab_changed');
+    if (ctl.lease) ctl.stop('tab_changed');
+  });
   window.addEventListener('pagehide', () => {
     if (!ctl.lease) return;
     const body = new Blob([JSON.stringify({ reason: 'pagehide' })], { type: 'application/json' });

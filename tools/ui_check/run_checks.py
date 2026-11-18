@@ -35,6 +35,7 @@ DEFAULT_VIEWPORTS = ["390x844", "844x390", "820x1180", "1180x820", "1440x900"]
 # 앱 틀의 STOP(data-ui-check="stop")이 있으면 그것을 재고, 없으면(개편 전 화면) 주행 패널의 STOP을 잰다.
 DEFAULT_STOP_SELECTORS = ["[data-ui-check~='stop']", "#roverStopButton", "[data-rover-drive='stop']"]
 THEME_STORAGE_KEY = "ubts-theme"
+ROVER_TAB_STORAGE_KEY = "ubts-rover-tab-v1"     # Rover Control in-page tab (2026-11-19)
 DEFAULT_STOP_TEXTS = ["STOP", "정지", "비상 정지"]
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
 SETTLE_SAMPLE_MS = 250
@@ -245,6 +246,9 @@ async def check_page(browser, base_url: str, dataset: str, route: str, viewport:
         if options.theme != "page":
             # 화면이 기억해 둔 테마를 읽기 전에 저장 값을 넣는다(화면의 테마 스위치가 쓰는 것과 같은 키).
             await context.add_init_script(f"try {{ localStorage.setItem('{THEME_STORAGE_KEY}', '{options.theme}'); }} catch (_) {{}}")
+        if options.rover_tab:
+            # Rover Control 의 탭(2026-11-19): 화면이 기억한 탭을 읽기 전에 넣는다.
+            await context.add_init_script(f"try {{ localStorage.setItem('{ROVER_TAB_STORAGE_KEY}', '{options.rover_tab}'); }} catch (_) {{}}")
         page = await context.new_page()
 
         def on_console(message):
@@ -394,6 +398,7 @@ def build_run(options, pages: list, browser_info: dict, server_stats: dict, star
         "stop_selectors": options.stop_selector,
         "stop_texts": options.stop_text,
         "theme": options.theme,
+        "rover_tab": options.rover_tab,
         "vehicle": options.vehicle,
         "settle": {"min_ms": options.settle_ms, "max_ms": options.max_settle_ms, "sample_ms": SETTLE_SAMPLE_MS, "stable_samples": SETTLE_STABLE_SAMPLES},
         "thresholds": {
@@ -437,6 +442,8 @@ def parse_args(argv=None):
     parser.add_argument("--stop-selector", action="append", help="STOP 조작 요소를 찾는 CSS 선택자(여러 번 가능, 앞의 것이 우선)")
     parser.add_argument("--stop-text", action="append", help="선택자로 못 찾을 때 버튼 글자로 찾는 값(여러 번 가능)")
     parser.add_argument("--theme", choices=("page", "light", "dark"), default="page", help="테마. page는 화면의 기본값 그대로(기본), light·dark는 그 테마로 바꿔서 잰다")
+    parser.add_argument("--rover-tab", choices=("manual", "auto", "setup", "record"), default=None,
+                        help="Rover Control 의 탭(2026-11-19). 주지 않으면 화면 기본(수동 조종)")
     parser.add_argument("--concurrency", type=int, default=3, help="동시에 여는 쪽 수")
     parser.add_argument("--retries", type=int, default=1, help="쪽을 열지 못했을 때 다시 해 보는 횟수")
     parser.add_argument("--settle-ms", type=int, default=1500, help="측정 전에 기다리는 최소 시간")

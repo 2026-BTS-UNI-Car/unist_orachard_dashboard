@@ -32,7 +32,15 @@ bridge's normal 'drive' op (owner, lease, one-use ticket, seq + 1, deadman, inpu
 and the firmware watchdog all unchanged): a drive request every SEND_PERIOD_S at the plan's duty with the steering
 target held, and a request with throttle 0 at the planned time (or at once on release, a missing hold heartbeat for
 HOLD_TIMEOUT_S, or STOP). Meanwhile the page sends no drive of its own (the server owns the ticket chain) and takes the
-chain back afterwards; a chain nobody takes within TAKE_TIMEOUT_S is closed with STOP. Forward only; no LiDAR loop (v2).
+chain back afterwards; a chain nobody takes within TAKE_TIMEOUT_S is closed with STOP. No LiDAR loop (v2).
+
+Backward (2026-11-19, user request '특정거리 앞으로 가는거 뿐만 아니라 뒤로 가는 기능'): direction 'backward' drives the same
+duty with a negative throttle (the bridge's drive op takes -100..100; its cap applies to |throttle|). Every rule of the
+forward move holds (Arm, held button, STOP, drive time 1.3..10 s, the bridge cap); the distance is at most
+DISTANCE_MAX_BACKWARD_M because nothing looks behind the vehicle. The speed table was driven forward only: a backward
+plan uses it as an assumption (grade '가정'). Tape corrections are kept per direction as well as per duty: a backward
+move never borrows a forward correction (without a backward sample the factor is 1.0). Samples of the 2026-11-17/19
+files have no direction and count as forward.
 """
 from __future__ import annotations
 
@@ -48,6 +56,8 @@ TABLE_SCHEMA = "ubts.drive_terrain_table.v1"
 STORE_SCHEMA = "ubts.drive_distance_corrections.v1"
 DEFAULT_TABLE = Path(__file__).resolve().parent.parent / "config" / "drive_terrain_table_202610.json"
 DISTANCE_MIN_M, DISTANCE_MAX_M, DISTANCE_DEFAULT_M = 0.2, 3.0, 1.0
+DISTANCE_MAX_BACKWARD_M = 2.0           # no rear sensing: a shorter limit than forward
+DIRECTIONS = ("forward", "backward")
 DRIVE_MIN_S = 1.3
 DRIVE_MAX_S = 10.0
 FACTOR_MIN, FACTOR_MAX = 0.5, 1.5
@@ -145,16 +155,32 @@ def no_correction(factor: float = 1.0) -> dict:
     return {"factor": factor, "samples": 0, "from_duty": None, "exact": False}
 
 
-def plan(table: dict, terrain, duty, distance_m, factor: float = 1.0, correction=None) -> dict:
+def direction_of(value) -> str | None:
+    """'forward' (also for a request without one) or 'backward'; None for anything else."""
+    if value is None:
+        return "forward"
+    return value if isinstance(value, str) and value in DIRECTIONS else None
+
+
+def distance_limit(direction: str) -> float:
+    return DISTANCE_MAX_BACKWARD_M if direction == "backward" else DISTANCE_MAX_M
+
+
+def plan(table: dict, terrain, duty, distance_m, factor: float = 1.0, correction=None, direction=None) -> dict:
     """The plan of one move (pure). 'problem' is None when it may run; the numbers are given either way.
     duty: an integer % within the terrain's table range, None for the terrain's default. correction: a callable
-    (terrain key, duty) -> the correction of that duty (CorrectionStore.correction); without it 'factor' applies."""
+    (terrain key, duty, direction) -> the correction of that duty and direction (CorrectionStore.correction); without
+    it 'factor' applies. direction: 'forward' (None) or 'backward' (negative throttle, at most DISTANCE_MAX_BACKWARD_M)."""
+    way = direction_of(direction)
+    if way is None:
+        return {"ok": False, "problem": "distance_direction_invalid"}
     t = terrain_of(table, terrain)
     if t is None:
-        return {"ok": False, "problem": "distance_terrain_unknown"}
+        return {"ok": False, "problem": "distance_terrain_unknown", "direction": way}
     lo, hi = duty_range(t)
-    span = {"terrain": t["key"], "duty_min": lo, "duty_max": hi, "default_duty": default_duty(t),
-            "duties": [r["duty"] for r in t["speeds"]]}
+    span = {"terrain": t["key"], "direction": way, "duty_min": lo, "duty_max": hi, "default_duty": default_duty(t),
+            "duties": [r["duty"] for r in t["speeds"]], "distance_min_m": DISTANCE_MIN_M,
+            "distance_limit_m": distance_limit(way)}
     if duty is None:
         duty = default_duty(t)
     if type(duty) is not int:
@@ -168,15 +194,17 @@ def plan(table: dict, terrain, duty, distance_m, factor: float = 1.0, correction
     lag = start_lag_s(table)
     coast, coast_grade = coast_m(table, duty, v)
     lag_grade = _lag_point(table)["grade"] if duty == 100 else "가정"
-    corr = dict(correction(t["key"], duty)) if correction is not None else no_correction(float(factor))
+    corr = dict(correction(t["key"], duty, way)) if correction is not None else no_correction(float(factor))
+    corr["direction"] = way
     factor = min(FACTOR_MAX, max(FACTOR_MIN, float(corr["factor"])))
     corr["factor"] = round(factor, 3)
     drive_s = lag + (float(distance_m) / factor - coast) / v
     min_m = factor * model_distance(v, lag, coast, DRIVE_MIN_S)
-    max_m = min(DISTANCE_MAX_M, factor * model_distance(v, lag, coast, DRIVE_MAX_S))
+    limit = distance_limit(way)
+    max_m = min(limit, factor * model_distance(v, lag, coast, DRIVE_MAX_S))
     problem = None
-    if not DISTANCE_MIN_M <= distance_m <= DISTANCE_MAX_M:
-        problem = "distance_out_of_range"
+    if not DISTANCE_MIN_M <= distance_m <= limit:
+        problem = "distance_out_of_range_backward" if way == "backward" else "distance_out_of_range"
     elif drive_s < DRIVE_MIN_S:
         problem = "distance_too_short_for_duty"
     elif drive_s > DRIVE_MAX_S:
@@ -184,15 +212,18 @@ def plan(table: dict, terrain, duty, distance_m, factor: float = 1.0, correction
     return {
         "ok": problem is None, "problem": problem,
         **span, "terrain_label": t["label"], "day": t["day"],
-        "duty": duty, "throttle": duty, "pwm": duty_pwm(duty), "distance_m": round(float(distance_m), 3),
+        "duty": duty, "throttle": -duty if way == "backward" else duty, "pwm": duty_pwm(duty),
+        "distance_m": round(float(distance_m), 3),
         "drive_s": round(drive_s, 3), "expected_m": round(factor * model_distance(v, lag, coast, drive_s), 3),
         "min_distance_m": round(min_m, 2), "max_distance_m": round(max_m, 2),
         "factor": round(factor, 3), "correction": corr,
         "speed": speed,
         "lag": {"value": lag, "grade": lag_grade},
         "coast": {"value": coast, "grade": coast_grade},
-        "grade": _worst(speed["grade"], lag_grade, coast_grade),
-        "source": "2026-10 기록(조향 장치 전 차, ESP8266): %s %s" % (t["label"], t["day"]),
+        # the table was driven forward only: backward it is an assumption
+        "grade": _worst(speed["grade"], lag_grade, coast_grade, *(("가정",) if way == "backward" else ())),
+        "source": "2026-10 기록(조향 장치 전 차, ESP8266): %s %s%s" % (
+            t["label"], t["day"], " · 뒤로는 앞으로 잰 표를 그대로 씀(가정)" if way == "backward" else ""),
     }
 
 
@@ -206,6 +237,7 @@ def table_view(table: dict) -> dict:
                       "duties": [{k: r[k] for k in ("duty", "speed_m_s", "grade", "reference", "segments")}
                                  for r in t["speeds"]]} for t in table["terrains"]],
         "limits": {"distance_min_m": DISTANCE_MIN_M, "distance_max_m": DISTANCE_MAX_M,
+                   "distance_max_backward_m": DISTANCE_MAX_BACKWARD_M, "directions": list(DIRECTIONS),
                    "distance_default_m": DISTANCE_DEFAULT_M, "drive_min_s": DRIVE_MIN_S, "drive_max_s": DRIVE_MAX_S,
                    "factor_min": FACTOR_MIN, "factor_max": FACTOR_MAX, "hold_timeout_s": HOLD_TIMEOUT_S},
         "start_lag_s": start_lag_s(table),
@@ -213,10 +245,12 @@ def table_view(table: dict) -> dict:
 
 
 class CorrectionStore:
-    """Correction factors from the operator's tape measurements per terrain and duty (a small JSON file, like the
-    tuning log). The file format is the one of 2026-11-17: a list of samples per terrain, each with the duty it was
-    taken at; the factor of a duty uses only that duty's samples (2026-11-19). A sample without an integer duty is
-    kept in the file but not used. Each duty keeps its last SAMPLES_KEEP samples."""
+    """Correction factors from the operator's tape measurements per terrain, direction and duty (a small JSON file,
+    like the tuning log). The file format is the one of 2026-11-17: a list of samples per terrain, each with the duty it
+    was taken at; the factor of a duty uses only that duty's samples (2026-11-19). A backward sample carries
+    "direction": "backward"; a sample without a direction is a forward one (the files of 2026-11-17/19). A sample
+    without an integer duty is kept in the file but not used. Each direction and duty keeps its last SAMPLES_KEEP
+    samples."""
 
     def __init__(self, path):
         self.path = Path(path)
@@ -249,23 +283,32 @@ class CorrectionStore:
         duty = sample.get("duty") if isinstance(sample, dict) else None
         return duty if type(duty) is int else None
 
+    @staticmethod
+    def _direction_of(sample):
+        """'forward' (also without a direction), 'backward', or None for a damaged direction (not used)."""
+        value = sample.get("direction") if isinstance(sample, dict) else None
+        return "forward" if value is None else value if value in DIRECTIONS else None
+
     @classmethod
-    def _by_duty(cls, samples: list) -> dict:
-        """The usable samples of one terrain by duty (an integer duty and a finite positive ratio)."""
+    def _by_duty(cls, samples: list, direction: str = "forward") -> dict:
+        """The usable samples of one terrain and direction by duty (an integer duty and a finite positive ratio)."""
         out = {}
         for s in samples:
             ratio = s.get("ratio") if isinstance(s, dict) else None
             if cls._duty_of(s) is None or isinstance(ratio, bool) or not isinstance(ratio, (int, float)) \
-                    or not math.isfinite(ratio) or ratio <= 0:
+                    or not math.isfinite(ratio) or ratio <= 0 or cls._direction_of(s) != direction:
                 continue
             out.setdefault(s["duty"], []).append(s)
         return out
 
     @classmethod
-    def correction_of(cls, samples: list, duty) -> dict:
-        """The correction at a duty: its own samples, else the nearest measured duty's (a tie goes to the duty with
-        more samples, then the lower one), else 1.0. from_duty names the duty whose samples were used."""
-        by = cls._by_duty(samples)
+    def correction_of(cls, samples: list, duty, direction: str = "forward") -> dict:
+        """The correction at a duty in one direction: its own samples, else the nearest measured duty's of the same
+        direction (a tie goes to the duty with more samples, then the lower one), else 1.0. from_duty names the duty
+        whose samples were used. The other direction's samples are never borrowed."""
+        if direction not in DIRECTIONS:
+            return no_correction()
+        by = cls._by_duty(samples, direction)
         if type(duty) is not int or not by:
             return no_correction()
         source = min(by, key=lambda d: (abs(d - duty), -len(by[d]), d))
@@ -276,13 +319,13 @@ class CorrectionStore:
         entry = self._read()["terrains"].get(terrain) if isinstance(terrain, str) else None
         return entry.get("samples", []) if isinstance(entry, dict) else []
 
-    def correction(self, terrain, duty) -> dict:
+    def correction(self, terrain, duty, direction: str = "forward") -> dict:
         with self._lock:
             samples = self._samples(terrain)
-        return self.correction_of(samples, duty)
+        return self.correction_of(samples, duty, direction)
 
-    def factor(self, terrain, duty) -> float:
-        return self.correction(terrain, duty)["factor"]
+    def factor(self, terrain, duty, direction: str = "forward") -> float:
+        return self.correction(terrain, duty, direction)["factor"]
 
     def view(self) -> dict:
         with self._lock:
@@ -292,7 +335,9 @@ class CorrectionStore:
             samples = entry.get("samples", []) if isinstance(entry, dict) else []
             out[key] = {"samples": len(samples), "last": samples[-FACTOR_SAMPLES:],
                         "duties": [{"duty": duty, "factor": self._factor(rows), "samples": len(rows)}
-                                   for duty, rows in sorted(self._by_duty(samples).items())]}
+                                   for duty, rows in sorted(self._by_duty(samples).items())],
+                        "backward_duties": [{"duty": duty, "factor": self._factor(rows), "samples": len(rows)}
+                                            for duty, rows in sorted(self._by_duty(samples, "backward").items())]}
         return out
 
     def add(self, terrain: str, sample: dict) -> dict:
@@ -301,22 +346,29 @@ class CorrectionStore:
             entry = data["terrains"].setdefault(terrain, {"samples": []})
             samples = entry.get("samples", []) + [sample]
             count, keep = {}, []
-            for s in reversed(samples):                 # the last SAMPLES_KEEP of each duty
-                duty = self._duty_of(s)
-                count[duty] = count.get(duty, 0) + 1
-                if count[duty] <= SAMPLES_KEEP:
+            for s in reversed(samples):                 # the last SAMPLES_KEEP of each direction and duty
+                group = (self._direction_of(s), self._duty_of(s))
+                count[group] = count.get(group, 0) + 1
+                if count[group] <= SAMPLES_KEEP:
                     keep.append(s)
             entry["samples"] = keep[::-1]
             self._write(data)
         return self.view()
 
-    def reset(self, terrain: str | None = None) -> dict:
+    def reset(self, terrain: str | None = None, direction: str | None = None) -> dict:
+        """Forget the samples of one terrain (all of them, or only one direction's), or of every terrain."""
         with self._lock:
             data = self._read()
             if terrain is None:
                 data["terrains"] = {}
-            else:
+            elif direction is None:
                 data["terrains"].pop(terrain, None)
+            else:
+                entry = data["terrains"].get(terrain)
+                if isinstance(entry, dict):
+                    entry["samples"] = [s for s in entry.get("samples", []) if self._direction_of(s) != direction]
+                    if not entry["samples"]:
+                        data["terrains"].pop(terrain, None)
             self._write(data)
         return self.view()
 
@@ -352,6 +404,7 @@ class MoveRunner:
             elapsed = max(0.0, end - m["started_at"])
             p = m["plan"]
             out = {"id": m["id"], "state": m["state"], "reason": m["reason"], "terrain": p["terrain"],
+                   "direction": p.get("direction", "forward"),
                    "duty": p["duty"], "distance_m": p["distance_m"], "planned_s": p["drive_s"],
                    "elapsed_s": round(elapsed, 3), "expected_m": p["expected_m"], "factor": p["factor"],
                    "taken": m["taken"], "feedback_open": m["state"] in ("finished", "closed") and
@@ -435,10 +488,13 @@ class MoveRunner:
                       "actual_m": round(float(actual_m), 3), "model_m": round(model, 3),
                       "drive_s": p["drive_s"], "elapsed_s": round(elapsed, 3), "duty": p["duty"],
                       "requested_m": p["distance_m"], "factor": p["factor"]}
+            direction = p.get("direction", "forward")
+            if direction != "forward":
+                sample["direction"] = direction           # forward samples stay as in the 2026-11-17 files
             m["feedback_done"] = True
         view = store.add(p["terrain"], sample)
         return {"ok": True, "sample": sample, "corrections": view,
-                "correction": store.correction(p["terrain"], p["duty"])}
+                "correction": store.correction(p["terrain"], p["duty"], direction)}
 
     def _own(self, session, move_id):
         m = self.move

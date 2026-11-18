@@ -30,9 +30,11 @@ class DistanceRoutes(unittest.TestCase):
         self.assertTrue(reply and reply['ok'], reply)
         return reply
 
-    def start(self, chain, terrain='road_paved', duty=40, distance=1.0, client=None):
+    def start(self, chain, terrain='road_paved', duty=40, distance=1.0, client=None, direction=None):
         body = {'terrain': terrain, 'duty': duty, 'distance_m': distance, 'lease': chain['lease'],
                 'ticket': chain['ticket'], 'seq': chain['seq'], 'steer_mrad': 0}
+        if direction is not None:
+            body['direction'] = direction
         return (client or self.page).post('/api/rover/distance/start', body)
 
     def hold_until_done(self, move_id, limit_s=8.0):
@@ -134,6 +136,39 @@ class Routes(DistanceRoutes):
             self.assertEqual((reply['plan']['correction']['from_duty'], reply['plan']['correction']['exact']), (40, exact))
             self.assertGreater(reply['plan']['factor'], 1.0)
         status, reply = self.page.post('/api/rover/distance/reset', {'terrain': 'road_paved'})
+        self.assertEqual(reply['corrections'], {})
+
+    def test_backward_move(self):
+        """2026-11-19: direction 'backward' plans and drives in reverse, at most 2 m, with its own tape corrections."""
+        plan = lambda body: self.page.post('/api/rover/distance/plan', {'terrain': 'road_paved', 'duty': 40, **body})[1]
+        reply = plan({'distance_m': 1.0, 'direction': 'backward'})
+        self.assertTrue(reply['ok'], reply)
+        self.assertEqual((reply['plan']['direction'], reply['plan']['throttle'], reply['plan']['pwm']), ('backward', -40, 102))
+        self.assertEqual(plan({'distance_m': 2.5, 'direction': 'backward'})['plan']['problem'], 'distance_out_of_range_backward')
+        self.assertTrue(plan({'distance_m': 2.5})['ok'], 'forward keeps its 3 m')
+        self.assertEqual(plan({'distance_m': 1.0, 'direction': 'up'})['plan']['problem'], 'distance_direction_invalid')
+        status, reply = self.start({'lease': 'x', 'ticket': 'y', 'seq': 0}, distance=2.5, direction='backward')
+        self.assertEqual(reply['error'], 'distance_out_of_range_backward')
+        status, reply = self.start({'lease': 'x', 'ticket': 'y', 'seq': 0}, direction='backward')
+        self.assertEqual(reply['error'], 'distance_needs_arm', 'Arm first, as forward')
+        armed = self.arm()
+        status, reply = self.start(armed, direction='backward')
+        self.assertTrue(reply['ok'], reply)
+        time.sleep(0.3)
+        with self.stack.lock:
+            self.assertEqual(self.stack.fake.drive(), {2: -102, 3: -102}, 'reverse')
+        done = self.hold_until_done(reply['move']['id'])
+        self.assertEqual((done['move']['reason'], done['move']['direction']), ('planned', 'backward'))
+        status, reply = self.page.post('/api/rover/distance/feedback', {'move_id': done['move']['id'], 'actual_m': 0.9})
+        self.assertTrue(reply['ok'], reply)
+        status, view = self.page.get_json('/api/rover/distance')
+        corr = view['corrections']['road_paved']
+        self.assertEqual(([d['duty'] for d in corr['backward_duties']], corr['duties']), ([40], []))
+        self.assertEqual(plan({'distance_m': 1.0})['plan']['correction']['samples'], 0, 'forward does not borrow it')
+        self.assertEqual(plan({'distance_m': 1.0, 'direction': 'backward'})['plan']['correction']['samples'], 1)
+        status, reply = self.page.post('/api/rover/distance/reset', {'terrain': 'road_paved', 'direction': 'sideways'})
+        self.assertEqual(reply['error'], 'distance_direction_invalid')
+        status, reply = self.page.post('/api/rover/distance/reset', {'terrain': 'road_paved', 'direction': 'backward'})
         self.assertEqual(reply['corrections'], {})
 
     def test_lost_heartbeat_and_stop(self):

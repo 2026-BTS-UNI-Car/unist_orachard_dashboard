@@ -159,7 +159,7 @@ class Planner(unittest.TestCase):
             old_factor = 1.29                                     # 3dba62c: median of the terrain's last 5 samples
             p = dd.plan(TABLE, 'road_paved', None, 1.0, correction=store.correction)
             self.assertEqual(p['drive_s'], dd.plan(TABLE, 'road_paved', 40, 1.0, factor=old_factor)['drive_s'])
-            self.assertEqual(p['correction'], {'factor': 1.29, 'samples': 3, 'from_duty': 40, 'exact': True})
+            self.assertEqual(p['correction'], {'factor': 1.29, 'samples': 3, 'from_duty': 40, 'exact': True, 'direction': 'forward'})
             store.add('road_paved', {'ratio': 0.8, 'duty': 88})   # another speed's sample leaves the default alone
             self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 1.0, correction=store.correction)['drive_s'], p['drive_s'])
 
@@ -168,11 +168,11 @@ class Planner(unittest.TestCase):
             store = dd.CorrectionStore(Path(tmp) / 'corr.json')
             store.add('road_paved', {'ratio': 1.2, 'duty': 40})
             p = dd.plan(TABLE, 'road_paved', 70, 1.5, correction=store.correction)
-            self.assertEqual(p['correction'], {'factor': 1.2, 'samples': 1, 'from_duty': 40, 'exact': False})
+            self.assertEqual(p['correction'], {'factor': 1.2, 'samples': 1, 'from_duty': 40, 'exact': False, 'direction': 'forward'})
             self.assertEqual(p['factor'], 1.2)
             self.assertAlmostEqual(p['expected_m'], 1.5, places=2)
             none = dd.plan(TABLE, 'orchard_row_1010', 90, 2.0, correction=store.correction)
-            self.assertEqual(none['correction'], {'factor': 1.0, 'samples': 0, 'from_duty': None, 'exact': False})
+            self.assertEqual(none['correction'], {'factor': 1.0, 'samples': 0, 'from_duty': None, 'exact': False, 'direction': 'forward'})
 
     def test_cap_duty(self):
         self.assertEqual([dd.cap_duty(c) for c in (255, 153, 120, 102, 0)], [100, 60, 47, 40, 0])
@@ -193,6 +193,30 @@ class Planner(unittest.TestCase):
         self.assertEqual((row['duty_min'], row['duty_max'], row['default_duty']), (90, 100, 90))
         self.assertEqual(view['limits']['distance_default_m'], 1.0)
         self.assertIn('not been measured', view['not_measured'])
+        self.assertEqual((view['limits']['distance_max_backward_m'], view['limits']['directions']), (2.0, ['forward', 'backward']))
+
+    def test_backward_plan(self):
+        """2026-11-19: backward = the same duty with a negative throttle, at most 2 m, the table as an assumption."""
+        fwd = dd.plan(TABLE, 'road_paved', 40, 1.0)
+        back = dd.plan(TABLE, 'road_paved', 40, 1.0, direction='backward')
+        self.assertIsNone(back['problem'])
+        self.assertEqual((back['direction'], back['throttle'], back['pwm'], back['duty']), ('backward', -40, 102, 40))
+        self.assertEqual((fwd['direction'], fwd['throttle']), ('forward', 40))
+        self.assertEqual(back['drive_s'], fwd['drive_s'], 'the forward table is used as it is')
+        self.assertEqual(back['grade'], '가정')
+        self.assertIn('가정', back['source'])
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 1.0, direction=None), fwd, 'no direction = forward')
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 1.0, direction='forward'), fwd)
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 2.0, direction='backward')['problem'], None)
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 2.01, direction='backward')['problem'], 'distance_out_of_range_backward')
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 2.5, direction='forward')['problem'], None, 'forward keeps 3 m')
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 0.1, direction='backward')['problem'], 'distance_out_of_range_backward')
+        self.assertLessEqual(dd.plan(TABLE, 'road_paved', 58, 1.0, direction='backward')['max_distance_m'], 2.0)
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 58, 1.0, direction='backward')['distance_limit_m'], 2.0)
+        self.assertEqual(dd.plan(TABLE, 'road_paved', 100, 1.0, direction='backward')['problem'], 'distance_too_short_for_duty')
+        for bad in ('left', 'BACKWARD', 1, True, ''):
+            self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 1.0, direction=bad)['problem'], 'distance_direction_invalid', bad)
+        json.dumps(back, allow_nan=False)
 
 
 class Store(unittest.TestCase):
@@ -258,6 +282,38 @@ class Store(unittest.TestCase):
                              'a busy speed does not push out the samples of another')
             self.assertEqual(store.factor('road_paved', 40), round(1.0 + (dd.SAMPLES_KEEP + 2) / 100, 3))
 
+    def test_backward_corrections_are_their_own(self):
+        """Per direction and duty; a backward plan never borrows a forward sample; old samples count as forward."""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = dd.CorrectionStore(Path(tmp) / 'corr.json')
+            for ratio in (1.2, 1.3, 1.25):
+                store.add('road_paved', {'ratio': ratio, 'duty': 40})                          # forward (no direction)
+            self.assertEqual(store.correction('road_paved', 40, 'backward'), dd.no_correction(),
+                             'no backward sample: 1.0, not the forward factor')
+            p = dd.plan(TABLE, 'road_paved', 40, 1.0, correction=store.correction, direction='backward')
+            self.assertEqual(p['correction'], {'factor': 1.0, 'samples': 0, 'from_duty': None, 'exact': False,
+                                               'direction': 'backward'})
+            store.add('road_paved', {'ratio': 0.8, 'duty': 40, 'direction': 'backward'})
+            store.add('road_paved', {'ratio': 0.9, 'duty': 58, 'direction': 'backward'})
+            store.add('road_paved', {'ratio': 5.0, 'duty': 40, 'direction': 'sideways'})          # damaged: not used
+            c = store.correction
+            self.assertEqual(c('road_paved', 40), {'factor': 1.25, 'samples': 3, 'from_duty': 40, 'exact': True})
+            self.assertEqual(c('road_paved', 40, 'backward'), {'factor': 0.8, 'samples': 1, 'from_duty': 40, 'exact': True})
+            self.assertEqual(c('road_paved', 55, 'backward')['from_duty'], 58, 'borrowed within the direction')
+            self.assertEqual(c('road_paved', 55)['from_duty'], 40)
+            self.assertEqual(c('road_paved', 40, 'up'), dd.no_correction())
+            view = store.view()['road_paved']
+            self.assertEqual(view['duties'], [{'duty': 40, 'factor': 1.25, 'samples': 3}])
+            self.assertEqual(view['backward_duties'], [{'duty': 40, 'factor': 0.8, 'samples': 1},
+                                                       {'duty': 58, 'factor': 0.9, 'samples': 1}])
+            store.reset('road_paved', 'backward')
+            self.assertEqual(store.view()['road_paved']['backward_duties'], [])
+            self.assertEqual(c('road_paved', 40)['samples'], 3, 'a backward reset leaves the forward samples')
+            store.reset('road_paved', 'forward')
+            self.assertEqual(store.view()['road_paved']['duties'], [])
+            store.reset('road_paved')
+            self.assertEqual(store.view(), {})
+
     def test_a_file_of_2026_11_17_reads_per_duty(self):
         """The 11-17 feedback wrote every sample with its duty: those files need no change."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -290,8 +346,8 @@ class MoveRig(Rig):
         self.bridge.step()
         return future.result(timeout=0)
 
-    def start(self, terrain='road_paved', duty=40, distance=1.0):
-        self.plan = dd.plan(TABLE, terrain, duty, distance)
+    def start(self, terrain='road_paved', duty=40, distance=1.0, direction=None):
+        self.plan = dd.plan(TABLE, terrain, duty, distance, direction=direction)
         chain = {'lease': self.lease, 'ticket': self.ticket, 'seq': self.seq}
         self.drive_ms0 = self.fake.drive_on_ms
         # the page holds the steering where it is (after arm its target is the measured angle)
@@ -417,6 +473,42 @@ class Runner(unittest.TestCase):
         self.assertEqual((final['move']['reason'], final['move']['duty']), ('planned', 50))
         self.assertAlmostEqual(rig.drive_s(), rig.plan['drive_s'], delta=0.05)
         self.assertLess(rig.plan['drive_s'], dd.plan(TABLE, 'road_paved', 40, 1.5)['drive_s'], 'faster: shorter')
+
+    def test_backward_drives_reverse_for_the_planned_time(self):
+        rig = self.rig
+        reply = rig.start(distance=1.0, direction='backward')
+        self.assertTrue(reply['ok'], reply)
+        self.assertEqual(reply['move']['direction'], 'backward')
+        self.assertEqual(rig.fake.drive(), {2: -102, 3: -102}, 'duty 40 % backward -> PWM 102 in reverse on both motors')
+        final = rig.drive(rig.plan['drive_s'] + 0.5)
+        self.assertEqual((final['move']['reason'], final['move']['direction']), ('planned', 'backward'))
+        self.assertAlmostEqual(rig.drive_s(), rig.plan['drive_s'], delta=0.05)
+        self.assertEqual(rig.fake.drive(), {2: 0, 3: 0})
+        self.assertIn('chain', final)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = dd.CorrectionStore(Path(tmp) / 'corr.json')
+            fb = rig.runner.feedback(rig.session, final['move']['id'], 0.9, store)
+            self.assertTrue(fb['ok'], fb)
+            self.assertEqual(fb['sample']['direction'], 'backward')
+            self.assertEqual((fb['correction']['from_duty'], fb['correction']['exact']), (40, True))
+            self.assertEqual(store.view()['road_paved']['duties'], [], 'not a forward correction')
+            self.assertEqual(len(store.view()['road_paved']['backward_duties']), 1)
+
+    def test_backward_release_and_stop(self):
+        rig = self.rig
+        rig.start(distance=2.0, direction='backward')
+        final = rig.drive(1.0, release_at=0.5)
+        self.assertEqual(final['move']['reason'], 'released')
+        self.assertAlmostEqual(rig.drive_s(), 0.5, delta=0.05)
+        self.assertEqual(rig.fake.drive(), {2: 0, 3: 0})
+        rig.ticket, rig.seq = final['chain']['ticket'], final['chain']['seq']
+        rig.start(distance=2.0, direction='backward')
+        rig.drive(0.3)
+        rig.runner.abort('operator_stop')
+        rig.bridge.request({'op': 'stop', 'reason': 'operator_stop'})
+        rig.drive(0.3, hold_every=None)
+        self.assertEqual(rig.fake.drive(), {2: 0, 3: 0})
+        self.assertEqual(rig.runner.move['state'], 'stopped')
 
     def test_a_stale_chain_is_refused_by_the_bridge(self):
         rig = self.rig
