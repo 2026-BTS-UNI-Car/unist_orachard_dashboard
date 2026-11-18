@@ -620,6 +620,8 @@ class RecordingState:
         topics = [
             self.args.cmd_topic,
             self.args.rover_status_topic,
+            # Steering state of the ESP32-S3 bridge (every firmware STATUS line, about 9 Hz; /rover/status is 2 Hz).
+            getattr(self.args, "steering_topic", "/rover/steering/state"),
             MOTOR_REQUESTED_TOPIC,
             MOTOR_APPLIED_TOPIC,
             self.args.odom_topic,
@@ -1277,6 +1279,10 @@ def main() -> int:
     parser.add_argument(
         "--rover-status-topic",
         default=os.environ.get("ROVER_STATUS_TOPIC", "/rover/status"),
+    )
+    parser.add_argument(
+        "--steering-topic",
+        default=os.environ.get("ROVER_STEERING_TOPIC", "/rover/steering/state"),
     )
     parser.add_argument("--odom-topic", default=os.environ.get("ODOM_TOPIC", "/odom"))
     parser.add_argument(

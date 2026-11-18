@@ -90,6 +90,8 @@ class DataRecorderCameraPipelineTests(unittest.TestCase):
                 self.assertEqual(frame['raw']['stamp'],{'sec':123,'nanosec':456})
                 self.assertFalse(frame['processing']['start_reference'])
             self.assertIn('/imu/data_raw',state.topics_for('both'))
+            self.assertIn('/rover/steering/state',state.topics_for('both'))
+            self.assertIn('/rover/steering/state',state.topics_for('lidar', include_imu=False, include_gps=False))
             self.assertIn('/imu/data',state.topics_for('both'))
             self.assertNotIn('/orchard/imu/calibration',state.topics_for('both'))
             timeline = state.timeline_payload(state.active,{},1.)
