@@ -74,6 +74,44 @@ def safe_id(value: str) -> str:
 
 
 class RecordingState:
+    # 2026-11-19 (user: every sensor selectable one by one; autonomy recordings kept apart). Kept inside the class:
+    # tests/test_recorder_durability.py runs the class without the module's other definitions.
+    SENSOR_GROUPS = ("lidar", "camera", "imu", "gps", "drive", "steering", "executor", "tf")
+    RECORDING_TAGS = ("manual", "autonomy")
+    EXECUTOR_STATE_TOPIC = "/row_executor/state"   # the row executor's internals (JSON, ubts.row_executor.state.v1)
+
+    @staticmethod
+    def sensor_plan(sensors):
+        """(kind, include_imu, include_gps, sensors) for a sensor list, or (None, None, None, error code). The mapping
+        and media pipelines key on kind (lidar / camera / both), so one of lidar or camera is required."""
+        groups = RecordingState.SENSOR_GROUPS
+        if not isinstance(sensors, (list, tuple)) or not all(isinstance(s, str) for s in sensors):
+            return None, None, None, "sensors_invalid"
+        chosen = [s.strip().lower() for s in sensors]
+        unknown = [s for s in chosen if s not in groups]
+        if unknown:
+            return None, None, None, "unknown_sensor:" + ",".join(unknown[:4])
+        chosen = [s for s in groups if s in chosen]
+        lidar, camera = "lidar" in chosen, "camera" in chosen
+        if not (lidar or camera):
+            return None, None, None, "sensors_need_lidar_or_camera"
+        kind = "both" if lidar and camera else ("lidar" if lidar else "camera")
+        return kind, "imu" in chosen, "gps" in chosen, chosen
+
+    @staticmethod
+    def legacy_sensors(kind, include_imu=True, include_gps=True):
+        """The sensor groups an old-style recording (kind + include flags) covers."""
+        chosen = {"drive", "steering", "executor", "tf"}
+        if kind in ("lidar", "both"):
+            chosen.add("lidar")
+        if kind in ("camera", "both"):
+            chosen.add("camera")
+        if include_imu:
+            chosen.add("imu")
+        if include_gps:
+            chosen.add("gps")
+        return [s for s in RecordingState.SENSOR_GROUPS if s in chosen]
+
     def __init__(self, args: argparse.Namespace):
         self.args = args
         self.lock = threading.Lock()
@@ -151,6 +189,8 @@ class RecordingState:
                                  active) if active else {}),
                 "duration_s": active.get("duration_s"),
                 "rosbag_topics": list(active.get("topics") or []),
+                "tag": active.get("tag"),
+                "sensors": active.get("sensors"),
                 "archive_dir": str(self.archive_dir),
                 "archive_count": len(self.list_recordings()["recordings"]),
                 "rosbag_pid": self.process.pid
@@ -238,6 +278,9 @@ class RecordingState:
                     {
                         "id": metadata.get("id") or path.name,
                         "kind": metadata.get("kind") or "unknown",
+                        "tag": metadata.get("tag") or "manual",
+                        "sensors": metadata.get("sensors") or self.legacy_sensors(
+                            metadata.get("kind"), metadata.get("include_imu", True), metadata.get("include_gps", True)),
                         "state": metadata.get("state") or "archived",
                         "started_at": metadata.get("started_at"),
                         **display_clock(path, metadata),
@@ -297,8 +340,18 @@ class RecordingState:
         }
 
     def start(
-        self, kind: str, include_imu: bool = True, include_gps: bool = True
+        self, kind: str, include_imu: bool = True, include_gps: bool = True, sensors=None, tag=None
     ) -> dict[str, Any]:
+        tag = "manual" if tag is None else str(tag).strip().lower()
+        if tag not in self.RECORDING_TAGS:
+            return {"ok": False, "state": "invalid_tag", "error": "tag must be manual or autonomy"}
+        if sensors is not None:
+            planned_kind, planned_imu, planned_gps, chosen = self.sensor_plan(sensors)
+            if planned_kind is None:
+                return {"ok": False, "state": "invalid_sensors", "error": chosen}
+            kind, include_imu, include_gps = planned_kind, planned_imu, planned_gps
+        else:
+            chosen = None
         kind = kind.strip().lower()
         if kind not in {"lidar", "camera", "both"}:
             return {
@@ -332,12 +385,16 @@ class RecordingState:
             sync_directory(root.parent)
             include_imu = bool(include_imu)
             include_gps = bool(include_gps)
+            if chosen is None:
+                chosen = self.legacy_sensors(kind, include_imu, include_gps)
             topics = self.topics_for(
-                kind, include_imu=include_imu, include_gps=include_gps
+                kind, include_imu=include_imu, include_gps=include_gps, sensors=chosen
             )
             metadata = {
                 "id": recording_id,
                 "kind": kind,
+                "tag": tag,
+                "sensors": list(chosen),
                 "include_imu": include_imu,
                 "include_gps": include_gps,
                 "include_motor": True,
@@ -615,8 +672,10 @@ class RecordingState:
             return None
 
     def topics_for(
-        self, kind: str, *, include_imu: bool = True, include_gps: bool = True
+        self, kind: str, *, include_imu: bool = True, include_gps: bool = True, sensors=None
     ) -> list[str]:
+        if sensors is not None:
+            return self._topics_for_sensors(sensors)
         topics = [
             self.args.cmd_topic,
             self.args.rover_status_topic,
@@ -654,6 +713,24 @@ class RecordingState:
         return list(
             dict.fromkeys((topic for topic in topics if str(topic or "").strip()))
         )
+
+    def _topics_for_sensors(self, sensors) -> list[str]:
+        """The rosbag topics of a sensor group list (SENSOR_GROUPS)."""
+        groups = {
+            "drive": [self.args.cmd_topic, self.args.rover_status_topic, MOTOR_REQUESTED_TOPIC, MOTOR_APPLIED_TOPIC],
+            "steering": [getattr(self.args, "steering_topic", "/rover/steering/state")],
+            "tf": [self.args.odom_topic, self.args.tf_topic, self.args.tf_static_topic],
+            "imu": [self.args.imu_raw_topic, self.args.imu_relay_topic, self.args.imu_mag_topic,
+                    self.args.imu_driver_status_topic],
+            "gps": ["/gps/fix", "/gps/data", "/gps/driver_status"],
+            "lidar": [self.args.scan_topic],
+            "camera": [self.args.camera_topic, self.args.camera_compressed_topic,
+                       getattr(self.args, "camera_recording_topic", "/camera/recording/jpeg"),
+                       self.args.camera_info_topic, self.args.camera_preview_info_topic],
+            "executor": [getattr(self.args, "executor_state_topic", self.EXECUTOR_STATE_TOPIC)],
+        }
+        topics = [topic for group in self.SENSOR_GROUPS if group in sensors for topic in groups[group]]
+        return list(dict.fromkeys((topic for topic in topics if str(topic or "").strip())))
 
     def record_mapping_sensor(self, topic, message, receipt=None):
         with self.lock:
@@ -1193,6 +1270,8 @@ class Handler(BaseHTTPRequestHandler):
                     str(payload.get("kind") or ""),
                     include_imu=include_imu,
                     include_gps=include_gps,
+                    sensors=payload.get("sensors"),
+                    tag=payload.get("tag"),
                 )
             )
         elif self.path == "/stop":

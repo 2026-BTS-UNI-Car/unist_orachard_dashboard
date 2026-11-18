@@ -1109,6 +1109,26 @@ class TelemetryProvider:
         }
 
     def start_recording(self, payload: dict[str, Any]) -> dict[str, Any]:
+        # 2026-11-19: {sensors: [...], tag: manual|autonomy} (one checkbox per sensor; autonomy runs apart); the
+        # recorder validates the list (scripts/data_recorder_service.sensor_plan). The old kind request still works.
+        sensors = payload.get("sensors")
+        tag = payload.get("tag")
+        if sensors is not None or tag is not None:
+            if sensors is not None and (not isinstance(sensors, list) or len(sensors) > 16
+                                        or not all(isinstance(s, str) and len(s) <= 16 for s in sensors)):
+                return {"ok": False, "state": "invalid_sensors", "error": "sensors must be a list of names"}
+            if tag is not None and tag not in ("manual", "autonomy"):
+                return {"ok": False, "state": "invalid_tag", "error": "tag must be manual or autonomy"}
+            body: dict[str, Any] = {"kind": str(payload.get("kind") or "lidar")}
+            if sensors is not None:
+                body["sensors"] = sensors
+            if tag is not None:
+                body["tag"] = tag
+            result = self._recorder_post("/start", body)
+            if result.get("ok"):
+                return result
+            return {"ok": False, "state": result.get("state") or "recorder_unavailable",
+                    "error": result.get("error"), "status": self.recording_status()}
         kind = str(payload.get("kind") or "").strip().lower()
         if kind not in {"lidar", "camera", "both"}:
             return {

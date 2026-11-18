@@ -271,3 +271,29 @@ class DurabilityTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+
+class RecordingSensorChoiceTests(unittest.TestCase):
+    """2026-11-19: one checkbox per sensor and a manual / autonomy tag (no ROS needed: the AST namespace)."""
+
+    def test_sensor_plan_and_legacy(self):
+        RS = recorder_namespace()['RecordingState']
+        self.assertEqual(RS.sensor_plan(["lidar", "imu", "executor"])[:3], ("lidar", True, False))
+        self.assertEqual(RS.sensor_plan(["camera", "lidar", "gps"])[:3], ("both", False, True))
+        self.assertEqual(RS.sensor_plan(["imu", "gps"])[3], "sensors_need_lidar_or_camera")
+        self.assertTrue(RS.sensor_plan(["lidar", "radar"])[3].startswith("unknown_sensor"))
+        self.assertEqual(RS.sensor_plan("lidar")[3], "sensors_invalid")
+        self.assertIn("executor", RS.legacy_sensors("lidar"))
+        self.assertNotIn("camera", RS.legacy_sensors("lidar"))
+
+    def test_topics_tag_and_metadata(self):
+        ns = recorder_namespace()
+        with tempfile.TemporaryDirectory() as temp:
+            state = ns['RecordingState'](state_args(Path(temp)))
+            topics = state._topics_for_sensors(["lidar", "executor"])
+            self.assertIn(state.args.scan_topic, topics)
+            self.assertIn("/row_executor/state", topics)
+            self.assertNotIn(state.args.imu_raw_topic, topics)
+            self.assertEqual(state.start("lidar", sensors=["imu"])["state"], "invalid_sensors")
+            self.assertEqual(state.start("lidar", tag="field")["state"], "invalid_tag")
