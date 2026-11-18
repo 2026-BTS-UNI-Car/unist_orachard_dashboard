@@ -13,7 +13,9 @@
 export const STATUS_MS = 500;
 export const SHARED_MAX_AGE_MS = 1000;
 export const NOTICE_MS = 8000;           // the answer of this page's own request stays this long
-export const ACTIONS = ['set_center', 'find_left', 'find_right', 'apply', 'default'];
+export const ACTIONS = ['set_center', 'trim_left', 'trim_right', 'find_left', 'find_right', 'apply', 'default'];
+// Fine zero (2026-11-18): one press moves CAL CENTER by TRIM_COUNTS (about 0.2 deg); + = left (the POT rises to the left).
+export const TRIM_COUNTS = 5;
 const num = (value) => (typeof value === 'number' && isFinite(value) ? value : null);
 
 export const REASON_TEXT = {
@@ -22,7 +24,7 @@ export const REASON_TEXT = {
 };
 export const STORE_TEXT = { DEFAULT: '기본값', NVS: '저장됨', UNSAVED: '저장 안 됨' };
 export const ACTION_TEXT = {
-  set_center: '가운데 저장', find_left: '왼쪽 끝 찾기', find_right: '오른쪽 끝 찾기', apply: '적용', default: '기본값으로',
+  set_center: '가운데 저장', trim_left: '영점 왼쪽으로', trim_right: '영점 오른쪽으로', trim_center: '영점 미세 조정', find_left: '왼쪽 끝 찾기', find_right: '오른쪽 끝 찾기', apply: '적용', default: '기본값으로',
   read: '읽기',
 };
 // Refusals and job errors (scripts/esp32_abs_hold.py, scripts/esp32_steer_bridge.py) as the operator reads them.
@@ -173,7 +175,7 @@ export function calView(reply, margins = { left: 30, right: 30 }, notice = null)
     const name = ACTION_TEXT[last.action] || last.action;
     if (last.ok) {
       let text = `${name} 끝`;
-      if (last.action === 'apply' || last.action === 'default' || last.action === 'set_center') text += `: ${marksText(last.cal_after)} 저장`;
+      if (['apply', 'default', 'set_center', 'trim_center'].includes(last.action)) text += `: ${marksText(last.cal_after)} 저장`;
       if (last.action === 'find_left' || last.action === 'find_right') text += ': 적용 전(적용을 눌러야 쓰인다)';
       status = { kind: 'ok', text };
     } else {
@@ -280,8 +282,9 @@ export function initSteerCalibration(page, options = {}) {
 
   async function run(action) {
     if (posting || !view?.buttons[action]?.enabled) return;
-    if (!confirmFn(question(action))) return;
-    const body = { action };
+    const trim = action === 'trim_left' ? TRIM_COUNTS : action === 'trim_right' ? -TRIM_COUNTS : 0;
+    if (!trim && !confirmFn(question(action))) return;   // a trim moves no wheel: no question
+    const body = trim ? { action: 'trim_center', delta_counts: trim } : { action };
     if (action === 'apply') { const m = margins(); body.left_margin_counts = m.left; body.right_margin_counts = m.right; }
     posting = true;
     notice = { kind: 'testing', text: `${ACTION_TEXT[action]} 요청 중…`, at: now() };

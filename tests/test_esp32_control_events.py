@@ -30,7 +30,7 @@ class ControlEvents(unittest.TestCase):
         self.assertEqual(events(rig, 'armed')[-1]['armed'], True)
         self.assertTrue(rig.arm()['ok'])
         rig.fake.pot_invalid = True                      # a loose potentiometer contact (2026-11-18)
-        rig.run(0.5)
+        rig.run(1.0)                                     # longer than the 0.6 s blip grace
         self.assertEqual(events(rig, 'disarmed')[-1]['reason'], 'pot_invalid')
         self.assertIn('pot_invalid', [e['reason'] for e in events(rig, 'not_ready')])
         rig.fake.pot_invalid = False

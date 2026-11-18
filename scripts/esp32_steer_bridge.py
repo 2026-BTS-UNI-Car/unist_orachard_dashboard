@@ -227,7 +227,7 @@ class Esp32Bridge:
         if refusal:
             return {'ok': False, 'error': refusal}
         margins = {}
-        for key in ('left_margin_counts', 'right_margin_counts', 'pulse_ms'):
+        for key in ('left_margin_counts', 'right_margin_counts', 'pulse_ms', 'delta_counts'):
             if key in request:
                 margins[key] = request[key]
         result = self.motor.start_calibration(action, **margins)   # the owner (a session) is never stored
@@ -330,6 +330,9 @@ def build_parser():
     p.add_argument('--direction-verified', action='store_true',
                    default=os.environ.get('ROVER_ESP32_DIRECTION_VERIFIED', '0') == '1')
     p.add_argument('--max-drive-pwm', type=int, default=int(os.environ.get('ROVER_ESP32_MAX_DRIVE_PWM', '255')))
+    p.add_argument('--no-drive-ramp', dest='drive_ramp', action='store_false',
+                   default=os.environ.get('ROVER_ESP32_DRIVE_RAMP', '1') != '0',
+                   help='write drive steps at once (default: soft start and soft release)')
     p.add_argument('--drive-ttl-s', type=float, default=_env_float('ROVER_ESP32_DRIVE_TTL_S', esp.DRIVE_TTL_S))
     p.add_argument('--status-period-s', type=float,
                    default=_env_float('ROVER_ESP32_STATUS_PERIOD_S', esp.STATUS_PERIOD_S))
@@ -356,7 +359,8 @@ class Runner:
             self.transport, clock, left_forward=args.left_forward, right_forward=args.right_forward,
             max_drive_pwm=args.max_drive_pwm, drive_ttl_s=args.drive_ttl_s, status_period_s=args.status_period_s,
             angle_min_interval_s=args.angle_min_interval_s, angle_quantum_deg=args.angle_quantum_deg,
-            direction_verified=args.direction_verified, boot_wait_s=args.boot_wait_s)
+            direction_verified=args.direction_verified, boot_wait_s=args.boot_wait_s,
+            drive_ramp=args.drive_ramp)
         self.bridge = Esp32Bridge(self.motor, clock)
         self.server = None
         self.lock = None

@@ -251,6 +251,20 @@ class CalibrationTest(unittest.TestCase):
         self.assertEqual((rig.motor.cal['center'], rig.motor.cal['store']), (1925, 'NVS'))
         self.assertEqual(rig.fake.nvs['center'], 1925)
 
+    def test_trim_center_moves_the_centre_and_saves(self):
+        rig = CalRig(dict(pot=1925.0))
+        rig.ready()
+        before = rig.motor.cal['center']
+        reply, last, lines = rig.job('trim_center', delta_counts=5)
+        self.assertTrue(last['ok'], last)
+        self.assertEqual([line for line in lines if line.startswith('CAL')],
+                         ['CAL SET CENTER %d' % (before + 5), 'CAL SAVE'])
+        self.assertEqual((rig.motor.cal['center'], rig.motor.cal['store']), (before + 5, 'NVS'))
+        self.assertEqual(rig.fake.nvs['center'], before + 5)
+        self.assertEqual(rig.fake.drive_on_ms, 0)
+        for bad in (0, 41, -41, 2.5, '5', None):
+            self.assertEqual(rig.calibrate('trim_center', delta_counts=bad)['error'], 'calibration_trim_invalid', bad)
+
     def test_calibration_survives_a_board_reset_and_default_clears_it(self):
         rig = self.rig
         rig.job('find_left')

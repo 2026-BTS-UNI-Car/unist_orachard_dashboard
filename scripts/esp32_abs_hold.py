@@ -73,6 +73,10 @@ BOOT_WAIT_S = 3.0                 # after opening: wait this long for READY befo
 CONFIRM_WAIT_S = 1.5              # then: FW, a STATUS line and the STOP acknowledgement within this time
 ACK_TIMEOUT_S = 0.15              # a drive command without its 'OK: MOTOR n ...' line is written again after this
 STOP_CONFIRM_S = 0.6              # a stop without acknowledgement for this long: stop_unconfirmed latch, link reopened
+DRIVE_RAMP_UP_PWM_S = 150.0       # soft start (2026-11-18 field: 'sudden start'): 0 -> 153 in about 0.6..1 s
+DRIVE_RAMP_DOWN_PWM_S = 320.0     # soft release: the operator lets go / the input TTL ends; 153 -> 0 in ~0.5 s
+DRIVE_RAMP_FLOOR_PWM = 60         # a start jumps to this at once (below it the wheels do not turn; C2 ~ 87)
+DRIVE_RAMP_STEP_S = 0.05          # ramp update period (20 Hz lines while it changes)
 ZERO_REFRESH_S = 1.0              # '2 S' / '3 S' again while no drive is wanted
 RECONNECT_S = 2.0                 # retry period of a closed link
 ANGLE_MIN_INTERVAL_S = 0.5        # at most one new ANGLE target per this time (firmware settle 300 ms + one pulse)
@@ -113,9 +117,13 @@ CAL_HARD_RIGHT_MIN, CAL_HARD_LEFT_MAX = 1300, 2600
 CAL_CENTER_MIN, CAL_CENTER_MAX, CAL_MIN_SPAN = 1850, 2150, 150
 CAL_MARGIN_DEFAULT = 30           # counts inward of a found end (battery voltage and load headroom) [proposal]
 CAL_MARGIN_RANGE = (10, 120)
+POT_INVALID_GRACE_S = 0.6        # armed: a POT blip shorter than this keeps the lease (2026-11-18 field: loose
+                                 # contact / motor noise made 100 ms invalid blips end every drive); steering
+                                 # waits, the target is sent again once STATUS is valid. Disarmed: arm refused at once.
+CAL_TRIM_RANGE = (-40, 40)       # trim_center: CAL CENTER moves by this many counts at most per action
 CAL_USABLE_REASONS = ('REBOUND', 'NO_PROGRESS')   # the scan stopped at a stop; other endings are not applied
 CAL_MIN_TRAVEL = 20               # a found end must lie this far outward of where its scan started
-CAL_ACTIONS = ('find_left', 'find_right', 'set_center', 'apply', 'default', 'read')
+CAL_ACTIONS = ('find_left', 'find_right', 'set_center', 'trim_center', 'apply', 'default', 'read')
 CAL_FIND_PULSE_RANGE = (40, 100)  # 'CAL FIND LEFT 60' (SMOOTH firmware); without pulse_ms the firmware's 100 ms
 CAL_STOP_WAIT_S = 1.0             # the STOP before a job is acknowledged within this
 CAL_REPLY_S = 2.5                 # a CAL command answers within this (CAL CENTER measures for 650 ms)
@@ -488,7 +496,7 @@ class Esp32SteerMotor:
     def __init__(self, transport, clock=time.monotonic, *, left_forward='F', right_forward='F', max_drive_pwm=255,
                  drive_ttl_s=DRIVE_TTL_S, status_period_s=STATUS_PERIOD_S, angle_min_interval_s=ANGLE_MIN_INTERVAL_S,
                  angle_quantum_deg=ANGLE_QUANTUM_DEG, angle_max_jump_deg=ANGLE_MAX_JUMP_DEG, boot_wait_s=BOOT_WAIT_S,
-                 direction_verified=False):
+                 direction_verified=False, drive_ramp=False):
         for name, value in (('left_forward', left_forward), ('right_forward', right_forward)):
             if value not in ('F', 'R'):
                 raise ValueError('%s must be F or R' % name)
@@ -515,6 +523,7 @@ class Esp32SteerMotor:
         self.angle_max_jump_deg = float(angle_max_jump_deg)
         self.boot_wait_s = float(boot_wait_s)
         self.direction_verified = bool(direction_verified)
+        self.drive_ramp = bool(drive_ramp)   # soft start / soft release; safety stops stay immediate
         self.port = getattr(transport, 'port', None)
         self.identity = getattr(transport, 'identity', None)
         # link
@@ -556,10 +565,15 @@ class Esp32SteerMotor:
         self.status_seq = 0
         self.status_sent_at = None
         self.pot_invalid = False
+        self.pot_invalid_since = None   # first invalid POT of the current blip
+        self.pot_grace_over = False     # set by poll() when the blip outlasted POT_INVALID_GRACE_S
+        self.angle_blocked_by_pot = False
         self.events = []                # (time, kind, text) recent firmware events
         self.steer_event = None         # hold cancel / steering stop since the last ANGLE written
         # drive
         self.desired = {2: ('F', 0), 3: ('F', 0)}
+        self.ramp_out = dict(self.desired)
+        self.ramp_at = None
         self.acked = {2: None, 3: None}
         self.sent = {2: (None, None), 3: (None, None)}
         self.drive_until = 0.0
@@ -606,7 +620,7 @@ class Esp32SteerMotor:
             return 'esp32_not_ready'
         if self._status_stale(now):
             return 'steering_status_stale'
-        if self.pot_invalid:
+        if self.pot_invalid and not self._pot_blip(now):
             return 'pot_invalid'
         if self.stop_state == 'unconfirmed':
             return 'stop_unconfirmed'
@@ -645,6 +659,18 @@ class Esp32SteerMotor:
         ref = self.status_at if self.cal_ended_at is None else max(self.status_at, self.cal_ended_at)
         return now - ref > STATUS_STALE_S
 
+    def _pot_blip(self, now):
+        """True while an invalid POT is a short blip of an armed run (POT_INVALID_GRACE_S)."""
+        return self.enabled and self.pot_invalid_since is not None and not self.pot_grace_over
+
+    def _pot_went_invalid(self, now, text):
+        if not self.pot_invalid:
+            self._event(now, 'pot_invalid', text)
+            self.pot_invalid_since = now
+        self.pot_invalid = True
+        if not self._pot_blip(now):
+            self._request_stop('pot_invalid')
+
     def arm_blocker(self):
         if self.cal_job is not None:
             return 'calibrating'
@@ -665,6 +691,7 @@ class Esp32SteerMotor:
         now = self.clock()
         self.enabled = False if not for_arm else self.enabled
         self.desired = {2: (self.forward[2], 0), 3: (self.forward[3], 0)}
+        self.ramp_out = dict(self.desired)   # safety stop: no ramp
         self.drive_until = 0.0
         self.angle_req = None
         self.angle_sent = self.angle_sent_at = self.angle_stage = self.angle_blocked = None
@@ -677,7 +704,7 @@ class Esp32SteerMotor:
         self._guarded(now, self._write_stop, now)
 
     def release(self):
-        """Drive to zero, the steering target stays."""
+        """Drive to zero, the steering target stays (the operator let go: with drive_ramp a soft release)."""
         now = self.clock()
         self.desired = {2: (self.forward[2], 0), 3: (self.forward[3], 0)}
         self.drive_until = 0.0
@@ -746,6 +773,11 @@ class Esp32SteerMotor:
                         self._service_sm_query(now)
             if self.link == 'ready' and self.status_at is not None and self._status_stale(now):
                 self._request_stop('steering_status_stale')
+            if (self.pot_invalid and self.pot_invalid_since is not None and not self.pot_grace_over
+                    and now - self.pot_invalid_since >= POT_INVALID_GRACE_S):
+                self.pot_grace_over = True
+            if self.pot_invalid and not self._pot_blip(now):
+                self._request_stop('pot_invalid')
         except OSError as exc:
             self._link_fault(now, exc)
 
@@ -785,6 +817,9 @@ class Esp32SteerMotor:
         self.status = None
         self.status_at = None
         self.pot_invalid = False
+        self.pot_invalid_since = None
+        self.pot_grace_over = False
+        self.angle_blocked_by_pot = False
         self.acked = {2: None, 3: None}
         self.sent = {2: (None, None), 3: (None, None)}
         self.angle_sent = self.angle_sent_at = self.angle_stage = self.angle_blocked = None
@@ -814,6 +849,7 @@ class Esp32SteerMotor:
         self.counts['write_errors' if 'write' in str(exc) else 'read_errors'] += 1
         self._latch('hardware_fault', '%s' % exc)
         self.desired = {2: (self.forward[2], 0), 3: (self.forward[3], 0)}
+        self.ramp_out = dict(self.desired)   # safety stop: no ramp
         self.drive_until = 0.0
         self.angle_req = None
         try:
@@ -952,17 +988,21 @@ class Esp32SteerMotor:
             self.status = dict(f, at=now)
             self.status_at = now
             self.status_seq += 1
+            if self.pot_invalid:
+                self._event(now, 'pot_recovered', 'valid after %.2f s' % (now - (self.pot_invalid_since or now)))
             self.pot_invalid = False
+            self.pot_invalid_since = None
+            self.pot_grace_over = False
+            if self.angle_blocked_by_pot:
+                self.angle_blocked = None    # the hold was cancelled by the blip, not by the target: send it again
+                self.angle_blocked_by_pot = False
             self.counts['status'] += 1
             return
         if kind == 'status_invalid':
             self.status = dict(pot=f['pot'], invalid=True, hold=False, at=now)
             self.status_at = now
             self.status_seq += 1
-            if not self.pot_invalid:
-                self._event(now, 'pot_invalid', text)
-            self.pot_invalid = True
-            self._request_stop('pot_invalid')
+            self._pot_went_invalid(now, text)
             return
         if kind == 'ok_motor':
             motor = f['motor']
@@ -975,6 +1015,7 @@ class Esp32SteerMotor:
             for motor in DRIVE_MOTORS:
                 self.acked[motor] = (self.forward[motor], 0)
             self.desired = {2: (self.forward[2], 0), 3: (self.forward[3], 0)}
+            self.ramp_out = dict(self.desired)   # safety stop: no ramp
             self.drive_until = 0.0
             self._event(now, 'drive_watchdog', text)
             self._request_stop('mcu_drive_watchdog')
@@ -991,8 +1032,9 @@ class Esp32SteerMotor:
                 self.angle_blocked = self.angle_req
                 self.angle_stage = None
             if 'INVALID POT' in f['text'] or 'ADC STALE' in f['text']:
-                self.pot_invalid = True
-                self._request_stop('pot_invalid')
+                if kind == 'hold_cancelled' and self.angle_blocked is not None:
+                    self.angle_blocked_by_pot = True
+                self._pot_went_invalid(now, f['text'])
             return
         if kind == 'error':
             self.counts['errors'] += 1
@@ -1070,20 +1112,48 @@ class Esp32SteerMotor:
             self._close_transport('stop_unconfirmed')
             self.reconnect_at = now + RECONNECT_S
 
+    def _ramp_targets(self, now):
+        """The output to write now: self.desired, or (drive_ramp) a step toward it. A reversal ramps down first."""
+        if not self.drive_ramp:
+            self.ramp_out = dict(self.desired)
+            return dict(self.desired)
+        if self.ramp_at is not None and now - self.ramp_at < DRIVE_RAMP_STEP_S:
+            return dict(self.ramp_out)
+        dt = 0.0 if self.ramp_at is None else min(now - self.ramp_at, 2 * DRIVE_RAMP_STEP_S)
+        self.ramp_at = now
+        for motor in DRIVE_MOTORS:
+            d_dir, d_pwm = self.desired[motor]
+            o_dir, o_pwm = self.ramp_out[motor]
+            goal = 0 if (o_pwm and o_dir != d_dir) else d_pwm
+            if goal > o_pwm:
+                new = o_pwm + int(round(DRIVE_RAMP_UP_PWM_S * dt))
+                if o_pwm == 0:
+                    new = max(new, DRIVE_RAMP_FLOOR_PWM)
+                new, direction = min(goal, new), d_dir
+            elif goal < o_pwm:
+                new = max(goal, o_pwm - int(round(DRIVE_RAMP_DOWN_PWM_S * dt)))
+                direction = o_dir if new else d_dir
+            else:
+                new, direction = o_pwm, (d_dir if not o_pwm else o_dir)
+            self.ramp_out[motor] = (direction, new)
+        return dict(self.ramp_out)
+
     def _service_drive(self, now):
         if self.link not in ('ready', 'confirming'):
             return
         if self.link != 'ready':
             # Only stops before the link is confirmed (and on a wrong firmware).
             self.desired = {2: (self.forward[2], 0), 3: (self.forward[3], 0)}
+            self.ramp_out = dict(self.desired)   # safety stop: no ramp
         if any(self.desired[m][1] for m in DRIVE_MOTORS) and now >= self.drive_until:
             # The drive TTL ran out without a new drive request: zero now (the firmware would keep running).
             self.desired = {2: (self.forward[2], 0), 3: (self.forward[3], 0)}
             self.drive_ttl_stops += 1
             self._event(now, 'drive_ttl_expired', 'drive TTL %.2f s' % self.drive_ttl_s)
+        targets = self._ramp_targets(now)
         out = b''
         for motor in DRIVE_MOTORS:
-            want = self.desired[motor]
+            want = targets[motor]
             have = self.acked[motor]
             last, at = self.sent[motor]
             if have is not None and (have == want or (have[1] == 0 and want[1] == 0)):
@@ -1100,11 +1170,11 @@ class Esp32SteerMotor:
                 # a '2 S' / '3 S' that is never acknowledged is handled like an unconfirmed STOP
                 self.stop_state = 'pending'
                 self.stop_requested_at = now - STOP_CONFIRM_S
-        if not out and all(self.desired[m][1] == 0 for m in DRIVE_MOTORS) and self.link == 'ready':
+        if not out and all(targets[m][1] == 0 for m in DRIVE_MOTORS) and self.link == 'ready':
             if now >= self.zero_refresh_at:
                 out = drive_line(2, self.forward[2], 0) + drive_line(3, self.forward[3], 0)
                 self.counts['zero_refresh'] += 1
-        driving = any(self.desired[m][1] for m in DRIVE_MOTORS)
+        driving = any(targets[m][1] for m in DRIVE_MOTORS)
         if driving and self.drive_wd_ms and self.link == 'ready':
             # Patched firmware only: keep its drive watchdog fed while the host still wants the drive (inside the TTL).
             period = min(0.1, self.drive_wd_ms / 3000.0)
@@ -1119,6 +1189,8 @@ class Esp32SteerMotor:
     def _service_angle(self, now):
         if self.link != 'ready' or self.angle_req is None or not self.enabled:
             return
+        if self.pot_invalid:
+            return                                # wait for a valid STATUS (blip grace)
         req = self.angle_req
         if self.angle_blocked is not None:
             if req == self.angle_blocked:
@@ -1250,7 +1322,7 @@ class Esp32SteerMotor:
         return new, sides, problem or cal_problem(new['right'], new['center'], new['left'], *self.cal_guards())
 
     def start_calibration(self, action, left_margin_counts=CAL_MARGIN_DEFAULT,
-                          right_margin_counts=CAL_MARGIN_DEFAULT, pulse_ms=None):
+                          right_margin_counts=CAL_MARGIN_DEFAULT, pulse_ms=None, delta_counts=None):
         """Start one calibration action (CAL_ACTIONS); the bridge has checked armed / moving. STOP goes first.
         pulse_ms (find_left / find_right only, int 40..100, SMOOTH firmware): 'CAL FIND LEFT 60'; None: the
         firmware's 100 ms. Returns the answer for the control socket."""
@@ -1273,6 +1345,21 @@ class Esp32SteerMotor:
             steps = [(cal_find_line(side, pulse_ms), 'found')]
         elif action == 'set_center':
             steps = [(b'CAL CENTER\n', 'ok_cal'), (b'CAL SAVE\n', 'ok_cal')]
+        elif action == 'trim_center':
+            # Fine zero (2026-11-18 field): CAL CENTER moves by delta_counts (+ = left, the POT rises to the left);
+            # the wheels do not move now, the next command uses the new centre.
+            lo, hi = CAL_TRIM_RANGE
+            if type(delta_counts) is not int or not lo <= delta_counts <= hi or delta_counts == 0:
+                return {'ok': False, 'error': 'calibration_trim_invalid'}
+            cal = self.cal or {}
+            if not all(type(cal.get(k)) is int for k in ('right', 'center', 'left')):
+                return {'ok': False, 'error': 'calibration_unknown'}
+            new = {'right': cal['right'], 'center': cal['center'] + delta_counts, 'left': cal['left']}
+            problem = cal_problem(new['right'], new['center'], new['left'], *self.cal_guards())
+            if problem:
+                return {'ok': False, 'error': problem, 'proposal': new}
+            steps = [(cal_set_line('center', new['center']), 'ok_cal'), (b'CAL SAVE\n', 'ok_cal')]
+            want = new
         elif action == 'default':
             steps = [(b'CAL DEFAULT\n', 'ok_cal')]
             want = dict(CAL_DEFAULTS)
@@ -1378,7 +1465,7 @@ class Esp32SteerMotor:
             self._cal_finish(now, ok=False, error='calibration_readback_mismatch',
                              detail='want %(right)d/%(center)d/%(left)d' % want)
             return
-        if job['action'] in ('apply', 'set_center') and cal.get('store') != 'NVS':
+        if job['action'] in ('apply', 'set_center', 'trim_center') and cal.get('store') != 'NVS':
             self._cal_finish(now, ok=False, error='calibration_not_saved')
             return
         found = job.get('found')

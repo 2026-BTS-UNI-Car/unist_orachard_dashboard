@@ -59,7 +59,7 @@ test('armed or moving: refused with the reason', () => {
 
 test('idle: centre, both finds and default usable; apply needs a usable end', () => {
   const v = calView(reply());
-  assert.deepEqual(enabled(v), ['set_center', 'find_left', 'find_right', 'default']);
+  assert.deepEqual(enabled(v), ['set_center', 'trim_left', 'trim_right', 'find_left', 'find_right', 'default']);
   assert.match(v.buttons.apply.title, /먼저 끝 찾기/);
   assert.equal(rows(v)['지금 보정'], '오른쪽 1681 · 가운데 1900 · 왼쪽 2180 (기본값)');
   assert.equal(rows(v)['가변저항'], '1903');
@@ -261,7 +261,7 @@ test('page: hiding the page while a scan runs sends STOP', async () => {
   p.close();
 });
 
-test('markup: the folded section is inside Rover Control with the five buttons, no new menu', () => {
+test('markup: the folded section is inside Rover Control with the seven buttons, no new menu', () => {
   const html = readFileSync(path.join(here, '..', 'static', 'index.html'), 'utf8');
   const start = html.indexOf('id="steerCalPanel"');
   // Right after the potentiometer rows; the autonomy section is above both since 2026-11-17 (docs/SCREENS_KO.md 2).
@@ -271,7 +271,8 @@ test('markup: the folded section is inside Rover Control with the five buttons, 
   assert.match(section, /<details id="steerCalDetails">/);
   assert.match(html.slice(html.lastIndexOf('<section', start), start), /data-vehicle="front_steer"/);
   const labels = [...section.matchAll(/data-steer-cal="([a-z_]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
-  assert.deepEqual(labels, [['set_center', '지금 위치를 가운데로'], ['find_left', '왼쪽 끝 찾기'], ['find_right', '오른쪽 끝 찾기'],
+  assert.deepEqual(labels, [['set_center', '지금 위치를 가운데로'], ['trim_left', '영점 ← 왼쪽 0.2°'],
+    ['trim_right', '영점 → 오른쪽 0.2°'], ['find_left', '왼쪽 끝 찾기'], ['find_right', '오른쪽 끝 찾기'],
     ['apply', '적용'], ['default', '기본값으로']]);
   assert.match(section, /<h3>조향 보정<\/h3>/);
   assert.ok(!/nav-item|data-route=/.test(section), 'no navigation entry');

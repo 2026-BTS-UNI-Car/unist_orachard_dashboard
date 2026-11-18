@@ -462,10 +462,29 @@ class Armed(unittest.TestCase):
         rig.drive(40)
         rig.fake.pot_invalid = True
         rig.run(0.3)
+        self.assertIsNotNone(rig.bridge.control.lease, 'a blip shorter than POT_INVALID_GRACE_S keeps the lease')
+        rig.drive(40)
+        rig.run(0.5)
         self.assertIsNone(rig.bridge.control.lease)
         self.assertEqual(rig.fake.drive(), {2: 0, 3: 0})
         self.assertEqual(rig.call('arm', vehicle_profile='front_steer')['error'], 'pot_invalid')
         self.assertIn('pot_invalid', rig.bridge.snapshot['steering']['faults'])
+
+    def test_short_pot_blip_keeps_lease_and_resends_target(self):
+        rig = self.rig
+        rig.drive(40, 50)
+        rig.run(0.4)
+        rig.fake.pot_invalid = True
+        rig.run(0.25)
+        rig.fake.pot_invalid = False
+        rig.drive(40, 50)
+        rig.run(0.4)
+        self.assertIsNotNone(rig.bridge.control.lease)
+        kinds = [e[1] for e in rig.motor.events]
+        self.assertIn('pot_invalid', kinds)
+        self.assertIn('pot_recovered', kinds)
+        self.assertFalse(rig.motor.pot_invalid)
+        self.assertNotIn('pot_invalid', rig.bridge.snapshot['steering']['faults'])
 
     def test_silent_board_stops(self):
         rig = self.rig

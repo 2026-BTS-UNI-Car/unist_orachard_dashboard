@@ -628,7 +628,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # it; only its own fields go to the bridge (the bridge itself refuses while armed or moving).
             if supervisor is not None and (supervisor.status().get('active') or supervisor.status().get('loop_cleanup_pending')):
                 self._send_json({'ok': False, 'error': 'calibration_needs_disarmed'}, 409); return
-            fields = {key: payload[key] for key in ("action", "left_margin_counts", "right_margin_counts", "pulse_ms")
+            fields = {key: payload[key] for key in ("action", "left_margin_counts", "right_margin_counts", "pulse_ms", "delta_counts")
                       if key in payload}
             self._send_json(request({**fields, "op": "calibrate", "owner": session}))
             return
