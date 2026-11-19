@@ -34,35 +34,25 @@
       ]
     },
     {
-      "key": "orchard_row_1010",
-      "label": "과수원 열 안",
+      "key": "orchard",
+      "label": "과수원",
       "day": "2026-10-10",
-      "note": "inside a catalogued row corridor",
+      "note": "one orchard terrain since 2026-11-20 (operator request; before: orchard_1003, orchard_row_1010, orchard_other_1010). Duty 45-70: the 2026-10-03 orchard (no trajectory to tell row from outside; 55 and 70 rest on GNSS). Duty 90 and 100: the 2026-10-10 rows inside and outside the catalogued corridors, the segment-weighted mean of the two LiDAR values. Not merged in: the 2026-10-03 duty 100 by GNSS (0.847 m/s, 3 segments). Each row lists the source rows it was made of (parts).",
+      "merged_from": ["orchard_1003", "orchard_row_1010", "orchard_other_1010"],
       "speeds": [
-        {"duty": 90, "speed_m_s": 0.706, "grade": "측정", "reference": "LiDAR", "segments": 12, "source": "T3_speed_by_ground"},
-        {"duty": 100, "speed_m_s": 0.892, "grade": "측정", "reference": "LiDAR", "segments": 78, "source": "T3_speed_by_ground"}
-      ]
-    },
-    {
-      "key": "orchard_other_1010",
-      "label": "과수원 그 밖",
-      "day": "2026-10-10",
-      "note": "row ends, concrete farm road and rows not in the corridor catalogue",
-      "speeds": [
-        {"duty": 90, "speed_m_s": 0.685, "grade": "참고", "reference": "LiDAR", "segments": 3, "source": "T3_speed_by_ground"},
-        {"duty": 100, "speed_m_s": 0.896, "grade": "측정", "reference": "LiDAR", "segments": 119, "source": "T3_speed_by_ground"}
-      ]
-    },
-    {
-      "key": "orchard_1003",
-      "label": "과수원 10/3 (열 구분 없음)",
-      "day": "2026-10-03",
-      "note": "orchard without a trajectory to tell row from outside; the low duties rest on GNSS",
-      "speeds": [
-        {"duty": 45, "speed_m_s": 0.426, "grade": "참고", "reference": "LiDAR", "segments": 1, "source": "T3_speed_by_ground"},
-        {"duty": 55, "speed_m_s": 0.459, "grade": "참고", "reference": "GNSS", "segments": 3, "source": "T3_speed_by_ground"},
-        {"duty": 70, "speed_m_s": 0.641, "grade": "측정", "reference": "GNSS", "segments": 6, "source": "T3_speed_by_ground"},
-        {"duty": 100, "speed_m_s": 0.847, "grade": "참고", "reference": "GNSS", "segments": 3, "source": "T3_speed_by_ground"}
+        {"duty": 45, "speed_m_s": 0.426, "grade": "참고", "reference": "LiDAR", "segments": 1, "source": "T3_speed_by_ground",
+         "parts": [{"column": "orchard_1003", "day": "2026-10-03", "speed_m_s": 0.426, "grade": "참고", "reference": "LiDAR", "segments": 1}]},
+        {"duty": 55, "speed_m_s": 0.459, "grade": "참고", "reference": "GNSS", "segments": 3, "source": "T3_speed_by_ground",
+         "parts": [{"column": "orchard_1003", "day": "2026-10-03", "speed_m_s": 0.459, "grade": "참고", "reference": "GNSS", "segments": 3}]},
+        {"duty": 70, "speed_m_s": 0.641, "grade": "측정", "reference": "GNSS", "segments": 6, "source": "T3_speed_by_ground",
+         "parts": [{"column": "orchard_1003", "day": "2026-10-03", "speed_m_s": 0.641, "grade": "측정", "reference": "GNSS", "segments": 6}]},
+        {"duty": 90, "speed_m_s": 0.702, "grade": "측정", "reference": "LiDAR", "segments": 15, "source": "T3_speed_by_ground",
+         "parts": [{"column": "orchard_row_1010", "day": "2026-10-10", "speed_m_s": 0.706, "grade": "측정", "reference": "LiDAR", "segments": 12}, {"column": "orchard_other_1010", "day": "2026-10-10", "speed_m_s": 0.685, "grade": "참고", "reference": "LiDAR", "segments": 3}]},
+        {"duty": 100, "speed_m_s": 0.894, "grade": "측정", "reference": "LiDAR", "segments": 197, "source": "T3_speed_by_ground",
+         "parts": [{"column": "orchard_row_1010", "day": "2026-10-10", "speed_m_s": 0.892, "grade": "측정", "reference": "LiDAR", "segments": 78}, {"column": "orchard_other_1010", "day": "2026-10-10", "speed_m_s": 0.896, "grade": "측정", "reference": "LiDAR", "segments": 119}]}
+      ],
+      "not_merged": [
+        {"column": "orchard_1003", "day": "2026-10-03", "speed_m_s": 0.847, "grade": "참고", "reference": "GNSS", "segments": 3, "duty": 100, "why": "GNSS reference, 3 segments, against 197 LiDAR segments of 2026-10-10"}
       ]
     }
   ],

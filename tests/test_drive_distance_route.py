@@ -55,8 +55,7 @@ class Routes(DistanceRoutes):
     def test_table_and_plan(self):
         status, reply = self.page.get_json('/api/rover/distance')
         self.assertEqual(status, 200)
-        self.assertEqual([t['key'] for t in reply['table']['terrains']][:3],
-                         ['road_paved', 'orchard_row_1010', 'orchard_other_1010'])
+        self.assertEqual([t['key'] for t in reply['table']['terrains']], ['road_paved', 'orchard'])
         status, reply = self.page.post('/api/rover/distance/plan', {'terrain': 'road_paved', 'duty': 40, 'distance_m': 1})
         self.assertEqual(status, 200)
         self.assertTrue(reply['ok'], reply)

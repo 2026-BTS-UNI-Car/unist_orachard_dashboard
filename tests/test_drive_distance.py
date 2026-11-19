@@ -26,7 +26,7 @@ class Table(unittest.TestCase):
         self.assertIn('before the steering unit', TABLE['source']['vehicle'])
         self.assertIn('ESP8266', TABLE['source']['vehicle'])
         keys = [t['key'] for t in TABLE['terrains']]
-        self.assertEqual(keys, ['road_paved', 'orchard_row_1010', 'orchard_other_1010', 'orchard_1003'])
+        self.assertEqual(keys, ['road_paved', 'orchard'])      # one orchard terrain since 2026-11-20
         for terrain in TABLE['terrains']:
             for row in terrain['speeds']:
                 self.assertIn(row['grade'], ('측정', '참고'), row)
@@ -36,9 +36,19 @@ class Table(unittest.TestCase):
         # spot checks against tables/T3_speed_by_ground.md of the simulation repository (2026-11-12)
         speed = {(t['key'], r['duty']): r['speed_m_s'] for t in TABLE['terrains'] for r in t['speeds']}
         self.assertEqual(speed[('road_paved', 100)], 0.942)
-        self.assertEqual(speed[('orchard_row_1010', 90)], 0.706)
-        self.assertEqual(speed[('orchard_other_1010', 100)], 0.896)
-        self.assertEqual(speed[('orchard_1003', 70)], 0.641)
+        self.assertEqual(speed[('orchard', 70)], 0.641)                       # 2026-10-03, its own row
+        self.assertEqual(speed[('orchard', 90)], 0.702)                       # (0.706 x 12 + 0.685 x 3) / 15
+        self.assertEqual(speed[('orchard', 100)], 0.894)                      # (0.892 x 78 + 0.896 x 119) / 197
+        orchard = next(t for t in TABLE['terrains'] if t['key'] == 'orchard')
+        self.assertEqual(orchard['merged_from'], ['orchard_1003', 'orchard_row_1010', 'orchard_other_1010'])
+        for row in orchard['speeds']:
+            parts = row['parts']
+            segments = sum(x['segments'] for x in parts)
+            self.assertEqual(row['segments'], segments, row)
+            self.assertEqual(row['speed_m_s'], round(sum(x['speed_m_s'] * x['segments'] for x in parts) / segments, 3))
+            self.assertEqual({x['reference'] for x in parts}, {row['reference']}, 'one speed reference per row')
+        self.assertEqual([(x['column'], x['speed_m_s'], x['reference']) for x in orchard['not_merged']],
+                         [('orchard_1003', 0.847, 'GNSS')])
 
     def test_source_tables_when_the_simulation_repository_is_next_to_us(self):
         repo = Path(os.environ.get('UBTS_SIMULATION_REPO') or ROOT.parent / 'unist_orchard_simulation')
@@ -47,14 +57,20 @@ class Table(unittest.TestCase):
             self.skipTest('simulation repository not found (UBTS_SIMULATION_REPO)')
         text = source.read_text(encoding='utf-8')
         columns = {'road_paved': 1, 'orchard_1003': 2, 'orchard_row_1010': 3, 'orchard_other_1010': 4}
-        for terrain in TABLE['terrains']:
-            for row in terrain['speeds']:
-                line = next(l for l in text.splitlines() if l.startswith('| %d |' % row['duty']))
-                cell = line.split('|')[1 + columns[terrain['key']]].strip()
-                m = re.match(r'([\d.]+) \[(측정|참고)( GNSS)?, n (\d+)\]', cell)
-                self.assertIsNotNone(m, (terrain['key'], row['duty'], cell))
-                self.assertEqual((float(m[1]), m[2], 'GNSS' if m[3] else 'LiDAR', int(m[4])),
-                                 (row['speed_m_s'], row['grade'], row['reference'], row['segments']))
+        # a row of the merged orchard terrain is checked through the source rows it was made of (parts)
+        cells = [(terrain['key'], row['duty'], row) for terrain in TABLE['terrains'] for row in terrain['speeds']
+                 if 'parts' not in row]
+        cells += [(x['column'], row['duty'], x) for terrain in TABLE['terrains'] for row in terrain['speeds']
+                  for x in row.get('parts', ())]
+        cells += [(x['column'], x['duty'], x) for terrain in TABLE['terrains'] for x in terrain.get('not_merged', ())]
+        self.assertEqual(len(cells), 6 + 3 + 2 + 2 + 1)
+        for column, duty, row in cells:
+            line = next(l for l in text.splitlines() if l.startswith('| %d |' % duty))
+            cell = line.split('|')[1 + columns[column]].strip()
+            m = re.match(r'([\d.]+) \[(측정|참고)( GNSS)?, n (\d+)\]', cell)
+            self.assertIsNotNone(m, (column, duty, cell))
+            self.assertEqual((float(m[1]), m[2], 'GNSS' if m[3] else 'LiDAR', int(m[4])),
+                             (row['speed_m_s'], row['grade'], row['reference'], row['segments']))
 
 
 class Planner(unittest.TestCase):
@@ -96,10 +112,10 @@ class Planner(unittest.TestCase):
         self.assertEqual(dd.plan(TABLE, 'moon', 40, 1.0)['problem'], 'distance_terrain_unknown')
         for bad in (True, '1.0', float('nan')):
             self.assertEqual(dd.plan(TABLE, 'road_paved', 40, bad)['problem'], 'distance_invalid')
-        p = dd.plan(TABLE, 'orchard_row_1010', 100, 2.0)
+        p = dd.plan(TABLE, 'orchard', 100, 2.0)
         self.assertEqual((p['speed']['grade'], p['lag']['grade'], p['coast']['grade'], p['grade']),
                          ('측정', '측정', '측정', '측정'))
-        p = dd.plan(TABLE, 'orchard_1003', 55, 1.0)
+        p = dd.plan(TABLE, 'orchard', 55, 1.0)
         self.assertEqual((p['speed']['grade'], p['speed']['reference'], p['lag']['grade'], p['coast']['grade'],
                           p['grade']), ('참고', 'GNSS', '가정', '모델', '가정'))
         json.dumps(p, allow_nan=False)
@@ -115,11 +131,13 @@ class Planner(unittest.TestCase):
             self.assertEqual(p['problem'], 'distance_duty_out_of_range', duty)
             self.assertEqual((p['duty_min'], p['duty_max'], p['default_duty']), (40, 100, 40))
             self.assertEqual(p['duties'], [40, 58, 88, 90, 95, 100])
-        self.assertEqual(dd.plan(TABLE, 'orchard_row_1010', 89, 2.0)['problem'], 'distance_duty_out_of_range')
-        self.assertEqual(dd.plan(TABLE, 'orchard_1003', 44, 1.0)['problem'], 'distance_duty_out_of_range')
+        self.assertEqual(dd.plan(TABLE, 'orchard', 44, 1.0)['problem'], 'distance_duty_out_of_range')
+        self.assertEqual(dd.plan(TABLE, 'orchard', 101, 2.0)['problem'], 'distance_duty_out_of_range')
+        self.assertEqual(dd.plan(TABLE, 'orchard_row_1010', 90, 2.0)['problem'], 'distance_terrain_unknown',
+                         'the three orchard keys of before 2026-11-20 are gone')
         default = dd.plan(TABLE, 'road_paved', None, 1.0)
         self.assertEqual(default, dd.plan(TABLE, 'road_paved', 40, 1.0), 'no duty = the lowest table duty')
-        self.assertEqual(dd.plan(TABLE, 'orchard_row_1010', None, 2.0)['duty'], 90)
+        self.assertEqual(dd.plan(TABLE, 'orchard', None, 2.0)['duty'], 45)
 
     def test_interpolated_speed_between_table_rows(self):
         p = dd.plan(TABLE, 'road_paved', 50, 1.0)
@@ -128,7 +146,8 @@ class Planner(unittest.TestCase):
                                       'reference': 'LiDAR', 'segments': None, 'interpolated': True,
                                       'between': [40, 58]})
         self.assertEqual((p['grade'], p['pwm'], p['throttle']), ('가정', 128, 50))
-        self.assertEqual(dd.plan(TABLE, 'orchard_1003', 60, 1.0)['speed']['reference'], 'GNSS')
+        self.assertEqual(dd.plan(TABLE, 'orchard', 60, 1.0)['speed']['reference'], 'GNSS')
+        self.assertEqual(dd.plan(TABLE, 'orchard', 80, 2.0)['speed']['reference'], 'GNSS/LiDAR')   # between 70 and 90
         for terrain in TABLE['terrains']:
             lo, hi = dd.duty_range(terrain)
             rows = {r['duty']: r for r in terrain['speeds']}
@@ -151,7 +170,7 @@ class Planner(unittest.TestCase):
         """At the table duties (so at the default) the plan is the one of 3dba62c: the operator's calibration holds."""
         self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 1.0)['drive_s'], 2.897)          # 3dba62c planner values
         self.assertEqual(dd.plan(TABLE, 'road_paved', 40, 1.0, factor=1.02)['drive_s'], 2.844)
-        self.assertEqual(dd.plan(TABLE, 'orchard_1003', 45, 2.0, factor=1.1)['drive_s'], 4.465)
+        self.assertEqual(dd.plan(TABLE, 'orchard', 45, 2.0, factor=1.1)['drive_s'], 4.465)
         with tempfile.TemporaryDirectory() as tmp:
             store = dd.CorrectionStore(Path(tmp) / 'corr.json')
             for ratio in (1.31, 1.27, 1.29):                     # tape samples of 2026-11-18 style, all at the default
@@ -171,7 +190,7 @@ class Planner(unittest.TestCase):
             self.assertEqual(p['correction'], {'factor': 1.2, 'samples': 1, 'from_duty': 40, 'exact': False, 'direction': 'forward'})
             self.assertEqual(p['factor'], 1.2)
             self.assertAlmostEqual(p['expected_m'], 1.5, places=2)
-            none = dd.plan(TABLE, 'orchard_row_1010', 90, 2.0, correction=store.correction)
+            none = dd.plan(TABLE, 'orchard', 90, 2.0, correction=store.correction)
             self.assertEqual(none['correction'], {'factor': 1.0, 'samples': 0, 'from_duty': None, 'exact': False, 'direction': 'forward'})
 
     def test_cap_duty(self):
@@ -189,8 +208,10 @@ class Planner(unittest.TestCase):
         road = next(t for t in view['terrains'] if t['key'] == 'road_paved')
         self.assertEqual([d['duty'] for d in road['duties']], [40, 58, 88, 90, 95, 100])
         self.assertEqual((road['duty_min'], road['duty_max'], road['default_duty']), (40, 100, 40))
-        row = next(t for t in view['terrains'] if t['key'] == 'orchard_row_1010')
-        self.assertEqual((row['duty_min'], row['duty_max'], row['default_duty']), (90, 100, 90))
+        row = next(t for t in view['terrains'] if t['key'] == 'orchard')
+        self.assertEqual((row['label'], row['duty_min'], row['duty_max'], row['default_duty']), ('과수원', 45, 100, 45))
+        self.assertEqual([d['duty'] for d in row['duties']], [45, 55, 70, 90, 100])
+        self.assertEqual([t['key'] for t in view['terrains']], ['road_paved', 'orchard'])
         self.assertEqual(view['limits']['distance_default_m'], 1.0)
         self.assertIn('not been measured', view['not_measured'])
         self.assertEqual((view['limits']['distance_max_backward_m'], view['limits']['directions']), (2.0, ['forward', 'backward']))
