@@ -340,6 +340,8 @@ function updateCoreChart(el, core) {
 function renderDisks(disks) {
   const primary = disks[0];
   text("diskSummary", primary ? `${primary.mount} · ${fmtBytes(primary.used)} / ${fmtBytes(primary.total)} · ${fmtPercent(primary.percent)}` : "--");
+  text("systemStripDisk", primary ? fmtPercent(primary.percent) : "--");
+  text("systemStripDiskText", primary ? `여유 ${fmtBytes(primary.free)}` : "--");
   syncItems("diskList", disks, (disk) => disk.mount, createDiskRow, updateDiskRow);
 }
 

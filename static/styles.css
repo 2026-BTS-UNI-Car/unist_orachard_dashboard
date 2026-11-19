@@ -8,11 +8,6 @@
   gap: var(--page-gutter);
 }
 
-/* The CPU card has the most to show and takes a full row; the other four pair up … */
-.resource-grid > .resource-card:first-child {
-  grid-column: 1 / -1;
-}
-
 .wide {
   grid-column: 1 / -1;
 }
@@ -135,7 +130,6 @@
   overflow-wrap: anywhere;
 }
 
-.probe-card small,
 .container-detail-grid small {
   color: var(--color-text-secondary);
   overflow-wrap: anywhere;
@@ -277,7 +271,6 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2) var(--space-5);
-  margin-top: var(--space-4);
 }
 
 .core {
@@ -293,17 +286,6 @@
 .core strong {
   color: var(--color-text);
   text-align: right;
-}
-
-.resource-card > .progress {
-  margin-top: var(--space-4);
-}
-
-.resource-card > small {
-  display: block;
-  margin-top: var(--space-2);
-  color: var(--color-text-secondary);
-  overflow-wrap: anywhere;
 }
 
 /* ---- LiDAR polar view -------------------------------------------------- */
@@ -1166,11 +1148,6 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
 }
 
 /* ---- Network mode ------------------------------------------------------ */
-/* Both panels under the mode panel take the full row (the list of interfaces was a … */
-.page[data-page="/network"] .dashboard-grid > .panel {
-  grid-column: 1 / -1;
-}
-
 .network-mode-actions {
   justify-content: flex-start;
 }
@@ -2088,11 +2065,6 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   .rover-lidar-stage .lidar-map {
     width: min(100%, clamp(300px, 23vw, 430px));
   }
-
-  /* The full-width CPU card lists the cores four across. */
-  .core-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
 }
 
 /* A mouse does not need the tall hold buttons: the drive panel stays short. */
@@ -2113,13 +2085,6 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
 
   .page[data-page="/connection"] .dashboard-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* The two half-width panels of the connection page share a row (they are not … */
-@media (min-width: 1181px) {
-  .page[data-page="/connection"] .dashboard-grid {
-    grid-auto-flow: dense;
   }
 }
 
@@ -2404,6 +2369,53 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
 @container (min-width: 1300px) {
   .archive-preview.sensor-overview {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* pages simple 20261120 */
+.order-first {
+  order: -1;
+}
+
+.order-last,
+[data-page="/network"] > .status-strip {
+  order: 1;
+}
+
+.fold {
+  margin-top: var(--space-3);
+}
+
+.fold-body {
+  display: grid;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+}
+
+.panel .flush {
+  margin-top: calc(var(--space-4) * -1);
+  border-top: 0;
+}
+
+#overviewServices small,
+#cpuReadout > :nth-child(n + 2) {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .container-row {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    column-gap: var(--space-3);
+  }
+
+  .container-row > div,
+  .container-row > small {
+    grid-column: 1 / -1;
+  }
+
+  .container-row div small,
+  .doc-link small {
+    display: none;
   }
 }
 
