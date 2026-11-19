@@ -164,7 +164,7 @@ assert.notEqual(a, b);
 // before it sends Arm (the race seen in the SIM stack test: the start reply's status and a poll already in flight still
 // said idle, so Arm was never sent).
 async function prepareCase({ first = { run_state: 'idle', mode: 'MOTOR' }, startOk = true, startStatus = { run_state: 'idle', mode: 'MOTOR' },
-                             statuses = [], armOk = true, waitMs = 3000, answers = {}, abortAfter = null }) {
+                             statuses = [], armOk = true, waitMs = 3000, answers = {}, abortAfter = null, armShows = true }) {
   const sent = [], reads = [];
   let clock = 0;
   const queue = [first === null ? null : { ok: true, status: first }, ...statuses];
@@ -178,7 +178,12 @@ async function prepareCase({ first = { run_state: 'idle', mode: 'MOTOR' }, start
       if (Array.isArray(scripted) && scripted.length) return scripted.shift();
       return { ok: action === 'start' ? startOk : action === 'arm' ? armOk : true, reply: action === 'start' ? { ok: true, status: startStatus } : {} };
     },
-    readStatus: async () => { const next = queue.length ? queue.shift() : queue.last; reads.push(next); return next; },
+    readStatus: async () => {
+      // after an accepted Arm the executor's status says armed (armShows false: it keeps its old answer)
+      const armedNow = armShows && armOk && sent.some(([action]) => action === 'arm');
+      const next = armedNow ? { ok: true, status: { run_state: 'armed', mode: 'MOTOR' } } : queue.length ? queue.shift() : queue.last;
+      reads.push(next); return next;
+    },
   });
   return { result, sent: sent.map(([action]) => action), body: sent.find(([action]) => action === 'start')?.[1], reads: reads.length, clock };
 }
@@ -186,14 +191,20 @@ const fresh = (status) => ({ ok: true, status });
 await (async () => {
   // MOTOR: the start reply and the first read are still the old state; the second read says ready -> Arm.
   let r = await prepareCase({ statuses: [fresh({ run_state: 'idle', mode: 'MOTOR' }), fresh({ run_state: 'ready', mode: 'MOTOR' })] });
-  assert.deepEqual([r.result, r.sent, r.reads], [{ ok: true, step: 'arm', runState: 'ready' }, ['start', 'arm'], 3]);
+  assert.deepEqual([r.result, r.sent, r.reads], [{ ok: true, step: 'arm', runState: 'ready' }, ['start', 'arm'], 4],
+    'one more read after the Arm: the step ends when the status shows armed');
   assert.deepEqual(r.body, { row_len_m: 12.5 });
+  // The status keeps saying ready after the accepted Arm: the step waits ARM_SHOWN_MS (2 s in 150 ms steps), then ends ok.
+  r = await prepareCase({ statuses: [fresh({ run_state: 'ready', mode: 'MOTOR' })], armShows: false });
+  r.statusesLast = null;
+  assert.deepEqual([r.result.ok, r.result.step, r.sent], [true, 'arm', ['start', 'arm']]);
+  assert.ok(r.clock >= 2000 && r.clock < 2000 + 3 * 150, `waited about ARM_SHOWN_MS (${r.clock} ms)`);
   // A failed read (null) is "not yet", not an error.
   r = await prepareCase({ statuses: [null, { ok: false }, fresh({ run_state: 'ready' })] });
   assert.deepEqual([r.result.step, r.sent], ['arm', ['start', 'arm']]);
   // The start reply already says ready: Arm at once, no extra read.
   r = await prepareCase({ startStatus: { run_state: 'ready', mode: 'MOTOR' } });
-  assert.deepEqual([r.result.step, r.sent, r.reads], ['arm', ['start', 'arm'], 1]);
+  assert.deepEqual([r.result.step, r.sent, r.reads], ['arm', ['start', 'arm'], 2]);
   // SHADOW: start arms by itself; no Arm is sent.
   r = await prepareCase({ statuses: [fresh({ run_state: 'armed', mode: 'SHADOW' })] });
   assert.deepEqual([r.result, r.sent], [{ ok: true, step: 'armed', runState: 'armed' }, ['start']]);
