@@ -189,7 +189,7 @@ async function controlRequest(path, payload = {}, options = {}) {
     if (!res.ok) throw await httpError(path, res);
     return await res.json();
   } catch (err) {
-    if (err?.name === "AbortError") throw new Error(`${path}: 응답 없음 ${Math.round(timeoutMs / 1000)}초`);
+    if (err?.name === "AbortError") throw new Error(`${path}: ${Math.round(timeoutMs / 1000)}초 동안 응답이 없었습니다.`);
     throw err;
   } finally {
     clearTimeout(timer);

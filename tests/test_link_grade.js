@@ -138,7 +138,7 @@ for (const [rtt, grade, profile] of [[45, 'normal', 'balanced'], [160, 'slow', '
   assert.equal(f.reopened.length, reopenedBefore, 'nothing reopens while offline');
   assert.equal(f.badge.textContent, '연결 끊김');
   assert.match(f.badge.className, /bad/);
-  assert.match(f.badge.title, /스스로 정지/);
+  assert.match(f.badge.title, /차는 입력이 끊겨 스스로 멈춥니다/);
   f.sample(45);
   assert.equal(f.grade(), 'normal');
 }

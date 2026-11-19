@@ -11,37 +11,48 @@ export const HEARTBEAT_STATES = new Set(['armed', 'running', 'paused']);
 export const ACTIVE_RUN_STATES = new Set(['ready', 'armed', 'running', 'paused', 'latched']);
 
 export const RUN_STATE = {
-  idle: ['', '대기'], ready: ['info', '준비됨 · Arm 전'], armed: ['info', '출발 대기'], running: ['ok', '주행 중'],
+  idle: ['', '대기'], ready: ['info', '준비 미완료'], armed: ['info', '출발 대기'], running: ['ok', '주행 중'],
   paused: ['warn', '일시정지'], ended: ['', '끝남'], latched: ['bad', '멈춤'],
 };
 export const STOP_REASON = {
-  ROW_END: '정상 열 끝', OBSTACLE: '열 안 장애물', END_STRUCTURE: '열 끝 구조물(벽·울타리)',
-  PERCEPTION_OR_LOCALISATION: '센서·위치 추정 부족', CONTROL_AUTHORITY: '조향·구동 권한 부족',
-  OPERATOR_OR_BACKSTOP: '운영자·한도 정지', OPERATOR_LINK_LOST: '화면 연결 끊김(화면 신호 없음)',
-  SYSTEM_FAULT: '시스템 오류', UNCLASSIFIED: '분류 안 됨',
+  ROW_END: '열 끝 도착', OBSTACLE: '열 안 장애물', END_STRUCTURE: '열 끝 구조물',
+  PERCEPTION_OR_LOCALISATION: '센서·위치 추정 부족', CONTROL_AUTHORITY: '조향·구동 응답 부족',
+  OPERATOR_OR_BACKSTOP: 'STOP 또는 거리 한도', OPERATOR_LINK_LOST: '화면 연결 끊김',
+  SYSTEM_FAULT: '시스템 오류', UNCLASSIFIED: '이유 모름',
 };
 export const GO_BLOCKER = {
-  session_conflict: '다른 화면이 출발 권한을 가짐', operator_link_not_fresh: '이 화면의 연결 신호가 아직 없음',
-  no_run: 'run 없음: 먼저 준비', already_running: '이미 주행 중', latched: '멈춤 상태: 먼저 준비',
-  arm_first: 'Arm 전: 먼저 준비', inputs_not_fresh: '센서 입력 대기', steering_feedback: '조향 상태가 없거나 오래됨',
-  vehicle_moving: '차가 아직 움직임', corridor_not_acquired: '통로를 아직 못 찾음',
-  lease_lost: '조향 브리지 연결이 끊겨 다시 Arm이 필요함',                  // contract revision 3
+  session_conflict: '다른 화면에서 조종하고 있습니다.', operator_link_not_fresh: '이 화면의 연결을 확인하고 있습니다.',
+  no_run: '시작된 주행이 없습니다. 준비를 누르세요.', already_running: '이미 주행 중입니다.', latched: '멈춤 상태입니다. 준비를 누르세요.',
+  arm_first: '준비가 끝나지 않았습니다. 준비를 누르세요.', inputs_not_fresh: '센서 입력을 기다리고 있습니다.', steering_feedback: '조향 상태를 기다리고 있습니다.',
+  vehicle_moving: '차가 멈추기를 기다리고 있습니다.', corridor_not_acquired: '통로를 찾고 있습니다.',
+  lease_lost: '브리지가 조종 권한을 거두었습니다. 준비를 다시 누르세요.',                  // contract revision 3
 };
 // stop_detail (the executor's own reason string) -> short words; an unknown one is shown as sent.
 export const STOP_DETAIL = {
-  operator_stop: '운영자 STOP', operator_link_lost: '화면 연결 끊김', row_end: '열 끝', lease_lost: '브리지가 권한을 거둠',
+  operator_stop: 'STOP 누름', operator_link_lost: '화면 연결 끊김', row_end: '열 끝 도착', lease_lost: '조종 권한 거둠',
   // executor pause / end reasons (simulation repository tools/row_executor/core.py)
-  stale_lidar: 'LiDAR 입력 끊김', stale_imu: 'IMU 입력 끊김', speed_cap_below_min: '속도 제한이 최저 속도 아래',
-  overspeed: '과속', prediction_limit: '예측 한도', obstacle_ahead: '앞 장애물', stale_repeat_limit: '멈춤 반복',
-  gnss_geofence: 'GPS 범위 벗어남', bridge_error: '브리지 오류', bridge_latched: '브리지 멈춤', bridge_arm_failed: 'Arm 실패',
+  stale_lidar: 'LiDAR 입력 끊김', stale_imu: 'IMU 입력 끊김', speed_cap_below_min: '속도 제한이 최저 속도보다 낮음',
+  overspeed: '과속', prediction_limit: '예측 한도 도달', obstacle_ahead: '앞 장애물', stale_repeat_limit: '잠시 멈춤 반복',
+  gnss_geofence: 'GPS 범위 벗어남', bridge_error: '브리지 오류', bridge_latched: '브리지 멈춤 상태', bridge_arm_failed: '조종 권한 받기 실패',
+};
+// Why the run stopped as the first half of a sentence ("... 멈췄습니다."): the detail, else the category (stopClause).
+export const STOP_CLAUSE = {
+  operator_stop: 'STOP을 눌러', operator_link_lost: '화면 연결이 끊겨', row_end: '열 끝에 도착해', lease_lost: '브리지가 조종 권한을 거두어',
+  stale_lidar: 'LiDAR 입력이 끊겨', stale_imu: 'IMU 입력이 끊겨', speed_cap_below_min: '속도 제한이 최저 속도보다 낮아',
+  overspeed: '속도가 한도를 넘어', prediction_limit: '위치 예측이 한도에 닿아', obstacle_ahead: '앞에 장애물이 있어',
+  stale_repeat_limit: '잠시 멈춤이 여러 번 반복되어', gnss_geofence: 'GPS 위치가 열 범위를 벗어나', bridge_error: '브리지 오류로',
+  bridge_latched: '브리지가 멈춤 상태여서', bridge_arm_failed: '조종 권한을 받지 못해',
+  ROW_END: '열 끝에 도착해', OBSTACLE: '열 안에 장애물이 있어', END_STRUCTURE: '열 끝 구조물 앞이어서',
+  PERCEPTION_OR_LOCALISATION: '센서나 위치 추정이 부족해', CONTROL_AUTHORITY: '조향이나 구동이 명령을 따르지 못해',
+  OPERATOR_OR_BACKSTOP: 'STOP을 누르거나 거리 한도에 닿아', OPERATOR_LINK_LOST: '화면 연결이 끊겨', SYSTEM_FAULT: '시스템 오류로',
 };
 export const GNSS_STATE = {
   none: '수신 없음', no_fix: '미확정', fix: '확정', rtk: 'RTK', stale: '오래됨', unused: '쓰지 않음', off: '꺼짐',
-  absent: '수신 없음', waiting: '기다림', ok: '정상', accepted: '받아들임', rejected: '거부', fence_tripped: '범위 벗어남',
+  absent: '수신 없음', waiting: '대기', ok: '정상', accepted: '받아들임', rejected: '거부', fence_tripped: '범위 벗어남',
   fixed: 'RTK FIXED', float: 'RTK FLOAT',
   // executor gnss_status states (tools/row_executor/core.py) and the RTK constraint states (gnss_rtk.py)
-  no_run: 'run 없음', rejected_no_fix: '위치 없음(그 fix 안 씀)', rejected_hacc: '정확도 낮음(안 씀)',
-  rejected_jump: '위치 급변(안 씀)', rejected_quality: '품질 낮음(안 씀)', learning: 'RTK 맞추는 중',
+  no_run: '주행 없음', rejected_no_fix: '위치 미확정이라 쓰지 않음', rejected_hacc: '정확도가 낮아 쓰지 않음',
+  rejected_jump: '위치가 급변해 쓰지 않음', rejected_quality: '품질이 낮아 쓰지 않음', learning: 'RTK 맞추는 중',
   active: 'RTK 보정 중', fading: 'RTK 보정 줄이는 중', refused: 'RTK 보정 안 함',
 };
 // The run's GPS mode (2026-11-19, tools/row_executor/config.py gnss_mode): the choice of the autonomy start.
@@ -52,37 +63,37 @@ export const GNSS_MODE_TEXT = {
 };
 // Refusals of a start (the executor's own codes, and the dashboard's 400) as the operator reads them.
 export const START_ERROR = {
-  invalid_gnss_mode: 'GPS 방식 값이 틀림', invalid_row_len: '열 길이는 0보다 크고 1000 m 이하',
-  unknown_parameter: '이 실행기는 GPS 방식 선택을 모름(실행기 업데이트 필요)',
-  gnss_mode_not_supported: '이 실행기는 GPS 방식 선택을 모름(실행기 업데이트 필요)',
-  gnss_mode_invalid: 'GPS 방식 값이 틀림',
-  gnss_mode_unsupported: '실행기 설정이 GPS 사용을 허용하지 않음(설정 gnss_run_modes 에 weak_constraint 필요)',
-  gnss_rtk_not_fixed: 'RTK FIXED 가 아님: RTK 보정을 쓸 수 없다', gnss_needs_rtk_fixed: 'RTK FIXED 가 아님: RTK 보정을 쓸 수 없다',
-  gnss_not_available: 'GPS 수신이 없음', gnss_mode_needs_front_steer: '이 방식은 앞바퀴 조향 실행기에서만',
+  invalid_gnss_mode: 'GPS 설정 값이 올바르지 않습니다.', invalid_row_len: '열 길이는 0보다 크고 1000 m 이하여야 합니다.',
+  unknown_parameter: '이 실행기는 GPS 선택을 받지 않습니다. 실행기를 업데이트하세요.',
+  gnss_mode_not_supported: '이 실행기는 GPS 선택을 받지 않습니다. 실행기를 업데이트하세요.',
+  gnss_mode_invalid: 'GPS 설정 값이 올바르지 않습니다.',
+  gnss_mode_unsupported: '실행기 설정에서 GPS 사용이 꺼져 있습니다. 설정의 gnss_run_modes에 weak_constraint를 넣으세요.',
+  gnss_rtk_not_fixed: 'RTK FIXED 상태가 아니어서 RTK 보정을 쓸 수 없습니다.', gnss_needs_rtk_fixed: 'RTK FIXED 상태가 아니어서 RTK 보정을 쓸 수 없습니다.',
+  gnss_not_available: 'GPS 수신이 없습니다.', gnss_mode_needs_front_steer: '이 GPS 설정은 앞바퀴 조향 실행기에서만 쓸 수 있습니다.',
 };
 // Refusals of the other actions (executor request handlers, tools/row_executor/executor_main.py) in screen words.
 export const EXEC_ERROR = {
-  run_in_progress: 'run 이 아직 열려 있음', bridge_still_armed: '차가 아직 서는 중(브리지 Arm 유지)',
-  acknowledge_latch_first: '멈춤 확인이 먼저', start_a_run_first: 'run 없음', already_armed: '이미 Arm 됨',
-  motor_output_not_allowed: '이 실행기는 모터를 쓰지 않음', row_motor_output_not_enabled: '실행기 설정이 모터 출력을 막음',
-  config_not_feasible: '실행기 설정이 맞지 않음', no_run: 'run 없음', invalid_session_id: '화면 세션 값 오류',
-  start_mode_hold_to_run: '누르는 동안만 가는 방식의 실행기', control_in_use: '다른 화면이 조종권을 가짐',
-  executor_unreachable: '실행기 연결 안 됨', executor_not_configured: '실행기 설정 없음',
-  still_latched: '멈춤 상태가 남아 있음', still_open: '열린 run 이 끝나지 않음',       // prepareSequence's own
+  run_in_progress: '이전 주행이 아직 끝나지 않았습니다.', bridge_still_armed: '차가 아직 멈추는 중입니다.',
+  acknowledge_latch_first: '멈춤 상태를 먼저 해제해야 합니다.', start_a_run_first: '시작된 주행이 없습니다.', already_armed: '이미 준비되어 있습니다.',
+  motor_output_not_allowed: '이 실행기는 모터를 쓰지 않도록 되어 있습니다.', row_motor_output_not_enabled: '실행기 설정에서 모터 출력이 꺼져 있습니다.',
+  config_not_feasible: '실행기 설정 값이 서로 맞지 않습니다.', no_run: '시작된 주행이 없습니다.', invalid_session_id: '화면 연결 정보가 올바르지 않습니다.',
+  start_mode_hold_to_run: '이 실행기는 버튼을 누르는 동안만 가는 방식입니다.', control_in_use: '다른 화면에서 조종하고 있습니다.',
+  executor_unreachable: '실행기에 연결하지 못했습니다.', executor_not_configured: '실행기가 설정되어 있지 않습니다.',
+  still_latched: '멈춤 상태가 해제되지 않았습니다.', still_open: '이전 주행이 끝나지 않았습니다.',       // prepareSequence's own
 };
 export const LIMIT_REASON = {
   target: '목표 속도', corridor: '통로 신뢰도', lateral_error: '횡 오차', heading_error: '방향 오차',
-  row_end: '열 끝 감속', steering: '조향 권한', obstacle: '앞 장애물', approach: '열 끝 감속',
+  row_end: '열 끝 감속', steering: '조향 여유', obstacle: '앞 장애물', approach: '열 끝 감속',
 };
 // PW-10 (contract revision 6): why the online scale is held, and why its offer can not be taken.
 export const SCALE_HOLD = {
-  lidar_stale: 'LiDAR 스캔 없음', lidar_unmatched: 'LiDAR 속도 품질 미달(스캔 정합 실패)', not_driving: '주행 중 아님',
+  lidar_stale: 'LiDAR 스캔 없음', lidar_unmatched: 'LiDAR 속도 품질 낮음', not_driving: '주행 중 아님',
   no_status: '구동 상태 없음', monitor_off: '감시 꺼짐',
 };
 export const SCALE_WHY_NOT = {
-  no_scale: '배율이 아직 없다(주행 10초 미만)', no_forward_motion: 'LiDAR가 앞으로 가는 것을 못 봤다',
-  scale_set_in_config: '실행기 설정이 배율을 따로 정했다', out_of_range: '제안 값이 범위 밖', no_change: '지금 값과 같다',
-  no_field_tuning: '현장 조정 묶음 없음',
+  no_scale: '주행이 10초보다 짧아 배율이 아직 없습니다.', no_forward_motion: 'LiDAR에서 앞으로 간 움직임이 확인되지 않았습니다.',
+  scale_set_in_config: '실행기 설정 파일에 배율이 따로 정해져 있습니다.', out_of_range: '제안된 배율이 허용 범위 밖입니다.', no_change: '지금 배율과 같습니다.',
+  no_field_tuning: '실행기에 현장 조정 값이 없습니다.',
 };
 
 const num = (value) => (typeof value === 'number' && isFinite(value) ? value : null);
@@ -129,44 +140,57 @@ export function stopWords(s) {
   return label(STOP_REASON, category);
 }
 
-// What the start still waits for (the open start conditions).
-function waitWords(s) {
+// Why the run stopped as the first half of a sentence: the known detail, else the category; null when there is no
+// reason (the same order as stopWords). An unknown one reads "알 수 없는 이유로"; its code is in the folded rows.
+export function stopClause(s) {
+  const category = s.stop_reason || (s.single_row || {}).stop_category || null;
+  if (category === 'ROW_END') return STOP_CLAUSE.ROW_END;
+  if (typeof s.stop_detail === 'string' && STOP_DETAIL[s.stop_detail] && STOP_CLAUSE[s.stop_detail]) return STOP_CLAUSE[s.stop_detail];
+  if (!category) return null;
+  return STOP_CLAUSE[category] || '알 수 없는 이유로';
+}
+
+// A refusal reason as a sentence: a sentence of the tables as it is; anything else (an unknown code) is named in one.
+export const reasonSentence = (text) => (!text ? '이유는 알 수 없습니다.' : /[.?]\s*$/.test(text) ? text : `알려 온 이유는 ${text}입니다.`);
+
+// What the start still waits for (the open start conditions): at most `most` of them, one sentence each (every one
+// is in the folded rows).
+function waitWords(s, most = 2) {
   const open = openBlockers(s) || [];
-  if (open.length === 1 && open[0] === 'corridor_not_acquired') return '통로 찾는 중';
-  if (!open.length) return '출발 대기';
-  // one sentence: the first two, the rest as a count (every one is in the folded rows)
-  return `출발 대기: ${open.slice(0, 2).map((code) => label(GO_BLOCKER, code)).join(', ')}${open.length > 2 ? ` 외 ${open.length - 2}` : ''}`;
+  if (!open.length) return '출발 조건을 확인하고 있습니다.';
+  return [...new Set(open.slice(0, most).map((code) => GO_BLOCKER[code] || '출발 조건이 아직 맞지 않습니다.'))].join(' ');
 }
 
 // One sentence: the state now and what to do next. Returns [level, text]; level: '' | ok | warn | bad | testing.
 export function statusLine(reply, nowMs = Date.now()) {
-  if (!reply) return ['', '실행기 확인 중'];
-  if (reply.configured === false) return ['warn', '실행기 설정 없음: 자율주행을 쓸 수 없음'];
+  if (!reply) return ['', '자율주행 실행기를 확인하고 있습니다.'];
+  if (reply.configured === false) return ['warn', '자율주행 실행기가 설정되어 있지 않아 자율주행을 쓸 수 없습니다.'];
   if (!reply.ok || !reply.status) {
     const token = reply.error === 'executor_token_rejected' || reply.error === 'executor_token_missing';
-    return ['bad', token ? '실행기 연결 안 됨: 토큰이 맞지 않음' : '실행기 연결 안 됨'];
+    return ['bad', token ? '자율주행 실행기에 연결하지 못했습니다. 토큰이 맞지 않습니다.' : '자율주행 실행기에 연결하지 못했습니다.'];
   }
-  if (stale(reply, nowMs)) return ['bad', '실행기 응답 끊김: 주행 중이었다면 차는 스스로 선다'];
+  if (stale(reply, nowMs)) return ['bad', '자율주행 실행기의 응답이 끊겼습니다. 주행 중이었다면 차는 스스로 멈춥니다.'];
   const s = reply.status;
-  if (s.start_mode === 'hold_to_run' && HEARTBEAT_STATES.has(s.run_state)) return ['warn', '누르는 동안만 가는 방식의 실행기: 이 화면에서 출발 못 함'];
-  const shadow = s.mode === 'SHADOW' ? ' · SHADOW(차는 안 움직임)' : '';
-  const why = s.stop_detail === 'operator_end' ? null : stopWords(s);
+  if (s.start_mode === 'hold_to_run' && HEARTBEAT_STATES.has(s.run_state)) return ['warn', '이 실행기는 버튼을 누르는 동안만 가는 방식이라 이 화면에서는 출발할 수 없습니다.'];
+  const shadow = s.mode === 'SHADOW' ? ' 연습 모드라서 차는 움직이지 않습니다.' : '';
+  const why = s.stop_detail === 'operator_end' ? null : stopClause(s);
   const sr = s.single_row || {};
+  const again = '다시 하려면 준비를 누르세요.';
   switch (s.run_state) {
-    case 'idle': case undefined: case null: return ['', `준비를 누르세요${shadow}`];
+    case 'idle': case undefined: case null: return ['', `준비를 누르세요.${shadow}`];
     case 'ended':
-      if (!why) return ['', `준비를 누르세요${shadow}`];
-      return why === '열 끝 도착' ? ['ok', '멈춤: 열 끝 도착'] : ['warn', `멈춤: ${why} — 차를 다시 놓고 준비`];
-    case 'latched': return ['bad', `멈춤${why ? `: ${why}` : ''} — 차를 다시 놓고 준비`];
-    case 'ready': return ['warn', `${leaseLost(s) ? '브리지가 권한을 거둠' : 'Arm 전'} — 준비를 다시 누르세요`];
-    case 'armed': return goAllowed(s) ? ['ok', `출발할 수 있음${shadow}`] : ['testing', waitWords(s)];
+      if (!why) return ['', `준비를 누르세요.${shadow}`];
+      return (s.stop_reason || sr.stop_category) === 'ROW_END' ? ['ok', `${why} 멈췄습니다.`] : ['warn', `${why} 멈췄습니다. ${again}`];
+    case 'latched': return ['bad', `${why ? `${why} 멈췄습니다.` : '멈췄습니다.'} ${again}`];
+    case 'ready': return ['warn', leaseLost(s) ? GO_BLOCKER.lease_lost : '준비가 끝나지 않았습니다. 준비를 다시 누르세요.'];
+    case 'armed': return goAllowed(s) ? ['ok', `출발할 수 있습니다.${shadow}`] : ['testing', waitWords(s)];
     case 'running': {
       const distance = num(sr.distance_m) ?? num(s.dist), speed = num(sr.speed_m_s) ?? num(s.v);
       return ['ok', ['주행 중', distance === null ? null : `${distance.toFixed(1)} m`,
                      speed === null ? null : `${speed.toFixed(2)} m/s`].filter(Boolean).join(' · ')];
     }
-    case 'paused': return ['warn', `일시정지${why ? `: ${why}` : ''} — ${goAllowed(s) ? '다시 출발을 누르세요' : waitWords(s)}`];
-    default: return ['', `상태 ${String(s.run_state)}`];
+    case 'paused': return ['warn', `${why ? `${why} 잠시 멈췄습니다.` : '잠시 멈췄습니다.'} ${goAllowed(s) ? '다시 출발을 누르세요.' : waitWords(s, 1)}`];
+    default: return ['', '실행기 상태를 알 수 없습니다.'];
   }
 }
 
@@ -220,7 +244,8 @@ export async function armAfterStart({ started, send, readStatus, sleep, aborted 
 // running | ack | end | start | arm | armed | latched | wait | aborted.
 export const PREPARE_TOTAL_MS = 12000;
 export const START_RETRY_MS = 300;
-export const PREPARE_STEP = { ack: '멈춤 확인', end: '열린 run 끝내기', start: '새 run', arm: 'Arm' };
+export const PREPARE_STEP = { ack: '멈춤 상태를 해제하고 있습니다.', end: '이전 주행을 끝내고 있습니다.', start: '새 주행을 시작하고 있습니다.',
+                              arm: '조종 권한을 받고 있습니다.' };
 const OPEN_RUN_STATES = new Set(['ready', 'armed', 'paused']);
 export async function prepareSequence({ send, readStatus, sleep, rowLen = null, gnssMode = null, aborted = () => false,
                                         onStep = () => {}, waitMs = PREPARE_WAIT_MS, stepMs = PREPARE_STEP_MS,
@@ -279,14 +304,15 @@ export async function prepareSequence({ send, readStatus, sleep, rowLen = null, 
 
 // A failed 준비 as one sentence: where and why. words(code) -> the refusal in screen words.
 export function prepareFailText(result, words = (code) => code) {
-  const why = result.text || (result.error ? words(result.error) : '');
+  const raw = result.text || (result.error ? words(result.error) : '');
+  const why = raw ? reasonSentence(raw) : '';
   switch (result.step) {
-    case 'status': return '준비 실패: 실행기 상태를 읽지 못함';
-    case 'running': return '주행 중에는 준비할 수 없음: 먼저 멈추기';
-    case 'aborted': return '멈추기를 눌러 준비를 그만둠';
-    case 'latched': return '준비 실패: 실행기가 다시 멈춤 상태가 됨';
-    case 'wait': return `준비 실패(시간 초과): ${why || `실행기 상태 ${result.runState || '모름'}`}`;
-    default: return `준비 실패(${PREPARE_STEP[result.step] || result.step}): ${why || '이유 모름'}`;
+    case 'status': return '준비하지 못했습니다. 실행기 상태를 읽지 못했습니다.';
+    case 'running': return '주행 중에는 준비할 수 없습니다. 먼저 멈추기를 누르세요.';
+    case 'aborted': return '멈추기를 눌러 준비를 그만두었습니다.';
+    case 'latched': return '준비하지 못했습니다. 실행기가 다시 멈춤 상태가 됐습니다.';
+    case 'wait': return `시간 안에 준비를 끝내지 못했습니다. ${why || '실행기 상태는 자세히에서 확인하세요.'}`;
+    default: return `준비하지 못했습니다. ${why || '이유는 알 수 없습니다.'}`;
   }
 }
 
@@ -326,16 +352,16 @@ export function autoView(reply, nowMs = Date.now()) {
   const stopText = label(STOP_REASON, category);
   const blockers = Array.isArray(s.go_blockers) ? s.go_blockers : [];
   const rows = [
-    ['모드', s.mode === 'SHADOW' ? 'SHADOW · 차를 몰지 않음' : s.mode === 'MOTOR' ? 'MOTOR · 차를 몬다' : (s.mode || '--')],
-    ['정지 이유', stopText ? (s.stop_detail ? `${stopText} · ${STOP_DETAIL[s.stop_detail] || s.stop_detail}` : stopText) : '--'],
+    ['모드', s.mode === 'SHADOW' ? '연습 모드(차는 움직이지 않음) [SHADOW]' : s.mode === 'MOTOR' ? '실제 주행 모드 [MOTOR]' : (s.mode || '--')],
+    ['정지 이유', stopText ? [...new Set([stopText, s.stop_detail ? STOP_DETAIL[s.stop_detail] || s.stop_detail : stopText])].join(' · ') : '--'],
     ['실행기 코드', [s.run_state, category, s.stop_detail].filter((code) => typeof code === 'string' && code).join(' · ') || '--'],
-    ['출발 조건', blockers.length ? blockers.map((code) => `${label(GO_BLOCKER, code)} [${code}]`).join(', ') : '--'],
+    ['출발 조건', blockers.length ? blockers.map((code) => `${GO_BLOCKER[code] || '알 수 없는 조건입니다.'} [${code}]`).join(' ') : '--'],
     ['횡 · 방향 오차', `${fixed(sr.lateral_error_m, 2, ' m')} · ${fixed(sr.heading_error_deg, 1, '°')}`],
     ['속도', `${fixed(sr.speed_m_s, 2, '')} / 목표 ${fixed(num(speed.target_mps) ?? num(sr.target_speed_m_s), 2, '')} m/s`],
     ['속도 제한', num(speed.limit_mps) === null ? '--'
       : `${fixed(speed.limit_mps, 2, ' m/s')} · ${label(LIMIT_REASON, speed.limit_reason) || '--'}`],
     ['진행 거리', fixed(sr.distance_m, 1, ' m')],
-    ['GNSS', gnss.state || gnss.mode ? [gnss.mode ? GNSS_MODE_TEXT[gnss.mode] || gnss.mode : null, gnss.state ? label(GNSS_STATE, gnss.state) : null,
+    ['GPS', gnss.state || gnss.mode ? [gnss.mode ? GNSS_MODE_TEXT[gnss.mode] || gnss.mode : null, gnss.state ? label(GNSS_STATE, gnss.state) : null,
       num(num(gnss.hacc_m) ?? gnss.h_acc_m) !== null ? `±${(num(gnss.hacc_m) ?? gnss.h_acc_m).toFixed(1)} m` : null].filter(Boolean).join(' · ') : '정보 없음'],
     ['화면 연결', link.fresh === true ? `연결됨 · ${fixed(link.age_s, 2, ' s')}`
       : link.fresh === false ? '끊김' : '--'],
@@ -348,8 +374,8 @@ export function autoView(reply, nowMs = Date.now()) {
 export function modeChip(reply, nowMs = Date.now()) {
   const s = reply && reply.ok && reply.status ? reply.status : null;
   if (!s || !s.mode || stale(reply, nowMs)) return null;
-  if (s.mode === 'SHADOW') return ['', 'SHADOW · 모터 안 씀'];
-  if (s.mode === 'MOTOR') return ['warn', 'MOTOR · 차를 몬다'];
+  if (s.mode === 'SHADOW') return ['', '연습 모드'];
+  if (s.mode === 'MOTOR') return ['warn', '실제 주행 모드'];
   return ['', String(s.mode)];
 }
 
@@ -370,12 +396,12 @@ export function scaleText(scale) {
   if (num(scale.value) === null) {
     text = `모으는 중 ${win === null ? '--' : win.toFixed(0)}/${minimum === null ? '10' : minimum.toFixed(0)} s`;
   } else {
-    text = `${scale.value.toFixed(3)} (최근 ${win === null ? '--' : win.toFixed(0)}${target === null ? '' : `/${target.toFixed(0)}`} s)`;
+    text = `${scale.value.toFixed(3)} · 최근 ${win === null ? '--' : win.toFixed(0)}${target === null ? '' : `/${target.toFixed(0)}`} s`;
   }
   if (scale.frozen === true || (num(scale.value) === null && scale.hold && scale.hold !== 'not_driving')) {
-    text += ` · 멈춤: ${label(SCALE_HOLD, scale.hold) || '이유 모름'}`;
+    text += ` · 갱신 멈춤 · ${label(SCALE_HOLD, scale.hold) || '이유 모름'}`;
   }
-  if (scale.mismatch === true) text += ' · 표 어긋남';
+  if (scale.mismatch === true) text += ' · 속도 표와 어긋남';
   return text;
 }
 
@@ -387,15 +413,17 @@ export function scaleOffer(reply) {
   if (!offer || !Number.isInteger(offer.run_id) || HEARTBEAT_STATES.has(s.run_state)) return null;
   const value = num(offer.value);
   const win = num(offer.window_s);
-  const measured = value === null ? '온라인 배율 없음' : `온라인 배율 ${value.toFixed(3)} (최근 ${win === null ? '--' : win.toFixed(0)} s)`;
+  const span = win === null ? '' : `마지막 ${win.toFixed(0)}초 동안 잰 `;
+  const measured = value === null ? `${offer.run_id}번 주행에서는 온라인 배율을 재지 못했습니다.`
+    : `${offer.run_id}번 주행에서 ${span}온라인 배율은 ${value.toFixed(3)}입니다.`;
   if (offer.ok !== true) {
     return { runId: offer.run_id, canAccept: false,
-             text: `run ${offer.run_id} 끝: ${measured}. 전체 배율로 저장할 수 없다: ${label(SCALE_WHY_NOT, offer.why_not) || '이유 모름'}.` };
+             text: `${measured} 전체 배율로 저장할 수 없습니다. ${offer.why_not ? reasonSentence(SCALE_WHY_NOT[offer.why_not] || offer.why_not) : '이유는 알 수 없습니다.'}` };
   }
   const now = num(offer.speed_scale_now);
   const next = num(offer.speed_scale_new);
   return { runId: offer.run_id, canAccept: true, from: now, to: next,
-           text: `run ${offer.run_id} 끝: ${measured}. 전체 배율(k_field)을 ${fixed(now, 3, '')} → ${fixed(next, 3, '')}로 저장할까요?` };
+           text: `${measured} 지금 전체 배율은 ${fixed(now, 3, '')}입니다. ${fixed(next, 3, '')} 값으로 바꿔 저장할까요?` };
 }
 
 // A random session id of the operator link (contract: 4 to 64 characters).
@@ -418,9 +446,9 @@ const signedDeg = (deg) => (deg === null ? '--' : `${Math.abs(deg) < 0.05 ? '' :
 // The GPS words of a run: [value, sub, level]. requested: the mode the page sent ('' = the executor's setting).
 export function gnssTile(status, requested = '') {
   const g = status && typeof status.gnss === 'object' && status.gnss ? status.gnss : null;
-  if (!g) return [requested ? GNSS_MODE_TEXT[requested] || requested : '--', '실행기가 GPS 상태를 보내지 않음', ''];
+  if (!g) return [requested ? GNSS_MODE_TEXT[requested] || requested : '--', '실행기가 GPS 상태를 보내지 않습니다.', ''];
   const mode = typeof g.mode === 'string' ? g.mode : null;
-  const value = mode ? GNSS_MODE_TEXT[mode] || mode : '방식 모름';
+  const value = mode ? GNSS_MODE_TEXT[mode] || mode : '설정 모름';
   const hacc = num(g.hacc_m) ?? num(g.h_acc_m);
   const counts = g.counts && typeof g.counts === 'object' ? g.counts : {};
   const accepted = num(g.accepted) ?? num(counts.accepted);
@@ -431,7 +459,7 @@ export function gnssTile(status, requested = '') {
                  accepted === null ? null : `받음 ${accepted}${rejected === null ? '' : ` · 거부 ${rejected}`}`].filter(Boolean);
   let level = '';
   if (g.fence_tripped === true) { parts.unshift('범위 벗어남'); level = 'bad'; }
-  if (requested && mode && requested !== mode) { parts.unshift(`요청(${GNSS_MODE_TEXT[requested] || requested})과 다름`); level = level || 'warn'; }
+  if (requested && mode && requested !== mode) { parts.unshift('요청한 설정과 다름'); level = level || 'warn'; }
   return [value, parts.join(' · ') || '정보 없음', level];
 }
 
@@ -450,7 +478,7 @@ export function monitorView(reply, bridge = null, recording = null, requestedGns
     const speed = s.speed || {};
     tiles.push(['상태', isStale ? '끊김' : text, stopWords(s) || '', isStale ? 'bad' : level]);
     tiles.push(['속도', fixed(num(sr.speed_m_s) ?? num(s.v), 2, ' m/s'), `목표 ${fixed(num(speed.target_mps) ?? num(sr.target_speed_m_s), 2, '')}`, '']);
-    tiles.push(['횡 오차', fixed(num(sr.lateral_error_m) ?? num(s.lat), 2, ' m'), '+ = 왼쪽', '']);
+    tiles.push(['횡 오차', fixed(num(sr.lateral_error_m) ?? num(s.lat), 2, ' m'), '+는 왼쪽', '']);
     const distance = num(sr.distance_m) ?? num(s.dist);
     tiles.push(['남은 거리', fixed(num(sr.end_remaining_m), 1, ' m'), distance === null ? '' : `간 거리 ${distance.toFixed(1)} m`, '']);
     more.push(['방향 오차', fixed(num(sr.heading_error_deg) ?? num(s.head), 1, '°'), '', '']);
@@ -462,10 +490,10 @@ export function monitorView(reply, bridge = null, recording = null, requestedGns
   if (recording) {
     const driving = Boolean(s) && (s.run_state === 'running' || s.run_state === 'paused');
     const rec = !recording.known ? ['확인 중', '', ''] : recording.active
-      ? ['기록 중', recording.stopFailed ? '자동으로 멈추지 못함: 기록 탭에서 중지'
-        : recording.auto ? 'run 자동 기록(모든 센서)' : recording.tag === 'autonomy' ? '자율주행 기록' : '손으로 시작한 기록',
+      ? ['기록 중', recording.stopFailed ? '자동으로 멈추지 못했습니다. 기록 탭에서 중지하세요.'
+        : recording.auto ? '모든 센서 자동 기록' : recording.tag === 'autonomy' ? '자율주행 기록' : '직접 시작한 기록',
         recording.stopFailed ? 'warn' : 'ok']
-      : driving ? ['기록 안 함', '', 'warn'] : ['대기', '출발하면 자동 시작', ''];
+      : driving ? ['기록 꺼짐', '', 'warn'] : ['대기', '출발하면 자동 시작', ''];
     tiles.push(['기록', ...rec]);
   }
   // Steering command against the measured angle: the executor's own numbers, else the bridge's.
@@ -478,9 +506,9 @@ export function monitorView(reply, bridge = null, recording = null, requestedGns
   const acked = [drive.left?.acked, drive.right?.acked].map(num);
   const throttle = num(s?.T) ?? num(s?.single_row?.throttle_pct);
   const board = acked.some((v) => v !== null) ? `보드 PWM ${acked.map((v) => (v === null ? '--' : v)).join(' / ')}` : '';
-  more.push(['구동 duty', throttle === null ? '--' : `${throttle} %`, `${board}${num(drive.max_pwm) === null ? '' : `${board ? ' · ' : ''}상한 ${drive.max_pwm}`}`, '']);
+  more.push(['구동 출력', throttle === null ? '--' : `${throttle} %`, `${board}${num(drive.max_pwm) === null ? '' : `${board ? ' · ' : ''}상한 ${drive.max_pwm}`}`, '']);
   const pwm = num(steering.pwm), peak = num(steering.pwm_peak);
-  more.push(['조향 모터 PWM', pwm === null ? '--' : String(pwm), peak === null ? (bridge ? 'TRACE 값 없음' : '조향 상태 없음') : `최근 최대 ${peak}`, '']);
+  more.push(['조향 모터 PWM', pwm === null ? '--' : String(pwm), peak === null ? (bridge ? '값 없음' : '조향 상태 없음') : `최근 최대 ${peak}`, '']);
   return { tiles, more, stale: isStale };
 }
 
@@ -509,7 +537,7 @@ export function metricsView(reply) {
   for (const [key, value] of Object.entries(m).filter(([k, v]) => !known.has(k) && num(v) !== null).slice(0, 6)) {
     tiles.push([key, String(Math.round(value * 1000) / 1000), '', '']);
   }
-  return tiles.length ? { tiles, source: typeof m.reference === 'string' ? m.reference : '기준 중심선 대 실제 경로' } : null;
+  return tiles.length ? { tiles, source: typeof m.reference === 'string' ? m.reference : '기준 중심선과 실제 경로 비교' } : null;
 }
 
 // Recording of a run (2026-11-19, user: "자율주행시에는 반드시 모든 센서가 녹화되도록"). Before a go: start one (every sensor,

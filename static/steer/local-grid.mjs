@@ -80,7 +80,7 @@ export function describe(grid) {
   const parts = [`셀 ${num(grid.cell_m) ?? '--'} m · ${shape}`, `점유 ${grid.occupied ?? '--'}`,
                  grid.lines?.centre ? `선 품질 ${quality === null ? '--' : quality.toFixed(2)}` : '열 선 아직 없음'];
   if (age !== null) parts.push(`${age.toFixed(1)} s 전`);
-  if (grid.truncated) parts.push(grid.encoding === 'cells' ? '셀이 많아 가까운 것만' : '격자가 커서 셀을 못 받음');
+  if (grid.truncated) parts.push(grid.encoding === 'cells' ? '셀이 많아 가까운 것만 표시' : '격자가 커서 셀을 받지 못함');
   return [tag[0], tag[1], parts.join(' · ')];
 }
 
@@ -135,16 +135,16 @@ export function initLocalGrid(page) {
     let reply = null;
     try { reply = await page.getJson('/api/executor/status?grid=1'); } catch (_) { reply = null; }
     finally { busy = false; }
-    if (reply && reply.configured === false) { off = true; stop(); show(false); words('', '실행기 없음', '자율 실행기 설정 없음'); return; }
+    if (reply && reply.configured === false) { off = true; stop(); show(false); words('', '실행기 없음', '자율주행 실행기가 설정되어 있지 않습니다.'); return; }
     if (!reply?.ok) {
-      if (scene) words('bad', '실행기 연결 안 됨', grid ? describe(grid)[2] : '마지막 그림 유지');
+      if (scene) words('bad', '실행기 연결 안 됨', grid ? describe(grid)[2] : '마지막 그림을 유지합니다.');
       return;
     }
     const status = reply.status || {};
     // After a run (ended / idle / latched) the executor keeps integrating scans into its grid; the picture stays
     // the last one of the run until the next run opens.
     if (scene && !RUN_OPEN.has(status.run_state)) {
-      words('', '멈춤', '마지막 그림 · 다음 run 에서 다시 그린다');
+      words('', '멈춤', '마지막 주행의 그림입니다. 다음 주행에서 다시 그립니다.');
       return;
     }
     const next = status.local_grid_map && status.local_grid_map.schema === SCHEMA ? status.local_grid_map : null;
@@ -154,10 +154,10 @@ export function initLocalGrid(page) {
     trail = trailStep(trail, status);
     scene = sceneFromStatus(next ? status : { ...status, local_grid_map: undefined });
     if (scene && !scene.path.length && trail.points.length >= 2) scene.path = trail.points;
-    if (!scene) { show(false); words('', '대기', 'run 중에 그린다'); return; }
+    if (!scene) { show(false); words('', '대기', '주행 중에 그립니다.'); return; }
     show(true);
     if (grid) words(...describe(grid));
-    else words('', '격자 없음', '실행기가 국소 격자를 보내지 않음 · 경로·차만');
+    else words('', '격자 없음', '실행기가 격자를 보내지 않아 경로와 차만 그립니다.');
     draw();
   }
   function draw() {

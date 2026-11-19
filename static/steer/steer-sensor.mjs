@@ -16,9 +16,9 @@ const angle = (mrad) => (num(mrad) === null ? '--' : `${mrad >= 0 ? '' : '−'}$
 export function firmwareText(reply) {
   const sc = reply && typeof reply.steer_control === 'object' && reply.steer_control ? reply.steer_control : null;
   if (!sc) return '--';
-  if (sc.keys !== 'full_limit') return '단계 조향 (끝 목표 아님)';
+  if (sc.keys !== 'full_limit') return '단계 조향';
   if (sc.smooth === true) return 'SMOOTH · 한 번에 끊김 없이';
-  if (sc.smooth === false) return 'PULSE · 끊어서 (SMOOTH 꺼짐)';
+  if (sc.smooth === false) return 'PULSE · 끊어서 이동';
   return '끝 목표 · SMOOTH 보고 없음';
 }
 
@@ -35,11 +35,11 @@ export function potView(reply) {
   const permille = num(steering.measured_permille);
   return [level, text, [
     ['측정 각도', angle(num(steering.measured_mrad))],
-    ['측정 위치', permille === null ? '--' : `${permille} ‰ (왼쪽 +)`],
+    ['측정 위치', permille === null ? '--' : `${permille} ‰ · 왼쪽이 +`],
     ['가변저항 원값', num(steering.raw) === null ? '--' : String(steering.raw)],
     ['보정', steering.calibrated === true ? '있음' : steering.calibrated === false ? '없음' : '--'],
     ['조향 펌웨어', firmwareText(reply)],
-    ['상태 나이', num(steering.age_ms) === null ? '--' : `${steering.age_ms} ms${stale ? ' · 오래됨' : ''}`],
+    ['마지막 상태', num(steering.age_ms) === null ? '--' : `${steering.age_ms} ms 전${stale ? ' · 오래됨' : ''}`],
     ['결함', faults.length ? faults.map((f) => f.label).join(', ') : '없음'],
   ]];
 }

@@ -148,7 +148,7 @@ function testSecondaryRecorderRow() {
   c.state.recordings.status = live(false); c.state.recordings.lastStatusSteadyAt = clock;
   localTick();
   assert.equal(field('.status-dot').className, 'status-dot ok');
-  assert.equal(field('b').textContent, 'idle', 'fresh ordered response recovers without general telemetry');
+  assert.equal(field('b').textContent, '대기', 'fresh ordered response recovers without general telemetry');
   c.state.recordings.status = {...live(true), status_fresh: false, last_known: live(true)};
   localTick();
   assert.equal(field('.status-dot').className, 'status-dot warn', 'historical snapshot cannot become live');
@@ -199,19 +199,19 @@ async function testRecurringRecorderPolling() {
     interval();await flush();
   };
   for(let i=0;i<6;i++){
-    await step();assert.equal(ui.roverRecorderState.textContent,'ready');
+    await step();assert.equal(ui.roverRecorderState.textContent,'대기');
     assert.equal(detail['.status-dot'].className,'status-dot ok');
   }
   assert.equal(requests.length,2,'1s timer throttles real GETs to the2200ms cadence');
   mode='active';activeSince=steady;const durations=[];
   for(let i=0;i<15;i++){
-    await step();assert.equal(ui.roverRecorderState.textContent,'recording');
+    await step();assert.equal(ui.roverRecorderState.textContent,'기록 중');
     assert.equal(ui.roverRecordStopButton.disabled,false);
     durations.push(Number(ui.roverRecordingTimer.textContent.split(':')[1]));
   }
   assert.ok(durations.at(-1)>=13&&durations.at(-1)>durations[0],'elapsed updates beyond initial5s freshness window');
   mode='idle';for(let i=0;i<6;i++)await step();
-  assert.equal(ui.roverRecorderState.textContent,'ready');
+  assert.equal(ui.roverRecorderState.textContent,'대기');
   assert.equal(ui.roverRecordingTimer.textContent,'00:00');
   const beforeOutage=requests.length;
   mode='blocked';wall-=86400000; // OS wall-clock regression cannot suspend status polls.
@@ -227,10 +227,10 @@ async function testRecurringRecorderPolling() {
   assert.equal(pending.length,2,'timeout abort permits one recovery request');
   mode='idle';pending[1](live(false));await flush();
   pending[0](live(true,999));await flush();
-  assert.equal(ui.roverRecorderState.textContent,'ready','old aborted response cannot undo recovery');
-  for(let i=0;i<9;i++){await step();assert.equal(ui.roverRecorderState.textContent,'ready');}
+  assert.equal(ui.roverRecorderState.textContent,'대기','old aborted response cannot undo recovery');
+  for(let i=0;i<9;i++){await step();assert.equal(ui.roverRecorderState.textContent,'대기');}
   const beforeAway=requests.length;route='/docs';for(let i=0;i<6;i++)await step();
   assert.equal(requests.length,beforeAway,'polling is scoped to the visible control route');
-  route='/rover-control';await step();assert.equal(ui.roverRecorderState.textContent,'ready');
+  route='/rover-control';await step();assert.equal(ui.roverRecorderState.textContent,'대기');
   assert.ok(steady>=40000&&requests.length>=10);
 }

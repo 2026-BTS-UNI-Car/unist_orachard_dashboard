@@ -49,11 +49,11 @@ assert.equal(els.autoMode.hidden, true);
 
 status = { run_state: 'idle', mode: 'SHADOW' };
 await pollFn(); await settle();
-assert.deepEqual([els.autoMode.hidden, els.autoMode.className, els.autoMode.textContent], [false, 'status-chip', 'SHADOW · 모터 안 씀']);
+assert.deepEqual([els.autoMode.hidden, els.autoMode.className, els.autoMode.textContent], [false, 'status-chip', '연습 모드']);
 
 status = { run_state: 'ready', mode: 'MOTOR' };
 await pollFn(); await settle();
-assert.deepEqual([els.autoMode.hidden, els.autoMode.className, els.autoMode.textContent], [false, 'status-chip warn', 'MOTOR · 차를 몬다']);
+assert.deepEqual([els.autoMode.hidden, els.autoMode.className, els.autoMode.textContent], [false, 'status-chip warn', '실제 주행 모드']);
 
 status = { run_state: 'idle' };
 await pollFn(); await settle();

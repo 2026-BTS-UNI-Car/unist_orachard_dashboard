@@ -241,7 +241,7 @@ test('an arm refusal is shown and nothing is sent afterwards (no automatic re-ar
   await env.step(50);
   await env.ctl.arm();
   assert.equal(env.ctl.lease, null);
-  assert.match(env.ctl.message.text, /steering_uncalibrated/);
+  assert.equal(env.ctl.message.text, '조종 활성화가 거절됐습니다. 조향 보정이 없습니다.');
   await env.run(3000);
   assert.equal(env.bridge.requests.filter((r) => r.op === 'arm').length, 1, 'no automatic re-arm');
   assert.equal(env.bridge.requests.filter((r) => r.op !== 'arm').length, 0);
@@ -596,7 +596,7 @@ test('ownership loss by an error reply: lease dropped, STOP sent, no re-arm', as
   env.bridge.failNext = 'control_not_owned';
   await env.run(100);
   assert.equal(env.ctl.lease, null);
-  assert.match(env.ctl.message.text, /control_not_owned/);
+  assert.match(env.ctl.message.text, /^조종 권한이 끝났습니다. 이 화면에 조종 권한이 없습니다./);
   assert.ok(env.bridge.stops.includes('page_request_failed'));
   const n = env.bridge.requests.length;
   await env.run(3000);
@@ -611,7 +611,7 @@ test('ownership loss seen in the status (the bridge revoked the lease): dropped 
   env.bridge.latches.mcu_disarmed = { since: 1, detail: 'MCU watchdog', count: 1 };
   await env.step(50);
   assert.equal(env.ctl.lease, null);
-  assert.match(env.ctl.message.text, /mcu_disarmed/);
+  assert.equal(env.ctl.message.text, '조종 권한이 끝났습니다. MCU가 스스로 조종을 해제했습니다. 조종 활성화를 다시 누르세요.');
   assert.equal(env.bridge.stops.length, 0);
   // the screen shows the latch from the status the rules keep (the display model went with the page)
   assert.ok(env.ctl.lastStatus.steering_host.latches.mcu_disarmed);

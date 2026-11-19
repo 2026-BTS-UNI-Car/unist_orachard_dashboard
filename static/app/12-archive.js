@@ -594,8 +594,8 @@ function renderArchiveExecutor(frames, timeS) {
   if (key === state.archivePlayback.lastExecutorKey) return;
   state.archivePlayback.lastExecutorKey = key;
   text("roverArchiveAutoTime", frame ? `${fmtNumber(frame.t_s, 1)} s` : "--");
-  text("roverArchiveAutoStatus", frame ? "기록된 실행기 상태 · 재생 시각 이전의 마지막 값"
-    : list.length ? "이 시각 이전의 실행기 상태 없음" : "이 기록에 실행기 상태가 없거나 서버가 아직 보내지 않음");
+  text("roverArchiveAutoStatus", frame ? "재생 시각 이전에 기록된 마지막 실행기 상태입니다."
+    : list.length ? "이 시각 이전에 기록된 실행기 상태가 없습니다." : "이 기록에 실행기 상태가 없거나 서버가 아직 보내지 않았습니다.");
   const grid = $("roverArchiveAutoGrid");
   if (grid) {
     const rows = frame ? archiveExecutorTiles(frame.state) : [];
@@ -634,11 +634,11 @@ function renderRecordingDetail(detail, options = {}) {
   setupArchivePlayback(payload, normalizedPreview, options);
   const rows = id ? [
     { title: "ID", sub: recordingSensorLabel(payload), ok: true, level: "ok", value: id },
-    { title: "Duration", sub: `${formatShortDate(payload.display_started_at || metadata.started_at)}${payload.clock_quality === "gnss_estimated" ? ` · GPS 시각 보정 (원본 ${formatShortDate(metadata.started_at)})` : ""}`, ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
+    { title: "길이", sub: `${formatShortDate(payload.display_started_at || metadata.started_at)}${payload.clock_quality === "gnss_estimated" ? ` · GPS 시각 보정 (원본 ${formatShortDate(metadata.started_at)})` : ""}`, ok: true, level: "ok", value: metadata.duration_s ? `${fmtNumber(metadata.duration_s, 1)}s` : metadata.state || "--" },
     { title: "기록 시각", sub: recordingClockDescription(payload), ok: ["gnss_estimated", "gnss_receiver_estimated"].includes(payload.clock_quality), level: ["gnss_estimated", "gnss_receiver_estimated"].includes(payload.clock_quality) ? "ok" : "warn", value: recordingClockLabel(payload) },
     { title: "Timeline", sub: `${payload?.timeline_summary?.lidar_frames || state.recordings.timeline?.lidar?.frames?.length || 0} lidar · ${payload?.timeline_summary?.camera_frames || state.recordings.timeline?.camera?.frames?.length || 0} camera · ${payload?.timeline_summary?.imu_frames || state.recordings.timeline?.imu?.frames?.length || 0} imu`, ok: Boolean(state.recordings.timeline), level: state.recordings.timeline ? "ok" : "warn", value: state.recordings.timeline ? "playable" : "preview only" },
   ] : [
-    { title: "Archive", sub: "기록을 선택하세요", ok: false, level: "warn", value: "--" },
+    { title: "기록", sub: "기록을 선택하세요", ok: false, level: "warn", value: "--" },
   ];
   renderStatusRows("roverArchiveDetails", rows);
   renderArchiveDownloadButton(payload, id);
@@ -1041,7 +1041,7 @@ function renderArchiveFrame(options={}) {
     {
       label: "Roll / Pitch / Yaw",
       value: imuFrame ? `${fmtNumber(imuEuler.roll, 1)}° / ${fmtNumber(imuEuler.pitch, 1)}° / ${fmtNumber(imuEuler.yaw, 1)}°` : "--",
-      sub: imuFrame ? `${imuFrame.corrected ? "start-corrected" : "raw"} · calibration ${imuCalibrationState}` : waitingForImu?"IMU 버퍼 수신 중":"현재 재생 시각 안에 IMU frame 없음",
+      sub: imuFrame ? `${imuFrame.corrected ? "start-corrected" : "raw"} · calibration ${imuCalibrationState}` : waitingForImu?"IMU 기록을 받는 중":"이 재생 시각에는 IMU 기록 없음",
       color: imuFrame?.corrected ? colors.good : colors.amber,
     },
     { label: "가속도", value: imuFrame && vectorNorm(imuAcceleration) !== null ? `${fmtNumber(vectorNorm(imuAcceleration), 3)} m/s²` : "--", sub: `x ${fmtNumber(imuAcceleration.x, 3)} · y ${fmtNumber(imuAcceleration.y, 3)} · z ${fmtNumber(imuAcceleration.z, 3)}`, color: colors.good },
@@ -1049,7 +1049,7 @@ function renderArchiveFrame(options={}) {
     { label: "자기장", value: imuFrame && vectorNorm(imuMagnetic) !== null ? `${fmtNumber(vectorNorm(imuMagnetic), 2)} µT` : "--", sub: imuFrame?.calibration_reference_id ? `reference ${imuFrame.calibration_reference_id}` : "magnetometer unavailable", color: colors.blue },
   ]);
   text("roverArchiveImuTime", imuFrame ? `IMU ${fmtNumber(imuFrame.t_s, 3)}s / Δ ${fmtNumber(imuSyncDeltaS, 3)}s` : "IMU -- / Δ --");
-  text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data · base_link corrected" : "/imu/data_raw · sensor-native"} · playback ${fmtNumber(timeS, 3)}s` : waitingForImu?"IMU 버퍼 수신 중 · 재생 시각 동기화 대기":"동기 IMU sample 대기");
+  text("roverArchiveImuCaption", imuFrame ? `${imuFrame.corrected ? "/imu/data · base_link corrected" : "/imu/data_raw · sensor-native"} · playback ${fmtNumber(timeS, 3)}s` : waitingForImu?"IMU 기록을 받아 재생 시각에 맞추고 있습니다.":"재생 시각에 맞는 IMU 기록을 기다립니다.");
   drawImuAttitude($("roverArchiveImuCanvas"), Number(imuEuler.roll), Number(imuEuler.pitch), Number(imuEuler.yaw));
   const mapWait = state.archivePlayback.mapBuffering ? (window.LiveMap?.waitReason?.() || '지도 버퍼링') : '';
   text("roverArchiveTime", `${fmtClock(timeS)} / ${fmtClock(state.archivePlayback.durationS)}${mapWait ? ` · ${mapWait}` : ''}`);

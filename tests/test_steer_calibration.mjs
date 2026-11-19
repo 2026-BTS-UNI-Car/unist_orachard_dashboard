@@ -36,14 +36,14 @@ const enabled = (view) => ACTIONS.filter((a) => view.buttons[a].enabled);
 test('no bridge, no calibration block, firmware without CAL_RUNTIME: every button off with the reason', () => {
   let v = calView(null);
   assert.deepEqual(enabled(v), []);
-  assert.match(v.status.text, /연결 안 됨/);
+  assert.deepEqual([v.chip, v.status.text], ['연결 안 됨', '조종 브리지에 연결되지 않았습니다.'], 'a short chip, the sentence in the status line');
   v = calView({ ok: true, armed: false });
   assert.equal(v.chip, '보정 없음');
   assert.deepEqual(enabled(v), []);
   v = calView(reply({ supported: false, blocker: 'calibration_needs_firmware_update' }));
   assert.equal(v.chip, '펌웨어 업데이트 필요');
   assert.deepEqual(enabled(v), []);
-  assert.match(v.buttons.find_left.title, /펌웨어를 한 번 업데이트/);
+  assert.match(v.buttons.find_left.title, /펌웨어를 업데이트하세요/);
   assert.match(v.status.text, /받침/);
 });
 
@@ -52,7 +52,7 @@ test('armed or moving: refused with the reason', () => {
     const v = calView(reply({ blocker: code }));
     assert.deepEqual(enabled(v), [], code);
     assert.equal(v.level, 'warn');
-    assert.equal(v.chip, '지금은 안 됨');
+    assert.equal(v.chip, '지금은 불가');
   }
   assert.match(calView(reply({ blocker: 'calibration_needs_disarmed' })).status.text, /조종 활성화를 끈/);
 });
@@ -61,9 +61,9 @@ test('idle: centre, both finds and default usable; apply needs a usable end', ()
   const v = calView(reply());
   assert.deepEqual(enabled(v), ['set_center', 'trim_left', 'trim_right', 'find_left', 'find_right', 'default']);
   assert.match(v.buttons.apply.title, /먼저 끝 찾기/);
-  assert.equal(rows(v)['지금 보정'], '오른쪽 1681 · 가운데 1900 · 왼쪽 2180 (기본값)');
+  assert.equal(rows(v)['지금 보정'], '오른쪽 1681 · 가운데 1900 · 왼쪽 2180 · 기본값');
   assert.equal(rows(v)['가변저항'], '1903');
-  assert.equal(rows(v)['왼쪽 끝 (찾은 값)'], '--');
+  assert.equal(rows(v)['찾은 왼쪽 끝'], '--');
   assert.equal(v.chip, '보정 기본값');
   const off = calView(reply({ pot: 2150 }));
   assert.equal(off.buttons.set_center.enabled, false, 'the wheels are not near the centre');
@@ -86,10 +86,10 @@ test('apply proposal: found ends moved inward by the margins, checked against th
   assert.equal(proposal(unusable, { left: 30, right: 30 }).problem, 'calibration_nothing_found');
   const v = calView({ ok: true, calibration: cal }, { left: 30, right: 30 });
   assert.equal(v.buttons.apply.enabled, true);
-  assert.equal(rows(v)['적용하면'], '오른쪽 1490 · 가운데 1900 · 왼쪽 2290 (왼쪽·오른쪽 바뀜)');
-  assert.match(rows(v)['왼쪽 끝 (찾은 값)'], /^2320 \(되밀림에서 멈춤 · 11 펄스 · 9\.1 s · 12 s 전\)$/);
+  assert.equal(rows(v)['적용하면'], '오른쪽 1490 · 가운데 1900 · 왼쪽 2290 · 왼쪽·오른쪽 바뀜');
+  assert.match(rows(v)['찾은 왼쪽 끝'], /^2320 · 멈춘 이유 되밀림 · 11 펄스 · 9\.1 s · 12초 전$/);
   assert.equal(calView({ ok: true, calibration: cal }, { left: 200, right: 30 }).buttons.apply.enabled, false);
-  assert.match(rows(calView({ ok: true, calibration: unusable }))['왼쪽 끝 (찾은 값)'], /쓸 수 없음/);
+  assert.match(rows(calView({ ok: true, calibration: unusable }))['찾은 왼쪽 끝'], /쓸 수 없음/);
 });
 
 test('SMOOTH firmware r2: the guards of the status (2600, centre 1850..2150), the 2026-11-16 values pass, no staging', () => {
@@ -101,17 +101,17 @@ test('SMOOTH firmware r2: the guards of the status (2600, centre 1850..2150), th
   };
   const v = calView(reply(smooth));
   assert.equal(v.buttons.set_center.enabled, true, 'pot 2029 is inside 1850..2150');
-  assert.equal(rows(v)['하드 한계'], '오른쪽 ≥ 1300 · 왼쪽 ≤ 2600 · 가운데 1850–2150 · 폭 ≥ 150');
-  assert.match(rows(v)['한 목표 최대'], /나누지 않음/);
+  assert.equal(rows(v)['허용 한계'], '오른쪽 ≥ 1300 · 왼쪽 ≤ 2600 · 가운데 1850–2150 · 폭 ≥ 150');
+  assert.equal(rows(v)['한 번에 가는 최대 각'], 'SMOOTH 펌웨어라 목표까지 끊지 않고 한 번에 갑니다.');
   const cal = block({ ...smooth, found: { left: found('left', 2551, true, 'NO_PROGRESS'), right: null } });
   const p = proposal(cal, { left: 30, right: 30 });
   assert.deepEqual([p.marks, p.problem], [{ right: 1475, center: 2029, left: 2521 }, null]);
   assert.equal(proposal(block({ ...smooth, found: { left: found('left', 2640), right: null } }), { left: 30, right: 30 }).problem,
     'calibration_left_above_guard');
   const old = calView(reply());
-  assert.match(rows(old)['한 목표 최대'], /나눠 간다/, 'the pulse-hold firmware still stages');
+  assert.match(rows(old)['한 번에 가는 최대 각'], /큰 각은 나눠 갑니다.$/, 'the pulse-hold firmware still stages');
   const bare = calView(reply({ guards: undefined, pot: 2029 }));
-  assert.equal(rows(bare)['하드 한계'], '오른쪽 ≥ 1300 · 왼쪽 ≤ 2600 · 가운데 1850–2150 · 폭 ≥ 150', 'fallbacks = SMOOTH r2');
+  assert.equal(rows(bare)['허용 한계'], '오른쪽 ≥ 1300 · 왼쪽 ≤ 2600 · 가운데 1850–2150 · 폭 ≥ 150', 'fallbacks = SMOOTH r2');
 });
 
 test('a running scan: progress, live potentiometer, every action off', () => {
@@ -124,22 +124,22 @@ test('a running scan: progress, live potentiometer, every action off', () => {
   assert.equal(v.chip, '보정 중');
   assert.deepEqual(enabled(v), []);
   assert.equal(v.status.kind, 'testing');
-  assert.match(v.status.text, /왼쪽 끝 찾기 중 · 4\.5 s · 펄스 3 · 정착 2101 · 진척 \+38 · 되밀림 0 · STOP 으로 멈춤/);
-  assert.equal(rows(v)['가변저항(정착 값)'], '2101');
+  assert.equal(v.status.text, '멈추려면 STOP을 누르세요. 왼쪽 끝 찾기 중 · 4.5 s · 펄스 3 · 정착 2101 · 진척 +38 · 되밀림 0');
+  assert.equal(rows(v)['가변저항 정착 값'], '2101');
   assert.match(v.buttons.apply.title, /진행 중/);
 });
 
 test('results of the last action', () => {
   let v = calView(reply({ last: { action: 'apply', ok: true, cal_after: { right: 1490, center: 1900, left: 2290, store: 'NVS' } } }));
-  assert.deepEqual([v.status.kind, v.status.text], ['ok', '적용 끝: 오른쪽 1490 · 가운데 1900 · 왼쪽 2290 저장']);
+  assert.deepEqual([v.status.kind, v.status.text], ['ok', '찾은 끝을 적용했습니다. 저장한 값 · 오른쪽 1490 · 가운데 1900 · 왼쪽 2290']);
   v = calView(reply({ last: { action: 'find_right', ok: false, error: 'calibration_end_not_found', detail: 'NO_PROGRESS' } }));
-  assert.deepEqual([v.status.kind, v.status.text], ['bad', '오른쪽 끝 찾기 실패: 끝을 찾지 못함 (진척 없음)']);
+  assert.deepEqual([v.status.kind, v.status.text], ['bad', '오른쪽 끝을 찾지 못했습니다. 멈춘 이유는 진척 없음입니다.']);
   v = calView(reply({ last: { action: 'find_left', ok: false, error: 'calibration_stopped' } }));
-  assert.equal(v.status.text, '왼쪽 끝 찾기 실패: STOP 으로 멈춤');
+  assert.equal(v.status.text, '왼쪽 끝을 찾지 못했습니다. STOP으로 멈췄습니다.');
   v = calView(reply({ cal: { right: 1490, center: 1900, left: 2180, store: 'UNSAVED' },
     last: { action: 'apply', ok: false, error: 'calibration_no_answer', detail: 'CAL SAVE' } }));
-  assert.match(v.status.text, /저장 안 된 값이 쓰이는 중/);
-  assert.match(rows(v)['지금 보정'], /\(저장 안 됨\)$/);
+  assert.match(v.status.text, /^찾은 끝을 적용하지 못했습니다. 펌웨어가 응답하지 않았습니다. 세부 내용은 CAL SAVE입니다. 저장하지 않은 값이 쓰이고 있습니다. 다시 적용하거나 기본값으로 되돌리세요.$/);
+  assert.match(rows(v)['지금 보정'], / · 저장 안 됨$/);
 });
 
 // ---- page binding with a fake DOM --------------------------------------------------------------------------------
@@ -206,7 +206,7 @@ test('page: buttons follow the status; apply and default ask first and send thei
   p.button('apply').fire('click');
   await flush();
   assert.equal(p.log.posts.length, 0, 'no request when the dialog is declined');
-  assert.match(p.log.confirms[0], /새 값: 오른쪽 1490 · 가운데 1900 · 왼쪽 2290/);
+  assert.match(p.log.confirms[0], /새 값 · 오른쪽 1490 · 가운데 1900 · 왼쪽 2290/);
   p.state.confirm = true;
   p.els.steerCalMarginLeft.value = '40';
   p.els.steerCalMarginLeft.fire('input');
@@ -215,7 +215,7 @@ test('page: buttons follow the status; apply and default ask first and send thei
   assert.deepEqual(p.log.posts.at(-1), ['/api/rover/calibrate', { action: 'apply', left_margin_counts: 40, right_margin_counts: 30 }]);
   p.button('default').fire('click');
   await flush();
-  assert.match(p.log.confirms.at(-1), /기본값\(오른쪽 1681 · 가운데 1900 · 왼쪽 2180\)/);
+  assert.match(p.log.confirms.at(-1), /기본값 · 오른쪽 1681 · 가운데 1900 · 왼쪽 2180/);
   assert.deepEqual(p.log.posts.at(-1), ['/api/rover/calibrate', { action: 'default' }]);
   p.button('find_right').fire('click');
   await flush();
@@ -223,7 +223,7 @@ test('page: buttons follow the status; apply and default ask first and send thei
   assert.deepEqual(p.log.posts.at(-1), ['/api/rover/calibrate', { action: 'find_right' }]);
   p.button('set_center').fire('click');
   await flush();
-  assert.match(p.log.confirms.at(-1), /가변저항 1903/);
+  assert.match(p.log.confirms.at(-1), /가변저항 값은 1903입니다/);
   assert.deepEqual(p.log.posts.at(-1), ['/api/rover/calibrate', { action: 'set_center' }]);
   assert.equal(p.log.confirms.length, 5, 'every action asked first (one declined, four sent)');
   p.close();
@@ -247,7 +247,7 @@ test('page: a refusal is shown; disabled buttons send nothing; STOP always goes'
   p.button('find_left').fire('click');
   await flush();
   await flush();
-  assert.match(p.els.steerCalStatus.textContent, /왼쪽 끝 찾기 거절: 펌웨어에 실시간 보정이 없음/);
+  assert.match(p.els.steerCalStatus.textContent, /^왼쪽 끝 찾기 요청이 거절됐습니다. 펌웨어에 실시간 보정 기능이 없습니다./);
   p.close();
 });
 
@@ -267,7 +267,7 @@ test('page: with the folded end finding the marks stay by the centre buttons and
   await flush();
   const names = (list) => list.children.map((row) => row.children[0].textContent);
   assert.deepEqual(names(p.els.steerCalRows), ['지금 보정', '가변저항']);
-  assert.deepEqual(names(p.els.steerCalMore), ['왼쪽 끝 (찾은 값)', '오른쪽 끝 (찾은 값)', '적용하면', '하드 한계', '한 목표 최대']);
+  assert.deepEqual(names(p.els.steerCalMore), ['찾은 왼쪽 끝', '찾은 오른쪽 끝', '적용하면', '허용 한계', '한 번에 가는 최대 각']);
   assert.equal(names(p.els.steerCalRows).length + names(p.els.steerCalMore).length, p.screen.view().rows.length, 'no row is lost');
   assert.equal(p.button('apply').disabled, false, 'the buttons work as before');
   p.close();
@@ -285,7 +285,7 @@ test('markup: a part of the 보정·설정 tab of Rover Control with the seven b
   // stay on the screen. The end finding (find, margins, apply, default, its rows and samples) is one folded group.
   assert.ok(!section.includes('id="steerCalDetails"'), 'no fold around the part');
   assert.equal((section.match(/<details/g) || []).length, 1);
-  const fold = section.indexOf('<details id="steerCalEnds"><summary>끝 찾기 · 적용</summary>');
+  const fold = section.indexOf('<details id="steerCalEnds"><summary>끝 찾기와 적용</summary>');
   assert.ok(fold > 0, 'the end finding is a collapsed group (no open attribute)');
   const at = (text) => { const k = section.indexOf(text); assert.ok(k >= 0, text); return k; };
   for (const shown of ['id="steerCalRows"', 'data-steer-cal="set_center"', 'data-steer-cal="trim_left"', 'data-steer-cal="trim_right"',
@@ -295,9 +295,9 @@ test('markup: a part of the 보정·설정 tab of Rover Control with the seven b
   assert.ok(!/<p class="help-text"/.test(section), 'no paragraph of explanation: the buttons and the status line say why');
   assert.match(html.slice(html.lastIndexOf('<article', start), start), /data-rover-tab="setup" data-vehicle="front_steer"/);
   const labels = [...section.matchAll(/data-steer-cal="([a-z_]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
-  assert.deepEqual(labels, [['set_center', '지금 위치를 가운데로'], ['trim_left', '영점 ← 왼쪽 0.2°'],
-    ['trim_right', '영점 → 오른쪽 0.2°'], ['find_left', '왼쪽 끝 찾기'], ['find_right', '오른쪽 끝 찾기'],
-    ['apply', '적용'], ['default', '기본값으로']]);
+  assert.deepEqual(labels, [['set_center', '지금 위치를 가운데로'], ['trim_left', '영점 왼쪽으로 0.2°'],
+    ['trim_right', '영점 오른쪽으로 0.2°'], ['find_left', '왼쪽 끝 찾기'], ['find_right', '오른쪽 끝 찾기'],
+    ['apply', '찾은 끝 적용'], ['default', '기본값으로 되돌리기']]);
   assert.match(section, /<h2>조향 보정<\/h2>/);
   assert.ok(!/nav-item|data-route=/.test(section), 'no navigation entry');
   const raw = readFileSync(path.join(here, '..', 'static', 'steer', 'steer-calibration.mjs'));

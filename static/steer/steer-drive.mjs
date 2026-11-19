@@ -22,22 +22,22 @@ export const dragText = (deg) => (!deg ? '0°' : `${deg > 0 ? '왼쪽' : '오른
 // One short line under the pad (2026-11-19: "글씨도 쓸데없는 안내가 너무 많고"; 2026-11-20 shorter again); the full rules
 // are in Docs.
 export const HELP_TEXT = {
-  ramp: 'W/S 구동 · A/D 조향(고른 각까지) · C 가운데 · Esc 정지',
-  absolute: 'W/S 구동 · A/D 조향(끝까지) · C 가운데 · Esc 정지',
-  smooth: 'W/S 구동 · A/D 조향(끝까지, 끊김 없이) · C 가운데 · Esc 정지',
+  ramp: 'W/S 구동 · A/D 고른 각까지 조향 · C 가운데 · Esc 정지',
+  absolute: 'W/S 구동 · A/D 끝까지 조향 · C 가운데 · Esc 정지',
+  smooth: 'W/S 구동 · A/D 끝까지 끊김 없이 조향 · C 가운데 · Esc 정지',
 };
 // The drive readout's second line: what the MCU reports and the bridge's own drive cap (its install flag).
 export function driveCapText(cap) {
-  if (typeof cap !== 'number' || !isFinite(cap)) return 'MCU 보고 · 속도 아님';
-  if (cap <= 0) return '구동 상한 0 (브리지 설치 값): W/S 꺼짐';
-  return `MCU 보고 · 브리지 상한 PWM ${cap}`;
+  if (typeof cap !== 'number' || !isFinite(cap)) return 'MCU 보고 값 · 속도는 아님';
+  if (cap <= 0) return '구동 상한이 0이라 W/S가 꺼져 있습니다.';
+  return `MCU 보고 값 · 브리지 상한 PWM ${cap}`;
 }
 
 // The device chip (short) and, while not armed, the explanation in the status line (controller.device()).
 export const DEVICE_TEXT = {
   present: ['ok', '조향 장치 연결됨', ''],
-  none: ['warn', '조향 장치 없음', '조향 장치 없음: 조종 브리지가 조향 상태를 내지 않는다(V2 차동 브리지이거나 V3 펌웨어 없음). 조종 활성화를 할 수 없다.'],
-  unavailable: ['bad', '연결 안 됨', '연결 안 됨: 조종 브리지에 닿지 않는다. STOP은 계속 보낸다.'],
+  none: ['warn', '조향 장치 없음', '조종 브리지가 조향 상태를 보내지 않아 조종 활성화를 할 수 없습니다. 차동 구동용 브리지이거나 조향 펌웨어가 없을 때 이렇게 됩니다.'],
+  unavailable: ['bad', '연결 안 됨', '조종 브리지에 연결되지 않습니다. STOP은 계속 보냅니다.'],
   unknown: ['', '확인 중', ''],
 };
 
@@ -47,7 +47,7 @@ const AD_RATE_KEY = 'ubts-steer-ad-rate';
 // server session and everything this page stored in the browser, then load the page again.
 export async function resetScreen(ctl, page, env = {}) {
   const ask = env.confirm || ((text) => globalThis.confirm(text));
-  if (!ask('이 브라우저의 화면 상태(저장 값, 세션)를 지우고 페이지를 다시 불러옵니다. 조종 중이면 먼저 STOP 합니다. 계속할까요?')) return false;
+  if (!ask('이 브라우저에 저장된 화면 설정과 세션을 지우고 페이지를 다시 불러올까요? 조종 중이면 먼저 STOP을 보냅니다.')) return false;
   if (ctl.lease) await Promise.resolve(ctl.stop('screen_reset')).catch(() => null);
   await Promise.resolve((page.controlRequest || page.postJson)('/api/session/reset', {})).catch(() => null);
   for (const store of [env.localStorage || globalThis.localStorage, env.sessionStorage || globalThis.sessionStorage]) {
@@ -57,7 +57,7 @@ export async function resetScreen(ctl, page, env = {}) {
   return true;
 }
 // The A/D steering speed as the operator reads it: the top of the range means the wheel's own speed (no ramp).
-export const adRateText = (degS, max) => (degS >= max ? '최대(바퀴 속도)' : `${degS} °/s`);
+export const adRateText = (degS, max) => (degS >= max ? '최대' : `${degS} °/s`);
 
 // Why the bridge would refuse Arm now (status steering_host.not_ready of the ESP32-S3 bridge), or null.
 export function boardNotReady(status) {
@@ -66,14 +66,14 @@ export function boardNotReady(status) {
 }
 export function armBlockText(code) {
   const why = {
-    pot_invalid: '가변저항 값 무효(배선 확인): 값이 범위 밖(예: 4095)이다. 배선을 확인하면 저절로 돌아온다.',
-    device_unavailable: '보드 다시 연결 중(전원·USB): 보드가 돌아오면 저절로 준비된다.',
-    esp32_not_ready: '보드 다시 연결 중: 시작 줄·STOP 확인을 기다린다.',
-    steering_status_stale: '조향 상태 줄이 끊김(보드·USB 확인): 돌아오면 저절로 준비된다.',
-    firmware_mismatch: '펌웨어 이름이 다름: 보드 펌웨어 확인',
-    stop_unconfirmed: 'STOP 확인이 없어 다시 연결 중',
+    pot_invalid: '가변저항 값이 범위 밖입니다. 배선을 확인하면 저절로 다시 준비됩니다.',
+    device_unavailable: '보드에 다시 연결하고 있습니다. 전원과 USB를 확인하세요. 보드가 연결되면 저절로 준비됩니다.',
+    esp32_not_ready: '보드에 다시 연결하고 있습니다. 보드의 시작 응답과 STOP 확인을 기다립니다.',
+    steering_status_stale: '조향 상태가 들어오지 않습니다. 보드와 USB를 확인하세요. 다시 들어오면 저절로 준비됩니다.',
+    firmware_mismatch: '펌웨어 이름이 다릅니다. 보드의 펌웨어를 확인하세요.',
+    stop_unconfirmed: 'STOP 확인을 받지 못해 보드에 다시 연결하고 있습니다.',
   };
-  return `조종 활성화 불가 · ${why[code] || R.messageFor?.(code) || code}`;
+  return `지금은 조종 활성화를 할 수 없습니다. ${why[code] || R.messageFor?.(code) || code}`;
 }
 
 // Short labels of the faults in the status (MCU bits and host latches), from the rules' catalogues.
@@ -313,9 +313,9 @@ export function initSteerDrive(page) {
     const colours = page.chartColors();
     page.renderReadout('steerReadout', [
       { label: '목표 / 측정', value: `${fmtDeg(v.targetDeg)} / ${fmtDeg(v.measuredDeg)}`, sub: v.fresh ? `오차 ${fmtDeg(v.errorDeg)}` : '상태 오래됨', color: colours.cyan },
-      { label: '구동 duty', value: v.duty ? `${v.duty.left} / ${v.duty.right}` : '--', sub: driveCapText(v.driveCapPwm), color: colours.blue },
+      { label: '구동 출력', value: v.duty ? `${v.duty.left} / ${v.duty.right}` : '--', sub: driveCapText(v.driveCapPwm), color: colours.blue },
       { label: '입력 기한', value: v.deadlineMs === null ? '--' : `${Math.round(v.deadlineMs)} ms`, sub: v.saturated ? '조향 포화' : '0.75 s · Esc 즉시 정지', color: colours.good },
-      { label: '가변저항', value: v.potRaw === null ? (v.potInvalid ? '무효' : '--') : String(v.potRaw),
+      { label: '가변저항', value: v.potRaw === null ? (v.potInvalid ? '값 이상' : '--') : String(v.potRaw),
         sub: v.steerPwm === null ? '조향 PWM --' : `조향 PWM ${v.steerPwm}${v.steerPwmPeak ? ` · 최근 최대 ${v.steerPwmPeak}` : ''}`,
         color: v.potInvalid ? colours.bad || colours.cyan : colours.blue },
     ]);
@@ -368,7 +368,7 @@ export function initSteerDrive(page) {
       const idleExplain = !ctl.lease && !ctl.lastStop && !ctl.lastLoss && explain;
       const kind = idleExplain ? level : ctl.message.kind === 'info' ? 'testing' : ctl.message.kind;
       const textValue = idleExplain ? explain
-        : v.centreOff && ctl.lease && ctl.message.kind === 'ok' ? `${ctl.message.text} · 가운데 아님: 가운데 버튼(C)` : ctl.message.text;
+        : v.centreOff && ctl.lease && ctl.message.kind === 'ok' ? `${ctl.message.text} 바퀴가 가운데에 있지 않습니다. 가운데 버튼이나 C를 누르세요.` : ctl.message.text;
       status.className = `test-result ${kind}`;
       setText('steerCommandStatus', textValue);
     }

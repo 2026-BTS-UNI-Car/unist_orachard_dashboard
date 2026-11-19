@@ -130,7 +130,7 @@ const ops = calls => calls.map(call => call.op);
     const {c, calls, status, fire} = setup({lease: null});
     fire('forward', 'pointerdown'); fire('forward', 'pointerup'); await flush();
     assert.equal(calls.length, 0); assert.equal(c.activeButton, '');
-    assert.match(status[0][1], /먼저 조종을 활성화/);
+    assert.match(status[0][1], /먼저 조종 활성화를 누르세요/);
   }
   // Style: a held pad button is not a scroll, a selection or a long-press menu.
   {

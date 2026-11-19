@@ -29,13 +29,13 @@ test('GPS per run: four modes, sent with start only when chosen', async () => {
 });
 
 test('GPS tile: the run mode, its state, a mismatch with the request, an executor without the block', () => {
-  assert.deepEqual(gnssTile({}, 'log_only'), ['GPS 기록만', '실행기가 GPS 상태를 보내지 않음', '']);
+  assert.deepEqual(gnssTile({}, 'log_only'), ['GPS 기록만', '실행기가 GPS 상태를 보내지 않습니다.', '']);
   const run = { gnss: { mode: 'geofence', configured_mode: 'off', state: 'fix', hacc_m: 1.234, accepted: 12, rejected: 3 } };
   assert.deepEqual(gnssTile(run, 'geofence'), ['GPS 범위 감시', '확정 · ±1.23 m · 받음 12 · 거부 3', '']);
   const [, sub, level] = gnssTile(run, 'weak_constraint');
   assert.equal(level, 'warn');
-  assert.match(sub, /^요청\(GPS 사용함\)과 다름/, 'an older executor that ignored the field shows it');
-  assert.equal(gnssTile({ gnss: { mode: 'weak_constraint', state: 'rejected_no_fix' } })[1], '위치 없음(그 fix 안 씀)',
+  assert.match(sub, /^요청한 설정과 다름/, 'an older executor that ignored the field shows it');
+  assert.equal(gnssTile({ gnss: { mode: 'weak_constraint', state: 'rejected_no_fix' } })[1], '위치 미확정이라 쓰지 않음',
     'no fix indoors: the run goes on without GPS');
   assert.equal(gnssTile({ gnss: { mode: 'weak_constraint', rtk: { state: 'fixed' }, counts: { accepted: 5, jump: 2, quality: 1 } } })[1],
     'RTK FIXED · 받음 5 · 거부 3');
@@ -51,7 +51,7 @@ test('monitor tiles: six on the screen (state, speed, lateral error, remaining d
     drive: { left: { acked: 89 }, right: { acked: 89 }, max_pwm: 255 } };
   const view = monitorView(reply(status), bridge, { known: true, active: true, tag: 'autonomy', auto: true }, 'log_only', now);
   assert.deepEqual(view.tiles.map(([name]) => name), ['상태', '속도', '횡 오차', '남은 거리', 'GPS', '기록']);
-  assert.deepEqual(view.more.map(([name]) => name), ['방향 오차', '속도 제한', '단계', '조향 명령 / 측정', '구동 duty', '조향 모터 PWM']);
+  assert.deepEqual(view.more.map(([name]) => name), ['방향 오차', '속도 제한', '단계', '조향 명령 / 측정', '구동 출력', '조향 모터 PWM']);
   const other = (name) => view.more.find(([label]) => label === name);
   assert.deepEqual(tile(view, '상태').slice(1, 4), ['주행 중', '', 'ok']);
   assert.deepEqual(tile(view, '속도').slice(1, 3), ['0.31 m/s', '목표 0.35']);
@@ -60,10 +60,10 @@ test('monitor tiles: six on the screen (state, speed, lateral error, remaining d
   assert.deepEqual(other('속도 제한').slice(1, 3), ['0.30 m/s', '통로 신뢰도']);
   assert.equal(other('방향 오차')[1], '2.3°');
   assert.equal(other('조향 명령 / 측정')[1], '왼 5.0° / 왼 4.0°', 'the executor numbers first (S, steer.meas)');
-  assert.equal(other('구동 duty')[1], '35 %');
-  assert.equal(other('구동 duty')[2], '보드 PWM 89 / 89 · 상한 255');
+  assert.equal(other('구동 출력')[1], '35 %');
+  assert.equal(other('구동 출력')[2], '보드 PWM 89 / 89 · 상한 255');
   assert.deepEqual(other('조향 모터 PWM').slice(1, 3), ['-142', '최근 최대 180']);
-  assert.deepEqual(tile(view, '기록').slice(1, 4), ['기록 중', 'run 자동 기록(모든 센서)', 'ok']);
+  assert.deepEqual(tile(view, '기록').slice(1, 4), ['기록 중', '모든 센서 자동 기록', 'ok']);
   // without the executor's steering numbers: the bridge's target and measurement
   const bare = monitorView(reply({ run_state: 'idle' }), bridge, null, '', now);
   assert.equal(bare.more.find(([label]) => label === '조향 명령 / 측정')[1], '왼 4.6° / 왼 3.4°');
@@ -79,12 +79,12 @@ test('monitor tiles: six on the screen (state, speed, lateral error, remaining d
   // why the run stopped, in words, under the state (the executor's own codes are in the folded rows)
   assert.equal(tile(monitorView(reply({ run_state: 'ended', stop_reason: 'ROW_END' }), null, null, '', now), '상태')[2], '열 끝 도착');
   assert.deepEqual(tile(monitorView(reply({ run_state: 'latched', stop_reason: 'OPERATOR_OR_BACKSTOP', stop_detail: 'operator_stop' }), null, null, '', now), '상태').slice(1, 4),
-    ['멈춤', '운영자 STOP', 'bad']);
+    ['멈춤', 'STOP 누름', 'bad']);
   // recording: waits for the start while no run drives; a run that drives without one is a warning
   assert.deepEqual(tile(monitorView(reply({}), null, { known: true, active: false }, '', now), '기록').slice(1, 4), ['대기', '출발하면 자동 시작', '']);
-  assert.deepEqual(tile(monitorView(reply({ run_state: 'running' }), null, { known: true, active: false }, '', now), '기록').slice(1, 4), ['기록 안 함', '', 'warn']);
+  assert.deepEqual(tile(monitorView(reply({ run_state: 'running' }), null, { known: true, active: false }, '', now), '기록').slice(1, 4), ['기록 꺼짐', '', 'warn']);
   assert.deepEqual(tile(monitorView(reply({ run_state: 'ended' }), null, { known: true, active: true, auto: true, stopFailed: true }, '', now), '기록').slice(1, 4),
-    ['기록 중', '자동으로 멈추지 못함: 기록 탭에서 중지', 'warn']);
+    ['기록 중', '자동으로 멈추지 못했습니다. 기록 탭에서 중지하세요.', 'warn']);
   assert.equal(tile(monitorView(reply({}), null, { known: false }, '', now), '기록')[1], '확인 중');
 });
 
@@ -243,41 +243,41 @@ async function panel({ status = READY, rec = { known: true, active: false }, mod
 
 test('panel: the kept GPS choice goes with 준비; a refusal is one sentence in the status line until the state moves on', async () => {
   const p = await panel({ status: { run_state: 'idle', mode: 'MOTOR' } });
-  assert.deepEqual(p.line(), ['', '준비를 누르세요']);
+  assert.deepEqual(p.line(), ['', '준비를 누르세요.']);
   assert.equal(p.els.autoGnssMode.value, 'off', 'two choices since 11/20: an older remembered mode falls back to off');
   p.els.autoGnssMode.value = 'weak_constraint'; p.els.autoGnssMode.fire('change');
   assert.equal(p.store.get('ubts-auto-gnss-mode-v1'), 'weak_constraint');
   p.state.refuse.start = 'gnss_rtk_not_fixed';
   p.els.autoPrepare.fire('click'); await p.done();
   assert.deepEqual(p.log.actions[0], ['start', { row_len_m: null, gnss_mode: 'weak_constraint' }]);
-  assert.deepEqual(p.line(), ['bad', '준비 실패(새 run): RTK FIXED 가 아님: RTK 보정을 쓸 수 없다'], 'where and why');
+  assert.deepEqual(p.line(), ['bad', '준비하지 못했습니다. RTK FIXED 상태가 아니어서 RTK 보정을 쓸 수 없습니다.'], 'what happened and why');
   await p.poll();
-  assert.equal(p.line()[1], '준비 실패(새 run): RTK FIXED 가 아님: RTK 보정을 쓸 수 없다', 'it stays while nothing changed');
+  assert.equal(p.line()[1], '준비하지 못했습니다. RTK FIXED 상태가 아니어서 RTK 보정을 쓸 수 없습니다.', 'it stays while nothing changed');
   p.state.refuse = {};
   p.els.autoGnssMode.value = 'off'; p.els.autoGnssMode.fire('change');
   p.els.autoPrepare.fire('click'); await p.done();
   assert.deepEqual(p.log.actions.find(([a], k) => a === 'start' && k > 0)[1], { row_len_m: null, gnss_mode: 'off' }, 'GPS 사용 안 함 is sent as off');
   assert.deepEqual(p.sent(), ['start', 'start', 'arm'], 'MOTOR: the run, then Arm, in the one press');
-  assert.deepEqual(p.line(), ['ok', '출발할 수 있음']);
+  assert.deepEqual(p.line(), ['ok', '출발할 수 있습니다.']);
   // a row length that is no number: nothing is sent
   const q = await panel({ status: { run_state: 'idle', mode: 'MOTOR' } });
   q.els.autoRowLen.value = '-3';
   q.els.autoPrepare.fire('click'); await q.done();
-  assert.deepEqual([q.sent(), q.line()[1]], [[], '열 길이는 0보다 큰 수이거나 비워 둔다']);
+  assert.deepEqual([q.sent(), q.line()[1]], [[], '열 길이는 0보다 큰 수로 넣거나 비워 두세요.']);
 });
 
 test('panel: 준비 does every step by itself: a stopped run is acknowledged, an open run ended; no latch button, no record button', async () => {
   const p = await panel({ status: STOPPED });
-  assert.deepEqual(p.line(), ['bad', '멈춤: 운영자 STOP — 차를 다시 놓고 준비'], 'why it stopped stays in the sentence until 준비');
+  assert.deepEqual(p.line(), ['bad', 'STOP을 눌러 멈췄습니다. 다시 하려면 준비를 누르세요.'], 'why it stopped stays in the sentence until 준비');
   assert.deepEqual([p.els.autoPrepare.disabled, p.els.autoPrimary.disabled, p.els.autoPrimary.textContent], [false, true, '자율 주행 시작']);
   assert.equal(p.els.autoRowLen.disabled, false, 'the row length and the GPS choice can be set before 준비');
   await p.poll();
-  assert.equal(p.line()[1], '멈춤: 운영자 STOP — 차를 다시 놓고 준비');
+  assert.equal(p.line()[1], 'STOP을 눌러 멈췄습니다. 다시 하려면 준비를 누르세요.');
   p.els.autoRowLen.value = '42.5';
   p.els.autoPrepare.fire('click'); await p.done();
   assert.deepEqual(p.sent(), ['ack', 'start', 'arm'], 'the latch is acknowledged by 준비, then the run and Arm');
   assert.deepEqual(p.log.actions.find(([a]) => a === 'start')[1], { row_len_m: 42.5, gnss_mode: 'off' });
-  assert.deepEqual(p.line(), ['ok', '출발할 수 있음']);
+  assert.deepEqual(p.line(), ['ok', '출발할 수 있습니다.']);
   assert.deepEqual([p.els.autoPrepare.disabled, p.els.autoPrimary.disabled], [false, false]);
   assert.deepEqual([p.els.autoRowLen.disabled, p.els.autoGnssMode.disabled], [true, true], 'fixed for the run that is armed');
   // 준비 again while the run waits: the open run is ended, a new one made with the values on the screen
@@ -285,33 +285,33 @@ test('panel: 준비 does every step by itself: a stopped run is acknowledged, an
   assert.deepEqual(p.sent(), ['ack', 'start', 'arm', 'end', 'start', 'arm']);
   // SHADOW: start arms by itself, and the sentence says the vehicle will not move
   const q = await panel({ status: { run_state: 'ended', mode: 'SHADOW', stop_reason: 'ROW_END', stop_detail: 'row_end' }, mode: 'SHADOW' });
-  assert.deepEqual(q.line(), ['ok', '멈춤: 열 끝 도착']);
+  assert.deepEqual(q.line(), ['ok', '열 끝에 도착해 멈췄습니다.']);
   q.els.autoPrepare.fire('click'); await q.done();
-  assert.deepEqual([q.sent(), q.line()[1]], [['start'], '출발할 수 있음 · SHADOW(차는 안 움직임)']);
+  assert.deepEqual([q.sent(), q.line()[1]], [['start'], '출발할 수 있습니다. 연습 모드라서 차는 움직이지 않습니다.']);
   for (const id of ['autoRecordButton', 'autoRecordState', 'autoRecordRuns', 'autoNotice']) assert.ok(!p.asked.has(id) && !q.asked.has(id), `${id} is gone`);
 });
 
 test('panel: the start is on only once the corridor is acquired; 다시 출발 after a pause; 준비 off while driving', async () => {
   const p = await panel({ status: { run_state: 'armed', mode: 'MOTOR', go_ready: false, go_blockers: ['corridor_not_acquired'] } });
-  assert.deepEqual([p.els.autoPrimary.disabled, p.line()], [true, ['testing', '통로 찾는 중']]);
+  assert.deepEqual([p.els.autoPrimary.disabled, p.line()], [true, ['testing', '통로를 찾고 있습니다.']]);
   p.els.autoPrimary.fire('click'); await p.done();
   assert.deepEqual([p.sent(), p.log.recordings], [[], []], 'nothing is sent and nothing recorded before the corridor');
   p.state.status = { run_state: 'armed', mode: 'MOTOR', go_ready: false, go_blockers: ['operator_link_not_fresh'] };
   await p.poll();
-  assert.deepEqual([p.els.autoPrimary.disabled, p.line()], [false, ['ok', '출발할 수 있음']], 'the operator link is what the press itself brings');
+  assert.deepEqual([p.els.autoPrimary.disabled, p.line()], [false, ['ok', '출발할 수 있습니다.']], 'the operator link is what the press itself brings');
   p.state.status = { run_state: 'paused', mode: 'MOTOR', go_ready: true, go_blockers: [], stop_reason: 'OPERATOR_LINK_LOST', stop_detail: 'operator_link_lost' };
   await p.poll();
-  assert.deepEqual([p.els.autoPrimary.disabled, p.els.autoPrimary.textContent, p.line()[1]], [false, '다시 출발', '일시정지: 화면 연결 끊김 — 다시 출발을 누르세요']);
+  assert.deepEqual([p.els.autoPrimary.disabled, p.els.autoPrimary.textContent, p.line()[1]], [false, '다시 출발', '화면 연결이 끊겨 잠시 멈췄습니다. 다시 출발을 누르세요.']);
   p.state.status = { run_state: 'running', mode: 'MOTOR', single_row: { distance_m: 12.34, speed_m_s: 0.38 }, operator_link: { fresh: true, timeout_s: 0.5 } };
   await p.poll();
   assert.deepEqual([p.els.autoPrepare.disabled, p.els.autoPrimary.disabled, p.els.autoPrimary.textContent], [true, true, '자율 주행 시작']);
   assert.deepEqual(p.line(), ['ok', '주행 중 · 12.3 m · 0.38 m/s']);
-  assert.equal(p.els.autoHint.textContent, '화면을 가리면 0.5초 뒤 선다', "the executor's own time limit");
+  assert.equal(p.els.autoHint.textContent, '화면을 끄거나 가리면 0.5초 뒤 차가 멈춥니다.', "the executor's own time limit");
   assert.equal(p.els.autoRowLen.disabled, true);
   // a refused heartbeat shows in the sentence and goes with the next one that passes
   p.state.refuse.heartbeat = 'session_conflict';
   await p.beat(); p.screen.draw();
-  assert.deepEqual(p.line(), ['bad', '연결 신호 거절: 다른 화면이 출발 권한을 가짐']);
+  assert.deepEqual(p.line(), ['bad', '화면 연결 신호가 거절됐습니다. 다른 화면에서 조종하고 있습니다.']);
   p.state.refuse = {};
   await p.beat(); p.screen.draw();
   assert.equal(p.line()[1], '주행 중 · 12.3 m · 0.38 m/s');
@@ -326,7 +326,7 @@ test('panel: the start records every sensor first, then the heartbeat and the go
   assert.equal(p.screen.autoRecording(), 'rec-9');
   assert.equal(p.line()[1], '주행 중 · 0.4 m · 0.20 m/s');
   const recordTile = () => p.els.autoMonitorGrid.children.map((row) => row.children.map((c) => c.textContent)).find(([name]) => name === '기록');
-  assert.deepEqual(recordTile(), ['기록', '기록 중', 'run 자동 기록(모든 센서)'], 'the recording shows as one tile');
+  assert.deepEqual(recordTile(), ['기록', '기록 중', '모든 센서 자동 기록'], 'the recording shows as one tile');
   p.state.status = { run_state: 'paused' };
   await p.poll();
   assert.equal(p.log.recordings.length, 1, 'paused: the recording goes on');
@@ -343,11 +343,11 @@ test('panel: no go when the recording cannot start; a hand-started recording is 
   p.page.recording.start = async () => ({ ok: false, error: 'recorder_unavailable' });
   p.els.autoPrimary.fire('click'); await p.done();
   assert.ok(!p.sent().includes('go'), 'no go without the recording');
-  assert.deepEqual(p.line(), ['bad', '기록을 시작하지 못해 출발하지 않음: recorder_unavailable']);
+  assert.deepEqual(p.line(), ['bad', '기록을 시작하지 못해 출발하지 않았습니다. 알려 온 이유는 recorder_unavailable입니다.']);
   const u = await panel({ rec: { known: false } });
   u.els.autoPrimary.fire('click'); await u.done();
   assert.ok(!u.sent().includes('go'), 'recorder state not known: no go');
-  assert.match(u.line()[1], /^기록 상태를 몰라 출발하지 않음/);
+  assert.match(u.line()[1], /^기록 상태를 확인할 수 없어 출발하지 않았습니다./);
   const q = await panel({ rec: { known: true, active: true, id: 'by-hand', sensors: RUN_RECORD_SENSORS } });
   q.els.autoPrimary.fire('click'); await q.done();
   assert.equal(q.log.recordings.length, 0, 'a running recording of every sensor is kept');
@@ -364,7 +364,7 @@ test('panel: no go when the recording cannot start; a hand-started recording is 
   const g = await panel();
   g.state.refuse.go = 'corridor_not_acquired';
   g.els.autoPrimary.fire('click'); await g.done();
-  assert.deepEqual(g.line(), ['bad', '출발 거절: 통로를 아직 못 찾음']);
+  assert.deepEqual(g.line(), ['bad', '출발하지 못했습니다. 통로를 찾고 있습니다.']);
 });
 
 test('panel: 멈추기 always works and wins: no Arm after it during 준비, no go after it while the recording starts', async () => {
@@ -374,20 +374,20 @@ test('panel: 멈추기 always works and wins: no Arm after it during 준비, no 
   p.els.autoPrepare.fire('click'); await p.done();
   assert.deepEqual(p.sent(), ['start', 'stop'], 'no Arm; the open run is stopped');
   assert.equal(p.state.status.run_state, 'latched');
-  assert.deepEqual(p.line(), ['bad', '멈추기를 눌러 준비를 그만둠']);
+  assert.deepEqual(p.line(), ['bad', '멈추기를 눌러 준비를 그만두었습니다.']);
   assert.equal(p.els.autoStopButton.disabled, false, '멈추기 is never switched off');
   // while the recording of a start is starting: the executor is stopped and the go is not sent
   const q = await panel();
   q.state.onRecord = async () => { q.els.autoStopButton.fire('click'); await q.settle(); };
   q.els.autoPrimary.fire('click'); await q.done();
   assert.deepEqual(q.sent(), ['stop'], 'the stop of the armed run; no go');
-  assert.equal(q.line()[1], '멈추기를 눌러 출발하지 않음');
+  assert.equal(q.line()[1], '멈추기를 눌러 출발하지 않았습니다.');
   await q.poll();
   assert.deepEqual(q.log.recordings.map(([a]) => a), ['start', 'stop'], 'the recording of the run that never left stops with it');
   // a plain 멈추기 on a run: the executor stop, and the reason stays in the sentence
   const r = await panel({ status: { run_state: 'running', mode: 'MOTOR' } });
   r.els.autoStopButton.fire('click'); await r.settle(); await r.poll();
-  assert.deepEqual([r.sent(), r.line()], [['stop'], ['bad', '멈춤: 운영자 STOP — 차를 다시 놓고 준비']]);
+  assert.deepEqual([r.sent(), r.line()], [['stop'], ['bad', 'STOP을 눌러 멈췄습니다. 다시 하려면 준비를 누르세요.']]);
   // no run: nothing for the executor (the page's own handler still sends the bridge stop)
   const i = await panel({ status: { run_state: 'idle', mode: 'MOTOR' } });
   i.els.autoStopButton.fire('click'); await i.settle();

@@ -183,17 +183,17 @@ test('W/S are not disabled by the page; a drive cap of 0 is shown and said', asy
   r.ctl.keyDown('w');
   await r.step();
   assert.equal(r.bridge.drives.at(-1).throttle, r.ctl.speedCapPct, 'W is sent as always: the bridge applies its cap');
-  assert.match(r.ctl.message.text, /구동 상한 0/);
+  assert.equal(r.ctl.message.text, '브리지의 구동 상한이 0이라 W/S를 눌러도 바퀴가 돌지 않습니다. 조향은 됩니다.');
   r.ctl.keyUp('w');
-  assert.equal(driveCapText(0), '구동 상한 0 (브리지 설치 값): W/S 꺼짐');
-  assert.equal(driveCapText(120), 'MCU 보고 · 브리지 상한 PWM 120');
-  assert.equal(driveCapText(undefined), 'MCU 보고 · 속도 아님');
+  assert.equal(driveCapText(0), '구동 상한이 0이라 W/S가 꺼져 있습니다.');
+  assert.equal(driveCapText(120), 'MCU 보고 값 · 브리지 상한 PWM 120');
+  assert.equal(driveCapText(undefined), 'MCU 보고 값 · 속도는 아님');
   const s = rig({ drive: { max_pwm: 255 } });
   await s.arm();
   s.ctl.keyDown('s');
   await s.step();
   assert.equal(s.bridge.drives.at(-1).throttle, -s.ctl.speedCapPct);
-  assert.doesNotMatch(s.ctl.message.text, /구동 상한 0/);
+  assert.doesNotMatch(s.ctl.message.text, /구동 상한이 0/);
   assert.equal(steerView(s.ctl, s.clock.now()).driveCapPwm, 255);
 });
 
@@ -255,7 +255,7 @@ test('the status age limit comes from the bridge when it gives one', () => {
 
 test('labels, positions and help text', () => {
   assert.deepEqual(faultLabels(['pot_invalid', 'steer_hold_cancelled', 'mcu_reset_detected']).map((f) => [f.label, f.level]),
-    [['가변저항 값 무효(배선 확인)', 'bad'], ['조향 유지 취소(펌웨어)', 'warn'], ['MCU 리셋 감지', 'bad']]);
+    [['가변저항 값 이상', 'bad'], ['펌웨어가 조향 유지 취소', 'warn'], ['MCU 다시 시작됨', 'bad']]);
   assert.equal(dragText(0), '0°');
   assert.equal(dragText(12.5), '왼쪽 12.5°');
   assert.equal(dragText(-3), '오른쪽 3.0°');
@@ -267,7 +267,7 @@ test('labels, positions and help text', () => {
   const view = steerView(ctl, 1);
   assert.equal(view.absolute, true);
   assert.equal(view.dragPos, 50);
-  assert.match(HELP_TEXT.absolute, /A\/D 조향\(끝까지\)/);
+  assert.match(HELP_TEXT.absolute, /A\/D 끝까지 조향/);
   for (const text of Object.values(HELP_TEXT)) assert.ok(text.length <= 45, `one short line: ${text}`);
 });
 
@@ -372,9 +372,9 @@ test('board not ready: the reason and a clear text (pot_invalid = wiring)', () =
   assert.equal(boardNotReady({ steering_host: { not_ready: 'pot_invalid' } }), 'pot_invalid');
   assert.equal(boardNotReady({ steering_host: { not_ready: null } }), null);
   assert.equal(boardNotReady(null), null);
-  assert.match(armBlockText('pot_invalid'), /가변저항 값 무효\(배선 확인\)/);
-  assert.match(armBlockText('device_unavailable'), /보드 다시 연결 중/);
-  assert.match(R.messageFor('pot_invalid'), /배선 확인/);
+  assert.equal(armBlockText('pot_invalid'), '지금은 조종 활성화를 할 수 없습니다. 가변저항 값이 범위 밖입니다. 배선을 확인하면 저절로 다시 준비됩니다.');
+  assert.match(armBlockText('device_unavailable'), /보드에 다시 연결하고 있습니다/);
+  assert.equal(R.messageFor('pot_invalid'), '가변저항 값이 범위 밖입니다. 배선을 확인하세요.');
 });
 
 test('the differential Arm on a front-steer bridge adopts the steering panel and says so in Korean', () => {
@@ -403,7 +403,7 @@ test('A/D steering speed: the target ramps at the chosen rate while held; releas
   r.ctl.keyDown('d');
   await r.step();
   assert.equal(r.lastSteer(), -LIMIT, 'the top of the range: the full limit at once');
-  assert.equal(adRateText(20, 20), '최대(바퀴 속도)');
+  assert.equal(adRateText(20, 20), '최대');
   assert.equal(adRateText(7, 20), '7 °/s');
 });
 

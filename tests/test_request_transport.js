@@ -85,12 +85,12 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     await flush();
     assert.equal(f.timers.at(-1).ms, 8000, 'STOP waits up to 8 s');
     f.timers.at(-1).fn();
-    await assert.rejects(answer, /응답 없음 8초/);
+    await assert.rejects(answer, /8초 동안 응답이 없었습니다/);
     const command = f.context.controlRequest('/api/rover/command', {});
     await flush();
     assert.equal(f.timers.at(-1).ms, 5000, 'a drive command waits up to 5 s');
     f.timers.at(-1).fn();
-    await assert.rejects(command, /응답 없음 5초/);
+    await assert.rejects(command, /5초 동안 응답이 없었습니다/);
   }
   {
     // Conditional status polls (NET-06): an unchanged answer is a 304 and the caller gets the kept copy.

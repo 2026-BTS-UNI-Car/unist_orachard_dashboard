@@ -28,39 +28,54 @@ export const RELEASE_RETRIES = 3;
 const num = (value) => (typeof value === 'number' && isFinite(value) ? value : null);
 
 export const REASON_TEXT = {
-  planned: '계획 시간 끝', released: '버튼을 놓음', heartbeat_lost: '화면 신호가 끊김', operator_stop: 'STOP',
-  bridge_error: '브리지 오류', page_hidden: '화면이 가려짐', blur: '창이 포커스를 잃음', tab_changed: '탭을 바꿈',
+  planned: '계획대로 끝남', released: '버튼을 놓음', heartbeat_lost: '화면 연결 끊김', operator_stop: 'STOP',
+  bridge_error: '브리지 오류', page_hidden: '화면이 가려짐', blur: '다른 창으로 넘어감', tab_changed: '탭을 바꿈',
+};
+// The same reasons as the sentence of the result line (수동 조종 tab).
+export const REASON_SENTENCE = {
+  planned: '계획한 시간만큼 이동했습니다.', released: '버튼을 놓아 멈췄습니다.', heartbeat_lost: '화면 연결이 끊겨 멈췄습니다.',
+  operator_stop: 'STOP으로 멈췄습니다.', bridge_error: '브리지 오류로 멈췄습니다.', page_hidden: '화면이 가려져 멈췄습니다.',
+  blur: '다른 창으로 넘어가 멈췄습니다.', tab_changed: '탭을 바꿔 멈췄습니다.',
 };
 export const DIRECTION_TEXT = { forward: '앞으로', backward: '뒤로' };
 export const MESSAGES = {
-  distance_terrain_unknown: '알 수 없는 지형',
-  distance_duty_invalid: '속도 duty 가 정수가 아님',
-  distance_duty_out_of_range: '이 지형 표 범위 밖의 속도 duty',
-  distance_invalid: '거리가 숫자가 아님',
-  distance_out_of_range: '거리는 0.2~3.0 m',
-  distance_out_of_range_backward: '뒤로는 0.2~2.0 m (뒤는 감지하지 못한다)',
-  distance_direction_invalid: '방향 값이 틀림',
-  distance_too_short_for_duty: '이 속도로는 너무 짧다(출발 자료 밖): 속도를 낮추거나 거리를 늘린다',
-  distance_too_long_for_duty: '이 속도로는 너무 길다: 속도를 높이거나 거리를 줄인다',
-  distance_needs_steer_bridge: 'ESP32-S3 조향 브리지가 아님',
-  distance_drive_cap_zero: '구동 상한 0 (브리지 설치 값): 거리 이동 불가',
-  distance_drive_cap_unknown: '브리지가 구동 상한을 알리지 않음',
-  distance_duty_above_cap: 'duty가 브리지 구동 상한보다 큼: 표의 속도가 나오지 않는다',
-  distance_needs_arm: '먼저 조종 활성화',
-  distance_needs_lease: '조종권 정보 없음: 다시 조종 활성화',
-  distance_needs_manual: '자율 run 중에는 안 됨',
-  distance_move_running: '거리 이동이 이미 진행 중',
-  distance_move_unknown: '이 화면의 거리 이동이 아님',
-  distance_feedback_needs_full_move: '계획 시간까지 간 이동만 보정에 쓴다',
-  distance_feedback_done: '이 이동은 이미 저장함',
-  distance_actual_invalid: '실제 거리는 0 m 초과 10 m 이하',
-  distance_not_configured: '서버에 거리 이동이 설정되지 않음',
-  motor_bridge_unavailable: '브리지에 연결할 수 없음',
-  control_not_owned: '다른 화면이 조종 중',
-  stale_input_rearm_required: '입력표 만료: 다시 조종 활성화',
-  http_failed: 'HTTP 요청 실패',
+  distance_terrain_unknown: '알 수 없는 지형입니다.',
+  distance_duty_invalid: '속도 출력 값은 정수여야 합니다.',
+  distance_duty_out_of_range: '이 지형의 속도 표 범위를 벗어난 출력 값입니다.',
+  distance_invalid: '거리에 숫자를 넣으세요.',
+  distance_out_of_range: '거리는 0.2~3.0 m 사이로 넣으세요.',
+  distance_out_of_range_backward: '뒤로는 0.2~2.0 m 사이로 넣으세요. 차 뒤쪽은 감지하지 못합니다.',
+  distance_direction_invalid: '방향 값이 올바르지 않습니다.',
+  distance_too_short_for_duty: '이 속도로 가기에는 거리가 너무 짧습니다. 속도를 낮추거나 거리를 늘리세요.',
+  distance_too_long_for_duty: '이 속도로 가기에는 너무 긴 거리입니다. 속도를 높이거나 거리를 줄이세요.',
+  distance_needs_steer_bridge: 'ESP32-S3 조향 브리지에서만 쓸 수 있습니다.',
+  distance_drive_cap_zero: '브리지의 구동 상한이 0이라 거리 이동을 할 수 없습니다.',
+  distance_drive_cap_unknown: '브리지가 구동 상한을 알려 주지 않았습니다.',
+  distance_duty_above_cap: '출력이 브리지의 구동 상한보다 커서 표의 속도가 나오지 않습니다.',
+  distance_needs_arm: '먼저 조종 활성화를 누르세요.',
+  distance_needs_lease: '조종 권한 정보가 없습니다. 조종 활성화를 다시 누르세요.',
+  distance_needs_manual: '자율주행 중에는 거리 이동을 할 수 없습니다.',
+  distance_move_running: '거리 이동을 이미 하고 있습니다.',
+  distance_move_unknown: '이 화면에서 시작한 거리 이동이 아닙니다.',
+  distance_feedback_needs_full_move: '계획한 시간까지 간 이동만 보정에 쓸 수 있습니다.',
+  distance_feedback_done: '이 이동의 거리는 이미 저장했습니다.',
+  distance_actual_invalid: '잰 거리는 0 m보다 크고 10 m 이하여야 합니다.',
+  distance_not_configured: '서버에 거리 이동이 설정되어 있지 않습니다.',
+  motor_bridge_unavailable: '브리지에 연결할 수 없습니다.',
+  control_not_owned: '다른 화면에서 조종하고 있습니다.',
+  stale_input_rearm_required: '조종 권한이 만료됐습니다. 조종 활성화를 다시 누르세요.',
+  http_failed: '서버에 요청을 보내지 못했습니다.',
 };
 export const message = (code) => (code ? (MESSAGES[code] || String(code)) : '');
+// The same as a sentence for a status line: an unknown code is named in one.
+export const sentence = (code) => (!code ? '이유는 알 수 없습니다.' : MESSAGES[code] || `서버가 알린 이유는 ${String(code)}입니다.`);
+// "...(으)로" after a name the server sends (a terrain label): 으로 after a final consonant other than rieul.
+export function withRo(word) {
+  const code = String(word || '').slice(-1).charCodeAt(0);
+  if (!(code >= 0xac00 && code <= 0xd7a3)) return `${word}(으)로`;
+  const final = (code - 0xac00) % 28;
+  return `${word}${final === 0 || final === 8 ? '로' : '으로'}`;
+}
 const fixed = (value, digits) => (num(value) === null ? '--' : value.toFixed(digits));
 // The rows shown under the controls; the others are in the folded '계획 자세히'.
 export const MAIN_ROWS = ['계획 시간', '예상 거리', '보정 배율', '구동 상한'];
@@ -105,9 +120,9 @@ export function speedAt(terrain, duty) {
 export function correctionText(plan) {
   const c = plan.correction || { factor: plan.factor, samples: 0, from_duty: null };
   const way = plan.direction === 'backward' ? '뒤로 ' : '';
-  if (num(c.from_duty) === null || !c.samples) return `${fixed(num(c.factor) ?? 1, 2)} (${way}줄자 기록 없음)`;
-  if (c.from_duty === plan.duty) return `${fixed(c.factor, 2)} (${way}줄자 ${c.samples}번)`;
-  return `${fixed(c.factor, 2)} (${c.from_duty} %의 ${way}배율을 빌림)`;
+  if (num(c.from_duty) === null || !c.samples) return `${fixed(num(c.factor) ?? 1, 2)} · ${way}줄자 기록 없음`;
+  if (c.from_duty === plan.duty) return `${fixed(c.factor, 2)} · ${way}줄자 ${c.samples}번`;
+  return `${fixed(c.factor, 2)} · 출력 ${c.from_duty} %의 ${way}배율을 빌려 씀`;
 }
 
 // The tape corrections of one terrain and direction as a row text, or null.
@@ -127,23 +142,23 @@ export function distView(s) {
   const terrain = s.table?.terrains?.find((t) => t.key === plan?.terrain);
   if (plan && plan.speed) {
     const sp = plan.speed;
-    rows.push(['계획 시간', `${fixed(plan.drive_s, 2)} s · duty ${plan.duty} % (PWM ${plan.pwm})`]);
+    rows.push(['계획 시간', `${fixed(plan.drive_s, 2)} s · 출력 ${plan.duty} % · PWM ${plan.pwm}`]);
     rows.push(['예상 거리', `${fixed(plan.expected_m, 2)} m · 등급 ${plan.grade}${plan.direction === 'backward' ? ' · 뒤로' : ''}`]);
     rows.push(['속도', sp.interpolated && Array.isArray(sp.between)
-      ? `${fixed(sp.value, 3)} m/s [${sp.grade}: 표의 ${sp.between[0]} %·${sp.between[1]} % 사이 직선 보간, ${sp.reference}]`
-      : `${fixed(sp.value, 3)} m/s [${sp.grade}, ${sp.reference}, 구간 ${sp.segments}]`]);
-    rows.push(['출발 지연', `${fixed(plan.lag.value, 2)} s [${plan.lag.grade}${plan.lag.grade === '가정' ? ': 100 % 출발 값을 씀' : ': 100 % 출발 9건'}]`]);
-    rows.push(['놓은 뒤 미끄러짐', `${fixed(plan.coast.value, 2)} m [${plan.coast.grade}]`]);
+      ? `${fixed(sp.value, 3)} m/s · 등급 ${sp.grade} · 표의 ${sp.between[0]} %와 ${sp.between[1]} % 사이를 직선으로 이음 · ${sp.reference}`
+      : `${fixed(sp.value, 3)} m/s · 등급 ${sp.grade} · ${sp.reference} · 구간 ${sp.segments}`]);
+    rows.push(['출발 지연', `${fixed(plan.lag.value, 2)} s · 등급 ${plan.lag.grade} · ${plan.lag.grade === '가정' ? '출력 100 % 출발 값을 씀' : '출력 100 % 출발 9건'}`]);
+    rows.push(['놓은 뒤 미끄러짐', `${fixed(plan.coast.value, 2)} m · 등급 ${plan.coast.grade}`]);
     rows.push(['이 속도로 갈 수 있는 거리', `${fixed(plan.min_distance_m, 2)}–${fixed(plan.max_distance_m, 2)} m`]);
     rows.push(['보정 배율', correctionText(plan)]);
     const measured = measuredText(s.corrections, plan.terrain, plan.direction);
     if (measured) rows.push(['줄자 기록 있는 속도', measured]);
   }
-  if (terrain?.duties?.length) rows.push(['표에 있는 duty', `${terrain.duties.map((d) => d.duty).join(' · ')} % (그 사이는 직선 보간)`]);
+  if (terrain?.duties?.length) rows.push(['표에 있는 출력', `${terrain.duties.map((d) => d.duty).join(' · ')} % · 사이 값은 직선으로 이음`]);
   const cap = num(s.bridge?.max_pwm);
   const capDuty = num(s.bridge?.max_duty);
-  rows.push(['구동 상한', cap === null ? '--' : cap === 0 ? 'PWM 0 (브리지 설치 값): 바퀴가 돌지 않음' : `PWM ${cap}${capDuty === null ? '' : ` (duty ${capDuty} %까지)`}`]);
-  rows.push(['자료', `${terrain ? `${terrain.label} ${terrain.day} · ` : ''}2026-10 기록, 조향 장치 전 차(ESP8266). 지금 차는 재지 않음${direction === 'backward' ? '. 뒤로는 앞으로 잰 표를 그대로 씀(가정)' : ''}`]);
+  rows.push(['구동 상한', cap === null ? '--' : cap === 0 ? 'PWM 0이라 바퀴가 돌지 않습니다.' : `PWM ${cap}${capDuty === null ? '' : ` · 출력 ${capDuty} %까지`}`]);
+  rows.push(['자료', `${terrain ? `${terrain.label} ${terrain.day} · ` : ''}2026-10에 조향 장치를 달기 전의 ESP8266 차로 잰 기록입니다. 지금 차로는 재지 않았습니다.${direction === 'backward' ? ' 뒤로 갈 때도 앞으로 잰 표를 그대로 쓴다고 가정했습니다.' : ''}`]);
 
   // The slider's readout: the duty now, its table speed at once, the drive time once the plan is for this duty.
   const inTerrain = s.table?.terrains?.find((t) => t.key === s.input?.terrain);
@@ -152,38 +167,38 @@ export function distView(s) {
   if (inTerrain && duty !== null) {
     const v = speedAt(inTerrain, duty);
     const planned = plan && plan.speed && plan.terrain === inTerrain.key && plan.duty === duty;
-    const time = planned ? (plan.problem ? '이 거리 안 됨' : `${fixed(plan.drive_s, 2)} s`) : s.planError ? '--' : '계산 중';
+    const time = planned ? (plan.problem ? '이 거리는 불가' : `${fixed(plan.drive_s, 2)} s`) : s.planError ? '--' : '계산 중';
     speed = `${duty} % · ${v === null ? '--' : `${v.toFixed(2)} m/s`} · ${time}`;
   }
 
   const running = s.move && s.move.state === 'driving';
   let why = null;
-  if (!s.table) why = '표를 읽는 중';
-  else if (s.external || running) why = '거리 이동 중';
+  if (!s.table) why = '속도 표를 읽고 있습니다.';
+  else if (s.external || running) why = '거리 이동 중입니다.';
   else if (!s.armed) why = message('distance_needs_arm');
-  else if (!s.fresh) why = '조향 상태가 오래됨';
-  else if (s.planError) why = message(s.planError);
-  else if (!plan) why = '계획 중';
-  else if ((plan.direction || 'forward') !== direction) why = '계획 중';
-  else if (plan.problem) why = message(plan.problem);
-  else if (s.bridge?.refusal) why = message(s.bridge.refusal);
-  const go = { enabled: !why, title: why || '누르고 있는 동안만 간다. 놓으면 바로 선다.',
-               text: `${DIRECTION_TEXT[direction]} 이동 (누르고 있기)` };
+  else if (!s.fresh) why = '조향 상태가 오래됐습니다.';
+  else if (s.planError) why = sentence(s.planError);
+  else if (!plan) why = '이동 계획을 계산하고 있습니다.';
+  else if ((plan.direction || 'forward') !== direction) why = '이동 계획을 계산하고 있습니다.';
+  else if (plan.problem) why = sentence(plan.problem);
+  else if (s.bridge?.refusal) why = sentence(s.bridge.refusal);
+  const go = { enabled: !why, title: why || '누르고 있는 동안만 이동합니다. 놓으면 바로 멈춥니다.',
+               text: `누르는 동안 ${DIRECTION_TEXT[direction]}` };
 
-  let status = { kind: '', text: '버튼을 누르고 있는 동안만 간다' };
+  let status = { kind: '', text: '버튼을 누르고 있는 동안만 이동합니다.' };
   if (running) {
-    status = { kind: 'testing', text: `${DIRECTION_TEXT[s.move.direction] || ''} 거리 이동 중 · ${fixed(s.move.elapsed_s, 1)} / ${fixed(s.move.planned_s, 2)} s · 놓으면 선다`.trim() };
+    const way = DIRECTION_TEXT[s.move.direction] ? `${DIRECTION_TEXT[s.move.direction]} ` : '';
+    status = { kind: 'testing', text: `버튼을 놓으면 바로 멈춥니다. ${way}이동 중 · ${fixed(s.move.elapsed_s, 1)} / ${fixed(s.move.planned_s, 2)} s` };
   } else if (s.result) {
     const r = s.result;
     const expected = num(r.expected_for_elapsed_m) ?? r.expected_m;
-    const reason = REASON_TEXT[r.reason] || r.reason || '';
+    const ended = REASON_SENTENCE[r.reason] || (r.reason ? `이동이 끝났습니다. 끝난 이유는 ${r.reason}입니다.` : '이동이 끝났습니다.');
     const kind = r.reason === 'planned' ? 'ok' : r.state === 'failed' || r.state === 'stopped' ? 'bad' : 'warn';
-    let text = `끝 (${reason}): 계획 ${fixed(r.planned_s, 2)} s · 실제 ${fixed(r.elapsed_s, 2)} s · 예상 ${fixed(expected, 2)} m`;
-    if (r.feedback_open) text += ' · 줄자 거리는 보정·설정 탭에서';
+    const text = `${ended}${r.feedback_open ? ' 줄자로 잰 거리는 보정·설정 탭에 넣으세요.' : ''} 계획 ${fixed(r.planned_s, 2)} s · 실제 ${fixed(r.elapsed_s, 2)} s · 예상 ${fixed(expected, 2)} m`;
     status = { kind, text };
   }
   if (s.notice && !running) status = s.notice;
-  const feedback = { enabled: Boolean(s.result && s.result.feedback_open && !running), title: s.result?.feedback_open ? '실제 간 거리(m)를 저장' : '계획 시간까지 간 이동 뒤에' };
+  const feedback = { enabled: Boolean(s.result && s.result.feedback_open && !running), title: s.result?.feedback_open ? '줄자로 잰 거리를 저장합니다.' : '계획한 시간까지 이동한 뒤에 저장할 수 있습니다.' };
   const chip = running ? ['warn', '이동 중'] : go.enabled ? ['ok', '준비'] : ['', '대기'];
   return { rows, go, feedback, status, chip, speed, direction,
            main: rows.filter(([name]) => MAIN_ROWS.includes(name)), more: rows.filter(([name]) => !MAIN_ROWS.includes(name)) };
@@ -196,16 +211,16 @@ export function tapeView(s) {
   const labelOf = (key) => s.table?.terrains?.find((item) => item.key === key)?.label || key || '--';
   const r = s.result;
   const moved = r && typeof r.terrain === 'string' && r.terrain ? r.terrain : null;
-  const last = r ? `마지막 이동: ${moved ? `${labelOf(moved)} · ` : ''}${DIRECTION_TEXT[r.direction] || '앞으로'} ${fixed(num(r.distance_m), 1)} m · ${num(r.duty) === null ? '--' : `${r.duty} %`} · ${REASON_TEXT[r.reason] || r.reason || ''}`
-    : '이 화면에서 끝난 이동 없음';
+  const last = r ? `마지막 이동 · ${moved ? `${labelOf(moved)} · ` : ''}${DIRECTION_TEXT[r.direction] || '앞으로'} ${fixed(num(r.distance_m), 1)} m · 출력 ${num(r.duty) === null ? '--' : `${r.duty} %`} · ${REASON_TEXT[r.reason] || r.reason || ''}`
+    : '이 화면에서 끝낸 거리 이동이 아직 없습니다.';
   const rows = [];
   for (const direction of ['forward', 'backward']) rows.push([`${DIRECTION_TEXT[direction]} 줄자 배율`, measuredText(s.corrections, terrain, direction) || '기록 없음']);
   const open = Boolean(r && r.feedback_open && !(s.move && s.move.state === 'driving'));
   const other = open && Boolean(moved && terrain && moved !== terrain);
-  const note = other ? `마지막 이동은 ${labelOf(moved)}에서 한 것: 그 지형을 골라야 저장된다` : null;
+  const note = other ? `마지막 이동은 ${labelOf(moved)}에서 했습니다. 저장하려면 지형을 ${withRo(labelOf(moved))} 고르세요.` : null;
   const enabled = open && !other;
   return { last, rows, note, chip: enabled ? ['ok', '입력 가능'] : other ? ['warn', '지형 다름'] : ['', '대기'],
-           feedback: { enabled, title: enabled ? '실제 간 거리(m)를 저장' : note || '계획 시간까지 간 이동 뒤에' } };
+           feedback: { enabled, title: enabled ? '줄자로 잰 거리를 저장합니다.' : note || '계획한 시간까지 이동한 뒤에 저장할 수 있습니다.' } };
 }
 
 export function initDriveDistance(page, options = {}) {
@@ -278,7 +293,7 @@ export function initDriveDistance(page, options = {}) {
     }
     const limit = distanceLimit(s.table, s.direction);
     if (ui.meters && ui.meters.max !== String(limit)) ui.meters.max = String(limit);
-    setText($('steerDistMetersLabel'), `거리 m (0.2~${limit.toFixed(1)}${s.direction === 'backward' ? ', 뒤로' : ''})`);
+    setText($('steerDistMetersLabel'), `거리 (0.2~${limit.toFixed(1)} m)`);
     const status = $('steerDistStatus');
     if (status) { status.className = `test-result ${view.status.kind || ''}`.trim(); setText(status, view.status.text); }
     const toTape = $('steerDistToTape');
@@ -292,7 +307,7 @@ export function initDriveDistance(page, options = {}) {
     const fb = $('steerDistFeedback');
     if (fb) { fb.disabled = !tape.feedback.enabled; fb.title = tape.feedback.title; }
     const reset = $('steerDistReset');
-    if (reset) setText(reset, `이 지형 ${DIRECTION_TEXT[s.direction]} 보정 초기화`);
+    if (reset) setText(reset, '줄자 보정 지우기');
     const tapeStatus = $('steerDistTapeStatus');
     const tapeNote = s.tapeNotice || (tape.note ? { kind: 'warn', text: tape.note } : null);
     if (tapeStatus) {
@@ -341,7 +356,7 @@ export function initDriveDistance(page, options = {}) {
         s.table = reply.table; s.corrections = reply.corrections || {};
         if (!loaded) { loaded = true; fillTerrains(); }
       }
-    } catch (_) { s.notice = { kind: 'bad', text: `표를 읽지 못함: ${message('http_failed')}` }; }
+    } catch (_) { s.notice = { kind: 'bad', text: `속도 표를 읽지 못했습니다. ${message('http_failed')}` }; }
     replan();
   }
   async function replanNow() {
@@ -409,7 +424,7 @@ export function initDriveDistance(page, options = {}) {
     starting = false;
     if (!reply || !reply.ok) {
       c.endExternal({ lease: chain.lease, ticket: chain.ticket, seq: chain.seq });
-      s.notice = { kind: 'bad', text: `거리 이동 거절: ${message(reply?.error)}` };
+      s.notice = { kind: 'bad', text: `거리 이동을 시작하지 못했습니다. ${sentence(reply?.error)}` };
       replan();
       return;
     }
@@ -436,7 +451,7 @@ export function initDriveDistance(page, options = {}) {
     clearTimer(holdTimer); holdTimer = null;
     const c = ctl();
     if (c && c.external) c.endExternal(null, 'distance_move_lost');
-    if (why !== 'stopped' && moveId !== null) s.notice = { kind: 'bad', text: '거리 이동의 끝을 확인하지 못함: 다시 조종 활성화' };
+    if (why !== 'stopped' && moveId !== null) s.notice = { kind: 'bad', text: '거리 이동이 끝났는지 확인하지 못했습니다. 조종 활성화를 다시 누르세요.' };
     moveId = null; s.move = null;
     draw();
   }
@@ -493,23 +508,23 @@ export function initDriveDistance(page, options = {}) {
         s.corrections = reply.corrections || s.corrections;
         s.result = { ...s.result, feedback_open: false };
         const c = reply.correction;
-        const at = num(s.result.duty) === null ? '' : ` ${s.result.duty} %`;
+        const at = num(s.result.duty) === null ? '' : ` · 출력 ${s.result.duty} %`;
         const way = DIRECTION_TEXT[s.result.direction] || '앞으로';
         const where = terrainLabel(s.result.terrain || terrainKey());
-        s.tapeNotice = { kind: 'ok', text: `저장: ${where} ${way}${at} · 실제 ${actual} m / 모델 ${reply.sample.model_m} m · 배율 ${c ? `${fixed(c.factor, 2)} (줄자 ${c.samples}번)` : '--'}` };
-      } else s.tapeNotice = { kind: 'bad', text: `저장 안 됨: ${message(reply?.error)}` };
-    } catch (_) { s.tapeNotice = { kind: 'bad', text: `저장 안 됨: ${message('http_failed')}` }; }
+        s.tapeNotice = { kind: 'ok', text: `잰 거리를 저장했습니다. ${where} · ${way}${at} · 잰 거리 ${actual} m · 계산 거리 ${reply.sample.model_m} m · 배율 ${c ? `${fixed(c.factor, 2)} · 줄자 ${c.samples}번` : '--'}` };
+      } else s.tapeNotice = { kind: 'bad', text: `잰 거리를 저장하지 못했습니다. ${sentence(reply?.error)}` };
+    } catch (_) { s.tapeNotice = { kind: 'bad', text: `잰 거리를 저장하지 못했습니다. ${message('http_failed')}` }; }
     replan();
   });
   $('steerDistReset')?.addEventListener('click', async () => {
     const terrain = terrainKey();
     const way = DIRECTION_TEXT[s.direction];
-    if (!terrain || !confirmFn(`${terrainLabel(terrain)}의 ${way} 줄자 보정 기록(모든 속도)을 지우고 배율을 1.00 으로 되돌립니다. 계속할까요?`)) return;
+    if (!terrain || !confirmFn(`${terrainLabel(terrain)}에서 ${way} 갈 때의 줄자 보정을 모든 속도에서 지울까요? 배율이 1.00으로 돌아갑니다.`)) return;
     try {
       const reply = await post('/api/rover/distance/reset', { terrain, direction: s.direction });
-      if (reply && reply.ok) { s.corrections = reply.corrections || {}; s.tapeNotice = { kind: 'ok', text: `${terrainLabel(terrain)} ${way} 보정 초기화: 배율 1.00` }; }
-      else s.tapeNotice = { kind: 'bad', text: `초기화 안 됨: ${message(reply?.error)}` };
-    } catch (_) { s.tapeNotice = { kind: 'bad', text: `초기화 안 됨: ${message('http_failed')}` }; }
+      if (reply && reply.ok) { s.corrections = reply.corrections || {}; s.tapeNotice = { kind: 'ok', text: `${terrainLabel(terrain)}에서 ${way} 갈 때의 줄자 보정을 지우고 배율을 1.00으로 되돌렸습니다.` }; }
+      else s.tapeNotice = { kind: 'bad', text: `줄자 보정을 지우지 못했습니다. ${sentence(reply?.error)}` };
+    } catch (_) { s.tapeNotice = { kind: 'bad', text: `줄자 보정을 지우지 못했습니다. ${message('http_failed')}` }; }
     replan();
   });
   win.addEventListener?.('blur', () => { if (pointer !== null) letGo('blur'); });

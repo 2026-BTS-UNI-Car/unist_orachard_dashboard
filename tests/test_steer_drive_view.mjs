@@ -8,13 +8,13 @@ assert.ok(R && typeof R.SteerController === 'function', 'the module loads the ru
 
 // Every device state has a chip text; the not-present states explain why arm is impossible.
 for (const state of ['present', 'none', 'unavailable', 'unknown']) assert.ok(DEVICE_TEXT[state][1], state);
-assert.match(DEVICE_TEXT.none[2], /조향 장치 없음/);
-assert.match(DEVICE_TEXT.unavailable[2], /연결 안 됨/);
+assert.match(DEVICE_TEXT.none[2], /조향 상태를 보내지 않아 조종 활성화를 할 수 없습니다/);
+assert.match(DEVICE_TEXT.unavailable[2], /^조종 브리지에 연결되지 않습니다. STOP은 계속 보냅니다.$/);
 
 // Faults: catalogue labels; an unknown code gets a short generic label and keeps its code.
 const labels = faultLabels(['SOFTLIMIT', 'steering_not_following', 'BOOT', 'something_new']);
 assert.deepEqual(labels.map((f) => f.level), ['warn', 'bad', 'info', 'bad']);
-assert.equal(labels[1].label, '조향 추종 안 됨');
+assert.equal(labels[1].label, '조향이 따라오지 않음');
 assert.deepEqual([labels[3].label, labels[3].code], ['기타 결함', 'something_new']);
 assert.deepEqual(faultLabels(null), []);
 

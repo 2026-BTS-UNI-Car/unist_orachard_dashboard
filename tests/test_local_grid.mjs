@@ -53,6 +53,6 @@ assert.ok(narrow.length * narrow.scale <= 340 - 24 + 1e-6, 'a phone width fits t
 assert.deepEqual(describe(grid).slice(0, 2), ['ok', `갱신 ${grid.updates}`]);
 assert.match(describe(grid)[2], /^셀 0.1 m · 200×100 · 점유 160 · 선 품질 1.00 · /);
 assert.deepEqual(describe({ ...grid, age_s: 3.21 }).slice(0, 2), ['warn', '오래됨 3.2 s']);
-assert.match(describe({ ...grid, lines: undefined, truncated: true, bits: '' })[2], /열 선 아직 없음 .*격자가 커서 셀을 못 받음/);
+assert.match(describe({ ...grid, lines: undefined, truncated: true, bits: '' })[2], /열 선 아직 없음 .*격자가 커서 셀을 받지 못함/);
 
 console.log('PASS: local grid bitmap and cells, grid frame, window fit and panel words with the real executor export');

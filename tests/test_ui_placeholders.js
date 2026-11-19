@@ -105,7 +105,7 @@ const between = (begin, end) => { const a = source.indexOf(begin), b = source.in
     context.renderContainerDetail(detail, {ok: true, lines: ['a', 'b', 'c']});
     assert.equal(content, 'a\nb\nc'); assert.equal(writes, 2);
     context.renderContainerDetail(detail, {ok: false, error: 'gone'});
-    assert.match(content, /로그 읽기 실패: gone/);
+    assert.match(content, /로그를 읽지 못했습니다. gone/);
   }
   console.log('PASS: placeholders until the server answers, defined CSS variables, existing element ids, styled observation buttons, log box rewrite');
 })().catch(error => { console.error(error); process.exitCode = 1; });
