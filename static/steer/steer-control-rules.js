@@ -26,7 +26,7 @@
  * Rules (design 4.4; values marked [proposal] are placeholders, not registered values):
  *   - Arm needs a click. No automatic re-arm after any stop, refusal or lost lease.
  *   - STOP (button, Esc) is always available, also without a lease and with a stale status.
- *   - W/S drive only while pressed, at the speed cap (0-60 %).
+ *   - W/S drive only while pressed, at the speed cap (0-100 %; the bridge applies its own PWM cap).
  *   - A/D steer while pressed toward the selected angle (5/10/15/20 deg, never above the equivalent soft limit of
  *     the status) with a target rate cap of 20 deg/s while moving [proposal] and 12 deg/s at standstill [proposal].
  *   - Moving = an MCU-reported drive duty (status line L or R, from the pin outputs) other than 0 within the last
@@ -80,7 +80,7 @@
     angleChoicesDeg: [5, 10, 15, 20],
     defaultSteerMode: 'centre',  // decision 9 (todo 4 da9): release returns to the centre; 'design' = DESIGN_v1 4.4
     defaultAngleDeg: 10,
-    speedCapMaxPct: 60,
+    speedCapMaxPct: 100,           // 2026-11-19 user: drive output 100 % (bridge cap PWM 255)
     defaultSpeedCapPct: 20,
     speedStepPct: 5,
     pollStaleMs: 300,            // no status reply for this long: stale [proposal]

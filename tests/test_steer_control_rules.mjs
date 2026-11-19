@@ -184,7 +184,7 @@ test('the script exports its API and does not need a DOM', () => {
   assert.equal(typeof S.SteerController, 'function');
   assert.equal(S.VEHICLE_PROFILE, 'front_steer');
   assert.equal(S.DEFAULTS.movingWindowMs, 300);
-  assert.equal(S.DEFAULTS.speedCapMaxPct, 60);
+  assert.equal(S.DEFAULTS.speedCapMaxPct, 100);
   assert.deepStrictEqual(S.DEFAULTS.angleChoicesDeg, [5, 10, 15, 20]);
   assert.equal(S.DEFAULTS.statusPeriodMs, 50, '20 Hz status polling');
 });
@@ -275,11 +275,13 @@ test('W drives only while pressed, at the speed cap; requests chain the ticket a
   assert.equal(env.ctl.lease !== null, true);
 });
 
-test('S reverses at the cap; W+S gives 0; the cap is 0-60 % with Q/E steps of 5', async () => {
+test('S reverses at the cap; W+S gives 0; the cap is 0-100 % with Q/E steps of 5', async () => {
   const env = makeEnv();
   await env.arm();
+  env.ctl.setSpeedCap(120);
+  assert.equal(env.ctl.speedCapPct, 100);
   env.ctl.setSpeedCap(80);
-  assert.equal(env.ctl.speedCapPct, 60);
+  assert.equal(env.ctl.speedCapPct, 80);
   env.ctl.setSpeedCap(-3);
   assert.equal(env.ctl.speedCapPct, 0);
   env.ctl.setSpeedCap(25);
