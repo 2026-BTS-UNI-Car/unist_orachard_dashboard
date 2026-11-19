@@ -360,10 +360,15 @@ export function metricsView(reply) {
 // tag autonomy) unless one is running; after the run ended or was stopped: stop only the one this panel started.
 export const RUN_RECORD_SENSORS = ['lidar', 'camera', 'imu', 'gps', 'drive', 'steering', 'executor', 'tf'];
 export const RUN_OVER_STATES = new Set(['ended', 'idle', 'latched']);
-export function recordBeforeGo(recording, wanted) {
+// needed (2026-11-20): the sensor groups an autonomy run must record; a running recording without all of them is
+// restarted with every sensor ('restart'), one that has them is kept.
+export function recordBeforeGo(recording, wanted, needed = null) {
   if (!wanted) return 'skip';
   if (!recording || !recording.known) return 'unknown';
-  return recording.active ? 'keep' : 'start';
+  if (!recording.active) return 'start';
+  if (!Array.isArray(needed) || !needed.length) return 'keep';
+  const have = Array.isArray(recording.sensors) ? recording.sensors : [];
+  return needed.every((s) => have.includes(s)) ? 'keep' : 'restart';
 }
 export function recordAfterRun(reply, autoId, recording) {
   const s = reply && reply.ok && reply.status ? reply.status : null;

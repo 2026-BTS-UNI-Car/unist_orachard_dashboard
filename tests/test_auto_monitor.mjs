@@ -200,7 +200,7 @@ async function panel({ status = { run_state: 'armed', mode: 'MOTOR', go_ready: t
 
 test('panel: the kept GPS choice goes with 준비; the executor refusal is shown in words', async () => {
   const p = await panel({ status: { run_state: 'idle', mode: 'MOTOR' } });
-  assert.equal(p.els.autoGnssMode.value, 'geofence', 'the last choice of this browser');
+  assert.equal(p.els.autoGnssMode.value, 'off', 'two choices since 11/20: an older remembered mode falls back to off');
   p.els.autoGnssMode.value = 'weak_constraint'; p.els.autoGnssMode.fire('change');
   assert.equal(p.store.get('ubts-auto-gnss-mode-v1'), 'weak_constraint');
   p.state.refuse = 'gnss_rtk_not_fixed';
@@ -208,9 +208,9 @@ test('panel: the kept GPS choice goes with 준비; the executor refusal is shown
   assert.deepEqual(p.log.actions[0], ['start', { row_len_m: null, gnss_mode: 'weak_constraint' }]);
   assert.match(p.els.autoNotice.textContent, /^준비 거절: RTK FIXED 가 아님/);
   p.state.refuse = null;
-  p.els.autoGnssMode.value = ''; p.els.autoGnssMode.fire('change');
+  p.els.autoGnssMode.value = 'off'; p.els.autoGnssMode.fire('change');
   p.els.autoPrimary.fire('click'); await p.settle();
-  assert.deepEqual(p.log.actions.find(([a], k) => a === 'start' && k > 0)[1], { row_len_m: null }, 'the executor setting: no field');
+  assert.deepEqual(p.log.actions.find(([a], k) => a === 'start' && k > 0)[1], { row_len_m: null, gnss_mode: 'off' }, 'GPS 사용 안 함 is sent as off');
 });
 
 test('panel: a go starts a recording of every sensor first; the run end stops only that one', async () => {
@@ -237,17 +237,17 @@ test('panel: no go when the recording cannot start (auto recording on); a hand-s
   p.els.autoPrimary.fire('click'); await p.settle();
   assert.ok(!p.log.actions.some(([a]) => a === 'go'), 'no go without the recording');
   assert.match(p.els.autoNotice.textContent, /기록을 시작하지 못해 출발하지 않음: recorder_unavailable/);
-  const q = await panel({ rec: { known: true, active: true, id: 'by-hand' } });
+  const q = await panel({ rec: { known: true, active: true, id: 'by-hand', sensors: RUN_RECORD_SENSORS } });
   q.els.autoPrimary.fire('click'); await q.settle();
-  assert.equal(q.log.recordings.length, 0, 'a running recording is kept');
+  assert.equal(q.log.recordings.length, 0, 'a running recording of every sensor is kept');
   assert.equal(q.log.actions.at(-1)[0], 'go');
   q.state.status = { run_state: 'ended' };
   q.state.rec = { known: true, active: true, id: 'by-hand' };
   assert.equal(recordAfterRun(reply(q.state.status), q.screen.autoRecording(), q.state.rec), false, 'never stopped by the panel');
-  const r = await panel();
-  r.els.autoRecordRuns.checked = false; r.els.autoRecordRuns.fire('change');
+  // 11/20: a running recording without every sensor is replaced by one of every sensor before the go
+  const r = await panel({ rec: { known: true, active: true, id: 'no-camera', sensors: ['lidar', 'imu', 'gps'] } });
   r.els.autoPrimary.fire('click'); await r.settle();
-  assert.equal(r.log.recordings.length, 0, 'switched off: no recording');
+  assert.deepEqual(r.log.recordings.slice(0, 2).map(([a]) => a), ['stop', 'start'], 'stopped, then every sensor');
   assert.equal(r.log.actions.at(-1)[0], 'go');
 });
 

@@ -91,7 +91,8 @@ function recordingStatusView() {
     && typeof status.active === "boolean"
     && Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= 5000;
   return { known, active: known && status.active, status, busy: Boolean(state.recordings.actionInFlight),
-           id: known && status.active ? status.recording_id || null : null, tag: status.tag || null };
+           id: known && status.active ? status.recording_id || null : null, tag: status.tag || null,
+           sensors: Array.isArray(status.sensors) ? status.sensors : null };
 }
 
 // options: {sensors, tag} (the autonomy panel: every sensor, tag "autonomy"); without them the check boxes.

@@ -150,7 +150,7 @@ const NEW_TITLES = {
   // 자율주행: start panel with the GPS choice and the recording switch, then the monitoring view with the local grid.
   const auto = rover.slice(rover.indexOf('id="autoPanel"'), rover.indexOf('id="steerPotPanel"'));
   assert.deepEqual([...auto.matchAll(/<option[^>]* value="([a-z_]*)">([^<]+)</g)].map((m) => [m[1], m[2]]),
-    [['', '실행기 설정대로'], ['off', 'GPS 안 씀'], ['log_only', 'GPS 기록만'], ['geofence', 'GPS 범위 감시'], ['weak_constraint', 'RTK 약한 보정']]);
+    [['off', 'GPS 사용 안 함'], ['weak_constraint', 'GPS 사용함']]);
   for (const id of ['autoPrimary', 'autoEnd', 'autoStopButton', 'autoRecordRuns', 'autoRecordButton', 'autoMonitorGrid', 'autoMetricsGrid',
     'localGridPanel', 'localGridCanvas', 'autoGridBlock']) assert.ok(auto.includes(`id="${id}"`), `${id} in the autonomy tab`);
   assert.match(auto, /<div class="sim-map-stage" hidden="" id="localGridPanel">/, 'the grid picture shows when the executor sends one');

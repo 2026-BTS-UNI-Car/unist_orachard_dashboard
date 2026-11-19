@@ -39,17 +39,18 @@ export function initAutoPanel(page) {
   const gnssSelect = $('autoGnssMode');
   if (gnssSelect) {
     const kept = read(GNSS_KEY);
-    if (kept !== null && (kept === '' || GNSS_MODES.includes(kept))) gnssSelect.value = kept;
+    // two choices since 2026-11-20 (off / weak_constraint); an older remembered choice falls back to off
+    gnssSelect.value = kept === 'weak_constraint' ? 'weak_constraint' : 'off';
     gnssSelect.addEventListener('change', () => write(GNSS_KEY, gnssSelect.value));
   }
-  const gnssChoice = () => (gnssSelect && GNSS_MODES.includes(gnssSelect.value) ? gnssSelect.value : '');
+  const gnssChoice = () => (gnssSelect && GNSS_MODES.includes(gnssSelect.value) ? gnssSelect.value : 'off');
   const recordBox = $('autoRecordRuns');
   if (recordBox) {
     const kept = read(RECORD_KEY);
     if (kept !== null) recordBox.checked = kept !== '0';
     recordBox.addEventListener('change', () => { write(RECORD_KEY, recordBox.checked ? '1' : '0'); draw(); });
   }
-  const recordWanted = () => (recordBox ? recordBox.checked : true);
+  const recordWanted = () => true;   // 2026-11-20 user: an autonomy run always records every sensor
   const recording = () => (page.recording ? page.recording.view() : null);
 
   const active = () => page.currentRoute() === '/rover-control' && !document.hidden;
@@ -104,13 +105,25 @@ export function initAutoPanel(page) {
   }
   // Right before a go: a recording of every sensor (when wanted), or no go.
   async function recordForGo() {
-    const decision = recordBeforeGo(recording(), recordWanted());
-    if (decision === 'skip' || decision === 'keep') { recordNote = decision === 'keep' ? '이미 기록 중: 그 기록을 그대로 쓴다' : ''; return true; }
+    const decision = recordBeforeGo(recording(), recordWanted(), RUN_RECORD_SENSORS);
+    if (decision === 'skip' || decision === 'keep') { recordNote = decision === 'keep' ? '이미 모든 센서 기록 중: 그 기록을 그대로 쓴다' : ''; return true; }
     if (decision === 'unknown' || !page.recording) {
-      lastError = '기록 상태를 몰라 출발하지 않음 (기록 없이 가려면 "출발하면 모든 센서 기록"을 끈다)';
+      lastError = '기록 상태를 몰라 출발하지 않음 (기록 탭에서 녹화기 상태를 확인)';
       return false;
     }
-    const answer = await page.recording.start({ sensors: RUN_RECORD_SENSORS, tag: 'autonomy' });
+    if (decision === 'restart') {
+      // a recording without every sensor (e.g. started on the 기록 tab without the camera): stop it, then all sensors
+      const stopped = await page.recording.stop();
+      if (!stopped || stopped.ok === false) { lastError = `모든 센서 기록으로 바꾸지 못해 출발하지 않음: ${stopped?.error || '이유 모름'}`; return false; }
+    }
+    // The recorder may still be finishing the previous recording: try again for up to 5 s, only for that reason.
+    let answer = null;
+    for (let tries = 0; tries < 10; tries += 1) {
+      answer = await page.recording.start({ sensors: RUN_RECORD_SENSORS, tag: 'autonomy' });
+      if (answer && answer.ok !== false) break;
+      if (!/finaliz|busy|already|cleanup/.test(String(answer?.state || '') + String(answer?.error || ''))) break;
+      await new Promise((done) => setTimeout(done, 500));
+    }
     if (!answer || answer.ok === false) {
       lastError = `기록을 시작하지 못해 출발하지 않음: ${answer?.error || '이유 모름'}`;
       return false;
@@ -238,7 +251,7 @@ export function initAutoPanel(page) {
     if (state) {
       if (!rec || !rec.known) chip(state, '', '기록 확인 중');
       else if (rec.active) chip(state, 'ok', autoRecordId && rec.id === autoRecordId ? '기록 중 · run 자동' : '기록 중');
-      else chip(state, recordWanted() ? '' : 'warn', recordWanted() ? '출발 때 자동 기록' : '자동 기록 꺼짐');
+      else chip(state, '', '출발 때 모든 센서 자동 기록');
     }
     return rec;
   }

@@ -729,12 +729,12 @@
 <div class="panel-head"><h2>자율주행 · 열 따라가기</h2><div class="panel-actions"><span class="status-chip" hidden="" id="autoMode"></span><span class="status-chip" id="autoState">확인 중</span></div></div>
 <div class="tune-fields">
 <label class="field" for="autoRowLen">열 길이 m (비워도 됨)<input class="input" id="autoRowLen" inputmode="decimal" max="300" min="1" step="0.1" type="number"/></label>
-<label class="field" for="autoGnssMode">GPS 사용<select class="select" id="autoGnssMode"><option value="">실행기 설정대로</option><option value="off">GPS 안 씀</option><option value="log_only">GPS 기록만</option><option value="geofence">GPS 범위 감시</option><option title="RTK FIXED 일 때만 횡 위치를 조금 보정" value="weak_constraint">RTK 약한 보정</option></select></label>
+<label class="field" for="autoGnssMode">GPS<select class="select" id="autoGnssMode"><option value="off">GPS 사용 안 함</option><option title="열 범위를 벗어나면 정지, RTK 고정해일 때 중심선을 최대 10 cm 보정" value="weak_constraint">GPS 사용함</option></select></label>
 </div>
 <div class="sim-map-actions"><button class="action-button primary" disabled="" id="autoPrimary" type="button">확인 중</button><button class="action-button secondary" disabled="" id="autoEnd" type="button">run 끝내기</button><button class="action-button danger" id="autoStopButton" type="button">STOP</button></div>
 <div class="test-result" hidden="" id="autoNotice"></div>
 <div class="auto-record">
-<label class="switch-control"><input checked="" id="autoRecordRuns" type="checkbox"/><span>출발하면 모든 센서 기록</span></label>
+<span class="help-text" id="autoRecordRuns">출발하면 모든 센서를 기록한다(GPS 포함)</span>
 <div class="sim-map-actions"><button class="action-button secondary" id="autoRecordButton" type="button">기록 시작</button><span class="status-chip" id="autoRecordState">기록 확인 중</span></div>
 </div>
 <dl class="detail-list" hidden="" id="autoScale"><div><dt title="LiDAR 속도 ÷ 표 속도, 최근 주행 약 20초">온라인 배율</dt><dd id="autoScaleValue">--</dd></div></dl>

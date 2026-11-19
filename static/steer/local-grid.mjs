@@ -102,6 +102,8 @@ export function trailStep(trail, status) {
   return next;
 }
 
+const RUN_OPEN = new Set(['ready', 'armed', 'running', 'paused']);
+
 export function initLocalGrid(page) {
   const $ = (id) => document.getElementById(id);
   const panel = $('localGridPanel'), canvas = $('localGridCanvas');
@@ -139,6 +141,12 @@ export function initLocalGrid(page) {
       return;
     }
     const status = reply.status || {};
+    // After a run (ended / idle / latched) the executor keeps integrating scans into its grid; the picture stays
+    // the last one of the run until the next run opens.
+    if (scene && !RUN_OPEN.has(status.run_state)) {
+      words('', '멈춤', 'run 이 끝나 마지막 그림을 그대로 둔다 · 다음 run 에서 다시 그린다');
+      return;
+    }
     const next = status.local_grid_map && status.local_grid_map.schema === SCHEMA ? status.local_grid_map : null;
     if (next && (!grid || next.updates !== grid.updates || next.bits !== grid.bits || next.lines?.stamp !== grid.lines?.stamp)) cells = gridCells(next);
     grid = next;
