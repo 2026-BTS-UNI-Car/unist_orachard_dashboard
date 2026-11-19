@@ -306,6 +306,10 @@ class RelayUnitTest(unittest.TestCase):
         self.assertEqual(out["metrics"], {"lat_rms_m": 0.041, "within_0_10_pct": 97.5, "samples": 120,
                                           "grid_lat_rms_m": 0.05, "ok": True, "note": "x" * 40})
         self.assertNotIn("single_row_geometry", out, "the geometry only with the grid read")
+        self.assertEqual(out["pose"], [1.0, 0.1, 0.02], "the run odometry pose in every read (the moving picture)")
+        self.assertEqual(page_status(raw, grid=True)["pose"], [1.0, 0.1, 0.02])
+        for bad in ({"base": [1.0, 0.1]}, {"base": [1.0, "x", 0.0]}, {"base": [1.0, float("nan"), 0.0]}, {"base": None}, None):
+            self.assertNotIn("pose", page_status(dict(raw, single_row_geometry=bad)), "three finite numbers or nothing")
         geo = page_status(raw, grid=True)["single_row_geometry"]
         self.assertEqual(geo["base"], [1.0, 0.1, 0.02])
         self.assertEqual(geo["band"], {"heading_rad": 0.01, "centre_m": 0.05, "width_m": 2.5})

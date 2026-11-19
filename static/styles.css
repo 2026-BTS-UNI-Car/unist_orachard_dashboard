@@ -2434,3 +2434,9 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
 .auto-fields {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+
+#localGridCanvas {
+  max-width: 480px;
+  height: 440px;
+  margin: 0 auto;
+}

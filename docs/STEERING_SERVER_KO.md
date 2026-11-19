@@ -151,6 +151,7 @@ flowchart LR
   `metrics {...}`(2026-11-19: 기준 중심선 대 실제 경로 비교. 이름이 바뀔 수 있어 짧은 snake_case 이름의 수·참거짓·짧은 글을 64개까지 그대로 넘긴다),
   `bridge_detail {state, latch_reason}`, `lease_lost {where, error, bridge_reason, bridge_latches, steering_fault}`(규약 개정 3, 없으면 칸 없음),
   `online_scale {enabled, run_id, value, window_s, target_s, min_s, frozen, hold, age_s, mismatch, speed_scale, prior_scale, offer {run_id, value, window_s, end_reason, speed_scale_now, speed_scale_new, ok, why_not}}`(규약 개정 6, PW-10: 온라인 배율 = LiDAR 속도 ÷ 표 속도, 최근 주행 20 s. front_steer 실행기만, 없으면 칸 없음. 뜻은 시뮬레이션 레포 `docs/steering/OPERATOR_API_KO.md` 6.1). 화면: Rover Control 자율 칸(`autoPanel`) 안 '온라인 배율' 줄과 run 뒤의 저장 묻기(아래 화면 규칙, `docs/SCREENS_KO.md` 2절).
+- 모든 상태 읽기에 `pose [x m, y m, yaw rad]`(2026-11-20)를 넣는다. 실행기의 `single_row_geometry.base` 다: run 주행 거리 좌표이고 GNSS가 아니다. 실행기가 내지 않으면 칸이 없다. 주행 감시의 움직이는 그림이 자율 칸의 0.5 s 읽기 사이를 이어 그리는 데 쓴다(`docs/SCREENS_KO.md` 2-0절).
 - `GET /api/executor/status?grid=1`(Rover Control 자율주행 탭의 격자 칸이 화면에 있을 때, 1초에 한 번)만 `single_row_geometry {frame, base, band {heading_rad, centre_m, width_m, end_left_m, end_right_m}, path(최근 200점), lookahead?, target?, footprint_m}`(run 주행 거리 좌표)와 실행기의 국소 격자 `local_grid_map`(스키마 `ubts.row_executor.local_grid.v1`, 시뮬레이션 레포 `docs/steering/LOCAL_GRID_KO.md`)을 더 넘긴다:
   `schema, frame, updates, axis_rad, origin_uv, occupied, encoding, age_s, cell_m, shape, bits(24 KiB 이하), cells(2,000개 이하), truncated, lines {left, right, centre, quality, stamp}, base_pose`.
   run 주행 거리 좌표이고 GNSS가 아니다. 실행기가 내지 않으면 칸이 없고 화면은 그 층을 숨긴다.

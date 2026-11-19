@@ -52,7 +52,7 @@ export function initAutoPanel(page) {
   const root = $('autoPanel');
   if (!root) return null;
   const session = newSession();
-  let reply = null, pollTimer = null, beatTimer = null, polling = false, beating = false;
+  let reply = null, replyAt = 0, pollTimer = null, beatTimer = null, polling = false, beating = false;
   let busy = '';             // '' or the words of the step in progress (the buttons are off meanwhile, 멈추기 is not)
   let error = null;          // { text, key, beat }: a failed action, shown until the state moves on (key) or a new press
   let stops = 0;             // 멈추기 presses: a 준비 in progress gives up
@@ -79,7 +79,7 @@ export function initAutoPanel(page) {
   async function fetchStatus() {
     const turn = asked += 1;
     const fresh = await page.getJson('/api/executor/status');
-    if (turn > taken) { taken = turn; reply = fresh; }
+    if (turn > taken) { taken = turn; reply = fresh; replyAt = globalThis.performance ? performance.now() : Date.now(); }
     return reply;
   }
   async function poll() {
@@ -419,6 +419,7 @@ export function initAutoPanel(page) {
 
   function routeChanged() { if (active()) start(); else stop(); draw(); }
   routeChanged();
-  return { routeChanged, draw, prepare, go, changeSpeed, session: () => session, state: () => reply, autoRecording: () => autoRecordId,
+  return { routeChanged, draw, prepare, go, changeSpeed, session: () => session, state: () => reply, stateAt: () => replyAt,
+           autoRecording: () => autoRecordId,
            busy: () => busy };
 }
