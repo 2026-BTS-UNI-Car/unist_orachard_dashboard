@@ -252,6 +252,11 @@ class DryRunAndRefusals(KitCase):
         report = json.loads(out[:out.rindex('}') + 1])
         self.assertNotIn('/run/ubts-rover:/run/ubts-rover:rw', report['plan']['binds'])
         self.assertNotIn('--motor-output', report['plan']['cmd'][-1])
+        # the tick log budget of one executor process (2026-11-20: 1000 MB lasted 7.5 h with the grid block)
+        self.assertIn('--max-log-mb 8000', report['plan']['cmd'][-1])
+        code, out = self.run_main('--max-log-mb', '12000')
+        self.assertEqual(code, 0, out)
+        self.assertIn('--max-log-mb 12000', json.loads(out[:out.rindex('}') + 1])['plan']['cmd'][-1])
 
     def test_refusals(self):
         self.docker.images = {}

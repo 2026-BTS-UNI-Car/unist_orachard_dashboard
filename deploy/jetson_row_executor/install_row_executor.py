@@ -75,7 +75,11 @@ DASH_RUNTIME_IN = '/app/runtime'
 CONTROL_CPU_SHARES = 4096          # 2026-11-19: CPU weight of the executor (default 1024)
 MODES = ('shadow', 'motor')
 MEMORY_BYTES = 1024 * 1024 * 1024
-MAX_LOG_MB = 1000
+# Tick lines of one executor process stop (events continue) once it wrote this much (row_executor JsonlLog). With the
+# local grid block a tick line is about 1.9 kB at 20 Hz, also while no run is open: 1000 MB was used up 7.5 h after
+# the start (2026-11-19 17:39 -> 2026-11-20 01:07 on the vehicle) and the tick log of every later run would have been
+# lost. 8000 MB is about 60 h of uptime; --max-log-mb sets another value.
+MAX_LOG_MB = 8000
 DEFAULT_SOCKET = '/var/run/docker.sock'
 STOP_GRACE_S = 10
 DOCKER_TIMEOUT_S = 20.0
@@ -365,7 +369,8 @@ def paths(host, options, dash_runtime, stamp, commit):
 def container_spec(image_id, options, p, ros_domain, commit, config_digest):
     motor = options.mode == 'motor'
     args = ['python3', '-B', '-s', '-m', 'row_executor.executor_main', '--config', CONFIG_IN, '--log-dir', LOG_IN,
-            '--token-file', LINK_IN + '/' + TOKEN_NAME, '--no-print-token', '--max-log-mb', str(MAX_LOG_MB)]
+            '--token-file', LINK_IN + '/' + TOKEN_NAME, '--no-print-token', '--max-log-mb',
+            str(int(getattr(options, 'max_log_mb', None) or MAX_LOG_MB))]
     if motor:
         args.append('--motor-output')
     binds = ['%s:%s:ro' % (p['package'], PKG_IN), '%s:%s:ro' % (p['config'], CONFIG_IN),
@@ -789,6 +794,8 @@ def build_parser():
     p.add_argument('--ros-reference', default=ROS_REFERENCE)
     p.add_argument('--base-dir', default=None, help='default ~/ubts-row-executor')
     p.add_argument('--allow-sensors-absent', action='store_true', help='ready without /scan and IMU (bench only)')
+    p.add_argument('--max-log-mb', type=int, default=MAX_LOG_MB,
+                   help='tick log budget of one executor process in MB (default %d, about 60 h of uptime)' % MAX_LOG_MB)
     p.add_argument('--ready-timeout', type=float, default=READY_TIMEOUT_S)
     p.add_argument('--receipt', default=None, help='rollback: a receipt other than the latest')
     p.add_argument('--docker-socket', default=DEFAULT_SOCKET)

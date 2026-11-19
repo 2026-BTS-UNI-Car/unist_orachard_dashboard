@@ -14,7 +14,7 @@
 | 실행기 파일 | `~/ubts-row-executor/releases/<시각>_<커밋>/row_executor/` → 컨테이너 `/opt/ubts/row_executor`(읽기 전용) | 레포 파일 그대로. 시작할 때 실행기가 `SHA256SUMS`와 vendor 목록을 다시 확인한다 |
 | 설정 | `…/releases/<시각>_<커밋>/config.json` → `/etc/row_executor/config.json`(읽기 전용) | 기본 `config.vehicle_esp32_shadow.json`(front_steer, 단일열, SHADOW, ESP32 브리지, 운영자 API `127.0.0.1:8097`) |
 | 현장 조정 값 | `~/ubts-row-executor/state/field_tuning.json` → `/var/lib/row_executor` | 없을 때만 패키지 기본값을 복사한다. 이미 있으면 그대로 둔다(조정한 값을 덮어쓰지 않는다) |
-| 기록 | `~/ubts-row-executor/log/` → `/var/log/row_executor` | 실행기 JSONL(최대 1000 MB), ROS 로그 |
+| 기록 | `~/ubts-row-executor/log/` → `/var/log/row_executor` | 실행기 JSONL(틱 줄은 실행기를 한 번 켠 동안 8000 MB 까지, `--max-log-mb` 로 바꿈; 2026-11-20 전에는 1000 MB 라 켠 지 7.5 시간 뒤 틱 줄이 끊겼다), ROS 로그 |
 | 토큰과 연결 파일 | `<대시보드 runtime>/row_executor/operator_token.txt`, `dashboard_link.json` | 실행기가 시작할 때마다 새 토큰을 쓴다(0600). 연결 파일은 설치기가 실행기 준비 확인 뒤에 쓴다. 대시보드는 `/app/runtime/row_executor/`에서 읽는다 |
 | 영수증 | `~/ubts-releases/row-executor-kit/<시각>_<커밋>/RECEIPT.json` | 경로, SHA-256, 컨테이너·이미지 ID, 단계별 시각, 확인 결과. 환경 변수는 이름만. 토큰은 쓰지 않는다 |
 
