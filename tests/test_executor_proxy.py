@@ -202,6 +202,11 @@ class RelayUnitTest(unittest.TestCase):
         self.assertEqual(lost["lease_lost"], {"where": "armed_wait", "error": "lease_lost", "bridge_reason": "steering_status_stale",
                                               "bridge_latches": ["status_seq_gap"], "steering_fault": None})
         self.assertNotIn("lease_lost", page_status({"run_state": "ready", "lease_lost": None}))
+        # 2026-11-20: go_active (the go still drives the run) for the recording of a stretch; the session digest and
+        # the counters stay here
+        link = page_status({"operator_link": {"fresh": True, "age_s": 0.04, "timeout_s": 1.0, "go_active": True, "session": "ab12cd34",
+                                              "go_serial": 3, "gos": 3, "last_cancel": "paused:stale_lidar"}})["operator_link"]
+        self.assertEqual(link, {"fresh": True, "age_s": 0.04, "timeout_s": 1.0, "go_active": True})
         self.assertEqual(page_status(raw, grid=True)["local_grid_map"], {"schema": "ubts.row_executor.local_grid.v1", "bits": "AA=="})
         for name in ("log", "token"):
             self.assertNotIn(name, out)

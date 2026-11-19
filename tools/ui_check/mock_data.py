@@ -384,6 +384,24 @@ def _stress_recordings() -> list:
                 },
             }
         )
+    # Autonomy recordings with the record of their stretch (dashboard_server/run_recording.py list_fields): the list of
+    # the 자율주행 tab shows two more short lines for them. Long values for the layout check.
+    stretches = [
+        {"run": 123456, "segment": 12, "resumed": True, "ended": True, "end_text": "센서·위치 추정 부족", "stopped_by": "server",
+         "drive_time_s": 99999.9, "distance_m": 98765.4, "time_source": "executor_metrics",
+         "previous_recording_id": "20990102T010000Z_both", "previous_stop_text": "화면 연결 끊김"},
+        {"run": 123456, "segment": 1, "resumed": False, "ended": True, "end_text": "화면 연결 끊김", "stopped_by": "page",
+         "drive_time_s": 35.2, "distance_m": 12.3, "time_source": "executor_metrics", "previous_recording_id": None,
+         "previous_stop_text": None},
+        {"run": 7, "segment": None, "resumed": True, "ended": False, "end_text": None, "stopped_by": None, "drive_time_s": None,
+         "distance_m": None, "time_source": None, "previous_recording_id": None, "previous_stop_text": "LiDAR 입력 끊김"},
+    ]
+    for index, stretch in enumerate(stretches):
+        rows.append({"id": f"20990102T0{2 - index}0000Z_both", "kind": "both", "tag": "autonomy", "state": "archived" if stretch["ended"] else "recording",
+                     "sensors": ["lidar", "camera", "imu", "gps", "drive", "steering", "executor", "tf"], "duration_s": 99999.9 - index,
+                     "started_at": f"2099-01-02T0{2 - index}:00:00Z", "clock_quality": "unverified",
+                     "timeline": {"lidar_frames": 999999, "camera_frames": 2999999, "imu_frames": 3299999, "gps_frames": 0},
+                     "segment": stretch})
     return rows
 
 
