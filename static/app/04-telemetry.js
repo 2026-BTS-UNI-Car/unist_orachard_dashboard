@@ -168,6 +168,14 @@ function renderTelemetry(data) {
   text("systemPowerValue", fmtPower(sys.power?.total_w));
   setProgress("memoryBar", memoryPercent(sys.memory));
   text("memoryDetail", `${fmtBytes(sys.memory?.used)} used / ${fmtBytes(memoryTotal(sys.memory))} · ${memoryLabel(sys.memory)} · ${fmtBytes(sys.memory?.available)} available`);
+  // Summary strip of the System page: the values of the panels below it (the disk cell is filled by renderDisks).
+  const load = Number((sys.loadavg || [])[0]);
+  text("systemStripCpu", fmtPercent(sys.cpu?.total_percent));
+  text("systemStripCpuText", Number.isFinite(load) ? `load ${load.toFixed(2)}` : "--");
+  text("systemStripMemory", fmtPercent(memoryPercent(sys.memory)));
+  text("systemStripMemoryText", `${fmtBytes(sys.memory?.used)} / ${fmtBytes(memoryTotal(sys.memory))}`);
+  text("systemStripTemp", fmtTemp(sys.temperature_c));
+  text("systemStripTempText", fmtPower(sys.power?.total_w));
 
   text("networkExternalIp", net.external_ip || "--");
   text("networkExternalIpText", net.external_ip ? "공개 주소" : "확인 대기");

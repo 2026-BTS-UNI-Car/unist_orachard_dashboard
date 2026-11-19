@@ -37,6 +37,31 @@
 | `/system/resources`, `/system/network`, `/system/docker`, `/system/fan` | `/system`, `/network`, `/docker`, `/fan` |
 | `/research` | `/` (연구 페이지는 없앤 채로 둔다, 결정 나15) |
 
+### 1-1. 일곱 쪽 정리 (2026-11-20)
+
+사용자 요청(2026-11-19, 뜻): 대시보드가 조잡하고 글과 쓰지 않는 기능이 너무 많으니 쓰기 편하게 다시 짜 달라. Rover Control 말고 일곱 쪽을 정리했다.
+메뉴(8개), 페이지 묶음, 패널 제목과 그 마크업 순서는 그대로다(`tests/test_menu_restore.js`). 바꾼 것은 세 가지다.
+
+- **보이는 순서**: 그 쪽의 핵심을 위로 올렸다. 마크업은 두고 CSS `order`(`order-first`, `order-last`, `static/styles.css` 끝의 `pages simple 20261120` 묶음)로만 바꿨다.
+  Rover Control 의 주행 제어를 좁은 화면에서 앞에 보인 것(2026-11-17)과 같은 방법이다. 키보드 초점은 마크업 순서로 움직인다.
+- **접기**: 드물게 쓰는 것은 닫힌 접힘 칸(`details`)에 넣었다. 요소 `id`, 화면 스크립트의 동작, 서버 API 는 그대로다.
+- **글**: 페이지 머리의 설명을 한 줄 이름으로 줄이고, 되풀이하는 설명 글을 지웠다.
+
+| 페이지 | 보이는 순서 | 접힌 것 | 그 밖 |
+| --- | --- | --- | --- |
+| Overview | 상태 띠 → ROS2 / Rover, Jetson 정보 → CPU / Memory, Network RX / TX | 없음 | ROS2 / Rover 줄은 이름과 OK·대기만 보인다(주소와 상태 글은 Connection 의 서비스 연결에 있다) |
+| Connection | 상태 띠 → ROS2 센서 링크 → RPLIDAR 상태 확인, 서비스 연결 → 2D LiDAR 지도 → 카메라 실시간 화면 | RPLIDAR '장치 정보'(장치, 고정 ID, 드라이버, 마지막 확인), LiDAR '고급 · 점 수와 다운로드'(점 수, 형식, 현재 지도 다운로드), 카메라 '고급 · 캡처 설정'(해상도, 프레임 수) | 장치 칸의 설명 글 네 줄을 지웠다 |
+| System | 상태 띠(CPU, 메모리, 온도, 디스크: 새로 더함) → CPU, Memory → Swap, Network → Power → Disk | CPU '코어별'(통합·코어별 그래프 전환, 코어 막대), Swap·Network·Power 의 '그래프' | 메모리 막대와 한 줄 요약은 숨겼다(같은 값이 그래프 아래에 있다). CPU 그래프 아래는 전체 값만 |
+| Network | 오프라인 AP / 저장된 Wi-Fi → 상태 띠(외부 IP, 내부 주소) → RX / TX → 연결 정보 | 없음 | 패널 안 순서: 시험 연결 알림과 '이 연결 유지' → AP 전환·Wi-Fi 검색 → 상태 → 연결 폼 → 저장된 Wi-Fi → 주변 Wi-Fi. 버튼과 요청은 그대로다 |
+| Docker | 상태 띠 → 컨테이너 목록 → 컨테이너 상세 → Container CPU, Container Memory | 컨테이너 상세의 '로그' | 휴대폰 폭의 목록 한 줄: 이름 / 상태·CPU·메모리 / 가동 시간(이미지 이름은 상세에 있다) |
+| Fan Control | 그대로 | 없음 | 머리 글만 줄였다 |
+| Docs | 그대로 | 없음 | 휴대폰 폭에서 목록의 요약 글을 숨겼다(고른 문서의 요약은 읽기 칸 머리에 있다) |
+
+System 의 상태 띠가 늘어 상태 띠는 일곱 개다(`tests/test_ui_frame.js`). 값은 아래 패널과 같은 것을 쓴다(`renderTelemetry`, `renderDisks`).
+닫힌 접힘 칸 안의 그래프는 칸을 열 때 그린다(캔버스 크기 감시, `static/app/13-charts-canvas.js`).
+화면 점검(`tools/ui_check`)의 받아들인 기록은 이 정리 전의 것이다. 견주면 `fail` 규칙은 모두 지키고, 마우스 화면의 36 px 조작 요소 수(알리기만 하는 수치)가 접힘 칸 머리만큼 늘어난다(`/system` +2, `/docker` +1).
+시험: `tests/test_pages_simple.js`(접힘 칸에 든 것과 밖에 남은 것, 보이는 순서의 표시, 네트워크 패널 안 순서, System 상태 띠, 짧은 머리 글).
+
 ## 2. Rover Control
 
 ### 2-0. 페이지 안 탭 (2026-11-19)

@@ -268,7 +268,7 @@ function setup(route = '/rover-control') {
   {
     const strips = [...html.matchAll(/<section class="status-strip( cols-2)?">([\s\S]*?)<\/section>\n/g),
       ...html.matchAll(/<div class="status-strip( cols-1)">(.*)<\/div>\n/g)];
-    assert.equal(strips.length, 6, 'overview, connection, network, docker, the one cell of the fan page, and Rover Control');
+    assert.equal(strips.length, 7, 'overview, connection, system (2026-11-20), network, docker, the one cell of the fan page, and Rover Control');
     for (const strip of strips) {
       const items = [...strip[2].matchAll(/<div class="status-strip-item"><span[^>]*>[^<]+<\/span><strong id="[^"]+">--<\/strong><small[^>]*>[^<]*<\/small>(?:<\/div>)?/g)];
       const expected = strip[1] === ' cols-2' ? 2 : strip[1] === ' cols-1' ? 1 : 4;
