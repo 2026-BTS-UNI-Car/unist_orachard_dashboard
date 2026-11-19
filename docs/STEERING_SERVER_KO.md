@@ -53,7 +53,7 @@ flowchart LR
 | `POST /api/rover/stop` | `{"reason": 문자열}` | `stop` | `{ok, state: "stop_requested"}`. lease가 없어도 된다 |
 | `GET /api/rover/status` | — | `status` | 브리지 스냅샷(4절) |
 
-- `throttle`: 정수 −100 ~ 100(%). 화면의 속도 상한은 0 ~ 60 % [자리값: DESIGN_v1 4.4]. 구동 duty는 `(|p| × 255 + 50) // 100`, 좌우 같은 값이다.
+- `throttle`: 정수 −100 ~ 100(%). 화면의 속도 상한은 0 ~ 100 %(2026-11-19부터; 그 전 0 ~ 60 % [자리값: DESIGN_v1 4.4]). 구동 duty는 `(|p| × 255 + 50) // 100`, 좌우 같은 값이다.
 - `steer_mrad`: 정수, 등가 소프트 한계 안(왼쪽 +, 오른쪽 −). 한계는 상태의 `steer_limit_mrad {left, right}`에서 읽는다 [자리값: 409 mrad = 23.46°, 호스트 프로필 v0].
 - `left`/`right`가 들어간 drive는 조향 브리지가 정지하고 `differential_command_rejected`로 거절한다. 옛 차동 화면은 `vehicle_profile`을 보내지 않으므로 Arm도 거절된다(`steer_profile_required`).
 - 조향만 바꾸는 입력(throttle 0)도 lease, ticket, seq, `deadman: true`, ARMED가 필요하다.
@@ -274,7 +274,7 @@ stateDiagram-v2
 | 조향 소프트 한계 | 409 mrad(23.46°) | 차량 사양(가변저항·벨트)과 B2·B3 측정 |
 | 정지 중 한 번 조향 | 5° | R18 결정 3, 조향 모터 열 예산(P9) |
 | 조향 목표 변화율 | 주행 20°/s, 정지 12°/s | B5 측정 |
-| 화면 속도 상한 | 0 ~ 60 % | 현장 확인 |
+| 화면 속도 상한 | 0 ~ 100 %(2026-11-19, 그 전 0 ~ 60 %) | 현장 확인 |
 | 상태 오래됨 판정 | 300 ms, age 150 ms, STOP 1 s | 느린 통신 측정(NET-05) |
 | heartbeat 주기 | 100 ms | 규약 개정 1(≤ 250 ms), 느린 통신 측정 |
 | operator_timeout_s | 1.0 s(0.5 ~ 3.0) | 규약 개정 1(A17 개정 31), 2026-11-13 R60 으로 0.5 → 1.0 s(느린 연결에서 자주 서지 않게), 현장 |

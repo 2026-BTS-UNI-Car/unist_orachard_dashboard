@@ -291,7 +291,7 @@ class KitTest(unittest.TestCase):
         self.assertIn('&& exec python3 -m scripts.esp_rover_bridge', spec['Cmd'][-1])
         env = dict(item.split('=', 1) for item in spec['Env'])
         self.assertEqual((env['ROVER_ESP_KIND'], env['ROVER_ESP_IDENTITY'], env['ROVER_ESP32_MAX_DRIVE_PWM'],
-                          env['ROVER_ESP32_DIRECTION_VERIFIED']), ('esp32_abs_hold', inst.IDENTITY, '153', '0'))
+                          env['ROVER_ESP32_DIRECTION_VERIFIED']), ('esp32_abs_hold', inst.IDENTITY, '255', '0'))
         self.assertEqual(env['ROVER_CONTROL_SOCKET'], '/run/ubts-rover/control.sock')
         self.assertNotIn('com.docker.compose.service', spec['Labels'])
         for rel in make.PAYLOAD:

@@ -33,18 +33,25 @@ export const GNSS_STATE = {
   none: '수신 없음', no_fix: '미확정', fix: '확정', rtk: 'RTK', stale: '오래됨', unused: '쓰지 않음', off: '꺼짐',
   absent: '수신 없음', waiting: '기다림', ok: '정상', accepted: '받아들임', rejected: '거부', fence_tripped: '범위 벗어남',
   fixed: 'RTK FIXED', float: 'RTK FLOAT',
+  // executor gnss_status states (tools/row_executor/core.py) and the RTK constraint states (gnss_rtk.py)
+  no_run: 'run 없음', rejected_no_fix: '위치 없음(그 fix 안 씀)', rejected_hacc: '정확도 낮음(안 씀)',
+  rejected_jump: '위치 급변(안 씀)', rejected_quality: '품질 낮음(안 씀)', learning: 'RTK 맞추는 중',
+  active: 'RTK 보정 중', fading: 'RTK 보정 줄이는 중', refused: 'RTK 보정 안 함',
 };
 // The run's GPS mode (2026-11-19, tools/row_executor/config.py gnss_mode): the choice of the autonomy start.
 export const GNSS_MODES = ['off', 'log_only', 'geofence', 'weak_constraint'];
 export const GNSS_MODE_TEXT = {
-  off: 'GPS 안 씀', log_only: 'GPS 기록만', geofence: 'GPS 범위 감시', weak_constraint: 'RTK 약한 보정',
+  // the start screen offers off / weak_constraint only (2026-11-20); the other two can still come from the executor
+  off: 'GPS 사용 안 함', log_only: 'GPS 기록만', geofence: 'GPS 범위 감시', weak_constraint: 'GPS 사용함',
 };
 // Refusals of a start (the executor's own codes, and the dashboard's 400) as the operator reads them.
 export const START_ERROR = {
   invalid_gnss_mode: 'GPS 방식 값이 틀림', invalid_row_len: '열 길이는 0보다 크고 1000 m 이하',
   unknown_parameter: '이 실행기는 GPS 방식 선택을 모름(실행기 업데이트 필요)',
   gnss_mode_not_supported: '이 실행기는 GPS 방식 선택을 모름(실행기 업데이트 필요)',
-  gnss_rtk_not_fixed: 'RTK FIXED 가 아님: RTK 약한 보정을 쓸 수 없다', gnss_needs_rtk_fixed: 'RTK FIXED 가 아님: RTK 약한 보정을 쓸 수 없다',
+  gnss_mode_invalid: 'GPS 방식 값이 틀림',
+  gnss_mode_unsupported: '실행기 설정이 GPS 사용을 허용하지 않음(설정 gnss_run_modes 에 weak_constraint 필요)',
+  gnss_rtk_not_fixed: 'RTK FIXED 가 아님: RTK 보정을 쓸 수 없다', gnss_needs_rtk_fixed: 'RTK FIXED 가 아님: RTK 보정을 쓸 수 없다',
   gnss_not_available: 'GPS 수신이 없음', gnss_mode_needs_front_steer: '이 방식은 앞바퀴 조향 실행기에서만',
 };
 export const LIMIT_REASON = {
@@ -185,7 +192,7 @@ export function autoView(reply, nowMs = Date.now()) {
     notice = ['warn', `출발 조건: ${s.go_blockers.map((code) => label(GO_BLOCKER, code)).join(', ')}`];
   } else if (s.run_state === 'running') {
     const timeout = num(link.timeout_s);
-    notice = ['ok', `주행 중: 이 화면을 열어 두어야 한다. 탭을 숨기거나 화면을 떠나면 ${timeout === null ? '0.5' : timeout.toFixed(1)}초 뒤 차가 선다.`];
+    notice = ['ok', `주행 중: 이 화면을 열어 두어야 한다. 탭을 숨기거나 화면을 떠나면 ${timeout === null ? '1.0' : timeout.toFixed(1)}초 뒤 차가 선다.`];
   } else if (s.run_state === 'paused' && category === 'OPERATOR_LINK_LOST') {
     notice = ['warn', '화면 연결이 끊겨 멈췄다. 다시 가려면 다시 출발을 누른다(자동 재출발 없음).'];
   }
@@ -279,7 +286,7 @@ export function gnssTile(status, requested = '') {
                  accepted === null ? null : `받음 ${accepted}${rejected === null ? '' : ` · 거부 ${rejected}`}`].filter(Boolean);
   let level = '';
   if (g.fence_tripped === true) { parts.unshift('범위 벗어남'); level = 'bad'; }
-  if (requested && mode && requested !== mode) { parts.unshift(`요청한 ${GNSS_MODE_TEXT[requested] || requested}과 다름`); level = level || 'warn'; }
+  if (requested && mode && requested !== mode) { parts.unshift(`요청(${GNSS_MODE_TEXT[requested] || requested})과 다름`); level = level || 'warn'; }
   return [value, parts.join(' · ') || '정보 없음', level];
 }
 

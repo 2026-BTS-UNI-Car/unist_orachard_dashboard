@@ -53,7 +53,7 @@
   (PC 시험에서 확인: `tests/test_esp32_bridge_linux.py`). 이 위험은 2026-11-16 보드에 쓴 펌웨어 감시가 0.3 s 로 줄인다(실제 보드에서는 아직 재지 않음). 물리 비상정지는 그대로 마지막 수단이다.
   `docker kill`, `docker stop -t 0` 을 쓰지 않는다.
 - 구동 방향(2·3 의 F 가 앞인지)은 아직 확인하지 않았다(`ROVER_ESP32_DIRECTION_VERIFIED=0`). 첫 시험은 바퀴를 들고 한다(5절).
-- 구동 PWM 상한은 기본 153(60 %, 화면의 속도 상한과 같음). `--max-drive-pwm` 으로 낮출 수 있다.
+- 구동 PWM 상한은 기본 255(100 %, 2026-11-19부터; 그 전 기본은 153 = 60 %). `--max-drive-pwm` 으로 낮출 수 있다.
   **2026-11-16 지금 설치: `--max-drive-pwm 0`**(사용자 결정, 첫 조향 시험 동안 구동 바퀴가 돌지 않게). 구동 방향 시험 전에 되돌리기(`rollback_esp32_bridge.py --apply`) 뒤
   기본값으로 다시 설치한다(같은 이름이면 설치기가 `new_name_in_use`로 거절하므로).
 
@@ -101,7 +101,7 @@ sudo python3 rollback_esp32_bridge.py --apply  # 새 컨테이너 멈춤(STOP), 
 | `--device` | by-id 경로(위) | ESP32 by-id 경로. ttyACM 을 훑어 고르지 않는다 |
 | `--identity` | `Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60` | 기대하는 udev ID_SERIAL |
 | `--device-mode` | `by-id` | `node` 는 지금 노드를 고정(권하지 않음) |
-| `--max-drive-pwm` | 153 | 구동 PWM 상한(0~255) |
+| `--max-drive-pwm` | 255 | 구동 PWM 상한(0~255; 2026-11-19 전 기본 153) |
 | `--left-forward`, `--right-forward` | `F` | 모터 2·3 에서 앞으로 가는 방향(바퀴 든 시험 뒤 정함) |
 | `--direction-verified` | 꺼짐 | 방향을 현장에서 확인한 뒤에만 |
 | `--allow-esp-absent` | 꺼짐 | ESP32 가 꽂혀 있지 않아도 브리지만 띄움(브리지는 2초마다 다시 열기를 시도) |

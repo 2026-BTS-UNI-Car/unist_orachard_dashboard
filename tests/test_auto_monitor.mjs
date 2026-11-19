@@ -17,7 +17,7 @@ const tile = (view, name) => view.tiles.find(([label]) => label === name);
 
 test('GPS per run: four modes, sent with start only when chosen', async () => {
   assert.deepEqual(GNSS_MODES, ['off', 'log_only', 'geofence', 'weak_constraint']);
-  assert.deepEqual(Object.values(GNSS_MODE_TEXT), ['GPS 안 씀', 'GPS 기록만', 'GPS 범위 감시', 'RTK 약한 보정']);
+  assert.deepEqual(Object.values(GNSS_MODE_TEXT), ['GPS 사용 안 함', 'GPS 기록만', 'GPS 범위 감시', 'GPS 사용함']);
   for (const [gnssMode, body] of [[null, { row_len_m: 40 }], ['geofence', { row_len_m: 40, gnss_mode: 'geofence' }]]) {
     const sent = [];
     await prepareRun({ send: async (action, b) => { sent.push([action, b]); return { ok: true, reply: { status: { run_state: 'armed' } } }; },
@@ -32,7 +32,9 @@ test('GPS tile: the run mode, its state, a mismatch with the request, an executo
   assert.deepEqual(gnssTile(run, 'geofence'), ['GPS 범위 감시', '확정 · ±1.23 m · 받음 12 · 거부 3', '']);
   const [, sub, level] = gnssTile(run, 'weak_constraint');
   assert.equal(level, 'warn');
-  assert.match(sub, /^요청한 RTK 약한 보정과 다름/, 'an older executor that ignored the field shows it');
+  assert.match(sub, /^요청\(GPS 사용함\)과 다름/, 'an older executor that ignored the field shows it');
+  assert.equal(gnssTile({ gnss: { mode: 'weak_constraint', state: 'rejected_no_fix' } })[1], '위치 없음(그 fix 안 씀)',
+    'no fix indoors: the run goes on without GPS');
   assert.equal(gnssTile({ gnss: { mode: 'weak_constraint', rtk: { state: 'fixed' }, counts: { accepted: 5, jump: 2, quality: 1 } } })[1],
     'RTK FIXED · 받음 5 · 거부 3');
   assert.equal(gnssTile({ gnss: { mode: 'geofence', fence_tripped: true } })[2], 'bad');

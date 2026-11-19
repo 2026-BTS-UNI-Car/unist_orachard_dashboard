@@ -696,7 +696,8 @@ def build_parser():
     p.add_argument('--identity', default=IDENTITY, help='expected udev ID_SERIAL')
     p.add_argument('--device-mode', choices=('by-id', 'node'), default='by-id',
                    help='by-id: Docker resolves the symlink at every start (default); node: pin the node found now')
-    p.add_argument('--max-drive-pwm', type=int, default=153, help='host cap of the drive PWM (153 = 60 %%)')
+    p.add_argument('--max-drive-pwm', type=int, default=255,
+                   help='host cap of the drive PWM (255 = 100 %%, since 2026-11-19; 153 = 60 %% was the old default)')
     p.add_argument('--left-forward', choices=('F', 'R'), default='F')
     p.add_argument('--right-forward', choices=('F', 'R'), default='F')
     p.add_argument('--direction-verified', action='store_true', help='only after the wheels-up check on site')
