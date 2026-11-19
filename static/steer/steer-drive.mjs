@@ -107,6 +107,12 @@ export function steerView(ctl, now) {
     targetPos: span(target), measuredPos: span(measured),
     duty: drive ? { left: drive.left, right: drive.right, en: drive.en } : null,
     deadlineMs: deadline, saturated: steering.saturated === true, faults: faultLabels(steering.faults),
+    // 2026-11-19 (user): the steering potentiometer on the manual tab: raw ADC count (-1 / absent = invalid) and the
+    // steering motor PWM the bridge reads from the firmware trace (16f9d5c)
+    potRaw: Number.isFinite(steering.raw) && steering.raw >= 0 ? steering.raw : null,
+    potInvalid: Array.isArray(steering.faults) && steering.faults.includes('pot_invalid'),
+    steerPwm: Number.isFinite(steering.pwm) ? steering.pwm : null,
+    steerPwmPeak: Number.isFinite(steering.pwm_peak) ? steering.pwm_peak : null,
     centreOff: target !== null && Math.abs(target) >= 0.5 && !ctl.centreReturn && !ctl.steeringActive(),
     absolute: ctl.absoluteMode(), smooth: ctl.smoothMode(), dragStepDeg: ctl.dragStepDeg(), driveCapPwm: ctl.driveCapPwm(),
     dragActive: ctl.drag.active, dragDeg: ctl.drag.active ? ctl.drag.deg : 0,
@@ -308,6 +314,9 @@ export function initSteerDrive(page) {
       { label: '목표 / 측정', value: `${fmtDeg(v.targetDeg)} / ${fmtDeg(v.measuredDeg)}`, sub: v.fresh ? `오차 ${fmtDeg(v.errorDeg)}` : '상태 오래됨', color: colours.cyan },
       { label: '구동 duty', value: v.duty ? `${v.duty.left} / ${v.duty.right}` : '--', sub: driveCapText(v.driveCapPwm), color: colours.blue },
       { label: '입력 기한', value: v.deadlineMs === null ? '--' : `${Math.round(v.deadlineMs)} ms`, sub: v.saturated ? '조향 포화' : '0.75 s · Esc 즉시 정지', color: colours.good },
+      { label: '가변저항', value: v.potRaw === null ? (v.potInvalid ? '무효' : '--') : String(v.potRaw),
+        sub: v.steerPwm === null ? '조향 PWM --' : `조향 PWM ${v.steerPwm}${v.steerPwmPeak ? ` · 최근 최대 ${v.steerPwmPeak}` : ''}`,
+        color: v.potInvalid ? colours.bad || colours.cyan : colours.blue },
     ]);
     setText('steerSpeedValue', `${ctl.speedCapPct}%`);
     setText('steerAdRateValue', adRateText(ctl.adRateDegS, ctl.cfg.adRateMaxDegS));

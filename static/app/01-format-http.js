@@ -159,6 +159,10 @@ async function postJson(path, payload = {}) {
 // the kept copy, exactly as if the server had sent it again.
 const CONTROL_TIMEOUT_MS = { stop: 8000, other: 5000 };
 const REQUEST_LIMIT = { normal: 4, constrained: 2 };
+// 2026-11-19 field (phone): a queued request that never answered (a dropped connection) kept its slot for good,
+// the status polls then failed behind it and the bar stayed '연결 끊김' until a reload. Every queued request now
+// gives its slot back after this long (the caller sees an abort, as for its own timeout).
+const REQUEST_TIMEOUT_MS = { status: 12000, bulk: 90000 };
 const BULK_REQUEST = /^\/api\/(?:recordings(?:$|\/(?!status$))|live\/recordings\/|live\/mapping-jobs|docker\/container\/|docs|plan$|site-map$|maps\/status$)/;
 const requestQueue = { active: 0, bulkActive: 0, waiting: [] };
 const CONDITIONAL_CACHE = { entries: new Map(), maxEntries: 24, maxBytes: 65536 };
@@ -242,14 +246,25 @@ function limitedFetch(input, init) {
       signal?.removeEventListener?.("abort", abort);
       requestQueue.active += 1;
       if (kind === "bulk") requestQueue.bulkActive += 1;
+      // The slot's own deadline; the caller's abort still ends the request at once.
+      const deadline = new AbortController();
+      const timer = setTimeout(() => deadline.abort(), REQUEST_TIMEOUT_MS[kind] || REQUEST_TIMEOUT_MS.status);
+      const relay = () => deadline.abort();
+      if (signal) {
+        if (signal.aborted) deadline.abort();
+        else signal.addEventListener?.("abort", relay, { once: true });
+      }
+      const runInit = { ...(init || {}), signal: deadline.signal };
       let request;
       try {
-        request = kind === "status" ? conditionalFetch(input, init)
-          : pageFetch(input, { priority: "low", ...(init || {}) });
+        request = kind === "status" ? conditionalFetch(input, runInit)
+          : pageFetch(input, { priority: "low", ...runInit });
       } catch (err) {
         request = Promise.reject(err);
       }
       request.then(resolve, reject).finally(() => {
+        clearTimeout(timer);
+        signal?.removeEventListener?.("abort", relay);
         requestQueue.active -= 1;
         if (kind === "bulk") requestQueue.bulkActive -= 1;
         startQueuedRequests();

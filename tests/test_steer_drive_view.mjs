@@ -50,3 +50,17 @@ assert.deepEqual(view.limits, { left: 409, right: 409 });
 assert.equal(view.measuredPos, null);
 
 console.log('PASS: steering panel device texts, fault labels and gauge values');
+
+// 2026-11-19 (user): the manual tab shows the potentiometer raw count and the steering motor PWM.
+const pot = new R.SteerController({ now: () => now, transport: null });
+pot.onStatus({ ...status, steering: { ...status.steering, raw: 1887, pwm: 72, pwm_peak: 95, faults: [] } }, now, now);
+view = steerView(pot, now);
+assert.equal(view.potRaw, 1887);
+assert.equal(view.steerPwm, 72);
+assert.equal(view.steerPwmPeak, 95);
+assert.equal(view.potInvalid, false);
+pot.onStatus({ ...status, steering: { ...status.steering, raw: -1, pwm: null, pwm_peak: null, faults: ['pot_invalid'] } }, now, now);
+view = steerView(pot, now);
+assert.equal(view.potRaw, null);
+assert.equal(view.potInvalid, true);
+assert.equal(view.steerPwm, null);
