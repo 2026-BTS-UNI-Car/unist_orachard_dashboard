@@ -380,7 +380,7 @@ services:
       ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
       ROVER_ESP32_LEFT_FORWARD: "${ROVER_ESP32_LEFT_FORWARD:-F}"
       ROVER_ESP32_RIGHT_FORWARD: "${ROVER_ESP32_RIGHT_FORWARD:-F}"
-      ROVER_ESP32_MAX_DRIVE_PWM: "${ROVER_ESP32_MAX_DRIVE_PWM:-153}"
+      ROVER_ESP32_MAX_DRIVE_PWM: "${ROVER_ESP32_MAX_DRIVE_PWM:-255}"
     devices:
       - "${ROVER_ESP32_DEVICE:-/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00}:/dev/ubts-motor"
     volumes:
