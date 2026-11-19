@@ -135,7 +135,7 @@ export function initLocalGrid(page) {
     let reply = null;
     try { reply = await page.getJson('/api/executor/status?grid=1'); } catch (_) { reply = null; }
     finally { busy = false; }
-    if (reply && reply.configured === false) { off = true; stop(); show(false); words('', '실행기 없음', '이 대시보드에는 자율 실행기가 없다.'); return; }
+    if (reply && reply.configured === false) { off = true; stop(); show(false); words('', '실행기 없음', '자율 실행기 설정 없음'); return; }
     if (!reply?.ok) {
       if (scene) words('bad', '실행기 연결 안 됨', grid ? describe(grid)[2] : '마지막 그림 유지');
       return;
@@ -144,7 +144,7 @@ export function initLocalGrid(page) {
     // After a run (ended / idle / latched) the executor keeps integrating scans into its grid; the picture stays
     // the last one of the run until the next run opens.
     if (scene && !RUN_OPEN.has(status.run_state)) {
-      words('', '멈춤', 'run 이 끝나 마지막 그림을 그대로 둔다 · 다음 run 에서 다시 그린다');
+      words('', '멈춤', '마지막 그림 · 다음 run 에서 다시 그린다');
       return;
     }
     const next = status.local_grid_map && status.local_grid_map.schema === SCHEMA ? status.local_grid_map : null;
@@ -154,7 +154,7 @@ export function initLocalGrid(page) {
     trail = trailStep(trail, status);
     scene = sceneFromStatus(next ? status : { ...status, local_grid_map: undefined });
     if (scene && !scene.path.length && trail.points.length >= 2) scene.path = trail.points;
-    if (!scene) { show(false); words('', '대기', 'run 중에 실행기 격자를 여기에 그린다.'); return; }
+    if (!scene) { show(false); words('', '대기', 'run 중에 그린다'); return; }
     show(true);
     if (grid) words(...describe(grid));
     else words('', '격자 없음', '실행기가 국소 격자를 보내지 않음 · 경로·차만');

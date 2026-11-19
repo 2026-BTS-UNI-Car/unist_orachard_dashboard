@@ -1,5 +1,8 @@
-// What the autonomy section shows and which button it offers, from GET /api/executor/status (UI-08,
+// What the autonomy tab shows and which of its three buttons are on, from GET /api/executor/status (UI-08,
 // docs/STEERING_SERVER_KO.md 6, contract v0 with revisions 1 and 2). Pure functions: tested without a page.
+// 2026-11-20 (user: "준비 → 열을 잡아서 자율주행 가능한 상태면 자율주행 버튼 활성화, 멈추기 버튼 누르면 멈추는, 최대한 단순한
+// 과정"): three buttons that stay in place (준비, 자율 주행 시작, 멈추기) and one status sentence (statusLine). 준비 does every
+// step by itself (prepareSequence: acknowledge a latch, end an open run, start, arm).
 
 export const HEARTBEAT_MS = 100;          // contract revision 1: every 100 ms (at most 250 ms)
 export const STATUS_MS = 500;             // placeholder (STEERING_SERVER_KO.md 6)
@@ -9,7 +12,7 @@ export const ACTIVE_RUN_STATES = new Set(['ready', 'armed', 'running', 'paused',
 
 export const RUN_STATE = {
   idle: ['', '대기'], ready: ['info', '준비됨 · Arm 전'], armed: ['info', '출발 대기'], running: ['ok', '주행 중'],
-  paused: ['warn', '일시정지'], ended: ['', '끝남'], latched: ['bad', '정지 래치'],
+  paused: ['warn', '일시정지'], ended: ['', '끝남'], latched: ['bad', '멈춤'],
 };
 export const STOP_REASON = {
   ROW_END: '정상 열 끝', OBSTACLE: '열 안 장애물', END_STRUCTURE: '열 끝 구조물(벽·울타리)',
@@ -19,16 +22,19 @@ export const STOP_REASON = {
 };
 export const GO_BLOCKER = {
   session_conflict: '다른 화면이 출발 권한을 가짐', operator_link_not_fresh: '이 화면의 연결 신호가 아직 없음',
-  no_run: 'run 없음: 먼저 준비', already_running: '이미 주행 중', latched: '래치 확인이 먼저',
-  arm_first: 'Arm이 먼저', inputs_not_fresh: '센서 입력이 오래됨', steering_feedback: '조향 상태가 없거나 오래됨',
+  no_run: 'run 없음: 먼저 준비', already_running: '이미 주행 중', latched: '멈춤 상태: 먼저 준비',
+  arm_first: 'Arm 전: 먼저 준비', inputs_not_fresh: '센서 입력 대기', steering_feedback: '조향 상태가 없거나 오래됨',
   vehicle_moving: '차가 아직 움직임', corridor_not_acquired: '통로를 아직 못 찾음',
   lease_lost: '조향 브리지 연결이 끊겨 다시 Arm이 필요함',                  // contract revision 3
 };
 // stop_detail (the executor's own reason string) -> short words; an unknown one is shown as sent.
 export const STOP_DETAIL = {
   operator_stop: '운영자 STOP', operator_link_lost: '화면 연결 끊김', row_end: '열 끝', lease_lost: '브리지가 권한을 거둠',
+  // executor pause / end reasons (simulation repository tools/row_executor/core.py)
+  stale_lidar: 'LiDAR 입력 끊김', stale_imu: 'IMU 입력 끊김', speed_cap_below_min: '속도 제한이 최저 속도 아래',
+  overspeed: '과속', prediction_limit: '예측 한도', obstacle_ahead: '앞 장애물', stale_repeat_limit: '멈춤 반복',
+  gnss_geofence: 'GPS 범위 벗어남', bridge_error: '브리지 오류', bridge_latched: '브리지 멈춤', bridge_arm_failed: 'Arm 실패',
 };
-export const LEASE_LOST_TEXT = '브리지가 권한을 거뒀다: Arm을 다시 누른다';
 export const GNSS_STATE = {
   none: '수신 없음', no_fix: '미확정', fix: '확정', rtk: 'RTK', stale: '오래됨', unused: '쓰지 않음', off: '꺼짐',
   absent: '수신 없음', waiting: '기다림', ok: '정상', accepted: '받아들임', rejected: '거부', fence_tripped: '범위 벗어남',
@@ -54,6 +60,16 @@ export const START_ERROR = {
   gnss_rtk_not_fixed: 'RTK FIXED 가 아님: RTK 보정을 쓸 수 없다', gnss_needs_rtk_fixed: 'RTK FIXED 가 아님: RTK 보정을 쓸 수 없다',
   gnss_not_available: 'GPS 수신이 없음', gnss_mode_needs_front_steer: '이 방식은 앞바퀴 조향 실행기에서만',
 };
+// Refusals of the other actions (executor request handlers, tools/row_executor/executor_main.py) in screen words.
+export const EXEC_ERROR = {
+  run_in_progress: 'run 이 아직 열려 있음', bridge_still_armed: '차가 아직 서는 중(브리지 Arm 유지)',
+  acknowledge_latch_first: '멈춤 확인이 먼저', start_a_run_first: 'run 없음', already_armed: '이미 Arm 됨',
+  motor_output_not_allowed: '이 실행기는 모터를 쓰지 않음', row_motor_output_not_enabled: '실행기 설정이 모터 출력을 막음',
+  config_not_feasible: '실행기 설정이 맞지 않음', no_run: 'run 없음', invalid_session_id: '화면 세션 값 오류',
+  start_mode_hold_to_run: '누르는 동안만 가는 방식의 실행기', control_in_use: '다른 화면이 조종권을 가짐',
+  executor_unreachable: '실행기 연결 안 됨', executor_not_configured: '실행기 설정 없음',
+  still_latched: '멈춤 상태가 남아 있음', still_open: '열린 run 이 끝나지 않음',       // prepareSequence's own
+};
 export const LIMIT_REASON = {
   target: '목표 속도', corridor: '통로 신뢰도', lateral_error: '횡 오차', heading_error: '방향 오차',
   row_end: '열 끝 감속', steering: '조향 권한', obstacle: '앞 장애물', approach: '열 끝 감속',
@@ -74,59 +90,203 @@ const fixed = (value, digits, unit) => (num(value) === null ? '--' : `${value.to
 const label = (table, code) => (code === null || code === undefined || code === '' ? null
   : (table[code] || `기타(${String(code)})`));
 
-// The button of the section: [text, action, enabled]. action: prepare | arm | go | ack | null.
-export function primaryAction(reply, nowMs = Date.now()) {
-  if (!reply) return { text: '확인 중', action: null, enabled: false };
-  if (reply.configured === false) return { text: '실행기 설정 없음', action: null, enabled: false };
-  if (!reply.ok || !reply.status) return { text: '실행기 연결 안 됨', action: null, enabled: false };
-  if (stale(reply, nowMs)) return { text: '실행기 응답 끊김', action: null, enabled: false };
-  const s = reply.status;
-  const ready = s.go_ready === undefined || s.go_ready === null ? true : s.go_ready === true;
-  // contract rev. 2: an executor set to hold_to_run refuses go and heartbeat (409 start_mode_hold_to_run)
-  if (s.start_mode === 'hold_to_run' && (s.run_state === 'armed' || s.run_state === 'paused' || s.run_state === 'running')) {
-    return { text: '누르는 동안만 방식: 이 화면에서 출발 못 함', action: null, enabled: false };
+// ---- The three buttons -----------------------------------------------------------------------------------------------
+// Start conditions that the press itself clears: the page sends its heartbeat right before the go.
+export const GO_PRESS_CLEARS = new Set(['operator_link_not_fresh']);
+
+// The executor's start conditions that are still open (without those of GO_PRESS_CLEARS); null when it sends no list.
+export function openBlockers(s) {
+  return s && Array.isArray(s.go_blockers) ? s.go_blockers.filter((code) => !GO_PRESS_CLEARS.has(code)) : null;
+}
+
+// True when a go may be sent: a run that is armed (or paused: 다시 출발) and nothing in its way but the operator link.
+// An executor without the list is judged by go_ready (absent = ready, as before). hold_to_run (contract rev. 2): never.
+export function goAllowed(s) {
+  if (!s || s.start_mode === 'hold_to_run' || (s.run_state !== 'armed' && s.run_state !== 'paused')) return false;
+  if (Array.isArray(s.go_blockers) && s.go_blockers.length) return openBlockers(s).length === 0;
+  return s.go_ready === undefined || s.go_ready === null ? true : s.go_ready === true;
+}
+
+// The status of a reply that can be acted on (configured, reachable, not older than STALE_MS), else null.
+function usable(reply, nowMs) {
+  return reply && reply.configured !== false && reply.ok && reply.status && !stale(reply, nowMs) ? reply.status : null;
+}
+
+// Which buttons are on. 준비: whenever the executor answers and the vehicle is not driving. 자율 주행 시작 (다시 출발 after a
+// pause): goAllowed. 멈추기 is always on (it is not in this table).
+export function autoButtons(reply, nowMs = Date.now()) {
+  const s = usable(reply, nowMs);
+  return { prepare: Boolean(s) && s.run_state !== 'running', go: goAllowed(s),
+           goText: s && s.run_state === 'paused' ? '다시 출발' : '자율 주행 시작' };
+}
+
+// ---- The status sentence -----------------------------------------------------------------------------------------------
+// Why the run stopped, in the operator's words: the known detail, else the category; null when there is no reason.
+export function stopWords(s) {
+  const category = s.stop_reason || (s.single_row || {}).stop_category || null;
+  if (category === 'ROW_END') return '열 끝 도착';
+  if (typeof s.stop_detail === 'string' && STOP_DETAIL[s.stop_detail]) return STOP_DETAIL[s.stop_detail];
+  return label(STOP_REASON, category);
+}
+
+// What the start still waits for (the open start conditions).
+function waitWords(s) {
+  const open = openBlockers(s) || [];
+  if (open.length === 1 && open[0] === 'corridor_not_acquired') return '통로 찾는 중';
+  if (!open.length) return '출발 대기';
+  // one sentence: the first two, the rest as a count (every one is in the folded rows)
+  return `출발 대기: ${open.slice(0, 2).map((code) => label(GO_BLOCKER, code)).join(', ')}${open.length > 2 ? ` 외 ${open.length - 2}` : ''}`;
+}
+
+// One sentence: the state now and what to do next. Returns [level, text]; level: '' | ok | warn | bad | testing.
+export function statusLine(reply, nowMs = Date.now()) {
+  if (!reply) return ['', '실행기 확인 중'];
+  if (reply.configured === false) return ['warn', '실행기 설정 없음: 자율주행을 쓸 수 없음'];
+  if (!reply.ok || !reply.status) {
+    const token = reply.error === 'executor_token_rejected' || reply.error === 'executor_token_missing';
+    return ['bad', token ? '실행기 연결 안 됨: 토큰이 맞지 않음' : '실행기 연결 안 됨'];
   }
+  if (stale(reply, nowMs)) return ['bad', '실행기 응답 끊김: 주행 중이었다면 차는 스스로 선다'];
+  const s = reply.status;
+  if (s.start_mode === 'hold_to_run' && HEARTBEAT_STATES.has(s.run_state)) return ['warn', '누르는 동안만 가는 방식의 실행기: 이 화면에서 출발 못 함'];
+  const shadow = s.mode === 'SHADOW' ? ' · SHADOW(차는 안 움직임)' : '';
+  const why = s.stop_detail === 'operator_end' ? null : stopWords(s);
+  const sr = s.single_row || {};
   switch (s.run_state) {
-    case 'idle': case 'ended': case undefined: case null:
-      return { text: s.mode === 'MOTOR' ? '준비 (run 만들기 · Arm)' : '준비 (run 만들기)', action: 'prepare', enabled: true };
-    case 'ready': return leaseLost(s) ? { text: 'Arm 다시 (브리지가 권한을 거둠)', action: 'arm', enabled: true }
-      : { text: 'Arm (모터 권한)', action: 'arm', enabled: true };
-    case 'armed': return { text: '자율 주행 시작', action: 'go', enabled: ready };
-    case 'running': return { text: '주행 중', action: null, enabled: false };
-    case 'paused': return { text: '다시 출발', action: 'go', enabled: ready };
-    case 'latched': return { text: '래치 확인', action: 'ack', enabled: true };
-    default: return { text: `상태 ${String(s.run_state)}`, action: null, enabled: false };
+    case 'idle': case undefined: case null: return ['', `준비를 누르세요${shadow}`];
+    case 'ended':
+      if (!why) return ['', `준비를 누르세요${shadow}`];
+      return why === '열 끝 도착' ? ['ok', '멈춤: 열 끝 도착'] : ['warn', `멈춤: ${why} — 차를 다시 놓고 준비`];
+    case 'latched': return ['bad', `멈춤${why ? `: ${why}` : ''} — 차를 다시 놓고 준비`];
+    case 'ready': return ['warn', `${leaseLost(s) ? '브리지가 권한을 거둠' : 'Arm 전'} — 준비를 다시 누르세요`];
+    case 'armed': return goAllowed(s) ? ['ok', `출발할 수 있음${shadow}`] : ['testing', waitWords(s)];
+    case 'running': {
+      const distance = num(sr.distance_m) ?? num(s.dist), speed = num(sr.speed_m_s) ?? num(s.v);
+      return ['ok', ['주행 중', distance === null ? null : `${distance.toFixed(1)} m`,
+                     speed === null ? null : `${speed.toFixed(2)} m/s`].filter(Boolean).join(' · ')];
+    }
+    case 'paused': return ['warn', `일시정지${why ? `: ${why}` : ''} — ${goAllowed(s) ? '다시 출발을 누르세요' : waitWords(s)}`];
+    default: return ['', `상태 ${String(s.run_state)}`];
   }
 }
 
-// "준비" in one press (contract v0): start, then Arm when the executor says the run is ready. The start reply is not
-// enough to decide: the status it carries can come from before the start, and a status poll already in flight when
-// the start was sent can answer with the old state. So: read the status again after the start reply until it says
-// ready (MOTOR: send arm) or armed (SHADOW: start arms by itself), at most waitMs. Only a run state that the start
-// itself makes (ready, armed) counts; idle or ended means "not yet". Returns { ok, step, runState }.
-export const PREPARE_WAIT_MS = 3000;
-export const PREPARE_STEP_MS = 150;
-// gnssMode (2026-11-19): the run's GPS mode (GNSS_MODES); null = the executor's configured mode (the field is not sent).
-export async function prepareRun({ send, readStatus, sleep, rowLen = null, gnssMode = null, waitMs = PREPARE_WAIT_MS,
-                                   stepMs = PREPARE_STEP_MS, now = () => Date.now() }) {
+// ---- 준비 in one press ---------------------------------------------------------------------------------------------------
+// The body of a start. gnssMode (2026-11-19): the run's GPS mode (GNSS_MODES); null = the executor's configured mode
+// (the field is not sent).
+function startBody(rowLen, gnssMode) {
   const body = { row_len_m: rowLen };
   if (gnssMode) body.gnss_mode = gnssMode;
-  const started = await send('start', body);
-  if (!started.ok) return { ok: false, step: 'start', runState: null };
+  return body;
+}
+// The refusal of a request as a result carries it ({error: code, text: words}; nothing when the sender gave none).
+const refusal = (answer) => ({ ...(answer && answer.error ? { error: answer.error } : {}), ...(answer && answer.text ? { text: answer.text } : {}) });
+
+// After a start the executor accepted (contract v0): Arm when the executor says the run is ready. The start reply is
+// not enough to decide: the status it carries can come from before the start, and a status poll already in flight when
+// the start was sent can answer with the old state. So: read the status again after the start reply until it says
+// ready (MOTOR: send arm) or armed (SHADOW: start arms by itself), at most waitMs. Only a run state that the start
+// itself makes (ready, armed) counts; idle or ended means "not yet". Returns { ok, step, runState[, error, text] }.
+export const PREPARE_WAIT_MS = 3000;
+export const PREPARE_STEP_MS = 150;
+export async function armAfterStart({ started, send, readStatus, sleep, aborted = () => false, waitMs = PREPARE_WAIT_MS,
+                                      stepMs = PREPARE_STEP_MS, now = () => Date.now() }) {
   const t0 = now();
   let status = started.reply && typeof started.reply.status === 'object' ? started.reply.status : null;
   for (;;) {
     const runState = status ? status.run_state : null;
     if (runState === 'armed') return { ok: true, step: 'armed', runState };
     if (runState === 'ready') {
+      if (aborted()) return { ok: false, step: 'aborted', runState };
       const armed = await send('arm', {});
-      return { ok: armed.ok, step: 'arm', runState };
+      return armed.ok ? { ok: true, step: 'arm', runState } : { ok: false, step: 'arm', runState, ...refusal(armed) };
     }
     if (runState === 'latched') return { ok: false, step: 'latched', runState };
     if (now() - t0 >= waitMs) return { ok: false, step: 'wait', runState };
     await sleep(stepMs);
     const fresh = await readStatus();
     status = fresh && fresh.ok && fresh.status ? fresh.status : null;
+  }
+}
+
+// 준비 (2026-11-20): one press does what is needed, each step only when the executor's state asks for it:
+//   latched            -> ack (the operator's acknowledgement of the stop)
+//   ready/armed/paused -> end (a run that is still open)
+//   then               -> start (row length, GPS mode) and Arm (armAfterStart)
+// After an end the bridge stays armed until the vehicle stands (executor terminal_stop_wait_s): a start refused with
+// bridge_still_armed is sent again every retryMs. A start refused because of a latch or an open run goes back to that
+// step (each at most twice). The whole press takes at most totalMs. send(action, body) -> { ok, reply, error, text };
+// readStatus() -> a fresh status reply or null; aborted() -> true once 멈추기 was pressed (nothing more is sent);
+// onStep(name) names the step for the status line. Returns { ok, step, runState[, error, text] }; step: status |
+// running | ack | end | start | arm | armed | latched | wait | aborted.
+export const PREPARE_TOTAL_MS = 12000;
+export const START_RETRY_MS = 300;
+export const PREPARE_STEP = { ack: '멈춤 확인', end: '열린 run 끝내기', start: '새 run', arm: 'Arm' };
+const OPEN_RUN_STATES = new Set(['ready', 'armed', 'paused']);
+export async function prepareSequence({ send, readStatus, sleep, rowLen = null, gnssMode = null, aborted = () => false,
+                                        onStep = () => {}, waitMs = PREPARE_WAIT_MS, stepMs = PREPARE_STEP_MS,
+                                        totalMs = PREPARE_TOTAL_MS, retryMs = START_RETRY_MS, now = () => Date.now() }) {
+  const t0 = now();
+  const read = async () => { const fresh = await readStatus(); return fresh && fresh.ok && fresh.status ? fresh.status : null; };
+  // Reads until done(status) or waitMs: the last status read (null when none came).
+  const settle = async (done) => {
+    const from = now();
+    let seen = null;
+    for (;;) {
+      await sleep(stepMs);
+      seen = (await read()) || seen;
+      if ((seen && done(seen)) || now() - from >= waitMs) return seen;
+    }
+  };
+  let status = await read();
+  if (!status) return { ok: false, step: 'status', runState: null };
+  let acks = 0, ends = 0, last = {};
+  for (;;) {
+    const runState = status.run_state ?? null;
+    if (aborted()) return { ok: false, step: 'aborted', runState };
+    if (now() - t0 >= totalMs) return { ok: false, step: 'wait', runState, ...last };
+    if (runState === 'running') return { ok: false, step: 'running', runState };
+    if (runState === 'latched') {
+      if (acks >= 2) return { ok: false, step: 'ack', runState, error: 'still_latched' };
+      acks += 1;
+      onStep('ack');
+      const acked = await send('ack', {});
+      if (!acked.ok) return { ok: false, step: 'ack', runState, ...refusal(acked) };
+      status = (await settle((s) => s.run_state !== 'latched')) || status;
+      continue;
+    }
+    if (OPEN_RUN_STATES.has(runState)) {
+      if (ends >= 2) return { ok: false, step: 'end', runState, error: 'still_open' };
+      ends += 1;
+      onStep('end');
+      const ended = await send('end', {});
+      if (!ended.ok && ended.error !== 'no_run') return { ok: false, step: 'end', runState, ...refusal(ended) };
+      status = (await settle((s) => !OPEN_RUN_STATES.has(s.run_state))) || status;
+      continue;
+    }
+    onStep('start');
+    const started = await send('start', startBody(rowLen, gnssMode));
+    if (!started.ok) {
+      last = refusal(started);
+      if (started.error === 'bridge_still_armed') { await sleep(retryMs); status = (await read()) || status; continue; }
+      if (started.error === 'acknowledge_latch_first') { status = { ...status, run_state: 'latched' }; continue; }
+      if (started.error === 'run_in_progress') { status = { ...status, run_state: 'paused' }; continue; }
+      return { ok: false, step: 'start', runState, ...last };
+    }
+    onStep('arm');
+    return armAfterStart({ started, send, readStatus, sleep, aborted, waitMs, stepMs, now });
+  }
+}
+
+// A failed 준비 as one sentence: where and why. words(code) -> the refusal in screen words.
+export function prepareFailText(result, words = (code) => code) {
+  const why = result.text || (result.error ? words(result.error) : '');
+  switch (result.step) {
+    case 'status': return '준비 실패: 실행기 상태를 읽지 못함';
+    case 'running': return '주행 중에는 준비할 수 없음: 먼저 멈추기';
+    case 'aborted': return '멈추기를 눌러 준비를 그만둠';
+    case 'latched': return '준비 실패: 실행기가 다시 멈춤 상태가 됨';
+    case 'wait': return `준비 실패(시간 초과): ${why || `실행기 상태 ${result.runState || '모름'}`}`;
+    default: return `준비 실패(${PREPARE_STEP[result.step] || result.step}): ${why || '이유 모름'}`;
   }
 }
 
@@ -150,19 +310,11 @@ export function runActive(reply) {
   return Boolean(reply && reply.ok && reply.status && ACTIVE_RUN_STATES.has(reply.status.run_state));
 }
 
-// The chip and the rows of the section.
+// The state chip (tab badge, monitoring head) and the rows of the folded 자세히: the executor's own codes are here.
 export function autoView(reply, nowMs = Date.now()) {
-  if (!reply) return { chip: ['', '확인 중'], notice: ['testing', '자율 실행기 상태를 확인하고 있다.'], rows: [], stale: true };
-  if (reply.configured === false) {
-    return { chip: ['', '설정 없음'], rows: [], stale: true,
-             notice: ['warn', '자율 실행기 설정 없음: 이 대시보드에는 UBTS_EXECUTOR_URL이 없다. 수동 조종과 STOP은 그대로 쓴다.'] };
-  }
-  if (!reply.ok || !reply.status) {
-    const why = reply.error === 'executor_token_rejected' || reply.error === 'executor_token_missing'
-      ? '토큰이 맞지 않음(실행기가 다시 시작됨)' : '실행기에 닿지 않음';
-    return { chip: ['bad', '연결 안 됨'], rows: [], stale: true,
-             notice: ['bad', `자율 실행기 연결 안 됨: ${why}. 주행 중이었다면 차는 스스로 선다. STOP은 브리지로도 보낸다.`] };
-  }
+  if (!reply) return { chip: ['', '확인 중'], rows: [], stale: true };
+  if (reply.configured === false) return { chip: ['', '설정 없음'], rows: [], stale: true };
+  if (!reply.ok || !reply.status) return { chip: ['bad', '연결 안 됨'], rows: [], stale: true };
   const s = reply.status;
   const isStale = stale(reply, nowMs);
   const [level, text] = RUN_STATE[s.run_state] || ['', String(s.run_state || '알 수 없음')];
@@ -172,9 +324,12 @@ export function autoView(reply, nowMs = Date.now()) {
   const gnss = s.gnss || {};
   const category = s.stop_reason || sr.stop_category || null;
   const stopText = label(STOP_REASON, category);
+  const blockers = Array.isArray(s.go_blockers) ? s.go_blockers : [];
   const rows = [
     ['모드', s.mode === 'SHADOW' ? 'SHADOW · 차를 몰지 않음' : s.mode === 'MOTOR' ? 'MOTOR · 차를 몬다' : (s.mode || '--')],
     ['정지 이유', stopText ? (s.stop_detail ? `${stopText} · ${STOP_DETAIL[s.stop_detail] || s.stop_detail}` : stopText) : '--'],
+    ['실행기 코드', [s.run_state, category, s.stop_detail].filter((code) => typeof code === 'string' && code).join(' · ') || '--'],
+    ['출발 조건', blockers.length ? blockers.map((code) => `${label(GO_BLOCKER, code)} [${code}]`).join(', ') : '--'],
     ['횡 · 방향 오차', `${fixed(sr.lateral_error_m, 2, ' m')} · ${fixed(sr.heading_error_deg, 1, '°')}`],
     ['속도', `${fixed(sr.speed_m_s, 2, '')} / 목표 ${fixed(num(speed.target_mps) ?? num(sr.target_speed_m_s), 2, '')} m/s`],
     ['속도 제한', num(speed.limit_mps) === null ? '--'
@@ -185,18 +340,7 @@ export function autoView(reply, nowMs = Date.now()) {
     ['화면 연결', link.fresh === true ? `연결됨 · ${fixed(link.age_s, 2, ' s')}`
       : link.fresh === false ? '끊김' : '--'],
   ];
-  let notice = null;
-  if (isStale) notice = ['bad', '실행기 상태가 1.5초 넘게 오지 않는다: 값이 오래됐다. 주행 중이었다면 차는 스스로 선다.'];
-  else if (leaseLost(s)) notice = ['warn', `${LEASE_LOST_TEXT}. ${GO_BLOCKER.lease_lost}.`];
-  else if (Array.isArray(s.go_blockers) && s.go_blockers.length && (s.run_state === 'armed' || s.run_state === 'paused')) {
-    notice = ['warn', `출발 조건: ${s.go_blockers.map((code) => label(GO_BLOCKER, code)).join(', ')}`];
-  } else if (s.run_state === 'running') {
-    const timeout = num(link.timeout_s);
-    notice = ['ok', `주행 중: 이 화면을 열어 두어야 한다. 탭을 숨기거나 화면을 떠나면 ${timeout === null ? '1.0' : timeout.toFixed(1)}초 뒤 차가 선다.`];
-  } else if (s.run_state === 'paused' && category === 'OPERATOR_LINK_LOST') {
-    notice = ['warn', '화면 연결이 끊겨 멈췄다. 다시 가려면 다시 출발을 누른다(자동 재출발 없음).'];
-  }
-  return { chip: isStale ? ['bad', '끊김'] : [level, text], notice, rows, stale: isStale };
+  return { chip: isStale ? ['bad', '끊김'] : [level, text], rows, stale: isStale };
 }
 
 // The executor's motor mode as a chip next to the run state (2026-11-17): SHADOW runs never move the vehicle, so the
@@ -261,11 +405,12 @@ export function newSession(random = globalThis.crypto) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ---- Monitoring view of the 자율주행 tab (2026-11-19) ---------------------------------------------------------------
-// User: "자율주행시에 occupancy grid map을 그리면서 하고있는거니? ... 모니터링이 쉽게 되도록". One tile per value: run state and
-// reason, lateral / heading error, distance, speed, the steering command against the measured angle, the drive duty, the
-// steering motor PWM (bridge status steering.pwm / pwm_peak, 16f9d5c), recording and GPS. The executor status is the
-// autonomy panel's own poll; the bridge status is the steering panel's (shared, no request of its own).
+/// ---- Monitoring view of the 자율주행 tab (2026-11-19) ---------------------------------------------------------------
+// User: "자율주행시에 occupancy grid map을 그리면서 하고있는거니? ... 모니터링이 쉽게 되도록". One tile per value. Since
+// 2026-11-20 ("글이 너무 많고") six tiles stay on the screen (state and reason, speed, lateral error, remaining distance,
+// GPS, recording); the others (heading error, the speed limit, the steering command against the measured angle, the drive
+// duty, the steering motor PWM of bridge status steering.pwm / pwm_peak) are in the folded 자세히. The executor status is
+// the autonomy panel's own poll; the bridge status is the steering panel's (shared, no request of its own).
 const DEG = 180 / Math.PI / 1000;
 const mradDeg = (mrad) => (num(mrad) === null ? null : mrad * DEG);
 const signedDeg = (deg) => (deg === null ? '--' : `${Math.abs(deg) < 0.05 ? '' : deg > 0 ? '왼 ' : '오 '}${Math.abs(deg).toFixed(1)}°`);
@@ -290,49 +435,53 @@ export function gnssTile(status, requested = '') {
   return [value, parts.join(' · ') || '정보 없음', level];
 }
 
-// The tiles: [label, value, sub, level]. bridge: the bridge status reply of the steering panel (or null);
-// recording: {known, active, tag, auto} (auto = started by this panel for the run).
+// The tiles [label, value, sub, level]: tiles = the six on the screen, more = the others (folded 자세히). bridge: the
+// bridge status reply of the steering panel (or null); recording: {known, active, tag, auto, stopFailed} (auto =
+// started by this panel for the run; stopFailed = its stop after the run was refused).
 export function monitorView(reply, bridge = null, recording = null, requestedGnss = '', nowMs = Date.now()) {
   const s = reply && reply.ok && reply.status ? reply.status : null;
   const isStale = stale(reply, nowMs);
-  const tiles = [];
+  const tiles = [], more = [];
   if (!s) {
     tiles.push(['상태', reply && reply.configured === false ? '실행기 없음' : reply ? '연결 안 됨' : '확인 중', '', reply ? 'bad' : '']);
   } else {
     const [level, text] = RUN_STATE[s.run_state] || ['', String(s.run_state || '알 수 없음')];
     const sr = s.single_row || {};
-    const stopText = label(STOP_REASON, s.stop_reason || sr.stop_category || null);
-    const why = stopText ? `${stopText}${s.stop_detail ? ` · ${STOP_DETAIL[s.stop_detail] || s.stop_detail}` : ''}` : sr.phase ? `단계 ${sr.phase}` : '';
-    tiles.push(['상태', isStale ? '끊김' : text, why, isStale ? 'bad' : level]);
-    tiles.push(['횡 오차', fixed(num(sr.lateral_error_m) ?? num(s.lat), 2, ' m'), '+ = 왼쪽', '']);
-    tiles.push(['방향 오차', fixed(num(sr.heading_error_deg) ?? num(s.head), 1, '°'), '', '']);
-    const remaining = num(sr.end_remaining_m);
-    tiles.push(['진행 거리', fixed(num(sr.distance_m) ?? num(s.dist), 1, ' m'), remaining === null ? '' : `남은 ${remaining.toFixed(1)} m`, '']);
     const speed = s.speed || {};
-    const limit = num(speed.limit_mps) === null ? '' : ` · 제한 ${speed.limit_mps.toFixed(2)} (${label(LIMIT_REASON, speed.limit_reason) || '--'})`;
-    tiles.push(['속도', fixed(num(sr.speed_m_s) ?? num(s.v), 2, ' m/s'), `목표 ${fixed(num(speed.target_mps) ?? num(sr.target_speed_m_s), 2, '')}${limit}`, '']);
+    tiles.push(['상태', isStale ? '끊김' : text, stopWords(s) || '', isStale ? 'bad' : level]);
+    tiles.push(['속도', fixed(num(sr.speed_m_s) ?? num(s.v), 2, ' m/s'), `목표 ${fixed(num(speed.target_mps) ?? num(sr.target_speed_m_s), 2, '')}`, '']);
+    tiles.push(['횡 오차', fixed(num(sr.lateral_error_m) ?? num(s.lat), 2, ' m'), '+ = 왼쪽', '']);
+    const distance = num(sr.distance_m) ?? num(s.dist);
+    tiles.push(['남은 거리', fixed(num(sr.end_remaining_m), 1, ' m'), distance === null ? '' : `간 거리 ${distance.toFixed(1)} m`, '']);
+    more.push(['방향 오차', fixed(num(sr.heading_error_deg) ?? num(s.head), 1, '°'), '', '']);
+    // the limit and what binds it, while the executor sends one (not driving: limit null, reason 'not_running')
+    more.push(['속도 제한', fixed(num(speed.limit_mps), 2, ' m/s'), num(speed.limit_mps) === null ? '' : label(LIMIT_REASON, speed.limit_reason) || '', '']);
+    if (sr.phase) more.push(['단계', String(sr.phase), '', '']);
+  }
+  tiles.push(['GPS', ...gnssTile(s, requestedGnss)]);
+  if (recording) {
+    const driving = Boolean(s) && (s.run_state === 'running' || s.run_state === 'paused');
+    const rec = !recording.known ? ['확인 중', '', ''] : recording.active
+      ? ['기록 중', recording.stopFailed ? '자동으로 멈추지 못함: 기록 탭에서 중지'
+        : recording.auto ? 'run 자동 기록(모든 센서)' : recording.tag === 'autonomy' ? '자율주행 기록' : '손으로 시작한 기록',
+        recording.stopFailed ? 'warn' : 'ok']
+      : driving ? ['기록 안 함', '', 'warn'] : ['대기', '출발하면 자동 시작', ''];
+    tiles.push(['기록', ...rec]);
   }
   // Steering command against the measured angle: the executor's own numbers, else the bridge's.
   const steering = bridge && typeof bridge.steering === 'object' && bridge.steering ? bridge.steering : {};
   const host = bridge && typeof bridge.steering_host === 'object' && bridge.steering_host ? bridge.steering_host : {};
   const cmd = mradDeg(num(s?.S) ?? num(s?.single_row?.steer_mrad) ?? num(host.target_mrad));
   const meas = mradDeg(num(s?.steer?.meas) ?? num(steering.measured_mrad));
-  tiles.push(['조향 명령 / 측정', `${signedDeg(cmd)} / ${signedDeg(meas)}`, cmd !== null && meas !== null ? `차이 ${Math.abs(cmd - meas).toFixed(1)}°` : '', '']);
+  more.push(['조향 명령 / 측정', `${signedDeg(cmd)} / ${signedDeg(meas)}`, cmd !== null && meas !== null ? `차이 ${Math.abs(cmd - meas).toFixed(1)}°` : '', '']);
   const drive = bridge && typeof bridge.drive === 'object' && bridge.drive ? bridge.drive : {};
   const acked = [drive.left?.acked, drive.right?.acked].map(num);
   const throttle = num(s?.T) ?? num(s?.single_row?.throttle_pct);
   const board = acked.some((v) => v !== null) ? `보드 PWM ${acked.map((v) => (v === null ? '--' : v)).join(' / ')}` : '';
-  tiles.push(['구동 duty', throttle === null ? '--' : `${throttle} %`, `${board}${num(drive.max_pwm) === null ? '' : `${board ? ' · ' : ''}상한 ${drive.max_pwm}`}`, '']);
+  more.push(['구동 duty', throttle === null ? '--' : `${throttle} %`, `${board}${num(drive.max_pwm) === null ? '' : `${board ? ' · ' : ''}상한 ${drive.max_pwm}`}`, '']);
   const pwm = num(steering.pwm), peak = num(steering.pwm_peak);
-  tiles.push(['조향 모터 PWM', pwm === null ? '--' : String(pwm), peak === null ? (bridge ? 'TRACE 값 없음' : '조향 상태 없음') : `최근 최대 ${peak}`, '']);
-  if (recording) {
-    const rec = !recording.known ? ['확인 중', '', ''] : recording.active
-      ? ['기록 중', recording.auto ? 'run 자동 기록(모든 센서)' : recording.tag === 'autonomy' ? '자율주행 기록' : '손으로 시작한 기록', 'ok']
-      : ['기록 안 함', '', 'warn'];
-    tiles.push(['기록', ...rec]);
-  }
-  tiles.push(['GPS', ...gnssTile(s, requestedGnss)]);
-  return { tiles, stale: isStale };
+  more.push(['조향 모터 PWM', pwm === null ? '--' : String(pwm), peak === null ? (bridge ? 'TRACE 값 없음' : '조향 상태 없음') : `최근 최대 ${peak}`, '']);
+  return { tiles, more, stale: isStale };
 }
 
 // status.metrics: the executor's comparison of its reference centreline with the travelled path (names read

@@ -39,14 +39,14 @@ test('view: rows with grades and source, the button off with its reason', () => 
   assert.equal(rows(v)['예상 거리'], '1.00 m · 등급 모델');
   assert.match(rows(v)['속도'], /0\.373 m\/s \[참고, LiDAR, 구간 1\]/);
   assert.match(rows(v)['출발 지연'], /가정: 100 % 출발 값을 씀/);
-  assert.equal(rows(v)['보정 배율'], '1.00 (이 지형 줄자 기록 없음)');
+  assert.equal(rows(v)['보정 배율'], '1.00 (줄자 기록 없음)');
   assert.equal(rows(v)['줄자 기록 있는 속도'], undefined);
   assert.equal(rows(v)['표에 있는 duty'], '40 · 88 % (그 사이는 직선 보간)');
   assert.equal(rows(v)['구동 상한'], 'PWM 255 (duty 100 %까지)');
   assert.match(rows(v)['자료'], /2026-10 기록, 조향 장치 전 차\(ESP8266\)\. 지금 차는 재지 않음/);
   v = distView({ ...base, plan: { ...PLAN, factor: 1.12, correction: { factor: 1.12, samples: 3, from_duty: 40, exact: true } },
     corrections: { road_paved: { samples: 4, duties: [{ duty: 40, factor: 1.12, samples: 3 }, { duty: 88, factor: 0.95, samples: 1 }] } } });
-  assert.match(rows(v)['보정 배율'], /^1\.12 \(이 속도 40 %에서 줄자 3번/);
+  assert.equal(rows(v)['보정 배율'], '1.12 (줄자 3번)');
   assert.equal(rows(v)['줄자 기록 있는 속도'], '40 % ×1.12 (3번) · 88 % ×0.95 (1번)');
   assert.equal(distView({ ...base, armed: false }).go.title, message('distance_needs_arm'));
   assert.equal(distView({ ...base, fresh: false }).go.enabled, false);
@@ -83,7 +83,7 @@ test('view: the speed readout, an interpolated speed and a borrowed correction',
   const v = distView({ ...base, plan, input: { terrain: 'road_paved', duty: 64 } });
   assert.equal(v.speed, '64 % · 0.57 m/s · 2.10 s');
   assert.equal(rows(v)['속도'], '0.572 m/s [모델: 표의 40 %·88 % 사이 직선 보간, LiDAR]');
-  assert.match(rows(v)['보정 배율'], /^1\.12 \(40 %에서 잰 배율을 빌려 씀: 64 %는 줄자 기록 없음/);
+  assert.equal(rows(v)['보정 배율'], '1.12 (40 %의 배율을 빌림)', 'a duty without its own tape: the nearest measured one, named');
   assert.match(rows(v)['이 속도로 갈 수 있는 거리'], /m$/);
 });
 
@@ -135,6 +135,7 @@ function page() {
     'steerDistMore', 'steerDistMetersLabel', 'steerDistToTape', 'steerDistTapePanel', 'steerDistTapeState', 'steerDistLast',
     'steerDistTapeRows', 'steerDistTapeStatus'];
   for (const id of ids) els[id] = new El(id, id === 'steerDistGo' ? 'button' : 'div');
+  els.steerDistTapeTerrain = new El('steerDistTapeTerrain', 'select');   // 2026-11-20: the tape part's own terrain choice
   els.steerDistPanel.directionButtons = ['forward', 'backward'].map((way) => {
     const button = new El(null, 'button'); button.dataset.distDirection = way; return button;
   });
@@ -269,7 +270,8 @@ test('page: blur and a hidden page release a held move; a finished move hands ba
   await p.settle();
   const feedback = p.log.posts.find(([route]) => route.endsWith('/feedback'))[1];
   assert.deepEqual(feedback, { move_id: 7, actual_m: 1.1 });
-  assert.match(p.els.steerDistTapeStatus.textContent, /보정 배율 1\.1/, 'the answer shows in the tape part (보정·설정)');
+  assert.equal(p.els.steerDistTapeStatus.textContent, '저장: 도로·포장 앞으로 · 실제 1.1 m / 모델 1 m · 배율 1.10 (줄자 1번)',
+    'the answer shows in the tape part (보정·설정) and names the terrain it was filed under');
   assert.equal(p.els.steerDistTapeStatus.hidden, false);
   p.els.steerDistReset.fire('click');
   await p.settle();
@@ -351,12 +353,12 @@ test('view: backward plans, its limits and its own corrections; the rows under t
   assert.equal(v.go.enabled, true);
   const r = Object.fromEntries(v.rows);
   assert.match(r['예상 거리'], /뒤로$/);
-  assert.match(r['보정 배율'], /^0\.90 \(이 속도 40 %에서 뒤로 줄자 1번/);
+  assert.equal(r['보정 배율'], '0.90 (뒤로 줄자 1번)');
   assert.equal(r['줄자 기록 있는 속도'], '40 % ×0.90 (1번)', 'the backward corrections');
   assert.match(r['자료'], /뒤로는 앞으로 잰 표를 그대로 씀/);
   assert.match(distView({ ...base, plan: { ...back, problem: 'distance_out_of_range_backward' }, direction: 'backward' }).go.title, /뒤로는 0\.2~2\.0 m/);
   assert.match(distView({ ...base, plan: { ...back, correction: { factor: 1, samples: 0, from_duty: null } }, direction: 'backward' }).rows
-    .find(([name]) => name === '보정 배율')[1], /이 지형 뒤로 줄자 기록 없음/);
+    .find(([name]) => name === '보정 배율')[1], /^1\.00 \(뒤로 줄자 기록 없음\)$/);
 });
 
 test('sliderRange: the terrain table range, its top cut at the bridge cap', () => {
@@ -367,16 +369,94 @@ test('sliderRange: the terrain table range, its top cut at the bridge cap', () =
   assert.deepEqual(sliderRange(road, { max_duty: 20 }), { min: 40, max: 40, def: 40 }, 'below the table: the lowest (the plan refuses)');
 });
 
-test('tapeView: the last move of this page and both directions of the terrain', () => {
-  const s = { table: TABLE, input: { terrain: 'road_paved' }, corrections: { road_paved: { duties: [{ duty: 40, factor: 1.2, samples: 3 }], backward_duties: [] } },
-    result: { id: 3, direction: 'backward', distance_m: 1.5, duty: 40, reason: 'planned', feedback_open: true } };
+test('tapeView: the last move with its terrain, both directions of the chosen terrain, a tape only for a move of that terrain', () => {
+  const s = { table: TABLE, input: { terrain: 'road_paved' },
+    corrections: { road_paved: { duties: [{ duty: 40, factor: 1.2, samples: 3 }], backward_duties: [] },
+      orchard_row_1010: { duties: [], backward_duties: [{ duty: 90, factor: 0.9, samples: 2 }] } },
+    result: { id: 3, terrain: 'road_paved', direction: 'backward', distance_m: 1.5, duty: 40, reason: 'planned', feedback_open: true } };
   let v = tapeView(s);
-  assert.equal(v.last, '마지막 이동: 뒤로 1.5 m · 40 % · 계획 시간 끝 · 줄자 거리를 넣을 수 있다');
-  assert.deepEqual(v.rows, [['지형', '도로·포장 (2026-10-03)'], ['앞으로 줄자 배율', '40 % ×1.20 (3번)'], ['뒤로 줄자 배율', '기록 없음']]);
-  assert.equal(v.feedback.enabled, true);
+  assert.equal(v.last, '마지막 이동: 도로·포장 · 뒤로 1.5 m · 40 % · 계획 시간 끝');
+  assert.deepEqual(v.rows, [['앞으로 줄자 배율', '40 % ×1.20 (3번)'], ['뒤로 줄자 배율', '기록 없음']], 'the terrain is the choice above the rows, not a row');
+  assert.deepEqual([v.feedback.enabled, v.chip, v.note], [true, ['ok', '입력 가능'], null]);
+  // another terrain chosen: its corrections are shown; the tape of the road move cannot be filed under it
+  v = tapeView({ ...s, input: { terrain: 'orchard_row_1010' } });
+  assert.deepEqual(v.rows, [['앞으로 줄자 배율', '기록 없음'], ['뒤로 줄자 배율', '90 % ×0.90 (2번)']]);
+  assert.deepEqual([v.feedback.enabled, v.chip], [false, ['warn', '지형 다름']]);
+  assert.equal(v.note, '마지막 이동은 도로·포장에서 한 것: 그 지형을 골라야 저장된다');
+  assert.equal(v.feedback.title, v.note);
   v = tapeView({ ...s, result: { ...s.result, feedback_open: false } });
-  assert.equal(v.feedback.enabled, false);
+  assert.deepEqual([v.feedback.enabled, v.note], [false, null]);
+  v = tapeView({ ...s, input: { terrain: 'orchard_row_1010' }, result: { ...s.result, feedback_open: false } });
+  assert.equal(v.note, null, 'nothing to save: nothing to explain');
+  v = tapeView({ ...s, result: { ...s.result, terrain: undefined } });
+  assert.deepEqual([v.feedback.enabled, v.last], [true, '마지막 이동: 뒤로 1.5 m · 40 % · 계획 시간 끝'], 'a server reply without the terrain: as before');
   assert.equal(tapeView({ table: TABLE, input: { terrain: 'road_paved' } }).last, '이 화면에서 끝난 이동 없음');
+});
+
+// 2026-11-20, user: "보정/설정 탭의 거리 이동 줄자 보정에서 도로/포장 옵션만 있는데, 그 옵션을 바꿀 수 있게".
+test('page: the tape part has its own terrain choice, one value with the 수동 조종 choice; reset and tape follow it', async () => {
+  const p = page();
+  await p.settle();
+  const drive = p.els.steerDistTerrain, tape = p.els.steerDistTapeTerrain;
+  const lastPlan = () => p.log.posts.filter(([route]) => route.endsWith('/plan')).at(-1)[1];
+  const options = (select) => select.children.map((o) => [o.value, o.textContent]);
+  assert.deepEqual(options(tape), [['road_paved', '도로·포장 (10/03)'], ['orchard_row_1010', '과수원 열 안 (10/10)']], 'every terrain of the table');
+  assert.deepEqual(options(tape), options(drive));
+  assert.deepEqual([drive.value, tape.value], ['road_paved', 'road_paved']);
+  // chosen in the tape part: the 수동 조종 choice, the speed range and the plan follow
+  tape.value = 'orchard_row_1010';
+  tape.fire('change');
+  await p.settle();
+  assert.equal(drive.value, 'orchard_row_1010', 'one changes the other');
+  assert.deepEqual([p.els.steerDistDuty.min, p.els.steerDistDuty.max], ['90', '90']);
+  assert.deepEqual(lastPlan(), { terrain: 'orchard_row_1010', duty: 90, distance_m: 1 });
+  // the reset clears the chosen terrain
+  p.els.steerDistReset.fire('click');
+  await p.settle();
+  assert.deepEqual(p.log.posts.filter(([route]) => route.endsWith('/reset')).at(-1)[1], { terrain: 'orchard_row_1010', direction: 'forward' });
+  assert.equal(p.els.steerDistTapeStatus.textContent, '과수원 열 안 앞으로 보정 초기화: 배율 1.00');
+  // chosen in 수동 조종: the tape part follows
+  drive.value = 'road_paved';
+  drive.fire('change');
+  await p.settle();
+  assert.equal(tape.value, 'road_paved');
+  assert.equal(p.els.steerDistTapeStatus.hidden, true, 'the answer of the other terrain is not kept');
+  // a full move on the road, then its tape
+  p.els.steerDistGo.fire('pointerdown', { pointerId: 2 });
+  await p.settle();
+  assert.equal(p.log.posts.find(([route]) => route.endsWith('/start'))[1].terrain, 'road_paved');
+  p.state.finishOn = 'hold';
+  await p.tickHold();
+  await p.settle();
+  p.els.steerDistGo.fire('pointerup', { pointerId: 2 });
+  await p.settle();
+  assert.equal(p.els.steerDistFeedback.disabled, false);
+  assert.match(p.els.steerDistLast.textContent, /^마지막 이동: 도로·포장 · /);
+  // another terrain chosen meanwhile: the tape of the road move is not filed under it (the button is off and says why)
+  tape.value = 'orchard_row_1010';
+  tape.fire('change');
+  await p.settle();
+  assert.deepEqual([p.els.steerDistFeedback.disabled, p.els.steerDistTapeState.textContent], [true, '지형 다름']);
+  assert.equal(p.els.steerDistTapeStatus.textContent, '마지막 이동은 도로·포장에서 한 것: 그 지형을 골라야 저장된다');
+  p.els.steerDistActual.value = '1.1';
+  p.els.steerDistFeedback.fire('click');
+  await p.settle();
+  assert.ok(!p.routes().includes('feedback'), 'nothing is sent for the other terrain');
+  // back on the terrain of the move: saved, and the corrections of that terrain show
+  tape.value = 'road_paved';
+  tape.fire('change');
+  await p.settle();
+  assert.equal(p.els.steerDistFeedback.disabled, false);
+  p.els.steerDistFeedback.fire('click');
+  await p.settle();
+  assert.deepEqual(p.log.posts.find(([route]) => route.endsWith('/feedback'))[1], { move_id: 7, actual_m: 1.1 });
+  assert.match(p.els.steerDistTapeStatus.textContent, /^저장: 도로·포장 앞으로 · 실제 1\.1 m/);
+  const tapeRows = () => p.els.steerDistTapeRows.children.map((row) => row.children.map((c) => c.textContent));
+  assert.deepEqual(tapeRows(), [['앞으로 줄자 배율', '40 % ×1.10 (1번)'], ['뒤로 줄자 배율', '기록 없음']]);
+  tape.value = 'orchard_row_1010';
+  tape.fire('change');
+  await p.settle();
+  assert.deepEqual(tapeRows(), [['앞으로 줄자 배율', '기록 없음'], ['뒤로 줄자 배율', '기록 없음']], 'the rows are those of the chosen terrain');
 });
 
 test('page: backward goes with plan and start, the distance follows its limit, the slider follows the bridge cap', async () => {

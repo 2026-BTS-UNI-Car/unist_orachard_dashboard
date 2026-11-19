@@ -147,12 +147,29 @@ const NEW_TITLES = {
     'the distance move is a collapsed part (no open attribute)');
   assert.match(drive, /data-dist-direction="forward"[^>]*>앞으로<\/button><button[^>]*data-dist-direction="backward"[^>]*>뒤로<\/button>/);
   assert.ok(!drive.includes('id="steerDistFeedback"'), 'the tape entry is in 보정·설정');
-  // 자율주행: start panel with the GPS choice and the recording switch, then the monitoring view with the local grid.
+  // 자율주행 (2026-11-20, user: "준비 → … 자율주행 버튼 활성화, 멈추기 버튼 누르면 멈추는, 최대한 단순한 과정"): the status
+  // sentence, the two inputs, three buttons that stay in place, one line of caution; then the monitoring view with six
+  // tiles and the local grid. Everything else of the tab is in one folded 자세히.
   const auto = rover.slice(rover.indexOf('id="autoPanel"'), rover.indexOf('id="steerPotPanel"'));
+  const start = auto.slice(0, auto.indexOf('id="autoMonitor"'));
   assert.deepEqual([...auto.matchAll(/<option[^>]* value="([a-z_]*)">([^<]+)</g)].map((m) => [m[1], m[2]]),
     [['off', 'GPS 사용 안 함'], ['weak_constraint', 'GPS 사용함']]);
-  for (const id of ['autoPrimary', 'autoEnd', 'autoStopButton', 'autoRecordRuns', 'autoRecordButton', 'autoMonitorGrid', 'autoMetricsGrid',
-    'localGridPanel', 'localGridCanvas', 'autoGridBlock']) assert.ok(auto.includes(`id="${id}"`), `${id} in the autonomy tab`);
+  assert.deepEqual([...start.matchAll(/<button class="action-button ([a-z]+)"( disabled="")? id="([A-Za-z]+)" type="button">([^<]+)</g)].map((m) => [m[3], m[4], m[1], Boolean(m[2])]),
+    [['autoPrepare', '준비', 'secondary', true], ['autoPrimary', '자율 주행 시작', 'primary', true], ['autoStopButton', '멈추기', 'danger', false]],
+    'three buttons in this order; 멈추기 is never off');
+  assert.deepEqual([...start.matchAll(/ id="([A-Za-z]+)"/g)].map((m) => m[1]),
+    ['autoStatus', 'autoRowLen', 'autoGnssMode', 'autoPrepare', 'autoPrimary', 'autoStopButton', 'autoHint'], 'top to bottom');
+  assert.equal((start.match(/<p /g) || []).length, 1, 'one line of caution, no paragraph of instructions');
+  for (const id of ['autoRecordRuns', 'autoRecordButton', 'autoRecordState', 'autoNotice']) assert.ok(!html.includes(`id="${id}"`), `${id} is gone: the start records by itself`);
+  assert.doesNotMatch(auto, /래치/, 'no latch wording on the tab');
+  const more = auto.slice(auto.indexOf('<details id="autoMore"><summary>자세히</summary>'), auto.indexOf('</details>'));
+  assert.equal((auto.match(/<details/g) || []).length, 1, 'one folded part (no open attribute)');
+  for (const id of ['autoMode', 'autoEnd', 'autoMoreGrid', 'autoMetricsBlock', 'autoMetricsGrid', 'autoScale', 'autoScaleOffer', 'autoDetails']) {
+    assert.ok(more.includes(`id="${id}"`), `${id} is in the folded 자세히`);
+  }
+  for (const id of ['autoMonitorGrid', 'localGridPanel', 'localGridCanvas', 'autoGridBlock']) {
+    assert.ok(auto.includes(`id="${id}"`) && !more.includes(`id="${id}"`), `${id} stays on the screen`);
+  }
   assert.match(auto, /<div class="sim-map-stage" hidden="" id="localGridPanel">/, 'the grid picture shows when the executor sends one');
   // 보정·설정: potentiometer, calibration (not folded any more: the tab is the fold), tape corrections, tuning (folded).
   assert.match(rover, /<article class="panel rover-setup-panel" data-rover-tab="setup" data-vehicle="front_steer" id="steerCalPanel">\n<div class="panel-head"><h2>조향 보정<\/h2>/);
@@ -168,6 +185,23 @@ const NEW_TITLES = {
   assert.deepEqual([...record.matchAll(/data-record-sensor="([a-z]+)"/g)].map((m) => m[1]),
     ['lidar', 'camera', 'imu', 'gps', 'drive', 'steering', 'executor', 'tf']);
   assert.ok(!record.includes('data-record-kind'), 'the kind buttons are gone');
+  // 2026-11-20 (user: "글이 너무 많고 쓸데없는 기능이 너무 많다"): what is rarely used is folded (closed <details>), nothing
+  // is removed and every id is where the scripts look for it. What the operator works with stays on the screen.
+  const folded = (id) => {
+    const at = rover.indexOf(`id="${id}"`);
+    assert.ok(at >= 0, `${id} is on Rover Control`);
+    return rover.lastIndexOf('<details', at) > rover.lastIndexOf('</details>', at);
+  };
+  for (const id of ['roverLidarRangeSlider', 'roverLidarPointSlider', 'roverLidarStats', 'roverCameraResolutionSelect', 'roverCameraFpsSelect',
+    'roverCameraStats', 'roverImuStats', 'steerAdRate', 'steerAngleChoices', 'screenResetButton', 'steerCalMarginLeft', 'steerCalMore',
+    'roverControlDetails', 'roverRecordSensors']) assert.ok(folded(id), `${id} is in a folded part`);
+  for (const id of ['roverLidarCanvas', 'roverLidarToggle', 'roverCameraImage', 'roverCameraToggle', 'roverImuCanvas', 'roverImuHeading',
+    'steerArmButton', 'steerDrag', 'steerReadout', 'steerSpeedSlider', 'steerHelp', 'steerCommandStatus', 'steerPotDetails', 'steerCalRows',
+    'steerCalStop', 'steerCalStatus', 'steerDistTapeTerrain', 'steerDistActual', 'steerDistFeedback', 'roverRecordStartButton',
+    'roverRecordStopButton', 'roverRecordingStatus']) assert.ok(!folded(id), `${id} stays on the screen`);
+  assert.doesNotMatch(rover, /<details[^>]*\sopen\b/, 'every fold starts closed');
+  // The tape part of 보정·설정 has its own terrain choice (the options come from the terrain table).
+  assert.match(rover.slice(rover.indexOf('id="steerDistTapePanel"')), /^[^]*?<label class="field" for="steerDistTapeTerrain">지형<select class="input" id="steerDistTapeTerrain"><\/select><\/label>\n<label class="field" for="steerDistActual">/);
   // The status strip of Rover Control comes first again, as the KPI row did.
   assert.ok(rover.indexOf('<section class="status-strip">') < rover.indexOf('<section class="rover-layout"'));
 }

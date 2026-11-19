@@ -10,6 +10,11 @@
 // and duty is a part of the 보정·설정 tab (#steerDistTapePanel; a duty without one borrows the nearest measured duty of
 // the same direction, the rows say which). The data are the October 2026 drive records of the vehicle BEFORE the steering
 // unit (ESP8266); the steering vehicle has not been measured.
+// Terrain in the tape part (2026-11-20, user: "줄자 보정에서 도로/포장 옵션만 있는데, 그 옵션을 바꿀 수 있게"): the tape part
+// has its own terrain choice (#steerDistTapeTerrain). It is the same choice as the one of the 수동 조종 tab: changing
+// either changes the other, the plan and the corrections shown. The reset clears the chosen terrain. A tape distance
+// belongs to the terrain its move was planned with (the server files it there), so it can be saved only while that
+// terrain is the chosen one; with another terrain chosen the part says which terrain the move was.
 // While the button is held the server drives with this page's lease (dashboard_server/drive_distance.py): the page hands
 // its lease chain over (controller.beginExternal), sends a hold heartbeat every HOLD_MS, and takes the chain back when
 // the move ends (endExternal). Release, a hidden page, blur, a lost pointer or leaving the tab -> release request; the
@@ -100,9 +105,9 @@ export function speedAt(terrain, duty) {
 export function correctionText(plan) {
   const c = plan.correction || { factor: plan.factor, samples: 0, from_duty: null };
   const way = plan.direction === 'backward' ? '뒤로 ' : '';
-  if (num(c.from_duty) === null || !c.samples) return `${fixed(num(c.factor) ?? 1, 2)} (이 지형 ${way}줄자 기록 없음)`;
-  if (c.from_duty === plan.duty) return `${fixed(c.factor, 2)} (이 속도 ${plan.duty} %에서 ${way}줄자 ${c.samples}번, 최근 5번의 중앙값)`;
-  return `${fixed(c.factor, 2)} (${c.from_duty} %에서 잰 ${way}배율을 빌려 씀: ${plan.duty} %는 줄자 기록 없음. 출발·멈춤 램프 몫이 속도마다 달라 어긋날 수 있다)`;
+  if (num(c.from_duty) === null || !c.samples) return `${fixed(num(c.factor) ?? 1, 2)} (${way}줄자 기록 없음)`;
+  if (c.from_duty === plan.duty) return `${fixed(c.factor, 2)} (${way}줄자 ${c.samples}번)`;
+  return `${fixed(c.factor, 2)} (${c.from_duty} %의 ${way}배율을 빌림)`;
 }
 
 // The tape corrections of one terrain and direction as a row text, or null.
@@ -165,7 +170,7 @@ export function distView(s) {
   const go = { enabled: !why, title: why || '누르고 있는 동안만 간다. 놓으면 바로 선다.',
                text: `${DIRECTION_TEXT[direction]} 이동 (누르고 있기)` };
 
-  let status = { kind: '', text: '방향·지형·거리·속도를 고르고 버튼을 누르고 있는다' };
+  let status = { kind: '', text: '버튼을 누르고 있는 동안만 간다' };
   if (running) {
     status = { kind: 'testing', text: `${DIRECTION_TEXT[s.move.direction] || ''} 거리 이동 중 · ${fixed(s.move.elapsed_s, 1)} / ${fixed(s.move.planned_s, 2)} s · 놓으면 선다`.trim() };
   } else if (s.result) {
@@ -184,17 +189,23 @@ export function distView(s) {
            main: rows.filter(([name]) => MAIN_ROWS.includes(name)), more: rows.filter(([name]) => !MAIN_ROWS.includes(name)) };
 }
 
-// The 보정·설정 tape part: the last move of this page, the corrections of the chosen terrain in both directions.
+// The 보정·설정 tape part: the last move of this page, the corrections of the chosen terrain in both directions. A tape
+// distance can be saved only for a move of the chosen terrain (note says so when another one is chosen).
 export function tapeView(s) {
   const terrain = s.input?.terrain;
-  const t = s.table?.terrains?.find((item) => item.key === terrain);
+  const labelOf = (key) => s.table?.terrains?.find((item) => item.key === key)?.label || key || '--';
   const r = s.result;
-  const last = r ? `마지막 이동: ${DIRECTION_TEXT[r.direction] || '앞으로'} ${fixed(num(r.distance_m), 1)} m · ${num(r.duty) === null ? '--' : `${r.duty} %`} · ${REASON_TEXT[r.reason] || r.reason || ''}${r.feedback_open ? ' · 줄자 거리를 넣을 수 있다' : ''}`
+  const moved = r && typeof r.terrain === 'string' && r.terrain ? r.terrain : null;
+  const last = r ? `마지막 이동: ${moved ? `${labelOf(moved)} · ` : ''}${DIRECTION_TEXT[r.direction] || '앞으로'} ${fixed(num(r.distance_m), 1)} m · ${num(r.duty) === null ? '--' : `${r.duty} %`} · ${REASON_TEXT[r.reason] || r.reason || ''}`
     : '이 화면에서 끝난 이동 없음';
-  const rows = [['지형', t ? `${t.label} (${t.day})` : '--']];
+  const rows = [];
   for (const direction of ['forward', 'backward']) rows.push([`${DIRECTION_TEXT[direction]} 줄자 배율`, measuredText(s.corrections, terrain, direction) || '기록 없음']);
   const open = Boolean(r && r.feedback_open && !(s.move && s.move.state === 'driving'));
-  return { last, rows, chip: open ? ['ok', '입력 가능'] : ['', '대기'], feedback: { enabled: open, title: open ? '실제 간 거리(m)를 저장' : '계획 시간까지 간 이동 뒤에' } };
+  const other = open && Boolean(moved && terrain && moved !== terrain);
+  const note = other ? `마지막 이동은 ${labelOf(moved)}에서 한 것: 그 지형을 골라야 저장된다` : null;
+  const enabled = open && !other;
+  return { last, rows, note, chip: enabled ? ['ok', '입력 가능'] : other ? ['warn', '지형 다름'] : ['', '대기'],
+           feedback: { enabled, title: enabled ? '실제 간 거리(m)를 저장' : note || '계획 시간까지 간 이동 뒤에' } };
 }
 
 export function initDriveDistance(page, options = {}) {
@@ -210,7 +221,11 @@ export function initDriveDistance(page, options = {}) {
   const details = $('steerDistDetails');
   if (!root || !details) return null;
   const ui = { terrain: $('steerDistTerrain'), meters: $('steerDistMeters'), duty: $('steerDistDuty'), go: $('steerDistGo'),
-               actual: $('steerDistActual') };
+               actual: $('steerDistActual'), tapeTerrain: $('steerDistTapeTerrain') };
+  // The terrain choice lives in two places (수동 조종, the tape part of 보정·설정): one value.
+  const terrainSelects = [ui.terrain, ui.tapeTerrain].filter(Boolean);
+  const terrainKey = () => (ui.terrain || ui.tapeTerrain)?.value;
+  const terrainLabel = (key) => s.table?.terrains.find((t) => t.key === key)?.label || key || '';
   const directionButtons = [...(root.querySelectorAll?.('[data-dist-direction]') || [])];
   const post = (path, body) => (page.controlRequest || page.postJson)(path, body);
   const s = { table: null, corrections: {}, plan: null, bridge: null, planError: null, move: null, result: null,
@@ -244,7 +259,7 @@ export function initDriveDistance(page, options = {}) {
   }
   function draw() {
     syncCtl();
-    s.input = { terrain: ui.terrain?.value, duty: Number(ui.duty?.value) };
+    s.input = { terrain: terrainKey(), duty: Number(ui.duty?.value) };
     view = distView(s);
     setText($('steerDistSpeed'), view.speed);
     const chip = $('steerDistState');
@@ -279,25 +294,33 @@ export function initDriveDistance(page, options = {}) {
     const reset = $('steerDistReset');
     if (reset) setText(reset, `이 지형 ${DIRECTION_TEXT[s.direction]} 보정 초기화`);
     const tapeStatus = $('steerDistTapeStatus');
+    const tapeNote = s.tapeNotice || (tape.note ? { kind: 'warn', text: tape.note } : null);
     if (tapeStatus) {
-      tapeStatus.hidden = !s.tapeNotice;
-      if (s.tapeNotice) { tapeStatus.className = `test-result ${s.tapeNotice.kind || ''}`.trim(); setText(tapeStatus, s.tapeNotice.text); }
+      tapeStatus.hidden = !tapeNote;
+      if (tapeNote) { tapeStatus.className = `test-result ${tapeNote.kind || ''}`.trim(); setText(tapeStatus, tapeNote.text); }
     }
   }
 
   function fillTerrains() {
-    if (!ui.terrain || !s.table) return;
-    ui.terrain.replaceChildren(...s.table.terrains.map((t) => {
-      const opt = doc.createElement('option');
-      opt.value = t.key; opt.textContent = `${t.label} (${t.day.slice(5).replace('-', '/')})`;
-      return opt;
-    }));
+    if (!terrainSelects.length || !s.table) return;
+    for (const select of terrainSelects) {
+      select.replaceChildren(...s.table.terrains.map((t) => {
+        const opt = doc.createElement('option');
+        opt.value = t.key; opt.textContent = `${t.label} (${t.day.slice(5).replace('-', '/')})`;
+        return opt;
+      }));
+    }
+    syncTerrain(terrainSelects[0]);
     fillDuties();
+  }
+  // The other terrain choice follows the one that changed.
+  function syncTerrain(from) {
+    for (const select of terrainSelects) if (select !== from && select.value !== from.value) select.value = from.value;
   }
   // The speed slider spans the terrain's table duties up to the bridge cap; a duty still inside the new range stays,
   // otherwise the terrain's default (its lowest table duty, the first choice of the 2026-11-17 page).
   function fillDuties() {
-    const terrain = s.table?.terrains.find((t) => t.key === ui.terrain?.value) || s.table?.terrains[0];
+    const terrain = s.table?.terrains.find((t) => t.key === terrainKey()) || s.table?.terrains[0];
     if (!ui.duty || !terrain) return;
     const range = sliderRange(terrain, s.bridge);
     if (range.min === null) return;
@@ -308,7 +331,7 @@ export function initDriveDistance(page, options = {}) {
     const def = Math.min(range.def, range.max);
     ui.duty.value = String(Number.isInteger(keep) && keep >= range.min && keep <= range.max ? keep : def);
   }
-  const inputs = () => ({ terrain: ui.terrain?.value, duty: Number(ui.duty?.value), distance_m: Number(ui.meters?.value),
+  const inputs = () => ({ terrain: terrainKey(), duty: Number(ui.duty?.value), distance_m: Number(ui.meters?.value),
                           ...(s.direction === 'backward' ? { direction: 'backward' } : {}) });
 
   async function load() {
@@ -454,13 +477,16 @@ export function initDriveDistance(page, options = {}) {
       replan();
     });
   }
-  for (const el of [ui.terrain]) el?.addEventListener('change', () => { fillDuties(); s.notice = null; replan(); });
+  for (const el of terrainSelects) {
+    el.addEventListener('change', () => { syncTerrain(el); fillDuties(); s.notice = null; s.tapeNotice = null; replan(); });
+  }
   for (const name of ['input', 'change']) ui.duty?.addEventListener(name, () => { dutyTouched = true; });
   for (const el of [ui.duty, ui.meters]) el?.addEventListener('input', () => { s.notice = null; replan(); });
   ui.duty?.addEventListener('change', () => { s.notice = null; replan(); });
   $('steerDistFeedback')?.addEventListener('click', async () => {
     const actual = Number(ui.actual?.value);
-    if (!s.result) return;
+    s.input = { terrain: terrainKey(), duty: Number(ui.duty?.value) };
+    if (!s.result || !tapeView(s).feedback.enabled) { draw(); return; }      // only a move of the chosen terrain
     try {
       const reply = await post('/api/rover/distance/feedback', { move_id: s.result.id, actual_m: actual });
       if (reply && reply.ok) {
@@ -469,18 +495,19 @@ export function initDriveDistance(page, options = {}) {
         const c = reply.correction;
         const at = num(s.result.duty) === null ? '' : ` ${s.result.duty} %`;
         const way = DIRECTION_TEXT[s.result.direction] || '앞으로';
-        s.tapeNotice = { kind: 'ok', text: `저장: 실제 ${actual} m / 모델 ${reply.sample.model_m} m = ${reply.sample.ratio} · 이 지형·${way}·속도${at} 보정 배율 ${c ? `${fixed(c.factor, 2)} (줄자 ${c.samples}번)` : '--'}` };
+        const where = terrainLabel(s.result.terrain || terrainKey());
+        s.tapeNotice = { kind: 'ok', text: `저장: ${where} ${way}${at} · 실제 ${actual} m / 모델 ${reply.sample.model_m} m · 배율 ${c ? `${fixed(c.factor, 2)} (줄자 ${c.samples}번)` : '--'}` };
       } else s.tapeNotice = { kind: 'bad', text: `저장 안 됨: ${message(reply?.error)}` };
     } catch (_) { s.tapeNotice = { kind: 'bad', text: `저장 안 됨: ${message('http_failed')}` }; }
     replan();
   });
   $('steerDistReset')?.addEventListener('click', async () => {
-    const terrain = ui.terrain?.value;
+    const terrain = terrainKey();
     const way = DIRECTION_TEXT[s.direction];
-    if (!terrain || !confirmFn(`이 지형의 ${way} 줄자 보정 기록(모든 속도)을 지우고 배율을 1.00 으로 되돌립니다. 계속할까요?`)) return;
+    if (!terrain || !confirmFn(`${terrainLabel(terrain)}의 ${way} 줄자 보정 기록(모든 속도)을 지우고 배율을 1.00 으로 되돌립니다. 계속할까요?`)) return;
     try {
       const reply = await post('/api/rover/distance/reset', { terrain, direction: s.direction });
-      if (reply && reply.ok) { s.corrections = reply.corrections || {}; s.tapeNotice = { kind: 'ok', text: `${way} 보정 초기화: 배율 1.00` }; }
+      if (reply && reply.ok) { s.corrections = reply.corrections || {}; s.tapeNotice = { kind: 'ok', text: `${terrainLabel(terrain)} ${way} 보정 초기화: 배율 1.00` }; }
       else s.tapeNotice = { kind: 'bad', text: `초기화 안 됨: ${message(reply?.error)}` };
     } catch (_) { s.tapeNotice = { kind: 'bad', text: `초기화 안 됨: ${message('http_failed')}` }; }
     replan();

@@ -530,6 +530,8 @@
 <div class="lidar-map-stage rover-lidar-stage">
 <canvas class="lidar-map" height="520" id="roverLidarCanvas" width="520"></canvas>
 </div>
+<details><summary>범위 · 점 수 · 수신 상태</summary>
+<div class="tune-stack">
 <div class="rover-sensor-controls">
 <div class="map-control compact">
 <div>
@@ -558,6 +560,8 @@
 </div>
 </div>
 <div class="chart-readout" id="roverLidarStats"></div>
+</div>
+</details>
 </article>
 <article class="panel rover-live-panel rover-map-panel sim-live-map-panel" data-rover-tab="manual auto" id="liveMapPanel">
 <div class="panel-head"><h2>실시간 점유 격자 지도</h2><span class="tag" id="liveMapState">대기</span></div>
@@ -579,6 +583,8 @@
 <img alt="로버 카메라 영상" id="roverCameraImage"/>
 <span id="roverCameraCaption">영상 대기</span>
 </div>
+<details><summary>해상도 · 프레임 수 · 수신 상태</summary>
+<div class="tune-stack">
 <div class="rover-sensor-controls">
 <div class="map-control compact">
 <div>
@@ -596,6 +602,8 @@
 </div>
 </div>
 <div class="chart-readout" id="roverCameraStats"></div>
+</div>
+</details>
 </article>
 <article class="panel rover-gps-panel wide" data-rover-tab="manual">
 <div class="panel-head">
@@ -630,7 +638,9 @@
 <strong id="roverImuHeading">--°</strong>
 <span class="tag" id="roverImuProcessingState" title="센서가 보낸 자세 그대로(소프트웨어 회전·영점 보정 없음)">원본 그대로</span>
 </div>
+<details><summary>IMU 값</summary>
 <div class="chart-readout" id="roverImuStats"></div>
+</details>
 </article>
 <article class="panel rover-drive-panel" data-rover-tab="manual">
 <div class="panel-head">
@@ -688,21 +698,25 @@
 <label for="steerSpeedSlider"><span>속도 상한 (Q −5, E +5)</span><strong id="steerSpeedValue">20%</strong></label>
 <input id="steerSpeedSlider" max="100" min="0" step="5" type="range" value="20"/>
 </div>
+<p class="help-text" id="steerHelp">W/S 구동 · A/D 조향 · C 가운데 · Esc 정지</p>
+<div class="sim-map-actions" hidden="" id="steerFaults"></div>
+<div class="test-result" id="steerCommandStatus">조향 장치 확인 중</div>
+<details><summary>조향 설정</summary>
+<div class="tune-stack">
 <div class="rover-speed-control">
 <label for="steerAdRate"><span>A/D 조향 속도 (°/s)</span><strong id="steerAdRateValue">최대</strong></label>
 <input id="steerAdRate" max="20" min="3" step="1" type="range" value="20"/>
 </div>
 <div aria-label="조향 각" class="segmented-control" id="steerAngleChoices"><button data-steer-angle="5" type="button">5°</button><button data-steer-angle="10" type="button">10°</button><button data-steer-angle="15" type="button">15°</button><button data-steer-angle="20" type="button">20°</button></div>
 <div aria-label="조향 키를 놓았을 때" class="segmented-control"><button class="active" data-steer-mode="centre" type="button">가운데로</button><button data-steer-mode="hold" type="button">각 유지</button></div>
-<p class="help-text" id="steerHelp">W/S 누르는 동안 구동 · A/D 조향 · C 가운데 · STOP·Esc 즉시 정지</p>
-<div class="sim-map-actions" hidden="" id="steerFaults"></div>
-<div class="test-result" id="steerCommandStatus">조향 장치 확인 중</div>
 <div class="sim-map-actions"><button class="action-button secondary" id="screenResetButton" title="이 브라우저에 남은 화면 상태(저장 값, 세션)를 지우고 다시 연다. 조종 중이면 먼저 STOP." type="button">화면 초기화</button></div>
+</div>
+</details>
 </div>
 <section class="panel-section" data-vehicle="front_steer" id="steerDistPanel">
 <div class="panel-head mini"><h3>거리 이동</h3><span class="status-chip" id="steerDistState">열면 확인</span></div>
 <details id="steerDistDetails">
-<summary>앞·뒤로 정한 거리만큼 (누르고 있기)</summary>
+<summary>정한 거리만큼 앞·뒤로</summary>
 <div class="tune-stack">
 <div aria-label="거리 이동 방향" class="segmented-control" id="steerDistDirection"><button aria-pressed="true" class="active" data-dist-direction="forward" type="button">앞으로</button><button aria-pressed="false" data-dist-direction="backward" type="button">뒤로</button></div>
 <div class="tune-fields">
@@ -726,34 +740,37 @@
 </section>
 </article>
 <article class="panel rover-auto-panel" data-rover-tab="auto" data-vehicle="front_steer" id="autoPanel">
-<div class="panel-head"><h2>자율주행 · 열 따라가기</h2><div class="panel-actions"><span class="status-chip" hidden="" id="autoMode"></span><span class="status-chip" id="autoState">확인 중</span></div></div>
+<div class="panel-head"><h2>자율주행 · 열 따라가기</h2></div>
+<div class="test-result auto-status" id="autoStatus" role="status">실행기 확인 중</div>
 <div class="tune-fields">
 <label class="field" for="autoRowLen">열 길이 m (비워도 됨)<input class="input" id="autoRowLen" inputmode="decimal" max="300" min="1" step="0.1" type="number"/></label>
 <label class="field" for="autoGnssMode">GPS<select class="select" id="autoGnssMode"><option value="off">GPS 사용 안 함</option><option title="열 범위를 벗어나면 정지, RTK 고정해일 때 중심선을 최대 10 cm 보정" value="weak_constraint">GPS 사용함</option></select></label>
 </div>
-<div class="sim-map-actions"><button class="action-button primary" disabled="" id="autoPrimary" type="button">확인 중</button><button class="action-button secondary" disabled="" id="autoEnd" type="button">run 끝내기</button><button class="action-button danger" id="autoStopButton" type="button">STOP</button></div>
-<div class="test-result" hidden="" id="autoNotice"></div>
-<div class="auto-record">
-<span class="help-text" id="autoRecordRuns">출발하면 모든 센서를 기록한다(GPS 포함)</span>
-<div class="sim-map-actions"><button class="action-button secondary" id="autoRecordButton" type="button">기록 시작</button><span class="status-chip" id="autoRecordState">기록 확인 중</span></div>
-</div>
-<dl class="detail-list" hidden="" id="autoScale"><div><dt title="LiDAR 속도 ÷ 표 속도, 최근 주행 약 20초">온라인 배율</dt><dd id="autoScaleValue">--</dd></div></dl>
-<div class="test-result testing" hidden="" id="autoScaleOffer"><div class="scale-offer"><p id="autoScaleText"></p><div class="sim-map-actions"><button class="action-button primary" id="autoScaleAccept" type="button">배율 저장</button><button class="action-button secondary" id="autoScaleDismiss" type="button">저장 안 함</button></div></div></div>
-<details id="autoMore"><summary>실행기 상태 자세히</summary><dl class="detail-list" id="autoDetails"></dl></details>
+<div class="auto-buttons"><button class="action-button secondary" disabled="" id="autoPrepare" type="button">준비</button><button class="action-button primary" disabled="" id="autoPrimary" type="button">자율 주행 시작</button><button class="action-button danger" id="autoStopButton" type="button">멈추기</button></div>
+<p class="help-text" id="autoHint">화면을 가리면 1초 뒤 선다</p>
 </article>
 <article class="panel rover-auto-monitor" data-rover-tab="auto" data-vehicle="front_steer" id="autoMonitor">
 <div class="panel-head"><h2>주행 감시</h2><span class="tag" id="autoMonitorState">대기</span></div>
 <dl class="monitor-grid" id="autoMonitorGrid"></dl>
+<div class="local-grid-block" id="autoGridBlock">
+<div class="panel-head mini"><h3>실행기 국소 격자</h3><span class="tag" id="localGridState">대기</span></div>
+<div class="sim-map-stage" hidden="" id="localGridPanel"><canvas aria-label="실행기 국소 점유 격자, 추정 열 선·중심선, 지나온 길과 차" height="440" id="localGridCanvas" width="720"></canvas></div>
+<p class="sim-map-status" id="localGridStatus" role="status">run 중에 그린다</p>
+</div>
+<details id="autoMore"><summary>자세히</summary>
+<div class="tune-stack">
+<div class="panel-actions"><span class="status-chip" hidden="" id="autoMode"></span><button class="action-button secondary" disabled="" id="autoEnd" type="button">run 끝내기</button></div>
+<dl class="monitor-grid" id="autoMoreGrid"></dl>
 <div class="auto-metrics" hidden="" id="autoMetricsBlock">
 <div class="panel-head mini"><h3>중심선 대비 오차</h3><small id="autoMetricsSource">--</small></div>
 <dl class="monitor-grid" id="autoMetricsGrid"></dl>
 </div>
-<div class="local-grid-block" id="autoGridBlock">
-<div class="panel-head mini"><h3>실행기 국소 격자</h3><span class="tag" id="localGridState">대기</span></div>
-<div class="sim-map-stage" hidden="" id="localGridPanel"><canvas aria-label="실행기 국소 점유 격자, 추정 열 선·중심선, 지나온 길과 차" height="440" id="localGridCanvas" width="720"></canvas></div>
-<p class="sim-map-status" id="localGridStatus" role="status">run 중에 실행기 격자를 여기에 그린다.</p>
-<p class="sim-map-note">이번 run 주행 거리 좌표(지도·GNSS 아님) · 파랑 열 선 · 초록 점선 추정 중심선 · 보라 점선 기준선 · 주황 지나온 길 · 원 목표점 · 노랑 차</p>
+<dl class="detail-list" hidden="" id="autoScale"><div><dt title="LiDAR 속도 ÷ 표 속도, 최근 주행 약 20초">온라인 배율</dt><dd id="autoScaleValue">--</dd></div></dl>
+<div class="test-result testing" hidden="" id="autoScaleOffer"><div class="scale-offer"><p id="autoScaleText"></p><div class="sim-map-actions"><button class="action-button primary" id="autoScaleAccept" type="button">배율 저장</button><button class="action-button secondary" id="autoScaleDismiss" type="button">저장 안 함</button></div></div></div>
+<dl class="detail-list" id="autoDetails"></dl>
+<p class="sim-map-note">격자 그림: 이번 run 주행 거리 좌표 · 파랑 열 선 · 초록 점선 추정 중심선 · 보라 점선 기준선 · 주황 지나온 길 · 원 목표점 · 노랑 차</p>
 </div>
+</details>
 </article>
 <article class="panel rover-setup-panel" data-rover-tab="setup" data-vehicle="front_steer" id="steerPotPanel">
 <div class="panel-head"><h2>조향 가변저항</h2><span class="status-chip" id="steerPotState">확인 중</span></div>
@@ -761,12 +778,17 @@
 </article>
 <article class="panel rover-setup-panel" data-rover-tab="setup" data-vehicle="front_steer" id="steerCalPanel">
 <div class="panel-head"><h2>조향 보정</h2><span class="status-chip" id="steerCalState">확인 중</span></div>
-<p class="help-text">조종 활성화 OFF 일 때만 된다. 적용하면 찾은 끝에서 여유만큼 안쪽이 명령 ±20(바퀴 각도는 재지 않음).</p>
 <dl class="detail-list" id="steerCalRows"></dl>
 <div class="sim-map-actions">
 <button class="action-button secondary" data-steer-cal="set_center" disabled="" type="button">지금 위치를 가운데로</button>
 <button class="action-button secondary" data-steer-cal="trim_left" disabled="" type="button" title="직진(0)에서 오른쪽으로 휘면 누른다 (한 번에 약 0.2°)">영점 ← 왼쪽 0.2°</button>
 <button class="action-button secondary" data-steer-cal="trim_right" disabled="" type="button" title="직진(0)에서 왼쪽으로 휘면 누른다 (한 번에 약 0.2°)">영점 → 오른쪽 0.2°</button>
+<button class="action-button danger" id="steerCalStop" type="button">STOP</button>
+</div>
+<div class="test-result" id="steerCalStatus" role="status">확인 중</div>
+<details id="steerCalEnds"><summary>끝 찾기 · 적용</summary>
+<div class="tune-stack">
+<div class="sim-map-actions">
 <button class="action-button secondary" data-steer-cal="find_left" disabled="" type="button">왼쪽 끝 찾기</button>
 <button class="action-button secondary" data-steer-cal="find_right" disabled="" type="button">오른쪽 끝 찾기</button>
 </div>
@@ -777,15 +799,17 @@
 <div class="sim-map-actions">
 <button class="action-button primary" data-steer-cal="apply" disabled="" type="button">적용</button>
 <button class="action-button secondary" data-steer-cal="default" disabled="" type="button">기본값으로</button>
-<button class="action-button danger" id="steerCalStop" type="button">STOP</button>
 </div>
-<div class="test-result" id="steerCalStatus" role="status">확인 중</div>
+<dl class="detail-list" id="steerCalMore"></dl>
 <div class="table-wrap" hidden="" id="steerCalSamplesWrap"><table class="table"><thead><tr><th>펄스</th><th>쪽</th><th>정착 값</th><th>진척</th><th>되밀림</th></tr></thead><tbody id="steerCalSamples"></tbody></table></div>
+</div>
+</details>
 </article>
 <article class="panel rover-setup-panel" data-rover-tab="setup" data-vehicle="front_steer" id="steerDistTapePanel">
 <div class="panel-head"><h2>거리 이동 줄자 보정</h2><span class="status-chip" id="steerDistTapeState">대기</span></div>
 <p class="sim-map-status" id="steerDistLast">이 화면에서 끝난 이동 없음</p>
 <div class="tune-fields">
+<label class="field" for="steerDistTapeTerrain">지형<select class="input" id="steerDistTapeTerrain"></select></label>
 <label class="field" for="steerDistActual">실제 간 거리 m (줄자)<input class="input" id="steerDistActual" inputmode="decimal" max="10" min="0" step="0.01" type="number"/></label>
 </div>
 <div class="sim-map-actions">
@@ -798,7 +822,7 @@
 <article class="panel rover-tuning-panel" data-rover-tab="setup" id="tuningPanel">
 <div class="panel-head"><h2>현장 조정 값</h2><span class="status-chip" id="tuneState">열면 확인</span></div>
 <details id="tuningDetails">
-<summary>조정 값 보기 · 바꾸기 (정지 중에만)</summary>
+<summary>조정 값 보기 · 바꾸기</summary>
 <form class="tune-grid" id="tuneForm" novalidate="">
 <section class="tune-group">
 <div class="panel-head mini"><h3>기본 묶음</h3><small id="tuneRevision">판 --</small></div>
@@ -837,8 +861,8 @@
 </div>
 </div>
 <button class="action-button primary record-start-button" id="roverRecordStartButton" type="button">기록 시작</button>
-<fieldset class="record-sensors" id="roverRecordSensors">
-<legend>기록할 센서</legend>
+<details><summary>기록할 센서 고르기</summary>
+<fieldset aria-label="기록할 센서" class="record-sensors" id="roverRecordSensors">
 <label class="check"><input data-record-sensor="lidar" type="checkbox"/><span>LiDAR</span></label>
 <label class="check"><input data-record-sensor="camera" type="checkbox"/><span>카메라</span></label>
 <label class="check"><input data-record-sensor="imu" type="checkbox"/><span>IMU</span></label>
@@ -848,6 +872,7 @@
 <label class="check"><input data-record-sensor="executor" type="checkbox"/><span>자율 실행기</span></label>
 <label class="check"><input data-record-sensor="tf" type="checkbox"/><span>오도메트리·TF</span></label>
 </fieldset>
+</details>
 <div class="test-result" id="roverRecordingStatus">기록 대기 중</div>
 <details class="media-jobs" id="recordingMediaJobs">
 <summary>녹화 영상 변환 작업</summary>
@@ -860,7 +885,9 @@
 <div class="panel-head">
 <h2>연동 상태</h2>
 </div>
+<details><summary>브리지 · ROS · 녹화기 상태</summary>
 <div class="status-list" id="roverControlDetails"></div>
+</details>
 </article>
 <article class="panel wide rover-archive-panel" data-rover-tab="record auto">
 <div class="panel-head">

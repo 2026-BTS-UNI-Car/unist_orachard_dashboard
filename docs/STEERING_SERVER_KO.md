@@ -179,12 +179,12 @@ stateDiagram-v2
 
 | 항목 | 값 |
 | --- | --- |
-| 주 버튼 | idle·ended "준비"(start, MOTOR면 이어서 arm) → ready "Arm" → armed "자율 주행 시작"(go) → running "주행 중"(꺼짐) → paused "다시 출발"(새 go) → latched "래치 확인"(ack). go 버튼은 `go_ready`일 때만 켜고, 아니면 `go_blockers`를 한국어로 보인다(규약 개정 2) |
+| 버튼 셋(2026-11-20) | 늘 같은 자리의 "준비"·"자율 주행 시작"·"멈추기". 준비: 주행 중이 아닐 때. 한 번에 latched 면 ack → 열린 run(ready·armed·paused)이면 end → start(열 길이·GPS) → MOTOR 면 arm(`bridge_still_armed` 는 0.3초마다 다시, 전체 12초). 자율 주행 시작(paused 에서는 "다시 출발"): armed·paused 이고 `go_blockers` 가 `operator_link_not_fresh` 말고는 비었을 때만 켠다(목록을 보내지 않는 실행기는 `go_ready`); 모든 센서 기록 → heartbeat → go. 멈추기: 늘 켜짐. 상태와 다음 할 일, 막는 조건, 거절 이유는 상태 한 줄(`autoStatus`)에 한국어로 보인다. 예전의 상태별 주 버튼 하나(준비 → Arm → 자율 주행 시작 → 래치 확인)와 따로 있던 기록 버튼은 없앴다. 자세한 것은 `docs/SCREENS_KO.md` 2-0 |
 | heartbeat | `run_state`가 armed·running·paused이고 상태가 새것인 동안, Rover Control이 열려 있고 탭이 보일 때만(스크롤 위치와 무관) 100 ms마다(규약 개정 1, 늦어도 250 ms). go 전 armed부터 보내므로 go 때 운영자 연결이 이미 새것이다(`operator_link_not_fresh` 막음 없음). 탭을 숨기거나 화면을 떠나면 멈춘다 → 실행기가 `operator_link.timeout_s` 뒤 선다(규약 개정 1: 범위 0.5 ~ 3.0, 화면에서 못 바꿈. 기본은 처음 0.5 s 였고 2026-11-13 시뮬레이션 저장소 결정 R60 으로 1.0 s. 화면은 상태의 값을 보인다) |
-| lease 잃음(규약 개정 3) | Arm 뒤 첫 go 전에 브리지가 lease를 거두면 run은 열린 채 `ready`, `go_blockers`에 `lease_lost`·`arm_first`. 주 버튼은 "Arm 다시 (브리지가 권한을 거둠)", 안내 "브리지가 권한을 거뒀다: Arm을 다시 누른다" |
-| 온라인 배율(규약 개정 6, PW-10) | 자율 칸의 '온라인 배율' 줄(`autoScale`): 실행기 상태에 `online_scale`이 있을 때만 보인다. 값(소수 3자리)과 창 길이 `(최근 20/20 s)`, 갱신이 멈췄으면 `멈춤: <까닭>`(LiDAR 스캔 없음, LiDAR 속도 품질 미달(스캔 정합 실패), 주행 중 아님, 구동 상태 없음), 표 ±20 % 어긋남이면 `표 어긋남`. 상태가 1.5 s 넘게 오래되면 숨긴다. 따로 묻지 않고 자율 칸의 상태 읽기(500 ms)에 실려 온다 |
-| 주행 뒤 저장 묻기(PW-10) | `online_scale.offer`가 있고 주행 중(armed·running·paused)이 아닐 때 자율 칸에 'run N 끝: 온라인 배율 … 전체 배율(k_field)을 a → b로 저장할까요?'와 '배율 저장'·'저장 안 함'(`autoScaleOffer`). '배율 저장'은 확인 창 뒤 `POST /api/executor/params {online_scale: accept, run_id}`, '저장 안 함'은 dismiss. 받을 수 없는 제안(`ok` false)은 까닭과 '닫기'만. 거절은 실행기 이유를 오류 줄에 보인다. 파일 저장은 현장 조정 값의 '파일에 저장' |
-| heartbeat 409 | `session_conflict`: 다른 화면이 출발 권한을 가짐. 화면은 오류 줄에 보인다(자동으로 빼앗지 않는다) |
+| lease 잃음(규약 개정 3) | Arm 뒤 첫 go 전에 브리지가 lease를 거두면 run은 열린 채 `ready`, `go_blockers`에 `lease_lost`·`arm_first`. 상태 줄 "브리지가 권한을 거둠 — 준비를 다시 누르세요". 준비가 그 run 을 끝내고(end), 래치가 남으면 확인(ack)한 뒤 새 run 을 만들어 Arm 한다 |
+| 온라인 배율(규약 개정 6, PW-10) | 주행 감시의 접힌 '자세히' 안 '온라인 배율' 줄(`autoScale`): 실행기 상태에 `online_scale`이 있을 때만 보인다. 값(소수 3자리)과 창 길이 `(최근 20/20 s)`, 갱신이 멈췄으면 `멈춤: <까닭>`(LiDAR 스캔 없음, LiDAR 속도 품질 미달(스캔 정합 실패), 주행 중 아님, 구동 상태 없음), 표 ±20 % 어긋남이면 `표 어긋남`. 상태가 1.5 s 넘게 오래되면 숨긴다. 따로 묻지 않고 자율 칸의 상태 읽기(500 ms)에 실려 온다 |
+| 주행 뒤 저장 묻기(PW-10) | `online_scale.offer`가 있고 주행 중(armed·running·paused)이 아닐 때 '자세히' 안에(상태 줄에는 띄우지 않는다) 'run N 끝: 온라인 배율 … 전체 배율(k_field)을 a → b로 저장할까요?'와 '배율 저장'·'저장 안 함'(`autoScaleOffer`). '배율 저장'은 확인 창 뒤 `POST /api/executor/params {online_scale: accept, run_id}`, '저장 안 함'은 dismiss. 받을 수 없는 제안(`ok` false)은 까닭과 '닫기'만. 거절은 실행기 이유를 오류 줄에 보인다. 파일 저장은 현장 조정 값의 '파일에 저장' |
+| heartbeat 409 | `session_conflict`: 다른 화면이 출발 권한을 가짐. 화면은 상태 줄에 보인다(자동으로 빼앗지 않는다). 다음 heartbeat 가 통과하면 사라진다 |
 | 상태 읽기 | Rover Control이 보일 때 500 ms, 숨김이면 멈춤 [자리값] |
 | STOP | 주행 패널 STOP, 상태 막대 STOP, Esc(Rover Control): 기존 브리지 stop(한 번) 그대로에 더해, run이 있거나 실행기 상태를 모르면 실행기 stop도 보낸다. 자율 칸에 따로 STOP 버튼을 두지 않는다(같은 패널 위에 STOP이 있다) |
 | 실행기 없음 | 설정 없음 → "실행기 설정 없음", 응답 없음 → "실행기 연결 안 됨". 버튼 꺼짐, STOP은 브리지 stop으로 계속 동작 |

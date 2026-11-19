@@ -158,10 +158,11 @@ class El {
 const opened = [];
 after(() => { for (const close of opened) close(); });   // also when a test failed half way
 
-function page(statusReply) {
+function page(statusReply, { more = false } = {}) {
   const els = {};
   for (const id of ['steerCalPanel', 'steerCalDetails', 'steerCalState', 'steerCalRows', 'steerCalStatus', 'steerCalStop',
     'steerCalSamplesWrap', 'steerCalSamples', 'steerCalMarginLeft', 'steerCalMarginRight']) els[id] = new El(id);
+  if (more) els.steerCalMore = new El('steerCalMore');     // 2026-11-20: the rows of the folded end finding
   els.steerCalMarginLeft.value = '30';
   els.steerCalMarginRight.value = '30';
   els.steerCalDetails.open = true;
@@ -261,6 +262,17 @@ test('page: hiding the page while a scan runs sends STOP', async () => {
   p.close();
 });
 
+test('page: with the folded end finding the marks stay by the centre buttons and the other rows go into the fold', async () => {
+  const p = page(reply({ found: { left: found('left', 2320), right: found('right', 1460) } }), { more: true });
+  await flush();
+  const names = (list) => list.children.map((row) => row.children[0].textContent);
+  assert.deepEqual(names(p.els.steerCalRows), ['지금 보정', '가변저항']);
+  assert.deepEqual(names(p.els.steerCalMore), ['왼쪽 끝 (찾은 값)', '오른쪽 끝 (찾은 값)', '적용하면', '하드 한계', '한 목표 최대']);
+  assert.equal(names(p.els.steerCalRows).length + names(p.els.steerCalMore).length, p.screen.view().rows.length, 'no row is lost');
+  assert.equal(p.button('apply').disabled, false, 'the buttons work as before');
+  p.close();
+});
+
 test('markup: a part of the 보정·설정 tab of Rover Control with the seven buttons, no new menu', () => {
   const html = readFileSync(path.join(here, '..', 'static', 'index.html'), 'utf8');
   const start = html.indexOf('id="steerCalPanel"');
@@ -269,7 +281,18 @@ test('markup: a part of the 보정·설정 tab of Rover Control with the seven b
   assert.ok(start > html.indexOf('id="steerPotPanel"') && start < html.indexOf('id="steerDistTapePanel"'), 'next to the potentiometer rows');
   assert.ok(html.indexOf('id="autoPanel"') < html.indexOf('id="steerPotPanel"'), 'the autonomy parts come first');
   const section = html.slice(start, html.indexOf('</article>', start));
-  assert.ok(!section.includes('<details'), 'not folded: its tab shows it');
+  // 2026-11-20: the part itself is not folded (its tab shows it): the marks, the centre buttons, STOP and the status
+  // stay on the screen. The end finding (find, margins, apply, default, its rows and samples) is one folded group.
+  assert.ok(!section.includes('id="steerCalDetails"'), 'no fold around the part');
+  assert.equal((section.match(/<details/g) || []).length, 1);
+  const fold = section.indexOf('<details id="steerCalEnds"><summary>끝 찾기 · 적용</summary>');
+  assert.ok(fold > 0, 'the end finding is a collapsed group (no open attribute)');
+  const at = (text) => { const k = section.indexOf(text); assert.ok(k >= 0, text); return k; };
+  for (const shown of ['id="steerCalRows"', 'data-steer-cal="set_center"', 'data-steer-cal="trim_left"', 'data-steer-cal="trim_right"',
+    'id="steerCalStop"', 'id="steerCalStatus"']) assert.ok(at(shown) < fold, `${shown} stays on the screen`);
+  for (const folded of ['data-steer-cal="find_left"', 'data-steer-cal="find_right"', 'id="steerCalMarginLeft"', 'id="steerCalMarginRight"',
+    'data-steer-cal="apply"', 'data-steer-cal="default"', 'id="steerCalMore"', 'id="steerCalSamplesWrap"']) assert.ok(at(folded) > fold, `${folded} is in the fold`);
+  assert.ok(!/<p class="help-text"/.test(section), 'no paragraph of explanation: the buttons and the status line say why');
   assert.match(html.slice(html.lastIndexOf('<article', start), start), /data-rover-tab="setup" data-vehicle="front_steer"/);
   const labels = [...section.matchAll(/data-steer-cal="([a-z_]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(labels, [['set_center', '지금 위치를 가운데로'], ['trim_left', '영점 ← 왼쪽 0.2°'],

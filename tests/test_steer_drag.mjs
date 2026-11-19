@@ -267,7 +267,8 @@ test('labels, positions and help text', () => {
   const view = steerView(ctl, 1);
   assert.equal(view.absolute, true);
   assert.equal(view.dragPos, 50);
-  assert.match(HELP_TEXT.absolute, /놓으면 0°/);
+  assert.match(HELP_TEXT.absolute, /A\/D 조향\(끝까지\)/);
+  for (const text of Object.values(HELP_TEXT)) assert.ok(text.length <= 45, `one short line: ${text}`);
 });
 
 // A fake element: enough of EventTarget, layout and pointer capture for bindSteerDrag.

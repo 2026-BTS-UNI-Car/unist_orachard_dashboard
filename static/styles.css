@@ -565,7 +565,6 @@
   color: var(--color-text-disabled);
 }
 
-.auto-record,
 .auto-metrics {
   display: grid;
   gap: var(--space-2);
@@ -2406,4 +2405,16 @@ html[data-vehicle-kind="front_steer"] [data-vehicle="differential"] {
   .archive-preview.sensor-overview {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+/* rover simple 20261120 */
+.auto-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 1fr;
+  gap: var(--space-2);
+}
+
+.auto-status {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
 }

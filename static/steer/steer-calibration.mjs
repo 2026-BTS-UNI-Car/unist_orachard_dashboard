@@ -72,6 +72,9 @@ export const CAL_MESSAGES = {
 export const calMessage = (code) => (code ? (CAL_MESSAGES[code] || String(code)) : '');
 
 const marksText = (m) => (m ? `오른쪽 ${m.right} · 가운데 ${m.center} · 왼쪽 ${m.left}` : '--');
+// The rows next to the centre buttons; the others (found ends, what 'apply' would set, the limits) are shown with the
+// folded end finding (#steerCalMore, 2026-11-20).
+export const MAIN_ROWS = ['지금 보정', '가변저항', '가변저항(정착 값)'];
 
 function foundText(found) {
   if (!found) return '--';
@@ -153,7 +156,7 @@ export function calView(reply, margins = { left: 30, right: 30 }, notice = null)
     buttons[action] = { enabled: enabled && !why, title: why || ACTION_TEXT[action] };
   }
   let level = 'ok', chip = cal.cal ? `보정 ${store || '있음'}` : '보정 가능';
-  let status = { kind: '', text: '끝 찾기는 앞바퀴를 바깥으로 천천히(PWM 100, 100 ms 펄스) 돌려 멈춤·되밀림을 찾는다. 찾은 값은 적용을 눌러야 쓰인다.' };
+  let status = { kind: '', text: '보정할 수 있음 · 찾은 끝은 적용을 눌러야 쓰인다' };
   const samples = Array.isArray(cal.samples) ? cal.samples : [];
   if (running) {
     const job = cal.job;
@@ -224,19 +227,22 @@ export function initSteerCalibration(page, options = {}) {
     view = calView(reply, margins(), fresh);
     const chip = $('steerCalState');
     if (chip) { chip.className = `status-chip ${view.level}`; setText(chip, view.chip); }
-    const list = $('steerCalRows');
-    if (list) {
-      const key = JSON.stringify(view.rows);
-      if (list.dataset.key !== key) {
-        list.dataset.key = key;
-        list.replaceChildren(...view.rows.map(([name, value]) => {
-          const row = doc.createElement('div');
-          const dt = doc.createElement('dt'); dt.textContent = name;
-          const dd = doc.createElement('dd'); dd.textContent = value;
-          row.append(dt, dd);
-          return row;
-        }));
-      }
+    // With the folded end finding on the page its rows go there; a page without it shows every row in one list.
+    const more = $('steerCalMore');
+    const lists = more ? [[$('steerCalRows'), view.rows.filter(([name]) => MAIN_ROWS.includes(name))],
+                          [more, view.rows.filter(([name]) => !MAIN_ROWS.includes(name))]] : [[$('steerCalRows'), view.rows]];
+    for (const [list, rows] of lists) {
+      if (!list) continue;
+      const key = JSON.stringify(rows);
+      if (list.dataset.key === key) continue;
+      list.dataset.key = key;
+      list.replaceChildren(...rows.map(([name, value]) => {
+        const row = doc.createElement('div');
+        const dt = doc.createElement('dt'); dt.textContent = name;
+        const dd = doc.createElement('dd'); dd.textContent = value;
+        row.append(dt, dd);
+        return row;
+      }));
     }
     root.querySelectorAll('[data-steer-cal]').forEach((button) => {
       const state = view.buttons[button.dataset.steerCal];
