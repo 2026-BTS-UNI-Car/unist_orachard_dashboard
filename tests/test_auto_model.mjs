@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {
   HEARTBEAT_MS, STALE_MS, EXEC_ERROR, GO_BLOCKER, SCALE_WHY_NOT, START_ERROR, STOP_CLAUSE, STOP_DETAIL, STOP_REASON, SCALE_HOLD, autoButtons, autoView, goAllowed, heartbeatWanted, modeChip,
-  newSession, openBlockers, prepareFailText, prepareSequence, runActive, scaleLine, scaleOffer, scaleText, statusLine, stopClause, stopWords,
+  newSession, openBlockers, prepareFailText, prepareSequence, speedChoice, speedLabel, speedNote, SPEED_KEY, runActive, scaleLine, scaleOffer, scaleText, statusLine, stopClause, stopWords,
 } from '../static/steer/auto-model.mjs';
 
 const now = 1_800_000_000_000;
@@ -274,6 +274,55 @@ await (async () => {
   assert.deepEqual([r.result.step, r.sent], ['aborted', ['ack']]);
   assert.equal(prepareFailText(r.result), '멈추기를 눌러 준비를 그만두었습니다.');
 })();
+
+// ---- The speed choice (2026-11-20, user: "자율주행 속도 설정은 따로 못 하나?") ------------------------------------------
+// The executor's status as the page gets it (shape read from the SIM stack 2026-11-20: status.tuning of
+// tools/row_executor/field_tuning.py State.status, reduced by dashboard_server/executor_proxy.py page_tuning).
+{
+  const tuningOf = ({ value = 0.4, editable = true, low = 0.2, high = 0.5, floor = 0.2, top = 0.5, margin = 0.05 } = {}) => ({
+    preset: 'default', revision: 0, editable, not_editable_because: editable ? null : 'tuning_locked_while_running', writable: false,
+    basic: [{ name: 'speed_scale', value: 1, low: 0.5, high: 1.3, unit: '' }, { name: 'target_speed_m_s', value, low, high, unit: 'm/s' }],
+    values: { basic: { speed_scale: 1, target_speed_m_s: value }, advanced: { ...(floor === null ? {} : { min_speed_m_s: floor }) },
+              locked: { ...(top === null ? {} : { max_speed_m_s: top }), ...(margin === null ? {} : { overspeed_margin_m_s: margin }) } } });
+  const choice = (status) => speedChoice(reply(status), now);
+  assert.equal(SPEED_KEY, 'target_speed_m_s');
+  // the range in 0.05 m/s steps, without the step the executor's own rule refuses (min_speed_m_s < target)
+  let c = choice({ run_state: 'idle', speed: { target_mps: 0.4 }, tuning: tuningOf() });
+  assert.deepEqual(c, { value: 0.4, options: [0.25, 0.3, 0.35, 0.4, 0.45, 0.5], enabled: true, limit: 0.55, note: '' });
+  assert.deepEqual(c.options.map(speedLabel), ['0.25 m/s', '0.30 m/s', '0.35 m/s', '0.40 m/s', '0.45 m/s', '0.50 m/s']);
+  // the range is the executor's, not the page's
+  assert.deepEqual(choice({ run_state: 'idle', tuning: tuningOf({ low: 0.1, high: 0.3, floor: 0.1, top: 0.6, value: 0.2 }) }).options, [0.15, 0.2, 0.25, 0.3]);
+  assert.deepEqual(choice({ run_state: 'idle', tuning: tuningOf({ low: 0.2, high: 0.5, top: 0.4 }) }).options, [0.25, 0.3, 0.35, 0.4], 'not above max_speed_m_s');
+  assert.deepEqual(choice({ run_state: 'idle', tuning: tuningOf({ floor: null, top: null, margin: null }) }).options, [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5],
+    'without the two rule values every step of the range is offered (the executor judges)');
+  // the value now: also one that is not on a step (set in the field tuning part or on another screen)
+  c = choice({ run_state: 'ended', tuning: tuningOf({ value: 0.38 }) });
+  assert.deepEqual([c.value, c.options], [0.38, [0.25, 0.3, 0.35, 0.38, 0.4, 0.45, 0.5]]);
+  // locked while a run is open: the executor says so (ready, armed, running, paused), and the tab locks its own three
+  for (const state of ['ready', 'armed', 'running', 'paused']) {
+    assert.equal(choice({ run_state: state, tuning: tuningOf({ editable: false }) }).enabled, false, state);
+  }
+  for (const state of ['armed', 'running', 'paused']) assert.equal(choice({ run_state: state, tuning: tuningOf({ editable: true }) }).enabled, false, `${state}: locked like the row length`);
+  for (const state of ['idle', 'ended', 'latched']) assert.equal(choice({ run_state: state, tuning: tuningOf() }).enabled, true, state);
+  assert.equal(choice({ run_state: 'ended', tuning: tuningOf({ editable: false }) }).enabled, false, 'at rest but the bridge is still armed or the vehicle moves');
+  // no range (an executor without the bundle, a differential one): off, the value now only
+  c = choice({ run_state: 'idle', speed: { target_mps: 0.4 }, tuning: { preset: null, revision: 0, editable: false } });
+  assert.deepEqual(c, { value: 0.4, options: [0.4], enabled: false, limit: null, note: '' });
+  assert.deepEqual(choice({ run_state: 'idle' }), { value: null, options: [], enabled: false, limit: null, note: '' });
+  const off = { value: null, options: [], enabled: false, limit: null, note: '' };
+  assert.deepEqual(speedChoice(null, now), off);
+  assert.deepEqual(speedChoice({ ok: false, configured: false }, now), off);
+  assert.deepEqual(speedChoice(reply({ run_state: 'idle', tuning: tuningOf() }), now + 2000), off, 'a stale status: nothing to choose from');
+  // the one line of caution: a value within 0.10 m/s of the overspeed line (max + margin), with the executor's number
+  const near = '과속 한도(0.55 m/s)에 가까워 주행 중 잠깐 느려질 때가 있습니다.';
+  assert.equal(choice({ run_state: 'idle', tuning: tuningOf({ value: 0.45 }) }).note, near);
+  assert.equal(choice({ run_state: 'running', tuning: tuningOf({ value: 0.5, editable: false }) }).note, near, 'also while driving with it');
+  assert.equal(choice({ run_state: 'idle', tuning: tuningOf({ value: 0.44 }) }).note, '');
+  assert.equal(choice({ run_state: 'idle', tuning: tuningOf({ value: 0.5, margin: null }) }).note, '', 'the line is not shown without the executor numbers');
+  assert.equal(speedNote(0.45, 0.6), '', 'another overspeed line: the distance to it decides');
+  assert.equal(speedNote(0.5, 0.6), '과속 한도(0.60 m/s)에 가까워 주행 중 잠깐 느려질 때가 있습니다.');
+  assert.match(near, /니다\.$/);
+}
 
 // PW-10 (contract revision 6): the online scale row and the question after a run.
 const scale = (extra = {}) => ({ enabled: true, run_id: 3, value: 0.8512, window_s: 20, target_s: 20, min_s: 10, frozen: false,

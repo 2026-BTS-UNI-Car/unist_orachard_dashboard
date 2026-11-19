@@ -770,10 +770,12 @@
 <article class="panel rover-auto-panel" data-rover-tab="auto" data-vehicle="front_steer" id="autoPanel">
 <div class="panel-head"><h2>자율주행 · 열 따라가기</h2></div>
 <div class="test-result auto-status" id="autoStatus" role="status">자율주행 실행기를 확인하고 있습니다.</div>
-<div class="tune-fields">
+<div class="tune-fields auto-fields">
 <label class="field" for="autoRowLen">열 길이 (m)<input class="input" id="autoRowLen" inputmode="decimal" max="300" min="1" placeholder="비워도 됩니다" step="0.1" type="number"/></label>
 <label class="field" for="autoGnssMode">GPS<select class="select" id="autoGnssMode"><option value="off">GPS 사용 안 함</option><option title="열 범위를 벗어나면 멈추고, RTK 고정해일 때는 중심선을 최대 10 cm까지 보정합니다." value="weak_constraint">GPS 사용함</option></select></label>
+<label class="field" for="autoSpeed">속도<select class="select" disabled="" id="autoSpeed"><option value="">--</option></select></label>
 </div>
+<p class="help-text" hidden="" id="autoSpeedNote"></p>
 <div class="auto-buttons"><button class="action-button secondary" disabled="" id="autoPrepare" type="button">준비</button><button class="action-button primary" disabled="" id="autoPrimary" type="button">자율 주행 시작</button><button class="action-button danger" id="autoStopButton" type="button">멈추기</button></div>
 <p class="help-text" id="autoHint">화면을 끄거나 가리면 1초 뒤 차가 멈춥니다.</p>
 </article>

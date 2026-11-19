@@ -5,7 +5,7 @@
 // No browser. Run: node tests/test_tuning_model.mjs
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { check, clock, describeChanges, fmt, groups, logRows, presetLine, presetNameOk, replyText, screenState, whyNot,
+import { check, clock, describeChanges, fmt, groups, logRows, presetLine, presetNameOk, refusalReason, replyText, screenState, whyNot,
          withUnit } from '../static/steer/tuning-model.mjs';
 
 const sample = JSON.parse(fs.readFileSync(new URL('./fixtures/executor_status_front_steer.json', import.meta.url), 'utf8'));
@@ -74,6 +74,11 @@ assert.deepEqual(replyText(view, 200, { ok: true, action: 'load_preset', changes
 assert.deepEqual(replyText(view, 400, { ok: false, error: 'invalid_params', problems: ['k_d: breaks a rule', 'x'] }),
                  ['bad', '요청이 거절됐습니다. 실행기가 값을 받지 않았습니다. k_d: breaks a rule / x']);
 assert.deepEqual(replyText(view, 409, { ok: false, error: 'tuning_locked_while_running' }), ['bad', '요청이 거절됐습니다. 주행이 끝나지 않아 바꿀 수 없습니다.']);
+// The reason alone (the speed choice of the 자율주행 tab puts its own first sentence before it).
+assert.equal(refusalReason(409, { ok: false, error: 'tuning_locked_while_running' }), '주행이 끝나지 않아 바꿀 수 없습니다.');
+assert.equal(refusalReason(400, { ok: false, error: 'invalid_params', problems: ['a', 'b'] }), '실행기가 값을 받지 않았습니다. a / b');
+assert.equal(refusalReason(409, { ok: false, error: 'brand_new_code' }), '알려 온 이유는 brand_new_code입니다.');
+assert.equal(refusalReason(502, null), '서버가 HTTP 502 오류로 답했습니다.');
 assert.deepEqual(replyText(view, 502, null), ['bad', '요청이 거절됐습니다. 서버가 HTTP 502 오류로 답했습니다.']);
 
 const at = new Date(2026, 10, 13, 5, 20, 25).getTime() / 1000;

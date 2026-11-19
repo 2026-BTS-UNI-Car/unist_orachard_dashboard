@@ -154,14 +154,19 @@ const NEW_TITLES = {
   // tiles and the local grid. Everything else of the tab is in one folded 자세히.
   const auto = rover.slice(rover.indexOf('id="autoPanel"'), rover.indexOf('id="steerPotPanel"'));
   const start = auto.slice(0, auto.indexOf('id="autoMonitor"'));
+  // the GPS choice has its two options in the page; the speed choice only a dash (its steps come from the executor)
   assert.deepEqual([...auto.matchAll(/<option[^>]* value="([a-z_]*)">([^<]+)</g)].map((m) => [m[1], m[2]]),
-    [['off', 'GPS 사용 안 함'], ['weak_constraint', 'GPS 사용함']]);
+    [['off', 'GPS 사용 안 함'], ['weak_constraint', 'GPS 사용함'], ['', '--']]);
   assert.deepEqual([...start.matchAll(/<button class="action-button ([a-z]+)"( disabled="")? id="([A-Za-z]+)" type="button">([^<]+)</g)].map((m) => [m[3], m[4], m[1], Boolean(m[2])]),
     [['autoPrepare', '준비', 'secondary', true], ['autoPrimary', '자율 주행 시작', 'primary', true], ['autoStopButton', '멈추기', 'danger', false]],
     'three buttons in this order; 멈추기 is never off');
   assert.deepEqual([...start.matchAll(/ id="([A-Za-z]+)"/g)].map((m) => m[1]),
-    ['autoStatus', 'autoRowLen', 'autoGnssMode', 'autoPrepare', 'autoPrimary', 'autoStopButton', 'autoHint'], 'top to bottom');
-  assert.equal((start.match(/<p /g) || []).length, 1, 'one line of caution, no paragraph of instructions');
+    ['autoStatus', 'autoRowLen', 'autoGnssMode', 'autoSpeed', 'autoSpeedNote', 'autoPrepare', 'autoPrimary', 'autoStopButton', 'autoHint'], 'top to bottom');
+  // 2026-11-20 (user: "자율주행 속도 설정은 따로 못 하나?"): the speed choice next to the row length and GPS. Its steps come
+  // from the executor (the markup has none), it is off until they are read, and its one line of caution is hidden.
+  assert.match(start, /<label class="field" for="autoSpeed">속도<select class="select" disabled="" id="autoSpeed"><option value="">--<\/option><\/select><\/label>\n<\/div>\n<p class="help-text" hidden="" id="autoSpeedNote"><\/p>\n<div class="auto-buttons">/);
+  assert.deepEqual(start.match(/<p [^>]*>/g), ['<p class="help-text" hidden="" id="autoSpeedNote">', '<p class="help-text" id="autoHint">'],
+    'one line of caution on the screen (the speed line shows only near the overspeed line), no paragraph of instructions');
   for (const id of ['autoRecordRuns', 'autoRecordButton', 'autoRecordState', 'autoNotice']) assert.ok(!html.includes(`id="${id}"`), `${id} is gone: the start records by itself`);
   assert.doesNotMatch(auto, /래치/, 'no latch wording on the tab');
   const more = auto.slice(auto.indexOf('<details id="autoMore"><summary>자세히</summary>'), auto.indexOf('</details>'));

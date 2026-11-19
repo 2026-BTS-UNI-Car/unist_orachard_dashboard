@@ -184,7 +184,7 @@ const STOPPED = { run_state: 'latched', mode: 'MOTOR', stop_reason: 'OPERATOR_OR
 // (SHADOW), arm arms it, go drives, stop latches). state.refuse[action] = an executor refusal code (HTTP 409).
 async function panel({ status = READY, rec = { known: true, active: false }, mode = 'MOTOR' } = {}) {
   const ids = ['autoPanel', 'autoStatus', 'autoPrepare', 'autoPrimary', 'autoStopButton', 'autoEnd', 'autoMode', 'autoHint', 'autoRowLen',
-    'autoGnssMode', 'autoMonitorGrid', 'autoMoreGrid', 'autoMonitorState', 'autoMetricsBlock', 'autoMetricsGrid', 'autoMetricsSource', 'autoScale',
+    'autoSpeed', 'autoSpeedNote', 'autoGnssMode', 'autoMonitorGrid', 'autoMoreGrid', 'autoMonitorState', 'autoMetricsBlock', 'autoMetricsGrid', 'autoMetricsSource', 'autoScale',
     'autoScaleValue', 'autoScaleOffer', 'autoScaleText', 'autoScaleAccept', 'autoScaleDismiss', 'autoDetails', 'roverTabAutoBadge'];
   const els = Object.fromEntries(ids.map((id) => [id, element(id)]));
   const asked = new Set();
@@ -196,8 +196,22 @@ async function panel({ status = READY, rec = { known: true, active: false }, mod
   const intervals = [];
   globalThis.setInterval = (fn, ms) => { const id = realSet(() => {}, 1e6); timers.push(id); intervals.push([fn, ms]); return id; };
   const { initAutoPanel } = await import('../static/steer/auto-panel.mjs');
-  const log = { actions: [], recordings: [], order: [] };
-  const state = { status, rec, mode, refuse: {}, blockers: [], onRequest: null, onRecord: null };
+  const log = { actions: [], recordings: [], order: [], params: [] };
+  const state = { status, rec, mode, refuse: {}, blockers: [], onRequest: null, onRecord: null, refuseParams: null, paramsDown: false };
+  // POST /api/executor/params as the dashboard relays it: a set of target_speed_m_s changes the executor's value; a
+  // refusal answers the executor's code (and problems) with its HTTP status; paramsDown: the request itself fails.
+  globalThis.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    log.params.push([url, init.method, body]);
+    if (state.paramsDown) throw new TypeError('fetch failed');
+    if (state.refuseParams) return { ok: false, status: state.refuseParams.code, json: async () => state.refuseParams.body };
+    const old = state.status.tuning.values.basic.target_speed_m_s, next = body.target_speed_m_s;
+    const tuning = state.status.tuning;
+    state.status = { ...state.status, speed: { ...(state.status.speed || {}), target_mps: next },
+      tuning: { ...tuning, revision: tuning.revision + 1, basic: tuning.basic.map((item) => (item.name === 'target_speed_m_s' ? { ...item, value: next } : item)),
+        values: { ...tuning.values, basic: { ...tuning.values.basic, target_speed_m_s: next } } } };
+    return { ok: true, status: 200, json: async () => ({ ok: true, action: 'set', changes: [{ key: 'target_speed_m_s', old, new: next }], tuning: { revision: tuning.revision + 1 } }) };
+  };
   const page = {
     currentRoute: () => '/rover-control',
     getJson: async () => ({ ok: true, configured: true, reachable: true, received_at: Date.now() / 1000, status: state.status }),
@@ -392,6 +406,93 @@ test('panel: 멈추기 always works and wins: no Arm after it during 준비, no 
   const i = await panel({ status: { run_state: 'idle', mode: 'MOTOR' } });
   i.els.autoStopButton.fire('click'); await i.settle();
   assert.deepEqual(i.sent(), []);
+});
+
+// The executor's tuning block in the status (the shape read from the SIM stack on 2026-11-20).
+const tuningOf = ({ value = 0.4, editable = true } = {}) => ({
+  preset: 'default', revision: 0, editable, not_editable_because: editable ? null : 'tuning_locked_while_running', writable: false,
+  basic: [{ name: 'speed_scale', value: 1, low: 0.5, high: 1.3, unit: '' }, { name: 'target_speed_m_s', value, low: 0.2, high: 0.5, unit: 'm/s' }],
+  values: { basic: { speed_scale: 1, target_speed_m_s: value }, advanced: { min_speed_m_s: 0.2 }, locked: { max_speed_m_s: 0.5, overspeed_margin_m_s: 0.05 } } });
+
+test('panel: the speed choice follows the executor (steps, value now, lock); a change sends one key and is not saved', async () => {
+  const p = await panel({ status: { run_state: 'idle', mode: 'MOTOR', speed: { target_mps: 0.4 }, tuning: tuningOf() } });
+  const select = p.els.autoSpeed, note = p.els.autoSpeedNote;
+  const options = () => select.children.map((o) => [o.value, o.textContent]);
+  const target = () => p.els.autoMonitorGrid.children.map((row) => row.children.map((c) => c.textContent)).find(([name]) => name === '속도');
+  assert.deepEqual(options(), [['0.25', '0.25 m/s'], ['0.3', '0.30 m/s'], ['0.35', '0.35 m/s'], ['0.4', '0.40 m/s'], ['0.45', '0.45 m/s'], ['0.5', '0.50 m/s']],
+    'the range of the executor in 0.05 m/s steps (0.20 is not offered: the executor refuses a target at its minimum speed)');
+  assert.deepEqual([select.value, select.disabled, note.hidden], ['0.4', false, true], "the executor's value is the one shown");
+  assert.equal(target()[2], '목표 0.40');
+  // a change: one request, one key, no save
+  select.value = '0.45'; select.fire('change'); await p.done();
+  assert.deepEqual(p.log.params, [['/api/executor/params', 'POST', { target_speed_m_s: 0.45 }]]);
+  assert.deepEqual(p.sent(), [], 'nothing else is sent: no run is made, nothing is saved');
+  assert.deepEqual([select.value, select.disabled], ['0.45', false]);
+  assert.equal(target()[2], '목표 0.45', "the monitoring tile shows the new target");
+  assert.deepEqual([note.hidden, note.textContent], [false, '과속 한도(0.55 m/s)에 가까워 주행 중 잠깐 느려질 때가 있습니다.'], 'the one line of caution from 0.45 m/s');
+  assert.deepEqual(p.line(), ['', '준비를 누르세요.'], 'no sentence for a change that went through');
+  select.value = '0.3'; select.fire('change'); await p.done();
+  assert.deepEqual(p.log.params.at(-1)[2], { target_speed_m_s: 0.3 });
+  assert.deepEqual([select.value, note.hidden], ['0.3', true]);
+  // the same value again: nothing is sent
+  select.value = '0.3'; select.fire('change'); await p.done();
+  assert.equal(p.log.params.length, 2);
+  // a value changed elsewhere (the field tuning part, another screen) shows here, also one between the steps
+  p.state.status = { ...p.state.status, speed: { target_mps: 0.38 }, tuning: tuningOf({ value: 0.38 }) };
+  await p.poll();
+  assert.deepEqual([select.value, options().map(([value]) => value)], ['0.38', ['0.25', '0.3', '0.35', '0.38', '0.4', '0.45', '0.5']]);
+});
+
+test('panel: a refused speed change goes back to the executor value and the status line says why', async () => {
+  const p = await panel({ status: { run_state: 'ended', mode: 'MOTOR', speed: { target_mps: 0.4 }, tuning: tuningOf() } });
+  const select = p.els.autoSpeed;
+  p.state.refuseParams = { code: 409, body: { ok: false, error: 'tuning_locked_vehicle_moving' } };
+  select.value = '0.5'; select.fire('change'); await p.done();
+  assert.deepEqual(p.log.params, [['/api/executor/params', 'POST', { target_speed_m_s: 0.5 }]]);
+  assert.equal(select.value, '0.4', 'back to the value the executor has');
+  assert.deepEqual(p.line(), ['bad', '속도를 바꾸지 못했습니다. 차가 움직이고 있어 바꿀 수 없습니다.'], 'the refusal table of the field tuning part');
+  assert.equal(p.els.autoSpeedNote.hidden, true, 'no caution for a value that was not taken');
+  // the executor's own problem lines and a code the table does not know are shown, not hidden
+  p.state.refuseParams = { code: 400, body: { ok: false, error: 'invalid_params', problems: ['target_speed_m_s: need min_speed_m_s < target_speed_m_s <= max_speed_m_s (locked)'] } };
+  select.value = '0.25'; select.fire('change'); await p.done();
+  assert.equal(p.line()[1], '속도를 바꾸지 못했습니다. 실행기가 값을 받지 않았습니다. target_speed_m_s: need min_speed_m_s < target_speed_m_s <= max_speed_m_s (locked)');
+  assert.equal(select.value, '0.4');
+  p.state.refuseParams = { code: 409, body: { ok: false, error: 'some_new_code' } };
+  select.value = '0.3'; select.fire('change'); await p.done();
+  assert.equal(p.line()[1], '속도를 바꾸지 못했습니다. 알려 온 이유는 some_new_code입니다.');
+  // the request itself fails
+  p.state.refuseParams = null; p.state.paramsDown = true;
+  select.value = '0.3'; select.fire('change'); await p.done();
+  assert.deepEqual([p.line()[1], select.value], ['속도를 바꾸지 못했습니다. 실행기에 연결하지 못했습니다.', '0.4']);
+  // and the three buttons are as before
+  p.state.paramsDown = false;
+  p.els.autoPrepare.fire('click'); await p.done();
+  assert.deepEqual(p.sent(), ['start', 'arm']);
+});
+
+test('panel: the speed choice is off while a run is open, and off with the value only when the executor sends no range', async () => {
+  const p = await panel({ status: { ...READY, speed: { target_mps: 0.4 }, tuning: tuningOf({ editable: false }) } });
+  const select = p.els.autoSpeed;
+  assert.deepEqual([select.disabled, select.value, p.els.autoRowLen.disabled], [true, '0.4', true], 'armed: locked like the row length and GPS');
+  select.value = '0.5'; select.fire('change'); await p.done();
+  assert.deepEqual([p.log.params, select.value], [[], '0.4'], 'a change that got through a locked choice is not sent and is put back');
+  for (const state of ['running', 'paused', 'ready']) {
+    p.state.status = { run_state: state, mode: 'MOTOR', speed: { target_mps: 0.4 }, tuning: tuningOf({ editable: false }) };
+    await p.poll();
+    assert.equal(select.disabled, true, state);
+  }
+  p.state.status = { ...STOPPED, speed: { target_mps: 0.4 }, tuning: tuningOf() };
+  await p.poll();
+  assert.equal(select.disabled, false, 'stopped: the speed of the next run can be chosen before 준비');
+  // 준비 keeps it off while it works (one thing at a time)
+  p.state.onRequest = async () => { assert.equal(select.disabled, true, 'off during 준비'); };
+  p.els.autoPrepare.fire('click'); await p.done();
+  p.state.onRequest = null;
+  // an executor without the range: the value now, nothing to choose
+  const q = await panel({ status: { run_state: 'idle', mode: 'MOTOR', speed: { target_mps: 0.4 }, tuning: { preset: null, revision: 0, editable: false } } });
+  assert.deepEqual([q.els.autoSpeed.disabled, q.els.autoSpeed.children.map((o) => o.textContent), q.els.autoSpeed.value], [true, ['0.40 m/s'], '0.4']);
+  const r = await panel({ status: { run_state: 'idle', mode: 'MOTOR' } });
+  assert.deepEqual([r.els.autoSpeed.disabled, r.els.autoSpeed.children.map((o) => o.textContent)], [true, ['--']], 'no value known: a dash');
 });
 
 test('state v1 message: centreline.odom, grid_centreline.odom and lookahead.odom are drawn', async () => {
