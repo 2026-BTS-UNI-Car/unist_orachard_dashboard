@@ -23,7 +23,7 @@ function setup({ stored = null, failStorage = false, lease = null } = {}) {
     return { dataset: { roverTabButton: tab }, attrs, tabIndex: 0, listeners: {}, setAttribute(k, v) { attrs[k] = v; },
       addEventListener(type, fn) { this.listeners[type] = fn; }, focus() {} };
   });
-  const parts = { liveMapPanel: 'manual auto', roverArchiveList: 'record auto', steerCalPanel: 'setup', tuningPanel: 'setup' };
+  const parts = { liveMapPanel: 'manual', roverLidarCanvas: 'manual auto', roverArchiveList: 'record auto', steerCalPanel: 'setup', tuningPanel: 'setup' };
   const element = (id) => (id === 'roverLayout' ? layout : parts[id]
     ? { closest: () => ({ dataset: { roverTab: parts[id] } }) } : null);
   const events = [], stops = [], calls = { renderRecordings: 0, stopArchive: 0 };
@@ -51,7 +51,9 @@ function setup({ stored = null, failStorage = false, lease = null } = {}) {
   assert.equal(t.layout.dataset.tab, 'auto', 'the kept tab');
   assert.deepEqual(t.buttons.map((b) => b.attrs['aria-selected']), ['false', 'true', 'false', 'false']);
   assert.deepEqual(t.buttons.map((b) => b.tabIndex), [-1, 0, -1, -1]);
-  assert.equal(t.context.roverPartShown('liveMapPanel'), true, 'the live map is in 수동 조종 and 자율주행');
+  assert.equal(t.context.roverPartShown('roverLidarCanvas'), true, 'the LiDAR picture is in 수동 조종 and 자율주행');
+  assert.equal(t.context.roverPartShown('liveMapPanel'), false, 'the live map is in 수동 조종 only (2026-11-20)');
+  assert.equal(t.context.roverTabOf('liveMapPanel'), 'manual', 'the /map address still opens 수동 조종');
   assert.equal(t.context.roverPartShown('steerCalPanel'), false);
   assert.equal(t.context.roverTabOf('tuningPanel'), 'setup');
   t.buttons[2].listeners.click();

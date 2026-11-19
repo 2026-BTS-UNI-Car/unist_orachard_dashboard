@@ -549,7 +549,7 @@
 <button aria-controls="roverLayout" aria-selected="false" class="tab" data-rover-tab-button="record" id="roverTabRecord" role="tab" tabindex="-1" type="button">기록</button>
 </div>
 <section class="rover-layout" data-tab="manual" id="roverLayout" role="tabpanel">
-<article class="panel rover-live-panel rover-lidar-panel" data-rover-tab="manual">
+<article class="panel rover-live-panel rover-lidar-panel" data-rover-tab="manual auto">
 <div class="panel-head">
 <h2>LiDAR</h2>
 <button class="action-button secondary" id="roverLidarToggle" type="button">LiDAR 시작</button>
@@ -557,6 +557,7 @@
 <div class="lidar-map-stage rover-lidar-stage">
 <canvas class="lidar-map" height="520" id="roverLidarCanvas" width="520"></canvas>
 </div>
+<p class="sim-map-status" hidden="" id="roverLidarNote" role="status"></p>
 <details><summary>범위 · 점 수 · 수신 상태</summary>
 <div class="tune-stack">
 <div class="rover-sensor-controls">
@@ -590,7 +591,7 @@
 </div>
 </details>
 </article>
-<article class="panel rover-live-panel rover-map-panel sim-live-map-panel" data-rover-tab="manual auto" id="liveMapPanel">
+<article class="panel rover-live-panel rover-map-panel sim-live-map-panel" data-rover-tab="manual" id="liveMapPanel">
 <div class="panel-head"><h2>실시간 점유 격자 지도</h2><span class="tag" id="liveMapState">대기</span></div>
 <div class="sim-map-actions"><button class="action-button primary" id="liveMapStart" type="button">그리기 시작</button><button class="action-button secondary" id="liveMapStop" type="button">그리기 멈춤</button><button class="action-button secondary" id="liveMapReset" type="button">새 지도</button></div>
 <details id="mappingJobsPanel" class="mapping-jobs"><summary>매핑 작업 관리</summary>

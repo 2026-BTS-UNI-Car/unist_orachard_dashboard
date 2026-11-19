@@ -127,8 +127,10 @@ const NEW_TITLES = {
     const id = m[3].match(/ id="([^"]+)"/);
     return [id ? id[1] : m[1].split(' ').filter((c) => c.startsWith('rover-')).pop(), m[2]];
   });
+  // 2026-11-20 (user: "실시간 점유 격자 지도 위치에 … 실시간 라이다만 넣어 줘, 자율주행 탭에서"): the LiDAR picture is a
+  // part of 수동 조종 and of 자율주행; the live occupancy grid map is a part of 수동 조종 only.
   assert.deepEqual(Object.fromEntries(parts), {
-    'rover-lidar-panel': 'manual', liveMapPanel: 'manual auto', 'rover-camera-panel': 'manual', 'rover-gps-panel': 'manual',
+    'rover-lidar-panel': 'manual auto', liveMapPanel: 'manual', 'rover-camera-panel': 'manual', 'rover-gps-panel': 'manual',
     'rover-imu-panel': 'manual', 'rover-drive-panel': 'manual',
     autoPanel: 'auto', autoMonitor: 'auto', steerPotPanel: 'setup', steerCalPanel: 'setup', steerDistTapePanel: 'setup',
     tuningPanel: 'setup', roverRecordPanel: 'record', 'rover-links-panel': 'setup', 'rover-archive-panel': 'record auto',
@@ -200,6 +202,16 @@ const NEW_TITLES = {
     'steerCalStop', 'steerCalStatus', 'steerDistTapeTerrain', 'steerDistActual', 'steerDistFeedback', 'roverRecordStartButton',
     'roverRecordStopButton', 'roverRecordingStatus']) assert.ok(!folded(id), `${id} stays on the screen`);
   assert.doesNotMatch(rover, /<details[^>]*\sopen\b/, 'every fold starts closed');
+  // The LiDAR part: one picture for both tabs (no second canvas), its button, and the sentence that 자율주행 shows
+  // instead of the button (hidden until that tab is shown).
+  {
+    const lidar = rover.slice(rover.indexOf('<article class="panel rover-live-panel rover-lidar-panel"'), rover.indexOf('id="liveMapPanel"'));
+    assert.deepEqual([...lidar.matchAll(/<canvas [^>]*id="([A-Za-z]+)"/g)].map((m) => m[1]), ['roverLidarCanvas']);
+    assert.match(lidar, /<button class="action-button secondary" id="roverLidarToggle" type="button">LiDAR 시작<\/button>/);
+    assert.match(lidar, /<\/canvas>\n<\/div>\n<p class="sim-map-status" hidden="" id="roverLidarNote" role="status"><\/p>\n<details>/,
+      'the sentence sits under the picture, above the folded range and point settings');
+    assert.equal((html.match(/id="liveMapCanvas"/g) || []).length, 1, 'the live map itself is unchanged');
+  }
   // The tape part of 보정·설정 has its own terrain choice (the options come from the terrain table).
   assert.match(rover.slice(rover.indexOf('id="steerDistTapePanel"')), /^[^]*?<label class="field" for="steerDistTapeTerrain">지형<select class="input" id="steerDistTapeTerrain"><\/select><\/label>\n<label class="field" for="steerDistActual">/);
   // The status strip of Rover Control comes first again, as the KPI row did.
