@@ -600,6 +600,16 @@ function mergeArchiveExecutorSegment(section) {
   }
 }
 
+// The recorded GPS mode and state in the words of the autonomy tab (static/steer/auto-model.mjs GNSS_MODE_TEXT,
+// GNSS_STATE); an unknown code is shown as recorded.
+const ARCHIVE_GNSS_MODE = { off: "사용 안 함", log_only: "기록만", geofence: "범위 감시", weak_constraint: "사용함" };
+const ARCHIVE_GNSS_STATE = {
+  ok: "정상", accepted: "받아들임", rejected: "거부", none: "수신 없음", absent: "수신 없음", no_fix: "미확정", fix: "확정",
+  rtk: "RTK", stale: "오래됨", unused: "쓰지 않음", off: "꺼짐", waiting: "대기", fence_tripped: "범위 벗어남",
+  no_run: "주행 없음", rejected_no_fix: "위치 미확정", rejected_hacc: "정확도 낮음", rejected_jump: "위치 급변",
+  rejected_quality: "품질 낮음",
+};
+
 function archiveExecutorTiles(msg) {
   const n = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
   const f = (value, digits, unit) => (n(value) === null ? "--" : `${value.toFixed(digits)}${unit}`);
@@ -612,7 +622,8 @@ function archiveExecutorTiles(msg) {
     ["속도", f(msg.speed_mps, 2, " m/s")], ["거리", f(msg.dist_m, 1, " m")],
     ["통로", msg.corridor_ok === true ? `찾음${n(msg.width_m) === null ? "" : ` · 폭 ${msg.width_m.toFixed(2)} m`}` : msg.corridor_ok === false ? "못 찾음" : "--"],
     ["횡 RMS", f(metrics.lat_rms_m, 3, " m")],
-    ["GPS", [gnss.mode, gnss.state].filter((v) => typeof v === "string").join(" · ") || "--"],
+    ["GPS", [ARCHIVE_GNSS_MODE[gnss.mode] ?? gnss.mode, gnss.mode === "off" ? null : (ARCHIVE_GNSS_STATE[gnss.state] ?? gnss.state)]
+      .filter((v) => typeof v === "string").join(" · ") || "--"],
   ];
 }
 
