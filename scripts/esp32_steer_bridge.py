@@ -68,6 +68,10 @@ DEFAULT_DEVICE = '/dev/ubts-motor'
 CONTROL_EVENTS_KEEP = 50
 CONTROL_EVENT_REPEAT_S = 2.0
 CONTROL_LOG_KEEP = 1000
+# A loop step that starts this long after the one before it is written as a control event ('slow_step': the gap and how
+# long the step before took). The loop runs every 0.02 s; the firmware drive watchdog is 0.3 s (2026-11-20: the field
+# records could not tell a blocked loop from a blocked board).
+SLOW_STEP_S = 0.2
 STATE_SCHEMA = 'ubts.esp32_steer_state.v1'
 
 
@@ -86,6 +90,7 @@ class Esp32Bridge:
         self.emergency_reason = 'operator_stop'
         self.internal_errors = 0
         self.control_events = []        # dicts, newest last (CONTROL_EVENTS_KEEP)
+        self._step_started = self._step_took = None     # the loop's own timing (slow_step events)
         self.events_unwritten = []      # not yet appended to the event log file
         self._event_state = None
         self._event_last = {}           # (event, reason) -> monotonic time (repeat limit)
@@ -115,7 +120,13 @@ class Esp32Bridge:
 
     # loop thread
     def step(self):
+        started = self.clock()
         try:
+            before, took = self._step_started, self._step_took
+            self._step_started = started
+            if before is not None and started - before >= SLOW_STEP_S:
+                self._detail_event('slow_step', None, {'gap_s': round(started - before, 3),
+                                                       'step_before_s': None if took is None else round(took, 3)})
             self._step()
         except Exception as exc:          # a defect: stop, keep the loop (no automatic re-arm)
             self.internal_errors += 1
@@ -125,6 +136,7 @@ class Esp32Bridge:
                 self.control.stop('internal_error')
             except Exception:
                 pass
+        self._step_took = self.clock() - started
 
     def _step(self):
         if self.emergency.is_set():
@@ -161,6 +173,9 @@ class Esp32Bridge:
                         result = {'ok': False, 'error': reason}
                 if not future.done():
                     future.set_result(result)
+        take = getattr(self.motor, 'take_link_diag', None)
+        for item in (take() if take else ()):
+            self._detail_event('link_diag', item.get('kind'), item)
         status = self.control.status()
         self._track_events(status)
         self.snapshot = {**status, 'updated_at': self.wall_clock(), 'mode': 'manual',
@@ -196,6 +211,18 @@ class Esp32Bridge:
         self._event_last[key] = now
         item = {'at': round(self.wall_clock(), 3), 'event': event, 'reason': reason, 'armed': state['armed'],
                 'link': state['link'], 'not_ready': state['not_ready']}
+        self.control_events.append(item)
+        del self.control_events[:-CONTROL_EVENTS_KEEP]
+        self.events_unwritten.append(item)
+        del self.events_unwritten[:-CONTROL_LOG_KEEP]
+
+    def _detail_event(self, event, reason, detail):
+        """A control event with a detail block (the link diagnosis of a link fault or a firmware drive watchdog
+        line, a slow loop step). Not under the repeat limit: each one is its own measurement; the keep limits
+        bound them."""
+        state = self._event_state or {}
+        item = {'at': round(self.wall_clock(), 3), 'event': event, 'reason': reason, 'armed': state.get('armed'),
+                'link': state.get('link'), 'not_ready': state.get('not_ready'), 'detail': detail}
         self.control_events.append(item)
         del self.control_events[:-CONTROL_EVENTS_KEEP]
         self.events_unwritten.append(item)

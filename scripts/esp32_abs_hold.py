@@ -88,6 +88,13 @@ STAGE_REACHED_DEG = 1.0           # an intermediate target counts as reached wit
 DRIVE_TTL_S = 0.75                # = RoverControl.INPUT_TTL; never longer
 EVENT_KEEP_S = 30.0
 WRITE_DEADLINE_S = 0.1
+# Link diagnosis (2026-11-20, orchard: seven runs ended with a board write that did not finish or with the firmware
+# drive watchdog, and the records did not say what the link looked like). A gap of RX_GAP_NOTE_S or more between
+# received lines is remembered; a link fault or a firmware drive watchdog line makes one diagnosis item with the
+# gaps of the last LINK_DIAG_WINDOW_S (take_link_diag: the bridge writes it into the control event log).
+RX_GAP_NOTE_S = 0.05
+LINK_DIAG_WINDOW_S = 3.0
+LINK_DIAG_KEEP = 10
 # One corrupted line (2026-11-17 08:47 on the vehicle: bytes dropped in the USB CDC stream spliced 'FW: ' onto
 # 'MITS F=RIGHT ...', the tail of the firmware name, and the bridge latched firmware_mismatch for good). A FW name other
 # than FIRMWARE_NAME is believed only on this many FW lines in a row (a FW line comes with every STATUS answer, 10 Hz);
@@ -546,6 +553,10 @@ class Esp32SteerMotor:
         self.boot_banner = False
         self.ready_once = False
         self.last_rx = None
+        self.last_write_at = None       # the last write the device took (link diagnosis)
+        self.rx_gaps = collections.deque(maxlen=32)   # (time, gap) of the late lines (RX_GAP_NOTE_S)
+        self.link_diag = []             # diagnosis items the bridge has not taken yet
+        self.link_diag_total = 0
         self.firmware = None
         self.firmware_detail = None
         self.drive_wd_ms = None         # firmware drive watchdog (FW line DRIVE_WD=<ms>); None = no firmware timeout
@@ -749,6 +760,25 @@ class Esp32SteerMotor:
         if self.stop_reason is None:
             self.stop_reason = reason
 
+    def _diag(self, now, kind, text):
+        """What the link looked like at a link fault or a firmware drive watchdog line: how long ago the last line
+        came, the last write went and the last STATUS was, the late lines of the last seconds, and what was asked
+        of the drive. Read-only bookkeeping: it changes nothing of the stop itself."""
+        def age(at):
+            return None if at is None else round(now - at, 3)
+        self.link_diag_total += 1
+        self.link_diag.append({
+            'kind': kind, 'text': str(text)[:160], 'link': self.link, 'rx_age_s': age(self.last_rx),
+            'write_age_s': age(self.last_write_at), 'status_age_s': age(self.status_at),
+            'rx_gaps_s': [gap for at, gap in self.rx_gaps if now - at <= LINK_DIAG_WINDOW_S][-8:],
+            'lines': self.counts['lines'], 'writes': self.counts['writes'], 'enabled': self.enabled,
+            'drive_pwm': [self.desired[motor][1] for motor in DRIVE_MOTORS], 'n': self.link_diag_total})
+        del self.link_diag[:-LINK_DIAG_KEEP]
+
+    def take_link_diag(self):
+        items, self.link_diag = self.link_diag, []
+        return items
+
     def _latch(self, name, detail=None):
         self.latches[name] = detail or True
         self.error = name if detail is None else '%s: %s' % (name, detail)
@@ -857,6 +887,7 @@ class Esp32SteerMotor:
             self.status_at = None
 
     def _link_fault(self, now, exc):
+        self._diag(now, 'link_fault', exc)
         self.counts['write_errors' if 'write' in str(exc) else 'read_errors'] += 1
         self._latch('hardware_fault', '%s' % exc)
         self.desired = {2: (self.forward[2], 0), 3: (self.forward[3], 0)}
@@ -876,6 +907,7 @@ class Esp32SteerMotor:
     def _write(self, data):
         self.transport.write(data)
         self.counts['writes'] += 1
+        self.last_write_at = self.clock()
 
     def _write_stop(self, now):
         if not getattr(self.transport, 'is_open', False) or self.link == 'closed':
@@ -913,6 +945,8 @@ class Esp32SteerMotor:
 
     def _line(self, now, text):
         self.counts['lines'] += 1
+        if self.last_rx is not None and now - self.last_rx >= RX_GAP_NOTE_S:
+            self.rx_gaps.append((now, round(now - self.last_rx, 3)))
         self.last_rx = now
         kind, f = parse_line(text)
         if self.cal_job is not None and (kind in ('ready', 'boot_rom') or
@@ -1033,6 +1067,7 @@ class Esp32SteerMotor:
             self.ramp_out = dict(self.desired)   # safety stop: no ramp
             self.drive_until = 0.0
             self._event(now, 'drive_watchdog', text)
+            self._diag(now, 'drive_watchdog', text)
             self._request_stop('mcu_drive_watchdog')
             return
         if kind == 'ok_all_stop':
