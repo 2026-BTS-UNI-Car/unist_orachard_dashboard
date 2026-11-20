@@ -17,7 +17,7 @@ import { bandCentre, point, polyline, pose, sceneBox, sceneFromState, sceneFromS
 import { trailStep } from '../static/steer/local-grid.mjs';
 
 const now = 1_800_000_000_000;
-const reply = (status) => ({ ok: true, configured: true, reachable: true, received_at: now / 1000, status });
+const reply = (status) => ({ ok: true, configured: true, reachable: true, received_at: now / 1000, page_ms: now, status });
 const tile = (view, name) => view.tiles.find(([label]) => label === name);
 
 test('GPS per run: four modes, sent with start only when chosen', async () => {

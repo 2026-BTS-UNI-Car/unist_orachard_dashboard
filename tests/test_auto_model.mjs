@@ -4,11 +4,11 @@
 import assert from 'node:assert/strict';
 import {
   HEARTBEAT_MS, STALE_MS, EXEC_ERROR, GO_BLOCKER, SCALE_WHY_NOT, START_ERROR, STOP_CLAUSE, STOP_DETAIL, STOP_REASON, SCALE_HOLD, autoButtons, autoView, goAllowed, heartbeatWanted, modeChip,
-  newSession, openBlockers, prepareFailText, prepareSequence, speedChoice, speedLabel, speedNote, SPEED_KEY, runActive, scaleLine, scaleOffer, scaleText, statusLine, stopClause, stopWords,
+  newSession, openBlockers, prepareFailText, prepareSequence, speedChoice, speedLabel, speedNote, SPEED_KEY, runActive, scaleLine, scaleOffer, scaleText, stale, stampReply, statusLine, stopClause, stopWords,
 } from '../static/steer/auto-model.mjs';
 
 const now = 1_800_000_000_000;
-const reply = (status, extra = {}) => ({ ok: true, configured: true, reachable: true, received_at: now / 1000, status, ...extra });
+const reply = (status, extra = {}) => ({ ok: true, configured: true, reachable: true, received_at: now / 1000, page_ms: now, status, ...extra });
 
 assert.ok(HEARTBEAT_MS <= 250, 'contract: heartbeat at most every 250 ms');
 assert.equal(HEARTBEAT_MS, 100, 'contract revision 1: every 100 ms');
@@ -43,6 +43,17 @@ assert.deepEqual(autoButtons({ ok: false, configured: false, received_at: now / 
 assert.deepEqual(autoButtons({ ok: false, configured: true, error: 'executor_unreachable' }, now), off);
 assert.deepEqual(autoButtons(null, now), off);
 assert.deepEqual(autoButtons(reply({ run_state: 'armed', go_ready: true }), now + 1600), off, 'stale: no 준비, no start');
+// The age of a status is on the page's clock (2026-11-20, orchard day): a Jetson whose clock is two hours behind (no
+// network time after a start) or ahead does not make a status that just arrived stale, and 준비 stays on.
+for (const skewS of [-7200, -2, 0, 2, 7200]) {
+  const skewed = stampReply({ ok: true, configured: true, reachable: true, received_at: now / 1000 + skewS, status: { run_state: 'idle' } }, now);
+  assert.equal(stale(skewed, now + 400), false, `Jetson clock ${skewS} s off`);
+  assert.equal(autoButtons(skewed, now + 400).prepare, true, `준비 with the Jetson clock ${skewS} s off`);
+  assert.notEqual(statusLine(skewed, now + 400)[0], 'bad', `status sentence with the Jetson clock ${skewS} s off`);
+  assert.equal(stale(skewed, now + STALE_MS + 1), true, 'no new status for 1.5 s: stale');
+}
+assert.equal(stale({ ok: true, configured: true, received_at: now / 1000, status: { run_state: 'idle' } }, now), true, 'a reply the page did not stamp');
+assert.equal(stampReply(null, now), null);
 assert.deepEqual(openBlockers({ go_blockers: ['operator_link_not_fresh', 'vehicle_moving'] }), ['vehicle_moving']);
 assert.equal(openBlockers({}), null, 'an executor without the list');
 assert.equal(goAllowed(null), false);
