@@ -56,11 +56,20 @@ const pendingGets=requests.filter(r=>r.path.includes('/map?')).length;
 run("archiveTime('slow',2,true)");await run("pollArchive('slow',archiveEpoch)");
 assert.equal(requests.filter(r=>r.path.includes('/map?')).length,pendingGets,'current-map GETs must not starve a pending cell window');
 holdWindow=false;finishWindow();await new Promise(resolve=>setImmediate(resolve));
-assert.equal(run("archiveReady('slow',2)"),true,'available cached cells permit synchronized sensor playback');
-assert.equal(run("archiveReady('slow',5)"),false,'exhausted cached cells hold the shared playback clock');
+// 2026-11-21: archiveReady no longer holds the playback clock (the player does not wait for the map); it and
+// archiveLag only tell the player's time label whether and how far the map is behind.
+assert.equal(run("archiveReady('slow',2)"),true,'available cached cells: the map keeps up');
+assert.equal(run("archiveLag('slow',2)"),0);
+assert.equal(run("archiveReady('slow',5)"),false,'beyond the cached cells the map is behind');
+assert.equal(run("archiveLag('slow',5)"),5-run('Number(archive.snapshot.frame_t_s)||0'),'with cached windows the lag counts from the last drawn scan');
+assert.ok(run("archiveLag('slow',5)")>1.9);
 run('bufferedCursorMap=false;availableCursorPrefix=5;archive.snapshot.frame_t_s=1');
-assert.equal(run("archiveReady('slow',5.2)"),true,'a processed geometry rejection must not deadlock playback');
-assert.equal(run("archiveReady('slow',6)"),false,'new-map processing cannot grow an unbounded clock backlog');
+assert.equal(run("archiveReady('slow',5.2)"),true,'a processed geometry rejection does not count as a late map');
+assert.equal(run("archiveLag('slow',5.2)"),0);
+assert.equal(run("archiveReady('slow',6)"),false,'a cursor beyond the processed prefix: the map is behind');
+assert.equal(run("archiveLag('slow',6)"),1,'while the map is being made the lag counts from the processed prefix');
+assert.equal(run("archiveLag('slow',65)"),60);
+assert.equal(run("archiveLag('another',65)"),0,'a recording that is not selected has no map to wait for');
 run(`bufferedCursorMap=true;archivePlaying=false;archiveTimeS=11.9;windowSupported=true;
   mapBuffer=new ArchiveMapBuffer({start_s:0,end_s:12,duration_s:12,
     seed:{tile_epoch:'same',tile_version:100,version:100,tiles:[],path:[]},
