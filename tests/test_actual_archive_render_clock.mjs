@@ -12,7 +12,7 @@ function harness(){
     removeAttribute(){},load(){this.currentTime=0;},closest(){return {classList:{toggle(){}}};}};
   const elements=new Map([['roverArchiveCameraVideo',video],['roverArchivePlayButton',{}]]);
   const p={playing:false,timeS:1,durationS:30,sync:true,nativeVideoUrl:'/first.mp4',nativeVideoReady:true,nativeVideoError:'',
-    nativeVideoOffsetS:0,mapBuffering:false,mapResumeRevision:0,sourceSwitchTimeS:null,videoPlayRevision:0,videoPlayRequested:false,
+    nativeVideoOffsetS:0,mapLagS:0,sourceSwitchTimeS:null,videoPlayRevision:0,videoPlayRequested:false,
     tickTimer:null,raf:null,loadingTelemetry:new Map(),cache:{gpsFrames:[],motorFrames:[],cameraFrames:[],lidarFrames:[],
       imuFrames:[{t_s:11.278361075337647,raw:{euler_deg:{yaw:1}}}]}};
   const state={archivePlayback:p,recordings:{selectedId:'record',timeline:{gps:{enabled:true},sync:{imu_frames:1}},selected:{source_video:{fps:30}}}};
