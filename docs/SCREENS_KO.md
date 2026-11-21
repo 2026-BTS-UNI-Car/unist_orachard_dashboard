@@ -260,7 +260,7 @@ System 의 상태 띠가 늘어 상태 띠는 일곱 개다(`tests/test_ui_frame
 
 | 새 기능 | 자리 | id |
 | --- | --- | --- |
-| 앞바퀴 조향 수동 조종(구동 W/S, 조향 A/D·가운데, 계기) (UI-07) | 주행 제어 패널, 차동 부분(자율 순항속도 줄, 활성화, 속도, 패드) 다음 | `steerDrive` |
+| 앞바퀴 조향 수동 조종(구동 W/S, 조향 A/D·가운데, 계기) (UI-07) | 주행 제어 패널, 차동 부분(활성화, 속도, 패드. 옛 자율 순항속도 줄은 2026-11-22에 내림) 다음 | `steerDrive` |
 | 끌어서 조향 각(왼쪽·오른쪽으로 끄는 동안 그 각, 값 표시, 놓으면 0°) (2026-11-16, ESP32-S3) | 조향 패드 바로 아래, 계기 위 | 막대 `steerDrag`, 값 `steerDragValue` |
 | 조향 가변저항(측정 각도·원값·보정·조향 펌웨어 SMOOTH/PULSE·결함) | 주행 제어 패널, 자율 칸 바로 아래 | `steerPotPanel`, 펌웨어 줄 `firmwareText`(`static/steer/steer-sensor.mjs`) |
 | 조향 보정(접힌 칸: 지금 보정·가변저항·찾은 끝, 지금 위치를 가운데로 / 왼쪽 끝 찾기 / 오른쪽 끝 찾기 / 찾은 끝 적용(여유) / 기본값으로 되돌리기, 진행·결과, STOP) (2026-11-16, ESP32-S3 `CAL_RUNTIME` 펌웨어) | 주행 제어 패널, 조향 가변저항 바로 아래 | `steerCalPanel`, `static/steer/steer-calibration.mjs`(칸을 처음 열 때 읽음), `POST /api/rover/calibrate` |
