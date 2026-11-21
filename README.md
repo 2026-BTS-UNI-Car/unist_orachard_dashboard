@@ -8,7 +8,7 @@ UNIST BTS 과수원 로버의 웹 대시보드입니다. 차에 실린 Jetson에
 |---|---|
 | ![Rover Control, 노트북](docs/assets/screens/rover_control_1440.png) | ![Rover Control, 휴대폰](docs/assets/screens/rover_control_390.png) |
 
-[화면 · 모의 자료] 2026-11-21 판의 Rover Control 첫 화면(상태 띠, 탭 네 개, 수동 조종 탭). 화면 점검 도구의 모의 서버(`tools/ui_check`)가 내는 예시 자료로 찍었고 실제 센서 값이 아니다.
+[화면 · 모의 자료] 2026-11-22 판의 Rover Control 첫 화면(상태 띠, 탭 네 개, 수동 조종 탭). 화면 점검 도구의 모의 서버(`tools/ui_check`)가 내는 예시 자료로 찍었고 실제 센서 값이 아니다.
 
 ## 목차
 
@@ -75,8 +75,16 @@ UNIST BTS 과수원 로버의 웹 대시보드입니다. 차에 실린 Jetson에
 |---|---|---|
 | ![조향 패널](docs/assets/screens/rover_drive_390.png) | ![보정·설정 탭](docs/assets/screens/rover_setup_1440.png) | ![기록 탭](docs/assets/screens/rover_record_1440.png) |
 
-[화면 · 모의 자료] 2026-11-21, 조향 차량(`front_steer`) 화면. 주행 상태, 실행기 격자, 조향 각, 보정 값, 기록 목록은 모두 지어낸 값이다.
+[화면 · 모의 자료] 2026-11-22, 조향 차량(`front_steer`) 화면. 주행 상태, 실행기 격자, 조향 각, 보정 값, 기록 목록은 모두 지어낸 값이다.
 조정 묶음의 이름·범위·단위는 실행기가 알려 준 것을 그대로 보인다.
+
+### 다크 테마와 팀 로고
+
+![Rover Control, 다크 테마](docs/assets/screens/rover_control_1440_dark.png)
+
+[화면 · 모의 자료] 2026-11-22, 다크 테마의 같은 화면. 테마 스위치(사이드바 아래)로 고르고 그 브라우저에 남는다.
+사이드바 왼쪽 위의 로고는 팀 로고(UBTS)다. 라이트 테마는 원래 색 그대로, 다크 테마는 남색 차체와 글자를 밝은 색으로 바꾼 판을 쓴다
+(`static/assets/ubts-logo-light.png`, `ubts-logo-dark.png`, 각 약 3.5 kB, 그때 테마의 파일 하나만 받는다).
 
 ## 3. 주요 기능
 
@@ -155,7 +163,7 @@ PC에서 2.4 GHz 연결을 흉내 내는 시험대(`tools/slow_link`)로 재며 
 |---|---|
 | ![Wi-Fi 관리, 노트북](docs/assets/screens/network_wifi_1440.png) | ![Wi-Fi 시험 연결, 휴대폰](docs/assets/screens/network_wifi_390.png) |
 
-[화면 · 모의 자료] 2026-11-21. 지어낸 SSID·주소(문서 예시 대역)로 찍었고 실제 Jetson의 Wi-Fi 목록이 아니다.
+[화면 · 모의 자료] 2026-11-22. 지어낸 SSID·주소(문서 예시 대역)로 찍었고 실제 Jetson의 Wi-Fi 목록이 아니다.
 
 ## 4. 시스템 구성
 
@@ -343,6 +351,7 @@ CI(`.github/workflows/smoke.yml`)는 컴파일과 Python 시험을 돌린다. RO
 | 2026-11-17~19 | 거리 이동, Rover Control 탭 네 개, 자율주행 감시와 자동 기록, 기록 센서 고르기, 화면 위 '연결 끊김'이 남던 결함 고침 |
 | 2026-11-20 | 과수원 첫 자율주행(18번 출발). 현장에서 Jetson 시계 결함 고침, 밤에 브리지 연결 진단 기록 |
 | 2026-11-21 | 기록 재생이 지도를 기다리지 않게 고침, 격자 지도의 방향을 IMU로, 재생용 영상 줄 32, 끊긴 기록 마무리 도구 |
+| 2026-11-22 | README 정리, 사이드바의 임시 로버 아이콘을 팀 로고(라이트·다크 판)로 바꿈, README 화면 그림 다시 찍음 |
 
 ## 10. 라이선스
 

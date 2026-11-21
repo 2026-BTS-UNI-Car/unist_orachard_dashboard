@@ -198,7 +198,11 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
     // icon, the select arrow, the slider fill): data, not requests, each a named token of at most 1 kB.
     const urls = [...css.matchAll(/url\("([^"]*)"\)/g)].map(match => match[1]);
     assert.equal(urls.length, (css.match(/url\(/g) || []).length, 'every url() is double-quoted');
-    assert.deepEqual(urls.filter(url => !url.startsWith('data:')), fontFiles, 'the only file url() values are the interface font');
+    // Besides the font: the team logo of the sidebar (token --brand-logo, one PNG per theme, about 3.5 kB; only the
+    // current theme's file is requested). It is a picture of the organisation avatar and cannot be a 1 kB inline SVG.
+    assert.deepEqual(urls.filter(url => !url.startsWith('data:')),
+      [...fontFiles, '/static/assets/ubts-logo-light.png', '/static/assets/ubts-logo-dark.png'],
+      'the only file url() values are the interface font and the team logo');
     const pictures = urls.filter(url => url.startsWith('data:'));
     assert.ok(pictures.length >= 8, 'inline pictures');
     for (const url of pictures) {
