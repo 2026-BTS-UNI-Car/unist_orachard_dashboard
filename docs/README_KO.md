@@ -60,17 +60,10 @@
 | [cloudflared.md](cloudflared.md) | Cloudflare Tunnel 설정 | 일부 낡음(`docker compose up --build` 안내는 쓰지 않는다. 아래 주의 참고) |
 | [fan_control.md](fan_control.md) | Jetson 팬 자동/수동 PWM | 확인하지 않음(2026-06 작성) |
 
-## 차동 시절 관찰 묶음 (조향 실행기로 바뀔 때까지 둠)
+## 내린 차동 시절 관찰 묶음 (2026-11-22)
 
-차동 구동 시절의 관찰 코드다. 지금 차는 2026-11-16부터 ESP32-S3 조향 차이지만 이 코드는 지우지 않고 두었다. 옛 차(차동 V2)의 수동 주행과 설치된 native 관찰 이미지가 이 코드에 기댄다. 내리는 조건과 내릴 파일 목록은 [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 9절.
-
-| 위치 | 내용 |
-| --- | --- |
-| [C0_SOURCE_CONSOLIDATION.md](C0_SOURCE_CONSOLIDATION.md), [C0_SOURCE_SHA256.json](C0_SOURCE_SHA256.json) | 2026-10-26 관찰 소스 묶음(진행 중이던 정리)의 설명과 파일 92개의 SHA-256 |
-| [../deploy/native_sensor_stream/README.md](../deploy/native_sensor_stream/README.md) | native 관찰 서비스(LiDAR·IMU·GNSS 원본 CDR, 지도). Jetson 에 compose 밖 별도 컨테이너로 설치돼 있다(2026-10 기록) |
-| [../deploy/native_sensor_shadow/README.md](../deploy/native_sensor_shadow/README.md) | 물리 관찰기(항상 HOLD, 모터 경로 없음) |
-| `../dashboard_server/_field10/row_executor/` (`README_FIELD.txt`, `OPERATIONS.txt`, `TURN_ASSIST.txt`, `NATIVE_NAVIGATION_KO.md`) | 차동 구동 열 주행 실행기의 사본. 파일마다 `SHA256SUMS` 로 고정되어 있어, 고치면 `write_sha256sums.py` 로 다시 만든다 |
-| [../tools/native_overlay_v2/README.md](../tools/native_overlay_v2/README.md), [../tools/cartographer_incremental_capture/README.md](../tools/cartographer_incremental_capture/README.md), [../tools/gnss_receiver_utc/README.md](../tools/gnss_receiver_utc/README.md) | 관찰 묶음의 설치 도구와 실험 소스 |
+차동 구동 시절의 native 관찰 서비스, 옛 자율 감독기(`/api/autonomy/*`), 관찰 패널, 현장 준비 점검표, 차동 열 주행 실행기의 사본과 그 설치 도구는 공개 전 정리 때 레포에서 내렸다.
+내리기 전 트리는 커밋 `b6b9bac`에 있다. 내린 목록은 [HISTORY.md](HISTORY.md), 까닭과 남긴 것은 [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 9절.
 
 ## 레포의 다른 문서와 도구
 
@@ -88,7 +81,7 @@
 `docker-compose.yml` 은 대시보드와 ROS 센서·브리지·녹화기 서비스를 정의한다. 기록상(2026-10-13) Jetson 에는 그 밖에 다음이 따로 설치돼 있다. 이 레포의 compose 로는 만들어지지 않는다.
 
 - GNSS 시각 동기: `scripts/gnss_time_sync.py`(시계가 동기화되지 않았고 녹화·조종·지도가 쉬는 동안에만 GNSS UTC 로 한 번 맞춤)
-- native 관찰 서비스: `deploy/native_sensor_stream/`
+- native 관찰 서비스(2026-10 설치). 소스는 2026-11-22에 레포에서 내렸고 커밋 `b6b9bac`의 `deploy/native_sensor_stream/`에 있다
 
 주의: 차의 대시보드 컨테이너는 compose 로 다시 만들지 않는다. compose 파일이 가리키는 이미지가 설치된 이미지보다 오래되어, 다시 만들면 옛 화면으로 돌아간다.
 
@@ -101,7 +94,6 @@ for f in tests/test_*.js tests/test_*.mjs; do node "$f" >/dev/null 2>&1 || echo 
 ```
 
 - ROS 가 있어야 하는 시험은 ROS 없이 건너뛴다. CI 는 ROS 이미지 안에서 따로 돌린다(`.github/workflows/smoke.yml`).
-- `dashboard_server/_field10/row_executor/tests/` 는 실행기 묶음의 시험이다(`python3 -m pytest dashboard_server/_field10/row_executor/tests`, pytest 필요). 그중 `test_field1010_closed_loop.py`, `test_navigation_observation.py` 는 시뮬레이션 레포의 배치에서만 돌고 여기서는 건너뛴다.
 - `tests/test_image_copies.py` 는 compose 의 각 서비스가 import 하는 파일이 그 이미지에 복사되는지 본다. `Dockerfile.ros2` 에 스크립트를 더하면 COPY 줄도 같이 고친다.
 
 묶음별 시험(README에 있던 목록):

@@ -142,7 +142,10 @@ const NEW_TITLES = {
   for (const id of ['steerDrive', 'steerDistPanel', 'roverArmButton', 'roverStopButton', 'steerDistDirection']) {
     assert.ok(drive.includes(`id="${id}"`), `${id} is in the drive panel`);
   }
-  assert.ok(drive.indexOf('id="hardwareAutonomyPanel"') < drive.indexOf('id="roverArmButton"'), 'old order: autonomy row, arm, speed, pad');
+  // 2026-11-22: the old differential autonomy row (cruise speed, disabled start, field preparation list) left with the
+  // differential supervisor; the rest of the differential parts keep the old order: arm, speed, pad.
+  assert.ok(!drive.includes('id="hardwareAutonomyPanel"'), 'no old autonomy row');
+  assert.ok(drive.indexOf('id="roverArmButton"') < drive.indexOf('id="roverSpeedSlider"'), 'old order: arm, speed, pad');
   assert.ok(drive.indexOf('id="roverSpeedSlider"') < drive.indexOf('data-rover-drive="forward"'));
   assert.ok(drive.indexOf('data-rover-drive="forward"') < drive.indexOf('id="steerDrive"'), 'the steering panel after the differential parts');
   assert.match(drive, /<section class="panel-section" data-vehicle="front_steer" id="steerDistPanel">\n<div class="panel-head mini"><h3>거리 이동<\/h3>[^\n]*\n<details id="steerDistDetails">\n/,

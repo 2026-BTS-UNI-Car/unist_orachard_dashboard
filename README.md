@@ -123,6 +123,5 @@ for f in tests/test_*.js tests/test_*.mjs; do node "$f" >/dev/null 2>&1 || echo 
 | hls.js | `static/vendor/hls/` | Apache-2.0 |
 | MapLibre GL JS, PMTiles, Protomaps basemaps | `static/vendor/` | BSD-3-Clause (지도 모양 CC0) |
 | Pretendard, 본고딕(Source Han Sans) 계열 글꼴 | `static/vendor/ubts-sans/`, `static/vendor/korean-font/` | SIL Open Font License 1.1 |
-| 관찰 도구 두 개 | `tools/cartographer_incremental_capture/`, `tools/gnss_receiver_utc/` | Apache-2.0 |
 
 제3자 파일의 판과 출처 해시는 `static/vendor/gps-map-vendors.json`, `static/vendor/hls/provenance.json`에 있다.

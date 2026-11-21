@@ -378,7 +378,7 @@ def jetson(clock=None, old_files=None, extra=None):
     image = docker.add_image(files, config, tag='unist-orachard-dashboard:latest')
     host = dict(NetworkMode='host', RestartPolicy=dict(Name='unless-stopped', MaximumRetryCount=0),
                 Binds=['/home/unist/ws/runtime:/app/runtime'], Privileged=True, PidMode='host')
-    layer_only = {'/app/dashboard_server/_field10/local.json': b'{"local": true}\n'}
+    layer_only = {'/app/dashboard_server/layer_only/local.json': b'{"local": true}\n'}
     layer_only.update(extra or {})
     old = docker.add_container(NAME, 'unist-orachard-dashboard:latest', config, host, extra=layer_only)
     other = docker.add_container('unist-orachard-ros2-camera-bridge',
@@ -428,7 +428,7 @@ class DryRun(KitCase):
         self.assertIn('dashboard_server/app.py', text)
         self.assertIn('static/app/00-main.js', text)
         self.assertIn('static/app.js', text)  # deleted by the repository
-        self.assertIn('dashboard_server/_field10/local.json', text)  # writable-layer file kept
+        self.assertIn('dashboard_server/layer_only/local.json', text)  # writable-layer file kept
         self.assertNotIn('do-not-print', text)
 
     def test_dry_run_json_plan(self):
@@ -439,7 +439,7 @@ class DryRun(KitCase):
         self.assertEqual(plan['changed'], ['dashboard_server/app.py', 'static/index.html'])
         self.assertEqual(plan['added'], ['dashboard_server/static_assets.py', 'static/app/00-main.js'])
         self.assertEqual(plan['remove'], ['static/app.js'])
-        self.assertEqual(plan['stale'], ['dashboard_server/_field10/local.json'])
+        self.assertEqual(plan['stale'], ['dashboard_server/layer_only/local.json'])
         self.assertEqual(plan['new_dirs'], ['static/app'])
 
     def test_finds_dashboard_without_name(self):
@@ -462,7 +462,7 @@ class Apply(KitCase):
         for rel, body in NEW_FILES.items():
             self.assertEqual(files[rel], body, rel)
         self.assertNotIn('static/app.js', files)
-        self.assertEqual(files['dashboard_server/_field10/local.json'], b'{"local": true}\n')
+        self.assertEqual(files['dashboard_server/layer_only/local.json'], b'{"local": true}\n')
         self.assertEqual(files['dashboard_server/_native_raster.so'], b'\x7fELF')
         old = self.docker.inspect(self.old)
         self.assertTrue(old['Name'].startswith('/' + NAME + '-kept-'))

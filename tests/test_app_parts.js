@@ -24,7 +24,7 @@ const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(match =
 const first = scripts.indexOf(`/static/${listed[0]}`);
 assert.deepEqual(scripts.slice(first, first + listed.length), listed.map(part => `/static/${part}`), 'parts are consecutive');
 assert.ok(scripts.indexOf('/static/archive-video.js') < first, 'archive-video.js loads before the parts');
-for (const later of ['/static/field-preparation.js', '/static/gps-map.js', '/static/live-map.js', '/static/media-jobs.js']) {
+for (const later of ['/static/gps-map.js', '/static/live-map.js', '/static/media-jobs.js']) {
   assert.ok(scripts.indexOf(later) > first + listed.length - 1, `${later} loads after the parts`);
 }
 for (const part of listed) {

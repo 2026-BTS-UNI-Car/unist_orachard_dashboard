@@ -12,11 +12,12 @@ from urllib.error import HTTPError
 os.environ['DASHBOARD_LIVE_MAP_WORKER']='0'
 from dashboard_server import app
 from dashboard_server.live_mapping import LiveMapping
-from dashboard_server.autonomy_settings import AutonomySettings
 
 
 class Tests(unittest.TestCase):
-    def test_preflight_is_read_only_and_cannot_start_autonomy(self):
+    def test_old_supervisor_routes_are_gone_and_start_nothing(self):
+        # The differential-era supervisor, preflight and observation routes (/api/autonomy*) left on 2026-11-22;
+        # autonomy runs through the row executor relay (/api/executor/*).
         from dashboard_server.source_live_mapping import SourceLiveMapping
         with tempfile.TemporaryDirectory() as root:
             server=app.create_server('127.0.0.1',0)
@@ -28,15 +29,15 @@ class Tests(unittest.TestCase):
             opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
             url=f'http://127.0.0.1:{server.server_port}'
             try:
-                with opener.open(url+'/api/autonomy/preflight') as response:r=json.load(response)
-                self.assertFalse(r['autonomy_output_enabled']);self.assertIn('live_mapping_fresh',r['blocking'])
-                with opener.open(url+'/api/autonomy') as response:status=json.load(response)
-                self.assertIn('live_mapping_fresh',status['preparation']['blocking'])
-                self.assertFalse(status['runtime_authority'])
-                self.assertFalse(live.active)
-                with self.assertRaises(HTTPError) as error:
-                    opener.open(Request(url+'/api/autonomy/start',data=b'{}',headers={'Content-Type':'application/json'}))
-                self.assertEqual(error.exception.code,409)
+                with opener.open(url+'/api/live/map') as response:response.read()
+                for path in ('/api/autonomy','/api/autonomy/preflight','/api/autonomy/observe','/api/autonomy/supervisor',
+                             '/api/autonomy/native-map/status'):
+                    with self.assertRaises(HTTPError) as error:opener.open(url+path)
+                    self.assertEqual(error.exception.code,404,path)
+                for path in ('/api/autonomy/start','/api/autonomy/speed','/api/autonomy/observe/start'):
+                    with self.assertRaises(HTTPError) as error:
+                        opener.open(Request(url+path,data=b'{}',headers={'Content-Type':'application/json'}))
+                    self.assertEqual(error.exception.code,404,path)
                 self.assertFalse(live.active)
             finally:
                 server.shutdown();server.server_close();thread.join()
@@ -62,7 +63,7 @@ class Tests(unittest.TestCase):
             url=f'http://127.0.0.1:{server.server_port}'
             opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
             try:
-                with opener.open(url+'/api/autonomy') as response:response.read()
+                with opener.open(url+'/api/live/mapping-jobs') as response:response.read()
                 def post(path,payload,origin=None):
                     with opener.open(Request(url+path,data=json.dumps(payload).encode(),headers={'Content-Type':'application/json',**({'Origin':origin} if origin else {})})) as response:return json.load(response)
                 post('/api/live/map/start',{})
@@ -103,12 +104,11 @@ class Tests(unittest.TestCase):
             previous=app.DashboardHandler.archive_mapping
             app.DashboardHandler.archive_mapping=Archive()
             app.DashboardHandler.live_mapping=LiveMapping(root,start_worker=False)
-            app.DashboardHandler.autonomy_settings=AutonomySettings(Path(root)/'settings.json')
             thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
             url=f'http://127.0.0.1:{server.server_port}'
             opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
             try:
-                with opener.open(url+'/api/autonomy') as response:response.read()
+                with opener.open(url+'/api/live/map') as response:response.read()
                 def post(payload):
                     with opener.open(Request(url+'/api/live/recordings/record/map-playback',
                             data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})) as response:
@@ -132,23 +132,17 @@ class Tests(unittest.TestCase):
                 server.shutdown();server.server_close();thread.join()
                 app.DashboardHandler.archive_mapping=previous
 
-    def test_http_auth_settings_and_unqualified_start(self):
+    def test_http_auth_and_live_map_routes(self):
         with tempfile.TemporaryDirectory() as root:
             server=app.create_server('127.0.0.1',0)
             app.DashboardHandler.live_mapping=LiveMapping(root,start_worker=False)
-            app.DashboardHandler.autonomy_settings=AutonomySettings(Path(root)/'settings.json')
             thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
             url=f'http://127.0.0.1:{server.server_port}'
             opener=build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
             try:
-                with opener.open(url+'/api/autonomy') as response:
-                    self.assertFalse(json.load(response)['enabled'])
+                with opener.open(url+'/api/live/map') as response:response.read()
                 def post(path,data,origin=None):
                     return opener.open(Request(url+path,data=json.dumps(data).encode(),headers={'Content-Type':'application/json',**({'Origin':origin} if origin else {})}))
-                with post('/api/autonomy/speed',{'speed_percent':35}) as response:
-                    self.assertEqual(json.load(response)['speed_percent'],35)
-                with self.assertRaises(HTTPError) as error:post('/api/autonomy/start',{})
-                self.assertEqual(error.exception.code,409)
                 with self.assertRaises(HTTPError) as error:post('/api/live/map/start',{},'http://foreign.invalid')
                 self.assertEqual(error.exception.code,403)
                 with post('/api/live/map/start',{}) as response:self.assertTrue(json.load(response)['active'])

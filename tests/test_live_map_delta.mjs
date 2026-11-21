@@ -113,7 +113,7 @@ import {mergeLivePath,livePathQuery,livePollDelay,acceptLiveResponse,LIVE_MAP_TI
   await flush();await flush();
   assert.equal(vm.runInContext('live.snapshot.version',context),1);
   assert.ok(timers.at(-1).delay>=800,'not drawing: about 1 s between polls');
-  // /api/autonomy runs separately and never blocks the map poll.
-  assert.ok(calls.some(p=>p==='/api/autonomy'));
+  // The map poll asks for nothing else (the old /api/autonomy poll left with the differential supervisor, 2026-11-22).
+  assert.ok(!calls.some(p=>p.startsWith('/api/autonomy')));
 }
 console.log('live map delta tests passed');

@@ -9,8 +9,24 @@
 | `archive-before-cleanup-20261113` | `8b255e7` | 이 정리 직전의 트리. 아래 목록의 파일이 모두 들어 있다 |
 | `baseline-installed-20261025` | `b4746cd` | 2026-10-25 차에 설치된 판을 기준으로 맞춘 트리 |
 | `main-before-ui-20261112` | `3372139` | 화면 개편을 시작하기 전의 main(차동 구동 시절의 마지막 main) |
+| `archive-before-public-cleanup-20261122` | `b6b9bac` | 공개 전 정리(2026-11-22) 직전의 트리. 아래 2026-11-22 목록의 파일이 모두 들어 있다 |
 
-태그가 원격에 올라가 있는지는 `git ls-remote --tags origin`으로 확인한다.
+태그가 원격에 올라가 있는지는 `git ls-remote --tags origin`으로 확인한다. 태그가 없어도 커밋 `b6b9bac`는 main 이력에 있다.
+
+## 내린 것 (2026-11-22, 공개 전 정리)
+
+| 묶음 | 파일 | 무엇 |
+| --- | ---: | --- |
+| 차동 시절 관찰·옛 자율 감독기 | 229 | `dashboard_server/_field10/`(차동 열 주행 실행기 사본), `deploy/native_sensor_stream/`, `deploy/native_sensor_shadow/`, `tools/native_overlay_v2/`, `tools/cartographer_incremental_capture/`, `tools/gnss_receiver_utc/`, `docs/C0_SOURCE_*`, 서버 모듈 11개(`autonomy_*`, `native_autonomy_*`, `native_observation_client`, `native_owner_lifecycle`, `field10_shadow*`, `field_preflight`, `encoderless_drive_preview`, `record_based_autonomy`), `static/field-preparation.js`, `static/native-accepted-map.mjs`, `config/field_autonomy_preparation.json`, 딸린 시험. 까닭은 [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 9절 |
+| 옛 배포 절차 | 3 | `scripts/deploy_raw_dashboard.py`, 그 시험, 이를 안내만 하던 `deploy` 워크플로. 설치는 `deploy/jetson_dashboard` 설치기만 쓴다 |
+| 일회성 스크립트 | 5 | `scripts/` 의 `sync_to_jetson.sh`, `jetson_dashboard_remote_restart.sh`(설치기를 거치지 않는 옛 배포), `run_data_recorder_tests.sh`, `add_native_camera_source.py`, `verify_adaptive_recording.py` |
+| 보고 문서 | 2 | `raw_sensor_dashboard.md`(영상 인식을 걷어 낸 변경 보고), `camera_ack_window_v2.md`(설치·검증 보고. 전송창 V2 계약은 [stream_latency.md](stream_latency.md)로 옮김) |
+| 화면 점검의 옛 기록 | 2 | `tools/ui_check/baseline/ui_check.json`(UI 개편 전, 90쪽), `tools/ui_check/accepted/six_screens_20261113.json`(화면 6개 구성, 110쪽) |
+| 그 밖 | 1 | `tests/test_dashboard_server_lifecycle_runtime.py`(옛 관찰 작업자의 수명 시험) |
+
+```bash
+git ls-tree -r --name-only archive-before-public-cleanup-20261122 deploy/native_sensor_stream   # 태그가 없으면 b6b9bac
+```
 
 ## 읽는 방법
 

@@ -288,10 +288,9 @@ const light = block(':root'), dark = {...light, ...block(':root[data-theme="dark
     // 14-steer.js: the small loader of the front-steer screens (UI-07/08/12); their modules (static/steer/) are
     // fetched only on a front-steer dashboard or on the tuning page, so the differential first load stays as it was.
     '/static/app/14-steer.js', '/static/app/99-main.js',
-    '/static/field-preparation.js',
     '/static/gps-map.js', '/static/live-map.js', '/static/media-jobs.js',
   ], 'files that index.html loads');
-  // One page sheet: the map, preparation and media job rules live in styles.css (four requests fewer).
+  // One page sheet: the map and media job rules live in styles.css (four requests fewer).
   assert.deepEqual(pageSheets, ['styles.css'], 'page style sheets');
   // The markup itself brings no picture: an <img> gets its source from a live stream or a recording.
   for (const match of html.matchAll(/<img\b[^>]*>/g)) assert.doesNotMatch(match[0], /\bsrc=/, `image loaded with the page: ${match[0]}`);

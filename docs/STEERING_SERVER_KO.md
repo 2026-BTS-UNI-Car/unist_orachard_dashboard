@@ -23,7 +23,7 @@ flowchart LR
 
 - 수동 조종은 지금처럼 대시보드 → 브리지 한 줄 소켓이다. 바뀌는 것은 요청의 칸뿐이다(3절).
 - 자율주행은 실행기가 브리지 lease를 잡고 몬다. 대시보드는 실행기 운영자 HTTP를 대신 부른다(6절). 토큰은 대시보드 서버만 읽고 화면에 내보내지 않는다.
-- 차동 시기의 옛 감독기 경로 `/api/autonomy/*`와 섞지 않는다. 새 경로 이름은 `/api/executor/*`다.
+- 자율 경로 이름은 `/api/executor/*`다. 차동 시기의 옛 감독기 경로 `/api/autonomy/*`는 2026-11-22에 내렸다(9절).
 
 ## 2. 차량 종류와 확장 지점 (D-12와 같이 본다)
 
@@ -256,18 +256,16 @@ stateDiagram-v2
 
 ## 9. 차동 판과의 공존
 
-**결정(todo 결정 나5, D-14): 차동(좌우 PWM) 전제 자율·관찰 코드는 조향 펌웨어가 차에 올라가 조향 실행기로 바뀔 때까지 둔다.**
-까닭: 차에 조향 펌웨어 V3가 올라가기 전까지는 지금 차(차동 펌웨어 V2)로 수동 주행이 되어야 하고, Jetson에 설치된 native 관찰 이미지의 원본이 이 코드다.
-바뀌면 태그에 보존한 뒤 내린다. 이 결정은 2026-11-13 묶음 S6에서 다시 확인했다(코드는 그대로 둠).
+**2026-11-22: 차동(좌우 PWM) 전제의 옛 자율·관찰 코드를 내렸다(공개 전 정리).** 처음 결정(todo 결정 나5, D-14)은 조향 펌웨어가 차에 올라가 조향 실행기로 바뀔 때까지 두는 것이었다.
+내리는 조건 셋 중 (2) 조향 수동 확인과 (3) 조향 실행기 설치·자율 시작·정지 확인은 2026-11-18~20 현장에서 채워졌고, (1) 은 V3 브리지 대신 ESP32-S3 브리지(`scripts.esp32_steer_bridge`)가 되었다.
+내리기 전 트리는 커밋 `b6b9bac`(보존 태그 `archive-before-public-cleanup-20261122`)에 있다. Jetson에 설치된 native 관찰 이미지는 그 커밋에서 다시 빌드한다.
 
-- 그때까지 그대로 두는 것: 차동 패드와 `left`/`right` 명령, 옛 감독기 `/api/autonomy/*`, 관찰 패널, 현장 준비 점검표. 이력 경로이며 조향 차량(`front_steer`)에서는 쓰지 않는다.
-- `DASHBOARD_VEHICLE=differential`(기본)에서 화면과 서버 동작은 이 사양 전과 같다. 새 자율·조정 칸은 실행기 설정이 없으면 "설정 없음"만 보인다.
-- `front_steer`에서는 차동 패드와 옛 자율 자리 패널을 숨기고 조향 패널을 보인다. 옛 경로 자체는 남는다.
-- 내리는 조건(모두): (1) Jetson에 V3 펌웨어와 조향 브리지(`scripts.steer_rover_bridge`, serial)가 설치되어 상태에 `steering` 블록이 나온다, (2) 사용자가 현장에서 조향 수동 조종을 확인했다, (3) 조향 실행기가 Jetson에 설치되어 자율 시작·정지를 확인했다. 셋이 채워지면 나5에 따라 내린다.
-- 내릴 묶음(세 묶음을 같이 내린다): 서버 `dashboard_server/` 의 `autonomy_settings`, `autonomy_observation`, `record_based_autonomy`, `native_autonomy_application`, `native_autonomy_supervisor`, `native_observation_client`, `native_owner_lifecycle`, `field10_shadow`, `field10_shadow_preflight`, `field_preflight`, `encoderless_drive_preview`, `_field10/`;
-  화면 `static/field-preparation.js`, `static/native-accepted-map.mjs`, `index.html` 의 옛 자율·관찰 패널; `deploy/native_sensor_stream/`, `deploy/native_sensor_shadow/`, `tools/native_overlay_v2/`, `tools/cartographer_incremental_capture/`, `tools/gnss_receiver_utc/`, `docs/C0_SOURCE_*`.
-  `body_feedback` 은 실시간 지도(`source_live_mapping`)도 쓰므로 남긴다. 내리기 전에 import 그래프를 다시 뽑아 끊긴 참조가 없는지 본다.
-- 내리는 방법: 태그(예: `archive-differential-<날짜>`)로 보존 → app.py 의 import·경로·`DashboardServer` 인자와 관련 시험을 함께 바꿈 → 전체 시험과 화면 점검 → 설치 묶음. Jetson의 native 관찰 이미지는 그 태그에서 다시 빌드할 수 있어야 한다.
+- 내린 것: 서버 `dashboard_server/` 의 `autonomy_settings`, `autonomy_observation`, `record_based_autonomy`, `native_autonomy_application`, `native_autonomy_supervisor`, `native_observation_client`, `native_owner_lifecycle`, `field10_shadow`, `field10_shadow_preflight`, `field_preflight`, `encoderless_drive_preview`, `_field10/`;
+  화면 `static/field-preparation.js`, `static/native-accepted-map.mjs`, `index.html` 의 옛 자율 순항속도·현장 준비 점검표 칸; `config/field_autonomy_preparation.json`; `deploy/native_sensor_stream/`, `deploy/native_sensor_shadow/`, `tools/native_overlay_v2/`, `tools/cartographer_incremental_capture/`, `tools/gnss_receiver_utc/`, `docs/C0_SOURCE_*` 와 딸린 시험.
+  옛 감독기 경로 `/api/autonomy/*` 는 이제 404 다.
+- 남긴 것: 차동 패드와 `left`/`right` 명령(옛 차동 V2 차의 수동 조종, 팀이 정할 일), `body_feedback`(실시간 지도 `source_live_mapping` 이 쓴다).
+  수동 조종·조향 보정·거리 이동 경로가 "모터를 가진 자율 실행" 에게 양보하는 자리(`DashboardHandler.autonomy_supervisor`, 기본 `None`)는 조종 경로를 바꾸지 않으려고 그대로 두었다. 지금 이 자리를 채우는 것은 없다.
+- `DASHBOARD_VEHICLE=differential`(기본)에서는 차동 패드가 보이고, 새 자율·조정 칸은 실행기 설정이 없으면 "설정 없음"만 보인다. `front_steer`에서는 차동 패드를 숨기고 조향 패널을 보인다.
 
 ## 10. 미정 값
 

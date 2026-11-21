@@ -676,16 +676,6 @@
 <button class="action-button danger" id="roverStopButton" type="button">STOP</button>
 </div>
 </div>
-<div class="sim-autonomy-controls" data-vehicle="differential" id="hardwareAutonomyPanel">
-<label for="hardwareAutonomySpeed">자율주행 순항속도 <strong id="hardwareAutonomySpeedValue">--</strong></label>
-<input id="hardwareAutonomySpeed" type="range" min="0" max="100" step="5" value="100"/>
-<button class="action-button secondary" disabled="" type="button">자율주행 시작 (검증 대기)</button>
-<p class="sim-map-status" id="hardwareAutonomyStatus" role="status">아직 검증 전입니다. 속도 설정은 저장됩니다.</p>
-<details class="field-preparation" id="fieldPreparationPanel">
-<summary>현장 시험 준비 (점검 자료 수신 대기)</summary>
-<ul data-preparation-checks=""></ul>
-</details>
-</div>
 <div class="rover-arm-controls" data-vehicle="differential">
 <button aria-pressed="false" class="action-button primary" id="roverArmButton" type="button">조종 활성화 OFF</button>
 </div>
@@ -1063,7 +1053,6 @@
 <script src="/static/app/13-charts-canvas.js"></script>
 <script src="/static/app/14-steer.js"></script>
 <script src="/static/app/99-main.js"></script>
-<script src="/static/field-preparation.js"></script>
 <script src="/static/gps-map.js" type="module"></script>
 <script src="/static/live-map.js" type="module"></script>
 <script src="/static/media-jobs.js"></script>

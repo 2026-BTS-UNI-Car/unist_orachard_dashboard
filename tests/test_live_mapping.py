@@ -4,7 +4,6 @@ import unittest
 from pathlib import Path
 import numpy as np
 from dashboard_server.live_mapping import LiveMapping, attitude, translation
-from dashboard_server.autonomy_settings import AutonomySettings
 from dashboard_server.archive_mapping import ArchiveMapping,renderer_snapshot
 
 
@@ -128,17 +127,6 @@ class Tests(unittest.TestCase):
         np.testing.assert_allclose(shift,[.08,-.04],atol=.01)
         line=np.column_stack((np.linspace(-4,4,200),np.zeros(200)))
         with self.assertRaises(ValueError):translation(line,line,0)
-
-    def test_settings_are_persistent_and_invalid_values_do_not_write(self):
-        with tempfile.TemporaryDirectory() as root:
-            path=Path(root)/'settings.json';settings=AutonomySettings(path)
-            settings.set_speed(45);before=path.read_bytes()
-            for value in (True,-1,101,'50',math.nan,math.inf):
-                with self.assertRaises(ValueError):settings.set_speed(value)
-                self.assertEqual(path.read_bytes(),before)
-            status=AutonomySettings(path).status()
-            self.assertEqual(status['speed_percent'],45)
-            self.assertFalse(status['enabled']);self.assertFalse(status['motor_command'])
 
     def test_archive_rejects_traversal_and_symlinks(self):
         with tempfile.TemporaryDirectory() as root:

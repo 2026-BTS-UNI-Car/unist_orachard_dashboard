@@ -343,27 +343,6 @@ def _empty_telemetry(now: float) -> dict:
     }
 
 
-PREPARATION_CHECK_IDS = [
-    "profile",
-    "native_sources",
-    "body_dimensions",
-    "sensor_extrinsics",
-    "planar_envelope",
-    "body_velocity_feedback",
-    "physical_emergency_stop",
-    "braking",
-    "october_source_review_complete",
-    "september_orchard_review_complete",
-    "current_vehicle_localization_validated",
-    "live_latency_under_load_validated",
-    "obstacle_and_unknown_space_stop_validated",
-    "row_end_and_turn_space_validated",
-    "manual_takeover_verified",
-    "work_boundary_defined",
-    "live_mapping_fresh",
-]
-
-
 def _stress_recordings() -> list:
     rows = []
     for index in range(30):
@@ -602,16 +581,6 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
             "/api/live/map": {"ok": True, "state": "idle", "active": False, "map_epoch": "mock-empty", "version": 0, "scan_count": 0},
             "/api/live/mapping-jobs": {"ok": True, "resources": {}, "jobs": []},
             "/api/network/wifi": {"ok": False, "enabled": False, "state": "disabled", "saved": [], "scan": None},
-            "/api/autonomy": {"ok": True, "speed_percent": 0, "message": "mock: 실차 자동 구동 보류", "preparation": None},
-            "/api/autonomy/observe": {
-                "ok": True,
-                "runtime_authority": False,
-                "motor_command_sent": False,
-                "autonomy_output_enabled": False,
-                "active": False,
-                "state": "idle",
-                "current_decision": {},
-            },
             "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
             "/api/rover/status": _steer_rover_status(dataset, now),
             "/api/executor/status": _executor_status(dataset, now),
@@ -619,7 +588,6 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
             "/api/executor/tuning/log": _tuning_log(dataset, now),
             "/api/rover/distance": _distance_view(dataset),
         }
-    checks = [{"id": key, "passed": index % 3 == 0} for index, key in enumerate(PREPARATION_CHECK_IDS)]
     return {
         "/api/health": {"ok": True, "mock": True},
         "/api/telemetry": _stress_telemetry(now),
@@ -673,24 +641,6 @@ def http_payloads(dataset: str, now: float | None = None) -> dict:
                 }
                 for index in range(4)
             ],
-        },
-        "/api/autonomy": {
-            "ok": True,
-            "speed_percent": 30,
-            "message": "mock: 실차 자동 구동 보류 · 점검용으로 지어낸 긴 안내 문장이 여기에 이어진다",
-            "preparation": {"schema": "ubts.field_preflight.v1", "checks": checks},
-        },
-        "/api/autonomy/observe": {
-            "ok": True,
-            "runtime_authority": False,
-            "motor_command_sent": False,
-            "autonomy_output_enabled": False,
-            "active": False,
-            "state": "idle",
-            "speed_percent": 30,
-            "cruise_percent": 20,
-            "first_failure_reason": "mock_reason_with_a_long_identifier_for_layout_check_and_no_spaces_inside_it",
-            "current_decision": {"decision": "HOLD", "proposed_left_percent": 0, "proposed_right_percent": 0},
         },
         "/api/maps/status": {"ok": False, "error": "mock: 오프라인 지도 파일 없음"},
         "/api/rover/status": _steer_rover_status(dataset, now),

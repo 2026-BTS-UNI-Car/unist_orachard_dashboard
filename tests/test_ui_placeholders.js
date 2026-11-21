@@ -12,7 +12,7 @@ const between = (begin, end) => { const a = source.indexOf(begin), b = source.in
 
 (async () => {
   // The page as delivered shows "--" where a value has to come from the server.
-  for (const id of ['cameraResolutionValue', 'cameraFpsValue', 'roverCameraResolutionValue', 'roverCameraFpsValue', 'hardwareAutonomySpeedValue']) {
+  for (const id of ['cameraResolutionValue', 'cameraFpsValue', 'roverCameraResolutionValue', 'roverCameraFpsValue']) {
     const match = html.match(new RegExp(`id="${id}"[^>]*>([^<]*)<`));
     assert.ok(match, id);
     assert.equal(match[1], '--', `${id} must not start with an invented value`);
@@ -81,13 +81,6 @@ const between = (begin, end) => { const a = source.indexOf(begin), b = source.in
     assert.deepEqual([...lookups].filter(id => !ids.has(id) && !created.has(id)).sort(), [], 'app.js refers to an element that is not in index.html');
   }
 
-  // The observation map buttons use the dashboard button style (they had none).
-  {
-    const nativeMap = read('native-accepted-map.mjs');
-    assert.match(nativeMap, /for\(const button of \[start,stop,fresh\]\)button\.className='action-button secondary';/);
-    assert.match(nativeMap, /actions\.className='field-observation-actions';actions\.append\(start,stop,fresh\);/);
-    assert.match(read('styles.css'), /\.field-observation-actions\s*\{[^}]*gap:/);
-  }
   // S33: the container log box is refreshed every 2.5 s; unchanged text is not rewritten
   // (a rewrite replaces the text node and drops the reader's selection).
   {
@@ -107,5 +100,5 @@ const between = (begin, end) => { const a = source.indexOf(begin), b = source.in
     context.renderContainerDetail(detail, {ok: false, error: 'gone'});
     assert.match(content, /로그를 읽지 못했습니다. gone/);
   }
-  console.log('PASS: placeholders until the server answers, defined CSS variables, existing element ids, styled observation buttons, log box rewrite');
+  console.log('PASS: placeholders until the server answers, defined CSS variables, existing element ids, log box rewrite');
 })().catch(error => { console.error(error); process.exitCode = 1; });
