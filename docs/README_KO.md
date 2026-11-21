@@ -24,6 +24,7 @@
 | [stream_latency.md](stream_latency.md) | 카메라·LiDAR·IMU 실시간 전송, 프레임 간격, ACK | 현재 |
 | [camera_ack_window_v2.md](camera_ack_window_v2.md) | 카메라 전송창 V2 적용과 검증(2026-10-25 설치) | 현재 |
 | [CAMERA_ORIGINAL1080_PREVIEW.md](CAMERA_ORIGINAL1080_PREVIEW.md) | 원본 1080 JPEG 실시간 표시(2026-10-25 설치), 끄는 주소 옵션 | 현재 |
+| [GRID_MAP_KO.md](GRID_MAP_KO.md) | 격자 지도를 그리는 법(쓰는 센서, 위치 추정 순서), 2026-11-21 방향 추정 변경(IMU 방향을 따름)과 과수원 기록으로 잰 결과, 조향 값을 쓰지 않는 까닭, 한계. 확인 도구 `tools/map_check/` | 현재(2026-11-21) |
 | [grid_cell_transport.md](grid_cell_transport.md) | 격자 지도를 셀 숫자로 보내고 브라우저가 그리는 형식 | 현재 |
 | [slow_link.md](slow_link.md) | 느린 2.4 GHz 연결: 시험대, 기준 측정, 원인, 목표 32개, 고친 뒤와 최종 측정(12절) | 현재 |
 | [WIFI_AP_CHECKLIST_KO.md](WIFI_AP_CHECKLIST_KO.md) | 차의 무선 AP 현장 점검표(채널·대역·출력·안테나·거리), 현장 연결 기록(`?link_log=1`)과 등급 경계 다시 맞추기 | 현재 |
