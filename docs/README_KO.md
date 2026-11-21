@@ -131,5 +131,8 @@ python -B tools/slow_link/compare.py --run <결과 폴더>
 | `LIDAR_WS_UPSTREAM`, `CAMERA_WS_UPSTREAM`, `IMU_WS_UPSTREAM`, `GPS_WS_UPSTREAM` | 센서 브리지 WebSocket 주소 |
 | `DASHBOARD_MODE` | `live`(기본) / `simulation`(시뮬레이션 확장을 꽂을 때, [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 2절) |
 | `RECORDER_MEDIA_QUEUE_MAX_JOBS` | 녹화기의 재생용 영상 대기 줄 길이(기본 32, 최대 64) |
+| `DASHBOARD_PUBLIC_HOST` | Overview 서비스 줄에 보일 Cloudflare 터널의 공개 주소(팀 서버 주소, 설정값). 없으면 주소 없이 보인다 |
+| `DASHBOARD_WORKSPACE_DIR` | 디스크 사용량에 더 보일 호스트의 작업 폴더(절대 경로). 없으면 `/`만 |
 
 `docker-compose.yml`은 서비스 구성(대시보드, 센서 드라이버와 브리지, 조종 브리지, 녹화기)을 적은 것이다. 빈 PC에서 전체를 처음 띄울 때의 참고로만 쓴다.
+장치 일련번호는 레포에 적지 않는다: `.env`에 `LIDAR_USB_DEVICE`(LiDAR 직렬 변환기의 by-id 경로), `ROVER_ESP32_IDENTITY`·`ROVER_ESP32_DEVICE`(ESP32-S3 보드의 udev ID_SERIAL과 by-id 경로)를 적는다. 없으면 장치가 없는 자리표시 경로라 그 서비스가 뜨지 않는다.

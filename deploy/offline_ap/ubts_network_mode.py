@@ -60,6 +60,11 @@ DNSMASQ_CONFIG = Path("/run/ubts-offline-ap/dnsmasq.conf")
 DNSMASQ_UNIT = "ubts-offline-ap-dnsmasq.service"
 PROXY_IMAGE = os.environ.get("UBTS_OFFLINE_PROXY_IMAGE", "nginx:stable-alpine")
 PORTAINER_TLS_NAME = os.environ.get("UBTS_PORTAINER_TLS_NAME", "localhost")
+# Host names the AP's local DNS answers with the AP address and the proxy serves (/etc/ubts-network-mode.conf).
+# The defaults are reserved example names; set the real ones on the vehicle.
+DASHBOARD_HOSTNAME = os.environ.get("UBTS_AP_DASHBOARD_HOSTNAME", "dashboard.example.invalid")
+PORTAINER_HOSTNAME = os.environ.get("UBTS_AP_PORTAINER_HOSTNAME", "docker.example.invalid")
+SSH_HOSTNAME = os.environ.get("UBTS_AP_SSH_HOSTNAME", "ssh.example.invalid")
 AP_IDLE_S = max(10, int(os.environ.get("UBTS_AP_IDLE_SECONDS", "60")))
 WIFI_SCAN_S = max(10, int(os.environ.get("UBTS_WIFI_SCAN_SECONDS", "60")))
 POLL_S = max(0.5, float(os.environ.get("UBTS_NETWORK_POLL_SECONDS", "1")))
@@ -316,6 +321,9 @@ def ensure_ap_profile() -> str:
 def render_dnsmasq() -> None:
     template = (OFFLINE_AP_DIR / "dnsmasq.conf.template").read_text(encoding="utf-8")
     rendered = template.replace("${AP_INTERFACE}", INTERFACE)
+    for placeholder, name in (("${DASHBOARD_HOSTNAME}", DASHBOARD_HOSTNAME), ("${PORTAINER_HOSTNAME}", PORTAINER_HOSTNAME),
+                              ("${SSH_HOSTNAME}", SSH_HOSTNAME)):
+        rendered = rendered.replace(placeholder, name)
     atomic_write(DNSMASQ_CONFIG, rendered, 0o600)
 
 
@@ -331,11 +339,14 @@ def proxy_environment() -> dict[str, str]:
         digest.update(path.read_bytes())
     image_id = run(["docker", "image", "inspect", "-f", "{{.Id}}", PROXY_IMAGE]).stdout.strip()
     digest.update(f"proxy-image={PROXY_IMAGE}\nproxy-image-id={image_id}\nportainer-tls-name={PORTAINER_TLS_NAME}\n".encode())
+    digest.update(f"dashboard-hostname={DASHBOARD_HOSTNAME}\nportainer-hostname={PORTAINER_HOSTNAME}\n".encode())
     environment = os.environ.copy()
     environment.update(
         {
             "AP_ADDRESS": AP_ADDRESS,
             "PORTAINER_TLS_NAME": PORTAINER_TLS_NAME,
+            "DASHBOARD_HOSTNAME": DASHBOARD_HOSTNAME,
+            "PORTAINER_HOSTNAME": PORTAINER_HOSTNAME,
             "UBTS_PROXY_CONFIG_FINGERPRINT": digest.hexdigest(),
             "UBTS_OFFLINE_PROXY_IMAGE": PROXY_IMAGE,
         }
@@ -1174,12 +1185,14 @@ class Controller:
         render_dnsmasq()
         run(["systemctl", "restart", DNSMASQ_UNIT])
         compose("up", "-d", "--wait", "--wait-timeout", "30")
-        for hostname in ["bts.sarihub.com", "bts-docker.sarihub.com", "jetson-ssh.sarihub.com"]:
+        for hostname in [DASHBOARD_HOSTNAME, PORTAINER_HOSTNAME, SSH_HOSTNAME]:
             answer = run(["dig", "+short", f"@{AP_ADDRESS}", hostname, "A"]).stdout.strip()
             if answer != AP_ADDRESS:
                 raise CommandError(f"local DNS validation failed for {hostname}")
-        run(["curl", "-fsS", "--max-time", "3", "--resolve", f"bts.sarihub.com:80:{AP_ADDRESS}", "http://bts.sarihub.com/api/health"])
-        run(["curl", "-fsS", "--max-time", "3", "--resolve", f"bts-docker.sarihub.com:80:{AP_ADDRESS}", "http://bts-docker.sarihub.com/api/status"])
+        run(["curl", "-fsS", "--max-time", "3", "--resolve", f"{DASHBOARD_HOSTNAME}:80:{AP_ADDRESS}",
+             f"http://{DASHBOARD_HOSTNAME}/api/health"])
+        run(["curl", "-fsS", "--max-time", "3", "--resolve", f"{PORTAINER_HOSTNAME}:80:{AP_ADDRESS}",
+             f"http://{PORTAINER_HOSTNAME}/api/status"])
         self.mode = "ap"
         self.transition = ""
         self.last_error = ""

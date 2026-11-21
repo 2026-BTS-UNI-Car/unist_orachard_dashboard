@@ -134,7 +134,7 @@ class FakeDocker:
     def __init__(self):
         self.containers = {
             DASH_ID: container(DASH_ID, inst.DASHBOARD_NAME, 'sha256:' + 'e' * 64, ['DASHBOARD_PORT=8080'],
-                               [('/home/unist/ws/runtime', '/app/runtime'), ('/run/ubts-rover', '/run/ubts-rover')]),
+                               [('/home/rover/ws/runtime', '/app/runtime'), ('/run/ubts-rover', '/run/ubts-rover')]),
             LIDAR_ID: container(LIDAR_ID, inst.ROS_REFERENCE, 'sha256:' + 'b' * 64, ['ROS_DOMAIN_ID=0'])}
         self.images = {inst.IMAGE: {'Id': inst.IMAGE, 'Architecture': 'arm64', 'RepoTags': ['ubts-c0:x'],
                                     'Config': {'Env': ['ROS_DISTRO=iron']}}}
@@ -217,7 +217,7 @@ class KitCase(unittest.TestCase):
         self.kit = write_kit(os.path.join(self.tmp.name, 'kit'))
         self.state = os.path.join(self.tmp.name, 'state')
         self.docker = FakeDocker()
-        self.host = FakeHost('/home/unist')
+        self.host = FakeHost('/home/rover')
         self.clock = [0.]
 
     def tearDown(self):
@@ -239,7 +239,7 @@ class KitCase(unittest.TestCase):
         return installer.apply(), installer
 
     def link(self):
-        return '/home/unist/ws/runtime/row_executor/dashboard_link.json'
+        return '/home/rover/ws/runtime/row_executor/dashboard_link.json'
 
 
 class DryRunAndRefusals(KitCase):
@@ -302,7 +302,7 @@ class Install(KitCase):
         self.assertNotIn('--motor-output', cmd)
         binds = spec['HostConfig']['Binds']
         self.assertFalse(any('/run/ubts-rover' in b for b in binds))
-        self.assertIn('/home/unist/ws/runtime/row_executor:/run/ubts-row-executor-link:rw', binds)
+        self.assertIn('/home/rover/ws/runtime/row_executor:/run/ubts-row-executor-link:rw', binds)
         self.assertTrue(any(b.endswith(':/opt/ubts/row_executor:ro') for b in binds))
         self.assertEqual((spec['HostConfig']['NetworkMode'], spec['HostConfig']['IpcMode']), ('host', 'host'))
         self.assertEqual(spec['HostConfig']['CpuShares'], inst.CONTROL_CPU_SHARES)   # 2026-11-19 CPU weight
@@ -310,7 +310,7 @@ class Install(KitCase):
         link = json.loads(self.host.files[self.link()])
         self.assertEqual((link['url'], link['token_file']),
                          ('http://127.0.0.1:8097', '/app/runtime/row_executor/operator_token.txt'))
-        self.assertEqual(self.host.files['/home/unist/ubts-row-executor/state/field_tuning.json'],
+        self.assertEqual(self.host.files['/home/rover/ubts-row-executor/state/field_tuning.json'],
                          b'{"schema": "ubts.field_tuning.v1"}\n')
         receipt = json.dumps(installer.receipt, default=str)
         self.assertNotIn(TOKEN, receipt)
@@ -321,9 +321,9 @@ class Install(KitCase):
         self.assertEqual(preflight['State']['Status'], 'exited')   # kept
 
     def test_field_tuning_of_earlier_runs_is_kept(self):
-        self.host.files['/home/unist/ubts-row-executor/state/field_tuning.json'] = b'{"tuned": 1}\n'
+        self.host.files['/home/rover/ubts-row-executor/state/field_tuning.json'] = b'{"tuned": 1}\n'
         self.assertEqual(self.install()[0], 0)
-        self.assertEqual(self.host.files['/home/unist/ubts-row-executor/state/field_tuning.json'], b'{"tuned": 1}\n')
+        self.assertEqual(self.host.files['/home/rover/ubts-row-executor/state/field_tuning.json'], b'{"tuned": 1}\n')
 
     def test_link_waits_for_fresh_sensors_and_a_failed_ready_restores(self):
         self.host.rates = (0, 33)                     # no /scan
@@ -377,7 +377,7 @@ class Install(KitCase):
                  ('token_of_the_new_executor', lambda: setattr(self.docker, 'old_tokens', ['old-' + 'y' * 24] * 99)))
         for waiting, setup in cases:
             with self.subTest(waiting=waiting):
-                self.docker, self.host = FakeDocker(), FakeHost('/home/unist')
+                self.docker, self.host = FakeDocker(), FakeHost('/home/rover')
                 setup()
                 code, installer = self.install()
                 self.assertEqual((code, installer.receipt['error']['code']), (1, 'ready_timeout'))

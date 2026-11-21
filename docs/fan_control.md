@@ -49,13 +49,13 @@ Dashboard는 `HOST_SYS` 환경 변수를 우선 사용하고, 없으면 `/sys`�
 cat /sys/class/hwmon/hwmon*/name
 systemctl is-active nvfancontrol
 cat /sys/class/hwmon/hwmon0/pwm1
-curl https://bts.sarihub.com/api/fan/status
+curl https://<대시보드 공개 주소>/api/fan/status
 ```
 
 수동 PWM 확인:
 
 ```bash
-curl -X POST https://bts.sarihub.com/api/fan/pwm \
+curl -X POST https://<대시보드 공개 주소>/api/fan/pwm \
   -H 'Content-Type: application/json' \
   --data '{"pwm":160}'
 ```
@@ -63,7 +63,7 @@ curl -X POST https://bts.sarihub.com/api/fan/pwm \
 자동 모드 전환:
 
 ```bash
-curl -X POST https://bts.sarihub.com/api/fan/mode \
+curl -X POST https://<대시보드 공개 주소>/api/fan/mode \
   -H 'Content-Type: application/json' \
   --data '{"auto":true}'
 ```

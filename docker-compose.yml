@@ -86,7 +86,9 @@ services:
       LIDAR_FRAME_ID: "${LIDAR_FRAME_ID:-laser}"
       LIDAR_SCAN_MODE: "${LIDAR_SCAN_MODE:-DenseBoost}"
     devices:
-      - "${LIDAR_USB_DEVICE:-/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_121a995f106ff011adae549b1045c30f-if00-port0}:/dev/ubts-lidar"
+      # The LiDAR's USB serial adapter by its by-id path. Set LIDAR_USB_DEVICE (e.g. in .env) to
+      # /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_<adapter serial>-if00-port0.
+      - "${LIDAR_USB_DEVICE:-/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_SET_LIDAR_USB_DEVICE-if00-port0}:/dev/ubts-lidar"
 
   ros2-camera-driver:
     build:
@@ -375,14 +377,16 @@ services:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       ROVER_ESP_KIND: "esp32_abs_hold"
       ROVER_SERIAL_PORT: "/dev/ubts-motor"
-      ROVER_ESP_IDENTITY: "${ROVER_ESP32_IDENTITY:-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60}"
+      # The ESP32-S3 board by its udev ID_SERIAL and by-id path (per board): set ROVER_ESP32_IDENTITY and
+      # ROVER_ESP32_DEVICE (e.g. in .env) to Espressif_USB_JTAG_serial_debug_unit_<board serial> and its -if00 path.
+      ROVER_ESP_IDENTITY: "${ROVER_ESP32_IDENTITY:-Espressif_USB_JTAG_serial_debug_unit_SET_ROVER_ESP32_IDENTITY}"
       ROVER_CONTROL_SOCKET: "/run/ubts-rover/control.sock"
       ROVER_BRIDGE_STATUS_FILE: "/app/runtime/rover_bridge_status.json"
       ROVER_ESP32_LEFT_FORWARD: "${ROVER_ESP32_LEFT_FORWARD:-F}"
       ROVER_ESP32_RIGHT_FORWARD: "${ROVER_ESP32_RIGHT_FORWARD:-F}"
       ROVER_ESP32_MAX_DRIVE_PWM: "${ROVER_ESP32_MAX_DRIVE_PWM:-255}"
     devices:
-      - "${ROVER_ESP32_DEVICE:-/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00}:/dev/ubts-motor"
+      - "${ROVER_ESP32_DEVICE:-/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_SET_ROVER_ESP32_DEVICE-if00}:/dev/ubts-motor"
     volumes:
       - ./runtime:/app/runtime
       - /run/ubts-rover:/run/ubts-rover

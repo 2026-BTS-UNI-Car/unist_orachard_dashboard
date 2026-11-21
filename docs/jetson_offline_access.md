@@ -12,7 +12,7 @@ DNS를 조회하지 않으므로 다른 인터넷 연결의 DNS/브라우저 Sec
 브라우저의 별도 HTTPS 전용 정책은 서버에서 강제로 해제할 수 없다.
 
 2026-10-04 KST 확인 시 외부 DNS로 도달하는 Cloudflare HTTP 경로는
-`301 Location: https://bts.sarihub.com/`를 반환했다. AP DNS 대신 외부 DNS가
+`301 Location: https://<대시보드 공개 주소>/`를 반환했다(공개 주소는 팀 서버 주소, 설정값). AP DNS 대신 외부 DNS가
 선택되면 이 공개 경로를 거치게 된다. IP 직접 접속은 Cloudflare도 거치지 않는다.
 
 설정 배포와 실제 백엔드를 통한 프록시 검증은 별도 기록에 남긴다.
@@ -118,10 +118,16 @@ IP forwarding, NAT/masquerade, 방화벽 변경, upstream DNS forwarding도 사�
 
 ```text
 http://10.77.0.1                -> 10.77.0.1:80 -> dashboard 127.0.0.1:8080
-http://bts.sarihub.com            -> 10.77.0.1:80 -> dashboard 127.0.0.1:8080
-http://bts-docker.sarihub.com     -> 10.77.0.1:80 -> Portainer 127.0.0.1:9443
-ssh unist@jetson-ssh.sarihub.com  -> 10.77.0.1:22 direct
+http://<DASHBOARD_HOSTNAME>     -> 10.77.0.1:80 -> dashboard 127.0.0.1:8080
+http://<PORTAINER_HOSTNAME>     -> 10.77.0.1:80 -> Portainer 127.0.0.1:9443
+ssh <계정>@<SSH_HOSTNAME>       -> 10.77.0.1:22 direct
 ```
+
+세 이름은 팀 서버 주소(설정값)이고 레포에는 적지 않는다. 보드의 `/etc/ubts-network-mode.conf`에
+`UBTS_AP_DASHBOARD_HOSTNAME`, `UBTS_AP_PORTAINER_HOSTNAME`, `UBTS_AP_SSH_HOSTNAME`으로 적는다(없으면
+`dashboard.example.invalid`, `docker.example.invalid`, `ssh.example.invalid`). AP의 로컬 DNS가 이 이름들을
+`10.77.0.1`로 돌려주고 nginx가 앞의 둘을 받는다. 설치된 AP 설정 파일(`/opt/ubts-offline-ap/`)이 2026-11-22 전 판이면
+그 파일에 고정된 이름과 같은 값을 적어야 AP가 켜진다(`deploy/network_helper_update/update_network_helper.py`가 확인한다).
 
 nginx는 AP 주소의 port 80에만 bind한다. 컨테이너는 read-only, no-new-privileges이며
 모든 capability를 제거한 뒤 nginx가 port 80 bind와 worker UID 강등에 실제로 필요한
@@ -130,7 +136,7 @@ upstream은 보드의 `localhost` 인증서를 CA 파일로 고정해 `proxy_ssl
 유지한다.
 
 공개 도메인에 HSTS가 캐시된 휴대폰은 HTTP를 HTTPS로 자동 승격할 수 있다. 이 경우
-`http://bts.sarihub.com`을 명시해도 HSTS가 적용될 수 있으므로
+`http://<DASHBOARD_HOSTNAME>`을 명시해도 HSTS가 적용될 수 있으므로
 `http://10.77.0.1`로 접속한다. Jetson에서 클라이언트가 사용하는 외부 DNS나
 공개 도메인의 HSTS를 강제로 바꿀 수는 없다. AP는 DHCP option 6으로
 `10.77.0.1` DNS를 계속 제공하며, 도메인 접속은 그 DNS를 사용하는 경우에만
@@ -149,16 +155,16 @@ Ethernet carrier가 실제 NetworkManager `connected` 상태이면 인터넷 경
 2026-08-27에 `Realtek 8811CU Wireless LAN 802.11ac USB NIC`를 작업 PC의 두 번째
 무선랜으로 사용해 실제 전환을 검증했다.
 
-- 기존 Jetson Wi-Fi `U+Net0588_5G`, `192.168.219.173`, default route를 유지한 채
+- 기존 Jetson Wi-Fi(집 공유기 Wi-Fi)와 그 주소, default route를 유지한 채
   controller와 Dashboard를 먼저 배포했다.
 - Dashboard AP API 응답 후 `BTS_Jetson`이 2.4 GHz channel 6, WPA2-Personal로 검색됐다.
 - Realtek은 DHCP `10.77.0.164/24`, DNS/DHCP server `10.77.0.1`, default gateway 없음으로
   연결됐다. PC의 Intel Wi-Fi 인터넷 default route는 유지됐다.
 - 세 도메인은 모두 명시적 DNS 질의에서 `10.77.0.1`을 반환했다.
-- Dashboard `/api/health`, Portainer `/api/status`, SSH `unist@10.77.0.1`을 실제로
+- Dashboard `/api/health`, Portainer `/api/status`, SSH `<계정>@10.77.0.1`을 실제로
   통과했다.
 - AP 상태 API는 client 1명, `can_request_ap=false`, `can_request_wifi=true`를 반환했다.
-- Wi-Fi 검색 API 후 약 10초 안에 기존 SSID와 `192.168.219.173`으로 복귀했다.
+- Wi-Fi 검색 API 후 약 10초 안에 기존 집 공유기 Wi-Fi와 그 주소로 복귀했다.
 - Realtek을 연결하지 않은 자동 시험에서는 AP 시작 약 71초 뒤 별도 명령 없이 저장된
   Wi-Fi와 default route가 복구됐다. 이는 AP 준비 시간과 60초 idle timer를 포함한다.
 - Wi-Fi 검색이 60초 동안 실패하면 AP로 복귀하는 분기와 Ethernet 버튼 잠금은 단위
@@ -167,7 +173,9 @@ Ethernet carrier가 실제 NetworkManager `connected` 상태이면 인터넷 경
 ## 설치·상태 확인
 
 ```bash
-sudo /home/unist/workspace/unist_orachard_dashboard/deploy/offline_ap/install-network-mode.sh
+# 세 이름(팀 서버 주소)은 환경 변수로 준다. 설치 스크립트가 /etc/ubts-network-mode.conf 에 적는다.
+sudo env UBTS_AP_DASHBOARD_HOSTNAME=<대시보드 이름> UBTS_AP_PORTAINER_HOSTNAME=<Portainer 이름> \
+  UBTS_AP_SSH_HOSTNAME=<SSH 이름> <레포 폴더>/deploy/offline_ap/install-network-mode.sh
 sudo systemctl enable --now ubts-network-mode.service
 
 systemctl status ubts-network-mode.service

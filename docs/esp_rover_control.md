@@ -7,7 +7,7 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 보드 | ESP32-S3, 네이티브 USB(USB Serial/JTAG, 303a:1001). Jetson `/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00` → `/dev/ttyACM1`(2026-11-16) |
+| 보드 | ESP32-S3, 네이티브 USB(USB Serial/JTAG, 303a:1001). Jetson `/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_<보드 일련>-if00` → `/dev/ttyACM1`(2026-11-16) |
 | 드라이버 | BTS7960 3개: 1 = 조향(일반 DC 모터, 가변저항 GPIO6), 2 = 왼쪽 구동, 3 = 오른쪽 구동 |
 | 펌웨어 | `ABS-HOLD-8-REBOUND-LIMITS`(소스 `BTS7960_Serial_Control.ino`, 개발자 제공). 115200, 줄 단위 글자 명령 |
 | 조향 명령 | `ANGLE -20..+20`(명령 눈금 도, **+ = 오른쪽**), 보정 RIGHT=1681 CENTER=1900 LEFT=2180(가변저항 값). ±20 은 명령 눈금이고 실제 바퀴 각도는 재지 않았다 |

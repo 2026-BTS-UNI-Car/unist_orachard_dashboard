@@ -48,6 +48,14 @@ INTERFACE=""
 SSID="UBTS-Jetson"
 PASSWORD_FILE=""
 PORTAINER_TLS_NAME="localhost"
+# Host names the AP's local DNS answers with the AP address and the proxy serves (ap.conf or options). The defaults
+# are reserved example names; set the real ones on the vehicle.
+DEFAULT_DASHBOARD_HOSTNAME="dashboard.example.invalid"
+DEFAULT_PORTAINER_HOSTNAME="docker.example.invalid"
+DEFAULT_SSH_HOSTNAME="ssh.example.invalid"
+DASHBOARD_HOSTNAME="$DEFAULT_DASHBOARD_HOSTNAME"
+PORTAINER_HOSTNAME="$DEFAULT_PORTAINER_HOSTNAME"
+SSH_HOSTNAME="$DEFAULT_SSH_HOSTNAME"
 PROXY_IMAGE="${UBTS_OFFLINE_PROXY_IMAGE:-nginx:stable-alpine}"
 BASELINE_ROUTING=""
 BASELINE_UPLINK=""
@@ -67,11 +75,11 @@ usage() {
 Usage:
   ubts-offline-ap preflight --interface IFACE
   ubts-offline-ap activate --interface IFACE --password-file FILE
-      [--ssid SSID] [--portainer-tls-name NAME] [--dry-run]
+      [--ssid SSID] [--portainer-tls-name NAME] [HOST NAMES] [--dry-run]
   ubts-offline-ap deactivate --interface IFACE [--ssid SSID]
-      [--portainer-tls-name NAME] [--dry-run]
+      [--portainer-tls-name NAME] [HOST NAMES] [--dry-run]
   ubts-offline-ap enable-auto --interface IFACE --password-file FILE
-      [--ssid SSID] [--portainer-tls-name NAME] [--dry-run]
+      [--ssid SSID] [--portainer-tls-name NAME] [HOST NAMES] [--dry-run]
   ubts-offline-ap disable-auto [--dry-run]
   ubts-offline-ap ensure
   ubts-offline-ap status
@@ -82,6 +90,11 @@ local-only dnsmasq (no gateway, DNS forwarding, NAT, or masquerade). It
 preserves every default route, policy rule, firewall/forwarding state, and
 uplink route-get result, then verifies AP DNS and both proxy backends. Any
 partial failure runs a verified fail-closed rollback.
+
+HOST NAMES: [--dashboard-hostname NAME] [--portainer-hostname NAME]
+[--ssh-hostname NAME]. The local DNS answers these three names with the AP
+address; the proxy serves the dashboard and Portainer names. Defaults are
+reserved example names (*.example.invalid).
 USAGE
 }
 
@@ -123,6 +136,17 @@ validate_tls_name() {
   [[ "$PORTAINER_TLS_NAME" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || die 'invalid Portainer TLS DNS name'
   [[ "$PORTAINER_TLS_NAME" != .* && "$PORTAINER_TLS_NAME" != *. ]] ||
     die 'Portainer TLS DNS name must not start or end with a dot'
+  validate_host_names
+}
+
+validate_host_names() {
+  local name
+  for name in "$DASHBOARD_HOSTNAME" "$PORTAINER_HOSTNAME" "$SSH_HOSTNAME"; do
+    [[ "$name" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ && ${#name} -le 253 ]] ||
+      die "invalid AP host name: $name"
+  done
+  [[ "$DASHBOARD_HOSTNAME" != "$PORTAINER_HOSTNAME" && "$DASHBOARD_HOSTNAME" != "$SSH_HOSTNAME" &&
+     "$PORTAINER_HOSTNAME" != "$SSH_HOSTNAME" ]] || die 'the three AP host names must differ'
 }
 
 validate_proxy_image() {
@@ -639,8 +663,12 @@ render_dnsmasq_config() {
   assert_root_owned_directory "$RUNTIME_STATE_DIR"
   temp_config="$(mktemp "${RUNTIME_STATE_DIR}/.dnsmasq.XXXXXXXX")"
   chmod 0600 "$temp_config"
-  awk -v interface="$INTERFACE" '{
+  awk -v interface="$INTERFACE" -v dashboard="$DASHBOARD_HOSTNAME" -v portainer="$PORTAINER_HOSTNAME" \
+      -v ssh="$SSH_HOSTNAME" '{
     gsub(/\$\{AP_INTERFACE\}/, interface)
+    gsub(/\$\{DASHBOARD_HOSTNAME\}/, dashboard)
+    gsub(/\$\{PORTAINER_HOSTNAME\}/, portainer)
+    gsub(/\$\{SSH_HOSTNAME\}/, ssh)
     print
   }' "$DNSMASQ_TEMPLATE" >"$temp_config"
   dnsmasq --test --conf-file="$temp_config" >/dev/null || {
@@ -702,7 +730,8 @@ proxy_config_fingerprint() {
   image_id="$(docker image inspect -f '{{.Id}}' "$PROXY_IMAGE" 2>/dev/null)" || return 1
   [[ "$image_id" =~ ^sha256:[0-9a-fA-F]{12,}$ ]] || return 1
   { sha256sum "${files[@]}"; printf 'proxy-image=%s\nproxy-image-id=%s\nportainer-tls-name=%s\n' \
-      "$PROXY_IMAGE" "$image_id" "$PORTAINER_TLS_NAME"; } |
+      "$PROXY_IMAGE" "$image_id" "$PORTAINER_TLS_NAME"
+    printf 'dashboard-hostname=%s\nportainer-hostname=%s\n' "$DASHBOARD_HOSTNAME" "$PORTAINER_HOSTNAME"; } |
     sha256sum | awk '{print $1}'
 }
 
@@ -712,11 +741,13 @@ compose_command() {
   fingerprint="$(proxy_config_fingerprint 2>/dev/null || printf unavailable)"
   if ((DRY_RUN)); then
     print_command env "AP_ADDRESS=${AP_ADDRESS}" "PORTAINER_TLS_NAME=${PORTAINER_TLS_NAME}" \
+      "DASHBOARD_HOSTNAME=${DASHBOARD_HOSTNAME}" "PORTAINER_HOSTNAME=${PORTAINER_HOSTNAME}" \
       "UBTS_PROXY_CONFIG_FINGERPRINT=${fingerprint}" \
       "UBTS_OFFLINE_PROXY_IMAGE=${PROXY_IMAGE}" "${args[@]}" "$@"
     return 0
   fi
   AP_ADDRESS="$AP_ADDRESS" PORTAINER_TLS_NAME="$PORTAINER_TLS_NAME" \
+  DASHBOARD_HOSTNAME="$DASHBOARD_HOSTNAME" PORTAINER_HOSTNAME="$PORTAINER_HOSTNAME" \
   UBTS_PROXY_CONFIG_FINGERPRINT="$fingerprint" \
   UBTS_OFFLINE_PROXY_IMAGE="$PROXY_IMAGE" "${args[@]}" "$@"
 }
@@ -725,6 +756,7 @@ check_compose_configuration() {
   local fingerprint
   fingerprint="$(proxy_config_fingerprint)" || die 'could not fingerprint proxy files/image'
   AP_ADDRESS="$AP_ADDRESS" PORTAINER_TLS_NAME="$PORTAINER_TLS_NAME" \
+  DASHBOARD_HOSTNAME="$DASHBOARD_HOSTNAME" PORTAINER_HOSTNAME="$PORTAINER_HOSTNAME" \
   UBTS_PROXY_CONFIG_FINGERPRINT="$fingerprint" UBTS_OFFLINE_PROXY_IMAGE="$PROXY_IMAGE" \
     docker compose -f "${INSTALL_DIR}/compose.yaml" config --quiet
 }
@@ -769,6 +801,7 @@ test_nginx_configuration() {
     --tmpfs "/var/run:uid=0,gid=0,mode=0755"
     --tmpfs "/tmp:uid=101,gid=101,mode=1777"
     -e AP_ADDRESS=127.0.0.1 -e "PORTAINER_TLS_NAME=${PORTAINER_TLS_NAME}"
+    -e "DASHBOARD_HOSTNAME=${DASHBOARD_HOSTNAME}" -e "PORTAINER_HOSTNAME=${PORTAINER_HOSTNAME}"
     -e PORTAINER_CA_PATH=/etc/nginx/portainer-ca.pem
     -v "${INSTALL_DIR}/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro"
     -v "${INSTALL_DIR}/render-and-run.sh:/opt/ubts-offline-ap/render-and-run.sh:ro"
@@ -818,7 +851,7 @@ assert_proxy_prerequisites() {
 
 assert_ap_dns() {
   local name answers
-  for name in bts.sarihub.com bts-docker.sarihub.com jetson-ssh.sarihub.com; do
+  for name in "$DASHBOARD_HOSTNAME" "$PORTAINER_HOSTNAME" "$SSH_HOSTNAME"; do
     answers="$(dig +time=2 +tries=1 +short @"$AP_ADDRESS" "$name" A 2>/dev/null |
       sed '/^[[:space:]]*$/d' | sort -u || true)"
     [[ "$answers" == "$AP_ADDRESS" ]] || die "AP DNS did not map only $name to $AP_ADDRESS"
@@ -830,10 +863,10 @@ assert_proxy_health() {
   proxy_is_healthy || die 'offline proxy is not healthy'
   proxy_config_matches || die 'offline proxy configuration fingerprint is stale'
   curl --fail --silent --show-error --max-time 3 --noproxy '*' \
-    --resolve "bts.sarihub.com:80:${AP_ADDRESS}" "http://bts.sarihub.com/api/health" >/dev/null ||
+    --resolve "${DASHBOARD_HOSTNAME}:80:${AP_ADDRESS}" "http://${DASHBOARD_HOSTNAME}/api/health" >/dev/null ||
     die 'dashboard proxy health failed'
   curl --fail --silent --show-error --max-time 3 --noproxy '*' \
-    --resolve "bts-docker.sarihub.com:80:${AP_ADDRESS}" "http://bts-docker.sarihub.com/api/status" >/dev/null ||
+    --resolve "${PORTAINER_HOSTNAME}:80:${AP_ADDRESS}" "http://${PORTAINER_HOSTNAME}/api/status" >/dev/null ||
     die 'Portainer proxy health failed'
 }
 
@@ -1223,8 +1256,8 @@ activate_ap_locked() {
     print_command nmcli connection load "$(profile_file_path)"
     print_command nmcli connection up "$connection" ifname "$INTERFACE" passwd-file '<root-only-temporary-file>'
     print_command systemctl start "$DNSMASQ_UNIT"
-    print_command dig +time=2 +tries=1 +short @10.77.0.1 bts.sarihub.com A
-    print_command dig +time=2 +tries=1 +short @10.77.0.1 bts-docker.sarihub.com A
+    print_command dig +time=2 +tries=1 +short @10.77.0.1 "$DASHBOARD_HOSTNAME" A
+    print_command dig +time=2 +tries=1 +short @10.77.0.1 "$PORTAINER_HOSTNAME" A
     compose_command up -d --wait --wait-timeout 30
     log 'dry-run completed; no profile, network, container, timer, or route changed'
     return 0
@@ -1310,6 +1343,9 @@ write_auto_config() {
     printf 'SSID=%s\n' "$SSID"
     printf 'PASSWORD_FILE=%s\n' "$PASSWORD_FILE"
     printf 'PORTAINER_TLS_NAME=%s\n' "$PORTAINER_TLS_NAME"
+    printf 'DASHBOARD_HOSTNAME=%s\n' "$DASHBOARD_HOSTNAME"
+    printf 'PORTAINER_HOSTNAME=%s\n' "$PORTAINER_HOSTNAME"
+    printf 'SSH_HOSTNAME=%s\n' "$SSH_HOSTNAME"
     printf 'PROXY_IMAGE=%s\n' "$PROXY_IMAGE"
   } >"$temp_config"
   if ((!TEST_MODE)); then chown root:root "$temp_config"; fi
@@ -1319,6 +1355,9 @@ write_auto_config() {
 load_auto_config() {
   local key value mode_value
   INTERFACE=""; SSID=""; PASSWORD_FILE=""; PORTAINER_TLS_NAME=""; PROXY_IMAGE="nginx:stable-alpine"
+  # Files written before 2026-11-22 have no host name keys: the defaults apply until they are added.
+  DASHBOARD_HOSTNAME="$DEFAULT_DASHBOARD_HOSTNAME"; PORTAINER_HOSTNAME="$DEFAULT_PORTAINER_HOSTNAME"
+  SSH_HOSTNAME="$DEFAULT_SSH_HOSTNAME"
   assert_root_owned_file "$AUTO_CONFIG"
   mode_value="$(file_mode_octal "$AUTO_CONFIG")" || die 'could not inspect automatic config mode'
   (( (mode_value & 077) == 0 )) || die 'automatic config must have mode 0600'
@@ -1329,6 +1368,9 @@ load_auto_config() {
       SSID) SSID="$value" ;;
       PASSWORD_FILE) PASSWORD_FILE="$value" ;;
       PORTAINER_TLS_NAME) PORTAINER_TLS_NAME="$value" ;;
+      DASHBOARD_HOSTNAME) DASHBOARD_HOSTNAME="$value" ;;
+      PORTAINER_HOSTNAME) PORTAINER_HOSTNAME="$value" ;;
+      SSH_HOSTNAME) SSH_HOSTNAME="$value" ;;
       PROXY_IMAGE) PROXY_IMAGE="$value" ;;
       *) die "unknown automatic config key: $key" ;;
     esac
@@ -1536,6 +1578,9 @@ parse_options() {
       --ssid) (($# >= 2)) || die '--ssid requires a value'; SSID="$2"; shift 2 ;;
       --password-file) (($# >= 2)) || die '--password-file requires a value'; PASSWORD_FILE="$2"; shift 2 ;;
       --portainer-tls-name) (($# >= 2)) || die '--portainer-tls-name requires a value'; PORTAINER_TLS_NAME="$2"; shift 2 ;;
+      --dashboard-hostname) (($# >= 2)) || die '--dashboard-hostname requires a value'; DASHBOARD_HOSTNAME="$2"; shift 2 ;;
+      --portainer-hostname) (($# >= 2)) || die '--portainer-hostname requires a value'; PORTAINER_HOSTNAME="$2"; shift 2 ;;
+      --ssh-hostname) (($# >= 2)) || die '--ssh-hostname requires a value'; SSH_HOSTNAME="$2"; shift 2 ;;
       --dry-run) DRY_RUN=1; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "unknown option: $1" ;;

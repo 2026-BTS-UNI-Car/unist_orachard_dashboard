@@ -515,8 +515,15 @@ test_manual_local_only_dhcp_dns() {
   mkdir -p "$RUNTIME_STATE_DIR"
   render_dnsmasq_config
   grep -Fqx 'interface=wlxap' "$DNSMASQ_RUNTIME_CONFIG"
-  grep -Fqx 'address=/bts-docker.sarihub.com/10.77.0.1' "$DNSMASQ_RUNTIME_CONFIG"
-  grep -Fqx 'address=/jetson-ssh.sarihub.com/10.77.0.1' "$DNSMASQ_RUNTIME_CONFIG"
+  grep -Fqx 'address=/dashboard.example.invalid/10.77.0.1' "$DNSMASQ_RUNTIME_CONFIG"
+  grep -Fqx 'address=/docker.example.invalid/10.77.0.1' "$DNSMASQ_RUNTIME_CONFIG"
+  grep -Fqx 'address=/ssh.example.invalid/10.77.0.1' "$DNSMASQ_RUNTIME_CONFIG"
+  # Configured names replace the defaults.
+  DASHBOARD_HOSTNAME=dash.test.invalid PORTAINER_HOSTNAME=docker.test.invalid SSH_HOSTNAME=ssh.test.invalid \
+    render_dnsmasq_config
+  grep -Fqx 'address=/dash.test.invalid/10.77.0.1' "$DNSMASQ_RUNTIME_CONFIG"
+  grep -Fqx 'address=/ssh.test.invalid/10.77.0.1' "$DNSMASQ_RUNTIME_CONFIG"
+  if grep -Fq 'HOSTNAME}' "$DNSMASQ_RUNTIME_CONFIG"; then return 1; fi
 }
 
 test_target_forwarding_restored() {
@@ -570,8 +577,8 @@ test_proxy_health_checks_both_backends() {
     return 1
   fi
   assert_proxy_health
-  grep -q 'http://bts.sarihub.com/api/health' "$MOCK_ROOT/curl.log"
-  grep -q 'http://bts-docker.sarihub.com/api/status' "$MOCK_ROOT/curl.log"
+  grep -q 'http://dashboard.example.invalid/api/health' "$MOCK_ROOT/curl.log"
+  grep -q 'http://docker.example.invalid/api/status' "$MOCK_ROOT/curl.log"
 }
 
 test_reconcile_dns_failure_rolls_back() {

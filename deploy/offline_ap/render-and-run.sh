@@ -4,6 +4,8 @@ set -eu
 : "${AP_ADDRESS:?AP_ADDRESS is required}"
 : "${PORTAINER_TLS_NAME:?PORTAINER_TLS_NAME is required}"
 : "${PORTAINER_CA_PATH:?PORTAINER_CA_PATH is required}"
+: "${DASHBOARD_HOSTNAME:?DASHBOARD_HOSTNAME is required}"
+: "${PORTAINER_HOSTNAME:?PORTAINER_HOSTNAME is required}"
 
 if [ "$AP_ADDRESS" != "10.77.0.1" ] && [ "${1:-}" != "test" ]; then
   printf '%s\n' 'ERROR: production AP_ADDRESS must be 10.77.0.1' >&2
@@ -16,6 +18,15 @@ case "$PORTAINER_TLS_NAME" in
     exit 1
     ;;
 esac
+
+for name in "$DASHBOARD_HOSTNAME" "$PORTAINER_HOSTNAME"; do
+  case "$name" in
+    ''|.*|*.|*[!A-Za-z0-9.-]*)
+      printf '%s\n' 'ERROR: invalid proxy host name' >&2
+      exit 1
+      ;;
+  esac
+done
 
 case "$PORTAINER_CA_PATH" in
   /*) ;;

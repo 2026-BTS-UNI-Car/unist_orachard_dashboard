@@ -20,7 +20,7 @@
 하는 일(`--apply`):
 
 1. 점검: 묶음 파일 SHA-256, Docker, 옛 브리지 컨테이너와 그 이미지, ESP32 장치(by-id 링크 → `/dev/ttyACM*` 문자 장치, 주 번호 166,
-   udev `ID_SERIAL` 이 `Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60`), 제어 소켓 잠금(`/run/ubts-rover/bridge.lock`)이 비어 있는지
+   udev `ID_SERIAL` 이 `Espressif_USB_JTAG_serial_debug_unit_<보드 일련>`), 제어 소켓 잠금(`/run/ubts-rover/bridge.lock`)이 비어 있는지
    (다른 브리지가 돌지 않는지), 대시보드가 같은 제어 소켓 폴더와 runtime 폴더를 쓰는지.
 2. 미리 확인: 옛 브리지 이미지로 만든 짧은 컨테이너(네트워크 없음, 장치·마운트 없음)에 새 파일을 넣고 브리지 모듈을 import 해 본다. 그 컨테이너는 지우지 않고 멈춘 채 둔다.
 3. 새 컨테이너: 옛 브리지와 **같은 이미지**(빌드·pull 없음), 같은 마운트(runtime, `/run/ubts-rover`, `/run/lock`, `/run/udev` 읽기 전용),
@@ -60,7 +60,7 @@
 ## 3. 준비
 
 - 차는 멈춰 있고, 바퀴는 땅에서 들거나 차를 고정한다. 대시보드 조종 비활성.
-- ESP32 보드가 Jetson USB 에 꽂혀 있고 `ls -l /dev/serial/by-id/` 에 `usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00 -> ../../ttyACM1` 이 보인다.
+- ESP32 보드가 Jetson USB 에 꽂혀 있고 `ls -l /dev/serial/by-id/` 에 `usb-Espressif_USB_JTAG_serial_debug_unit_<보드 일련>-if00 -> ../../ttyACM1` 이 보인다.
 - Docker 를 쓸 수 있는 사용자(`docker ps` 가 되면 그대로, 아니면 `sudo`). 제어 소켓 응답 확인은 root 만 할 수 있으므로 `sudo` 로 실행하면 확인이 하나 더 된다.
 - 화면에서 조향 패널을 쓰려면 같은 커밋의 대시보드 묶음도 설치한다([`../jetson_dashboard/README_KO.md`](../jetson_dashboard/README_KO.md)).
   대시보드는 `DASHBOARD_VEHICLE` 을 바꾸지 않아도 브리지가 `vehicle_profile: front_steer` 를 내면 Rover Control 의 주행 제어를 조향 패널로 바꾼다.
@@ -73,16 +73,19 @@ mkdir -p ~/ubts-releases && cd ~/ubts-releases
 tar xzf ubts-esp32-bridge-kit-<id>.tar.gz
 cd ubts-esp32-bridge-kit-<id>
 sha256sum -c SHA256SUMS                        # 모두 OK
-python3 install_esp32_bridge.py                # 점검만. 끝 줄 '점검 통과' 면 설치 가능 (종료 코드 0, 아니면 2)
-sudo python3 install_esp32_bridge.py --apply   # 설치. 끝 줄 '결과: installed'
+ID=Espressif_USB_JTAG_serial_debug_unit_<보드 일련>   # ls -l /dev/serial/by-id/ 에서 읽는다
+python3 install_esp32_bridge.py --identity "$ID"                # 점검만. 끝 줄 '점검 통과' 면 설치 가능 (종료 코드 0, 아니면 2)
+sudo python3 install_esp32_bridge.py --identity "$ID" --apply   # 설치. 끝 줄 '결과: installed'
 ```
+
+보드의 ID_SERIAL 은 보드마다 다른 값이라 레포에 적지 않는다(2026-11-22). `--identity` 또는 환경 변수 `UBTS_ESP32_IDENTITY` 로 주고, 없으면 도구가 아무것도 하지 않고 거절한다(종료 코드 2). by-id 경로(`--device`)는 이 값에서 정해진다.
 
 확인(차는 움직이지 않는다):
 
 ```sh
 docker ps --format '{{.Names}}\t{{.Status}}' | grep esp
 docker logs --tail 20 unist-orachard-ros2-esp32-bridge
-python3 -c "import json;d=json.load(open('/home/unist/workspace/unist_orachard_dashboard/runtime/rover_bridge_status.json'));print(d['esp_kind'],d['connected'],d['armed'],d['firmware'],d['steering']['command_equiv_deg'])"
+python3 -c "import json;d=json.load(open('<레포 폴더>/runtime/rover_bridge_status.json'));print(d['esp_kind'],d['connected'],d['armed'],d['firmware'],d['steering']['command_equiv_deg'])"
 ```
 
 대시보드 Rover Control: '조향 장치 연결됨', 목표/측정의 측정값이 보드의 `COMMAND_EQUIV` 와 같은 쪽(왼쪽 +, 오른쪽 −)인지 본다. 조종 활성화는 하지 않는다.
@@ -98,8 +101,8 @@ sudo python3 rollback_esp32_bridge.py --apply  # 새 컨테이너 멈춤(STOP), 
 
 | 옵션 | 기본 | 뜻 |
 | --- | --- | --- |
-| `--device` | by-id 경로(위) | ESP32 by-id 경로. ttyACM 을 훑어 고르지 않는다 |
-| `--identity` | `Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60` | 기대하는 udev ID_SERIAL |
+| `--device` | `--identity` 의 by-id 경로(`/dev/serial/by-id/usb-<ID_SERIAL>-if00`) | ESP32 by-id 경로. ttyACM 을 훑어 고르지 않는다 |
+| `--identity` | 환경 변수 `UBTS_ESP32_IDENTITY`(없으면 필수) | 기대하는 udev ID_SERIAL(`Espressif_USB_JTAG_serial_debug_unit_<보드 일련>`) |
 | `--device-mode` | `by-id` | `node` 는 지금 노드를 고정(권하지 않음) |
 | `--max-drive-pwm` | 255 | 구동 PWM 상한(0~255; 2026-11-19 전 기본 153) |
 | `--left-forward`, `--right-forward` | `F` | 모터 2·3 에서 앞으로 가는 방향(바퀴 든 시험 뒤 정함) |
@@ -164,10 +167,10 @@ Jetson 에서(2026-11-16 감시 판을 쓸 때와 같은 방법, esptool 4.7.0 �
 
 ```sh
 sudo python3 rollback_esp32_bridge.py --apply           # 1. 브리지가 STOP 을 보내고 포트를 놓는다
-esptool.py --chip esp32s3 --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00 \
+esptool.py --chip esp32s3 --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_<보드 일련>-if00 \
   write_flash --flash_mode keep --flash_freq keep --flash_size keep 0x10000 cal_runtime_app.bin   # 2. app0 만. 'Hash of data verified'
 python3 read_status.py                                  # 3. STATUS 만 보냄: FW 줄 끝 'CAL_RUNTIME=1', CAL 줄 'STORE=DEFAULT GUARD=1300..2500'
-sudo python3 install_esp32_bridge.py --max-drive-pwm 0 --apply   # 4. 이 묶음(새 커밋)의 브리지. 구동 상한은 사용자 결정대로
+sudo python3 install_esp32_bridge.py --identity "$ID" --max-drive-pwm 0 --apply   # 4. 이 묶음(새 커밋)의 브리지. 구동 상한은 사용자 결정대로
 ```
 
 부트로더·파티션·otadata 는 쓰지 않는다. 대시보드도 같은 커밋 묶음으로 설치해야 Rover Control 에 '조향 보정' 칸이 보인다.

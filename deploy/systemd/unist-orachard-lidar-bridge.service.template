@@ -1,3 +1,4 @@
+# Template: replace <user>, <app-dir> (the repository folder) and <ros2-ws> (the ROS 2 workspace) on the vehicle.
 [Unit]
 Description=UBTS ROS2 /scan LiDAR WebSocket Bridge
 After=network-online.target unist-orachard-ros2.service
@@ -5,11 +6,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=unist
-Group=unist
-WorkingDirectory=/home/unist/unist_orachard_dashboard
+User=<user>
+Group=<user>
+WorkingDirectory=<app-dir>
 Environment=ROS_DISTRO=iron
-ExecStart=/bin/bash -lc 'source /opt/ros/iron/setup.bash && source /home/unist/unist_orachard_ros2/install/setup.bash && python3 /home/unist/unist_orachard_dashboard/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan'
+ExecStart=/bin/bash -lc 'source /opt/ros/iron/setup.bash && source <ros2-ws>/install/setup.bash && python3 <app-dir>/scripts/lidar_ws_bridge.py --host 0.0.0.0 --port 8765 --topic /scan'
 Restart=on-failure
 RestartSec=3
 

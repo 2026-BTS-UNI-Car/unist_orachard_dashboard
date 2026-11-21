@@ -106,7 +106,7 @@ PNG 저장은 투명 배경이 아니라 현재 테마 기준의 단색 배경�
 
 ```bash
 source /opt/ros/iron/setup.bash
-source /home/unist/unist_orachard_ros2/install/setup.bash
+source <ROS 2 작업 폴더>/install/setup.bash
 ros2 launch orchard_bringup orchard_full.launch.py mode:=real use_rviz:=false use_lidar_driver:=true
 ```
 
@@ -125,7 +125,7 @@ Docker Compose bridge:
 > 옛 대시보드로 돌아간다. 대시보드는 [설치 묶음](../deploy/jetson_dashboard/README_KO.md)으로 바꾼다. 아래 명령처럼 서비스 이름 없이 `up --build` 하면 대시보드도 다시 만들어진다. 브리지만 다룰 때는 서비스 이름을 준다.
 
 ```bash
-cd /home/unist/workspace/unist_orachard_dashboard
+cd <레포 폴더>
 docker-compose up -d --build
 docker-compose logs -f ros2-lidar-bridge
 ```
@@ -150,4 +150,4 @@ driver 프로세스가 종료되지 않고 내부에서 멈춘 경우에는 위 
 curl -i http://127.0.0.1:8080/ws/lidar
 ```
 
-일반 HTTP 요청이면 `426 WebSocket upgrade required`가 정상입니다. 브라우저에서는 `ws://127.0.0.1:8080/ws/lidar` 또는 `wss://bts.sarihub.com/ws/lidar`로 연결됩니다.
+일반 HTTP 요청이면 `426 WebSocket upgrade required`가 정상입니다. 브라우저에서는 `ws://127.0.0.1:8080/ws/lidar` 또는 `wss://<대시보드 공개 주소>/ws/lidar`로 연결됩니다.

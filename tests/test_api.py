@@ -718,7 +718,7 @@ class DashboardApiTest(unittest.TestCase):
         offline_doc = self.get_json("/api/docs/jetson-offline-access")
         self.assertTrue(offline_doc["ok"])
         self.assertIn("wlP1p1s0", offline_doc["markdown"])
-        self.assertIn("jetson-ssh.sarihub.com", offline_doc["markdown"])
+        self.assertIn("UBTS_AP_SSH_HOSTNAME", offline_doc["markdown"])
         corridor_doc = self.get_json("/api/docs/corridor-test")
         self.assertTrue(corridor_doc["ok"])
         self.assertIn("복도 주행 시험", corridor_doc["markdown"])

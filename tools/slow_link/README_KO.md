@@ -25,7 +25,7 @@
 ```json
 {"lidar_npz": "D:/.../lidar/20261010T042301Z_both.scans.npz",
  "drive_json": "D:/.../drive-extract/20261010T042301Z_both.drive.json.gz",
- "camera_dir": "C:/Users/.../ubts-uiperf-run/camera720"}
+ "camera_dir": "<입력 폴더>/camera720"}
 ```
 
 `lidar_npz`는 스캔(3240빔, 약 10 Hz), `drive_json`은 IMU·GPS, `camera_dir`은 1280x720 JPEG 프레임 폴더다.

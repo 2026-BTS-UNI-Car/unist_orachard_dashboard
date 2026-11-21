@@ -31,6 +31,9 @@ services:
     environment:
       AP_ADDRESS: "${AP_ADDRESS:-10.77.0.1}"
       PORTAINER_TLS_NAME: "${PORTAINER_TLS_NAME:-localhost}"
+      # Host names the proxy serves besides the AP address (the helper passes the values of ap.conf).
+      DASHBOARD_HOSTNAME: "${DASHBOARD_HOSTNAME:-dashboard.example.invalid}"
+      PORTAINER_HOSTNAME: "${PORTAINER_HOSTNAME:-docker.example.invalid}"
       PORTAINER_CA_PATH: "/etc/nginx/portainer-ca.pem"
     volumes:
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
@@ -46,9 +49,9 @@ services:
         - CMD-SHELL
         - >-
           wget -q -O /dev/null "http://$${AP_ADDRESS}/api/health" &&
-          wget -q -O /dev/null --header='Host: bts.sarihub.com'
+          wget -q -O /dev/null --header="Host: $${DASHBOARD_HOSTNAME}"
           "http://$${AP_ADDRESS}/api/health" &&
-          wget -q -O /dev/null --header='Host: bts-docker.sarihub.com'
+          wget -q -O /dev/null --header="Host: $${PORTAINER_HOSTNAME}"
           "http://$${AP_ADDRESS}/api/status"
       interval: 30s
       timeout: 5s

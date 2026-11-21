@@ -1,3 +1,4 @@
+# Template: replace <user> and <app-dir> (the repository folder on the vehicle).
 [Unit]
 Description=UBTS Dashboard
 After=network-online.target
@@ -5,12 +6,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=unist
-Group=unist
-WorkingDirectory=/home/unist/unist_orachard_dashboard
+User=<user>
+Group=<user>
+WorkingDirectory=<app-dir>
 Environment=DASHBOARD_HOST=0.0.0.0
 Environment=DASHBOARD_PORT=8080
-Environment=TELEMETRY_FILE=/home/unist/unist_orachard_dashboard/runtime/telemetry_snapshot.json
+Environment=TELEMETRY_FILE=<app-dir>/runtime/telemetry_snapshot.json
 ExecStart=/usr/bin/python3 -m dashboard_server --host 0.0.0.0 --port 8080
 Restart=on-failure
 RestartSec=3

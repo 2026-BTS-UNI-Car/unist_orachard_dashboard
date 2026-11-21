@@ -50,8 +50,16 @@ OLD_NAME = 'unist-orachard-ros2-esp-rover-bridge'
 CONTROL_CPU_SHARES = 4096          # 2026-11-19: CPU weight of the bridge (default 1024)
 NEW_NAME = 'unist-orachard-ros2-esp32-bridge'
 DASHBOARD_NAME = 'unist-orachard-dashboard'
-DEVICE = '/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60-if00'
-IDENTITY = 'Espressif_USB_JTAG_serial_debug_unit_30:30:F9:3C:D8:60'
+# The board's udev ID_SERIAL (Espressif_USB_JTAG_serial_debug_unit_<board serial>) differs per board, so it is a
+# setting: --identity or the environment variable UBTS_ESP32_IDENTITY. The by-id path follows from it (--device).
+IDENTITY = os.environ.get('UBTS_ESP32_IDENTITY', '').strip()
+
+
+def device_for(identity):
+    return '/dev/serial/by-id/usb-%s-if00' % identity
+
+
+DEVICE = device_for(IDENTITY) if IDENTITY else ''
 CONTAINER_DEVICE = '/dev/ubts-motor'
 CONTROL_DIR = '/run/ubts-rover'
 STATUS_FILE_IN_CONTAINER = '/app/runtime/rover_bridge_status.json'
@@ -692,8 +700,10 @@ def build_parser():
     p.add_argument('--old-name', default=OLD_NAME)
     p.add_argument('--new-name', default=NEW_NAME)
     p.add_argument('--dashboard-name', default=DASHBOARD_NAME)
-    p.add_argument('--device', default=DEVICE, help='by-id path of the ESP32 (never a ttyACM scan)')
-    p.add_argument('--identity', default=IDENTITY, help='expected udev ID_SERIAL')
+    p.add_argument('--device', default=None,
+                   help='by-id path of the ESP32 (never a ttyACM scan); default: the by-id path of --identity')
+    p.add_argument('--identity', default=IDENTITY,
+                   help='expected udev ID_SERIAL (default: environment variable UBTS_ESP32_IDENTITY)')
     p.add_argument('--device-mode', choices=('by-id', 'node'), default='by-id',
                    help='by-id: Docker resolves the symlink at every start (default); node: pin the node found now')
     p.add_argument('--max-drive-pwm', type=int, default=255,
@@ -713,6 +723,11 @@ def build_parser():
 def main(argv=None, docker=None, host=None, out=None):
     options = build_parser().parse_args(argv)
     out = out or sys.stdout
+    if not options.identity:
+        print('결과: refused (보드 ID_SERIAL 이 없다: --identity 또는 UBTS_ESP32_IDENTITY)', file=out)
+        return 2
+    if options.device is None:
+        options.device = device_for(options.identity)
     if not 0 <= options.max_drive_pwm <= 255:
         print('결과: refused (max-drive-pwm 0..255)', file=out)
         return 2

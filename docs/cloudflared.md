@@ -10,7 +10,7 @@ Cloudflare Tunnel을 쓰면 Jetson Orin Nano Super가 공인 IP를 갖지 않아
 > 옛 대시보드로 돌아간다. 대시보드는 [설치 묶음](../deploy/jetson_dashboard/README_KO.md)으로 바꾼다. 아래 명령은 그 전의 기록이다.
 
 ```bash
-cd /home/unist/workspace/unist_orachard_dashboard
+cd <레포 폴더>
 docker compose up -d --build
 # docker compose 플러그인이 없으면: docker-compose up -d --build
 ```
@@ -27,22 +27,24 @@ cloudflared tunnel --url http://127.0.0.1:8080
 
 ```bash
 cloudflared tunnel login
-cloudflared tunnel create unist-orachard-dashboard
-cloudflared tunnel route dns unist-orachard-dashboard bts.sarihub.com
-mkdir -p /home/unist/.cloudflared
-cp cloudflared/config.example.yml /home/unist/.cloudflared/config.yml
+cloudflared tunnel create <터널 이름>
+cloudflared tunnel route dns <터널 이름> <대시보드 공개 주소>
+mkdir -p ~/.cloudflared
+cp cloudflared/config.example.yml ~/.cloudflared/config.yml
 ```
 
-`/home/unist/.cloudflared/config.yml`의 `hostname`과 `credentials-file`을 실제 값으로 바꿉니다. 현재 공개 예정 주소는 `bts.sarihub.com`입니다.
+`~/.cloudflared/config.yml`의 `tunnel`, `hostname`, `credentials-file`을 실제 값으로 바꿉니다. 터널 이름과 대시보드 공개 주소는 팀 서버 주소(설정값)라 레포에 적지 않는다. 아래 예시의 `dashboard.example.com`이 그 자리다.
 
-LiDAR 실시간 지도는 브라우저에서 같은 origin의 `wss://bts.sarihub.com/ws/lidar`로 접속합니다. 권장 ingress는 `/ws/lidar`만 LiDAR bridge(`127.0.0.1:8765`)로 보내고, 나머지는 dashboard(`127.0.0.1:8080`)로 보내는 구조입니다.
+대시보드 서버는 이 주소를 Overview의 서비스 줄에 보여 줄 수 있다: 컨테이너 환경 변수 `DASHBOARD_PUBLIC_HOST`(없으면 비워 둔다).
+
+LiDAR 실시간 지도는 브라우저에서 같은 origin의 `wss://<대시보드 공개 주소>/ws/lidar`로 접속합니다. 권장 ingress는 `/ws/lidar`만 LiDAR bridge(`127.0.0.1:8765`)로 보내고, 나머지는 dashboard(`127.0.0.1:8080`)로 보내는 구조입니다.
 
 ```yaml
 ingress:
-  - hostname: bts.sarihub.com
+  - hostname: dashboard.example.com
     path: /ws/lidar
     service: http://127.0.0.1:8765
-  - hostname: bts.sarihub.com
+  - hostname: dashboard.example.com
     service: http://127.0.0.1:8080
   - service: http_status:404
 ```
@@ -51,8 +53,11 @@ ingress:
 
 ## systemd 등록
 
+단위 파일의 `<user>`(Jetson 계정)와 `<tunnel-name>`을 바꾼 사본을 둔다.
+
 ```bash
-sudo cp deploy/systemd/cloudflared-unist-orachard-dashboard.service /etc/systemd/system/
+sed -e "s/<user>/$(id -un)/g" -e "s/<tunnel-name>/<터널 이름>/g" \
+  deploy/systemd/cloudflared-unist-orachard-dashboard.service | sudo tee /etc/systemd/system/cloudflared-unist-orachard-dashboard.service >/dev/null
 sudo systemctl daemon-reload
 sudo systemctl enable --now cloudflared-unist-orachard-dashboard.service
 sudo systemctl status cloudflared-unist-orachard-dashboard.service

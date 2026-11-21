@@ -22,6 +22,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -32,6 +33,11 @@ TARGET = Path("/usr/local/sbin/ubts-network-mode")
 SERVICE = "ubts-network-mode.service"
 STATUS_FILE = Path("/run/ubts-network-mode/status.json")
 BACKUP_DIR = Path("/var/lib/ubts-network-mode/helper-backups")
+# Since 2026-11-22 the helper checks the AP's three host names from these settings (defaults *.example.invalid);
+# an offline AP template installed before that maps fixed names, which the settings then have to repeat.
+AP_TEMPLATE = Path("/opt/ubts-offline-ap/dnsmasq.conf.template")
+NETWORK_CONF = Path("/etc/ubts-network-mode.conf")
+HOST_NAME_KEYS = ("UBTS_AP_DASHBOARD_HOSTNAME", "UBTS_AP_PORTAINER_HOSTNAME", "UBTS_AP_SSH_HOSTNAME")
 # The helper installed on the Jetson before this change (read 2026-11-16 without sudo; = repository 671672a).
 KNOWN_PREVIOUS = {"94f61dca48386e05f9261b8a473f574bb56c3ec70d9dec0f45d552523cb59651": "671672a (AP switch only)"}
 NEW_COMMANDS = ("wifi-scan", "wifi-saved", "wifi-connect", "wifi-confirm", "wifi-revert", "wifi-profile")
@@ -99,8 +105,35 @@ def check_source(source: Path) -> tuple[bytes, list[str]]:
     return data, problems
 
 
+def host_name_problems() -> list[str]:
+    """The installed AP template maps fixed host names (installed before 2026-11-22): the new helper would check the
+    names of NETWORK_CONF instead and the AP would not start unless they are the same three. The names are not
+    printed. An unreadable settings file (check without root) is left to the root run."""
+    try:
+        template = AP_TEMPLATE.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    fixed = sorted(name for name in re.findall(r"^address=/([^/\s]+)/", template, re.M) if "${" not in name)
+    if not fixed:
+        return []
+    try:
+        conf = NETWORK_CONF.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    values = {}
+    for line in conf.splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and not key.startswith("#"):
+            values[key.strip()] = value.strip()
+    if sorted(values.get(key, "") for key in HOST_NAME_KEYS) != fixed:
+        return [f"{NETWORK_CONF} 에 AP 이름 {', '.join(HOST_NAME_KEYS)} 를 설치된 {AP_TEMPLATE} 의 이름과 같게 적어야 한다"
+                " (없으면 새 도우미가 AP 를 켜지 못한다)"]
+    return []
+
+
 def plan(source: Path, allow_unknown: bool) -> dict:
     data, problems = check_source(source)
+    problems.extend(host_name_problems())
     installed = TARGET.read_bytes() if TARGET.is_file() else None
     installed_sha = sha256(installed) if installed is not None else None
     new_sha = sha256(data)

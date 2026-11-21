@@ -377,7 +377,7 @@ def jetson(clock=None, old_files=None, extra=None):
                   Labels={'com.docker.compose.service': 'dashboard'})
     image = docker.add_image(files, config, tag='unist-orachard-dashboard:latest')
     host = dict(NetworkMode='host', RestartPolicy=dict(Name='unless-stopped', MaximumRetryCount=0),
-                Binds=['/home/unist/ws/runtime:/app/runtime'], Privileged=True, PidMode='host')
+                Binds=['/home/rover/ws/runtime:/app/runtime'], Privileged=True, PidMode='host')
     layer_only = {'/app/dashboard_server/layer_only/local.json': b'{"local": true}\n'}
     layer_only.update(extra or {})
     old = docker.add_container(NAME, 'unist-orachard-dashboard:latest', config, host, extra=layer_only)

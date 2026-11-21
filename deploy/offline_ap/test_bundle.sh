@@ -37,6 +37,8 @@ fi
 printf '%s\n' 'Rendering Compose configuration...'
 AP_ADDRESS=10.77.0.1 \
 PORTAINER_TLS_NAME=localhost \
+DASHBOARD_HOSTNAME=dashboard.example.invalid \
+PORTAINER_HOSTNAME=docker.example.invalid \
 UBTS_PROXY_CONFIG_FINGERPRINT=test-only \
 UBTS_OFFLINE_PROXY_IMAGE="$IMAGE" \
   docker compose -f "${SCRIPT_DIR}/compose.yaml" config --quiet
@@ -63,6 +65,8 @@ docker run --rm --network none \
   --tmpfs /tmp:uid=101,gid=101,mode=1777 \
   -e AP_ADDRESS=127.0.0.1 \
   -e PORTAINER_TLS_NAME=localhost \
+  -e DASHBOARD_HOSTNAME=dashboard.example.invalid \
+  -e PORTAINER_HOSTNAME=docker.example.invalid \
   -e PORTAINER_CA_PATH=/etc/ssl/certs/ca-certificates.crt \
   -v "${SCRIPT_DIR}/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
   -v "${SCRIPT_DIR}/render-and-run.sh:/opt/ubts-offline-ap/render-and-run.sh:ro" \

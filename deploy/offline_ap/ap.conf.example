@@ -4,4 +4,8 @@ INTERFACE=wlx001122334455
 SSID=UBTS-Jetson
 PASSWORD_FILE=/etc/ubts-offline-ap/wpa2.pass
 PORTAINER_TLS_NAME=localhost
+# Names the AP's local DNS answers with 10.77.0.1 (the proxy serves the first two).
+DASHBOARD_HOSTNAME=dashboard.example.invalid
+PORTAINER_HOSTNAME=docker.example.invalid
+SSH_HOSTNAME=ssh.example.invalid
 PROXY_IMAGE=nginx:stable-alpine

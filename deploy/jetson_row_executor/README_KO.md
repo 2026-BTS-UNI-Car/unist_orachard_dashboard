@@ -33,7 +33,7 @@
 
 ```sh
 python deploy/jetson_row_executor/make_executor_kit.py \
-  --sim-repo D:/Develop/UBTS/unist_orchard_simulation --sim-commit <시뮬레이션 커밋> \
+  --sim-repo <시뮬레이션 레포> --sim-commit <시뮬레이션 커밋> \
   --dash-commit <이 레포 커밋> --out <레포 밖 폴더>
 ```
 
@@ -43,8 +43,8 @@ python deploy/jetson_row_executor/make_executor_kit.py \
 ## 4. Jetson에서 점검 (바꾸는 것 없음)
 
 ```sh
-scp ubts-row-executor-kit-<sim12>-<dash12>.tar.gz unist@jetson-ssh.sarihub.com:~/ubts-releases/
-ssh unist@jetson-ssh.sarihub.com
+scp ubts-row-executor-kit-<sim12>-<dash12>.tar.gz <Jetson 계정>@<Jetson SSH 주소>:~/ubts-releases/
+ssh <Jetson 계정>@<Jetson SSH 주소>
 cd ~/ubts-releases && tar xzf ubts-row-executor-kit-<sim12>-<dash12>.tar.gz && cd ubts-row-executor-kit-<sim12>-<dash12>
 sha256sum -c SHA256SUMS
 python3 install_row_executor.py            # 점검만. 마지막 줄 '점검 통과' 또는 '설치 불가: <까닭>'

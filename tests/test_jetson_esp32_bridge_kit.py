@@ -32,6 +32,9 @@ def load(name):
 
 inst = load('install_esp32_bridge')
 sys.modules.setdefault('install_esp32_bridge', inst)
+# A made-up board serial (the real one is a setting of the vehicle, not in the repository).
+inst.IDENTITY = 'Espressif_USB_JTAG_serial_debug_unit_02:00:00:00:00:01'
+inst.DEVICE = inst.device_for(inst.IDENTITY)
 roll = load('rollback_esp32_bridge')
 make = load('make_bridge_kit')
 
@@ -52,14 +55,14 @@ def old_inspect():
                            'ROVER_BRIDGE_STATUS_FILE=/app/runtime/rover_bridge_status.json', 'PATH=/usr/bin:/bin',
                            'ROS_DISTRO=iron', 'PYTHONUNBUFFERED=1'],
                    'Labels': {'com.docker.compose.service': 'ros2-esp-rover-bridge'}},
-        'HostConfig': {'Binds': ['/home/unist/ws/runtime:/app/runtime:rw', '/run/ubts-rover:/run/ubts-rover:rw',
+        'HostConfig': {'Binds': ['/home/rover/ws/runtime:/app/runtime:rw', '/run/ubts-rover:/run/ubts-rover:rw',
                                  '/run/lock:/run/lock:rw', '/run/udev:/run/udev:ro'],
                        'NetworkMode': 'host', 'IpcMode': 'host', 'SecurityOpt': ['no-new-privileges:true', 'label=disable'],
                        'RestartPolicy': {'Name': 'unless-stopped', 'MaximumRetryCount': 0},
                        'Devices': [{'PathOnHost': '/dev/serial/by-id/usb-Silicon_Labs_CP2102-if00-port0',
                                     'PathInContainer': '/dev/ubts-motor', 'CgroupPermissions': 'rwm'}],
                        'LogConfig': {'Type': 'json-file', 'Config': {}}},
-        'Mounts': [{'Type': 'bind', 'Source': '/home/unist/ws/runtime', 'Destination': '/app/runtime'},
+        'Mounts': [{'Type': 'bind', 'Source': '/home/rover/ws/runtime', 'Destination': '/app/runtime'},
                    {'Type': 'bind', 'Source': '/run/ubts-rover', 'Destination': '/run/ubts-rover'},
                    {'Type': 'bind', 'Source': '/run/lock', 'Destination': '/run/lock'},
                    {'Type': 'bind', 'Source': '/run/udev', 'Destination': '/run/udev'}],
@@ -71,7 +74,7 @@ def old_inspect():
 def dashboard_inspect():
     return {'Id': DASH_ID, 'Name': '/' + inst.DASHBOARD_NAME, 'Image': 'sha256:' + 'e' * 64,
             'Config': {'Env': ['ROVER_CONTROL_SOCKET=/run/ubts-rover/control.sock', 'DASHBOARD_MODE=live']},
-            'Mounts': [{'Type': 'bind', 'Source': '/home/unist/ws/runtime', 'Destination': '/app/runtime'},
+            'Mounts': [{'Type': 'bind', 'Source': '/home/rover/ws/runtime', 'Destination': '/app/runtime'},
                        {'Type': 'bind', 'Source': '/run/ubts-rover', 'Destination': '/run/ubts-rover'}],
             'State': {'Status': 'running', 'Running': True}}
 
@@ -193,7 +196,7 @@ class FakeHost:
         env = dict(item.split('=', 1) for item in spec['Env'])
         if env.get('ROVER_ESP_KIND') == 'esp32_abs_hold':
             import time
-            self.texts['/home/unist/ws/runtime/rover_bridge_status.json'] = json.dumps({
+            self.texts['/home/rover/ws/runtime/rover_bridge_status.json'] = json.dumps({
                 'esp_kind': 'esp32_abs_hold', 'vehicle_profile': 'front_steer', 'updated_at': time.time(),
                 'connected': self.esp_connected, 'armed': False, 'firmware': 'ABS-HOLD-8-REBOUND-LIMITS',
                 'state': 'disarmed'})
@@ -245,6 +248,20 @@ class KitTest(unittest.TestCase):
         self.assertEqual(report['plan']['devices'][0]['PathOnHost'], inst.DEVICE)
         self.assertIn('exec python3 -m scripts.esp_rover_bridge', report['plan']['cmd'][-1])
         self.assertNotIn('Silicon_Labs', json.dumps(report['plan']['esp32_settings']))
+
+    def test_board_identity_is_a_setting(self):
+        # No board serial in the repository: without --identity / UBTS_ESP32_IDENTITY the tool refuses before any call.
+        saved = inst.IDENTITY
+        inst.IDENTITY = ''
+        try:
+            code, text = self.run_tool()
+        finally:
+            inst.IDENTITY = saved
+        self.assertEqual(code, 2, text)
+        self.assertIn('UBTS_ESP32_IDENTITY', text)
+        self.assertEqual(self.docker.calls, [])
+        code, text = self.run_tool('--identity', saved)          # the by-id path follows from the identity
+        self.assertEqual(code, 0, text)
 
     def test_refusals(self):
         cases = [

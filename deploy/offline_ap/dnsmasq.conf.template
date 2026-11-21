@@ -14,6 +14,8 @@ dhcp-range=10.77.0.20,10.77.0.200,255.255.255.0,12h
 # Explicitly omit a default gateway. Clients receive only this local DNS.
 dhcp-option=3
 dhcp-option=6,10.77.0.1
-address=/bts.sarihub.com/10.77.0.1
-address=/bts-docker.sarihub.com/10.77.0.1
-address=/jetson-ssh.sarihub.com/10.77.0.1
+# Host names of the dashboard, Portainer and SSH (ap.conf DASHBOARD_HOSTNAME, PORTAINER_HOSTNAME, SSH_HOSTNAME)
+# answer with the AP address only.
+address=/${DASHBOARD_HOSTNAME}/10.77.0.1
+address=/${PORTAINER_HOSTNAME}/10.77.0.1
+address=/${SSH_HOSTNAME}/10.77.0.1

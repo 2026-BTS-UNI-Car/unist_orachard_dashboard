@@ -1,10 +1,12 @@
-tunnel: unist-orachard-dashboard
-credentials-file: /home/unist/.cloudflared/REPLACE_WITH_TUNNEL_ID.json
+# Example: replace <tunnel-name>, <user>, <tunnel-id> and dashboard.example.com with the team values (not in the
+# repository).
+tunnel: <tunnel-name>
+credentials-file: /home/<user>/.cloudflared/<tunnel-id>.json
 
 ingress:
-  - hostname: bts.sarihub.com
+  - hostname: dashboard.example.com
     path: /ws/lidar
     service: http://127.0.0.1:8765
-  - hostname: bts.sarihub.com
+  - hostname: dashboard.example.com
     service: http://127.0.0.1:8080
   - service: http_status:404

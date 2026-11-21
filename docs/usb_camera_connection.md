@@ -127,7 +127,7 @@ Jetson 1920x1080 캡처, 1280x720 표시 프리뷰, quality 70에서 측정한 �
 | 경로 | 표시 수신률 | 평균 JPEG packet | 대역폭 | p95 frame gap |
 |---|---:|---:|---:|---:|
 | Jetson 직접 LAN | 14.91 fps | 37.06 KiB | 4.50 Mbps | 100.6 ms |
-| `bts.sarihub.com` Cloudflare | 12.56 fps | 37.24 KiB | 3.53 Mbps | 145.0 ms |
+| 팀 서버 주소(Cloudflare) | 12.56 fps | 37.24 KiB | 3.53 Mbps | 145.0 ms |
 
 동일한 공용 경로에서 1080p JPEG + 1-credit decode ACK는 4.15 fps였으므로, 표시 프리뷰 분리와 `latest-ack`을 함께 적용해야 한다.
 

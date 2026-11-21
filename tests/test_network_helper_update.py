@@ -64,8 +64,12 @@ class UpdateTests(unittest.TestCase):
         self.source.parent.mkdir()
         self.source.write_bytes(NEW_SOURCE)
         self.system = FakeSystem(self.status, self.target)
+        self.ap_template = root / "dnsmasq.conf.template"          # absent: no offline AP installed
+        self.network_conf = root / "ubts-network-mode.conf"
         for patch in (
             mock.patch.object(updater, "TARGET", self.target),
+            mock.patch.object(updater, "AP_TEMPLATE", self.ap_template),
+            mock.patch.object(updater, "NETWORK_CONF", self.network_conf),
             mock.patch.object(updater, "STATUS_FILE", self.status),
             mock.patch.object(updater, "BACKUP_DIR", root / "backups"),
             mock.patch.object(updater, "KNOWN_PREVIOUS", {updater.sha256(OLD_SOURCE): "test old"}),
@@ -91,6 +95,22 @@ class UpdateTests(unittest.TestCase):
         self.assertTrue(any("CRLF" in problem for problem in updater.plan(self.source, True)["problems"]))
         self.source.write_bytes(b"def broken(:\n")
         self.assertTrue(any("구문" in problem for problem in updater.plan(self.source, True)["problems"]))
+
+    def test_fixed_ap_names_must_be_in_the_settings(self):
+        # An AP template from before 2026-11-22 maps fixed names; the new helper checks the names of the settings.
+        self.ap_template.write_text("address=/dash.test.invalid/10.77.0.1\naddress=/docker.test.invalid/10.77.0.1\n"
+                                    "address=/ssh.test.invalid/10.77.0.1\n", encoding="utf-8")
+        self.network_conf.write_text("UBTS_WIFI_INTERFACE=wlan0\n", encoding="utf-8")
+        problems = updater.plan(self.source, False)["problems"]
+        self.assertTrue(any("AP 이름" in problem for problem in problems), problems)
+        self.assertFalse(any("dash.test.invalid" in problem for problem in problems), "names are not printed")
+        self.network_conf.write_text("UBTS_AP_DASHBOARD_HOSTNAME=dash.test.invalid\nUBTS_AP_PORTAINER_HOSTNAME=docker.test.invalid\n"
+                                     "UBTS_AP_SSH_HOSTNAME=ssh.test.invalid\n", encoding="utf-8")
+        self.assertEqual(updater.plan(self.source, False)["problems"], [])
+        # A template with placeholders takes the names from the settings: nothing to compare.
+        self.ap_template.write_text("address=/${DASHBOARD_HOSTNAME}/10.77.0.1\n", encoding="utf-8")
+        self.network_conf.unlink()
+        self.assertEqual(updater.plan(self.source, False)["problems"], [])
 
     def test_apply_installs_keeps_a_backup_and_writes_a_receipt(self):
         self.assertEqual(updater.apply(self.source, False), 0)

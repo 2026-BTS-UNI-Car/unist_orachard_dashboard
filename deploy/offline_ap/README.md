@@ -26,14 +26,24 @@ DNS나 공개 도메인의 HSTS와 무관하게 AP IP로 직접 요청하는 권
 
 ```text
 phone --WPA2--> USB Wi-Fi AP (10.77.0.1/24)
-                   |-- DNS bts.sarihub.com        -> 10.77.0.1
-                   |-- DNS bts-docker.sarihub.com -> 10.77.0.1
-                   |-- DNS jetson-ssh.sarihub.com -> 10.77.0.1 (TCP 22 direct)
+                   |-- DNS <DASHBOARD_HOSTNAME> -> 10.77.0.1
+                   |-- DNS <PORTAINER_HOSTNAME> -> 10.77.0.1
+                   |-- DNS <SSH_HOSTNAME>       -> 10.77.0.1 (TCP 22 direct)
                    `-- nginx 10.77.0.1:80
-                         |-- bts.sarihub.com        -> http://127.0.0.1:8080
-                         `-- bts-docker.sarihub.com -> https://127.0.0.1:9443
+                         |-- <DASHBOARD_HOSTNAME> -> http://127.0.0.1:8080
+                         `-- <PORTAINER_HOSTNAME> -> https://127.0.0.1:9443
                                                        (CA 검증 유지)
 ```
+
+세 이름은 설정값이다(팀 서버 주소, 레포에는 적지 않는다). 기본값은 쓰이지 않는 예시 이름
+`dashboard.example.invalid`, `docker.example.invalid`, `ssh.example.invalid`이다.
+
+| 어디 | 설정 |
+| --- | --- |
+| 이 번들의 도우미 `ubts-offline-ap` | `--dashboard-hostname`, `--portainer-hostname`, `--ssh-hostname` 또는 root 전용 `ap.conf`의 `DASHBOARD_HOSTNAME`, `PORTAINER_HOSTNAME`, `SSH_HOSTNAME`(`ap.conf.example`) |
+| 단일 무선랜 자동 전환 `ubts-network-mode` | `/etc/ubts-network-mode.conf`의 `UBTS_AP_DASHBOARD_HOSTNAME`, `UBTS_AP_PORTAINER_HOSTNAME`, `UBTS_AP_SSH_HOSTNAME`(`install-network-mode.sh`가 같은 이름의 환경 변수에서 적는다) |
+
+2026-11-22 전에 만든 `ap.conf`와 `/etc/ubts-network-mode.conf`에는 이 키가 없어 기본값이 쓰인다. 차에서 쓰던 이름을 계속 쓰려면 세 키를 더한다.
 
 DNS는 포트를 지정할 수 없으므로, 두 HTTP 호스트명을 AP 전용 주소의 HTTP 80으로
 해석하고 host-network nginx가 `Host` 헤더로 백엔드를 구분합니다. nginx는
@@ -53,10 +63,10 @@ masquerade/NAT 또는 firewall rule을 만들지 않습니다. 따라서 이 AP�
 
 클라이언트가 접속하는 주소는 다음 두 **HTTP URL**과 로컬 SSH 이름을 지원합니다.
 
-- `http://bts.sarihub.com`
+- `http://<DASHBOARD_HOSTNAME>`
 - `http://10.77.0.1` (권장 대시보드 주소, DNS 조회 없음)
-- `http://bts-docker.sarihub.com`
-- `ssh unist@jetson-ssh.sarihub.com` (DNS가 `10.77.0.1`을 반환하고 TCP 22로 직접 접속)
+- `http://<PORTAINER_HOSTNAME>`
+- `ssh <Jetson 계정>@<SSH_HOSTNAME>` (DNS가 `10.77.0.1`을 반환하고 TCP 22로 직접 접속)
 
 이 번들은 443 리스너, 자체 서명 클라이언트 인증서, 인증서 경고 자동 우회,
 HTTPS에서 HTTP로의 강제 다운그레이드를 만들지 않습니다. 휴대폰과 Jetson 사이의
@@ -260,8 +270,8 @@ iCloud Private Relay, VPN/DNS profile을 강제하면 로컬 이름 override가 
 그 뒤 정확히 다음 HTTP 주소를 엽니다.
 
 ```text
-http://bts.sarihub.com
-http://bts-docker.sarihub.com
+http://<DASHBOARD_HOSTNAME>
+http://<PORTAINER_HOSTNAME>
 ```
 
 대시보드의 권장 주소는 `http://10.77.0.1`입니다. IP 요청도 대시보드 healthcheck에

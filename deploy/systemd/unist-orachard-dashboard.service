@@ -1,3 +1,5 @@
+# Example unit: replace <user> and <app-dir> (the repository folder on the vehicle) before copying it to
+# /etc/systemd/system/.
 [Unit]
 Description=UNIST Orchard Rover Dashboard
 After=network-online.target
@@ -5,19 +7,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=unist
-Group=unist
-WorkingDirectory=/home/unist/workspace/unist_orachard_dashboard
+User=<user>
+Group=<user>
+WorkingDirectory=<app-dir>
 Environment=DASHBOARD_HOST=127.0.0.1
 Environment=DASHBOARD_PORT=8080
-Environment=TELEMETRY_FILE=/home/unist/workspace/unist_orachard_dashboard/runtime/telemetry_snapshot.json
-ExecStart=/home/unist/workspace/unist_orachard_dashboard/scripts/run_dashboard.sh
+Environment=TELEMETRY_FILE=<app-dir>/runtime/telemetry_snapshot.json
+ExecStart=<app-dir>/scripts/run_dashboard.sh
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=/home/unist/workspace/unist_orachard_dashboard/runtime
+ReadWritePaths=<app-dir>/runtime
 
 [Install]
 WantedBy=multi-user.target
