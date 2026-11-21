@@ -28,13 +28,13 @@
 | [grid_cell_transport.md](grid_cell_transport.md) | 격자 지도를 셀 숫자로 보내고 브라우저가 그리는 형식 | 현재 |
 | [slow_link.md](slow_link.md) | 느린 2.4 GHz 연결: 시험대, 기준 측정, 원인, 목표 32개, 고친 뒤와 최종 측정(12절) | 현재 |
 | [WIFI_AP_CHECKLIST_KO.md](WIFI_AP_CHECKLIST_KO.md) | 차의 무선 AP 현장 점검표(채널·대역·출력·안테나·거리), 현장 연결 기록(`?link_log=1`)과 등급 경계 다시 맞추기 | 현재 |
-| [SCREENS_KO.md](SCREENS_KO.md) | 메뉴 8쪽(수정 전 구성으로 되돌림, UI-16), Rover Control 안의 새 기능 자리, 화면 6개 주소의 별칭 | 현재 |
+| [SCREENS_KO.md](SCREENS_KO.md) | 메뉴 8쪽, Rover Control 안의 탭과 새 기능 자리, 옛 주소의 별칭, 화면 그림(4절) | 현재 |
 
-## 조종 (차동 V2)
+## 조종 브리지
 
 | 문서 | 내용 | 상태 |
 | --- | --- | --- |
-| [esp_rover_control.md](esp_rover_control.md) | ESP32-S3(BTS7960 3개) 조종 브리지: 부호, 조향 목표 규칙, 구동 안전과 남는 위험, 설치. 옛 ESP8266 연결, 조종권, 정지, 저속 통신 | 현재(2026-11-16, 가짜 보드로 확인. 차에서 확인 전) |
+| [esp_rover_control.md](esp_rover_control.md) | ESP32-S3(BTS7960 3개) 조종 브리지: 부호, 조향 목표 규칙, 구동 안전과 남는 위험, 설치. 옛 ESP8266 연결, 조종권, 정지, 저속 통신 | 현재(2026-11-16 가짜 보드로 확인, 2026-11-18~20 차에서 씀) |
 | [rover_control_dashboard.md](rover_control_dashboard.md) | 화면의 조종 사용법 요약 | 현재(차동) |
 
 ## 조향 차량 (V3)
@@ -43,9 +43,9 @@
 | --- | --- | --- |
 | [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) | 조향 차량의 서버 사양: 구동·조향 조종 API, 조향 상태, 자율주행 시작·정지·heartbeat 중계, 조정 값, 정지 규칙, 차동과의 공존 | 현재(실차 펌웨어 V3 전) |
 | [STEERING_HOST_PORT_KO.md](STEERING_HOST_PORT_KO.md) | 시뮬레이션 레포에서 옮긴 조향 V3 호스트 브리지의 출처와 시험 | 현재 |
-| [FIELD_STEER_AUTONOMY_TEST_KO.md](FIELD_STEER_AUTONOMY_TEST_KO.md) | ESP32-S3 차량의 현장 첫 조향 시험(바퀴 든 상태, 잴 값 표), 그림자 주행, 구동 측정, 결정할 것, 첫 자율 시험 순서 | 현재(2026-11-16, 차에서 하기 전) |
-| [CORRIDOR_TEST_KO.md](CORRIDOR_TEST_KO.md) | 건물 복도에서 처음 땅에 놓고 하는 시험의 준비물과 당일 순서: 채울 값(조향 극성·범위, 출발 duty, 속도, 정지 거리, 직진 휨, 거리 명령 보정), 안전 규칙 | 현재(2026-11-17, 시험 전 점검표) |
-| [ORCHARD_DAY_20261120_KO.md](ORCHARD_DAY_20261120_KO.md) | 건물 복도에서 처음 땅에 놓고 하는 시험의 준비물과 당일 순서: 채울 값(조향 극성·범위, 출발 duty, 속도, 정지 거리, 직진 휨, 거리 명령 보정), 안전 규칙 | 현재(2026-11-17, 시험 전 점검표) |
+| [FIELD_STEER_AUTONOMY_TEST_KO.md](FIELD_STEER_AUTONOMY_TEST_KO.md) | ESP32-S3 차량의 현장 첫 조향 시험(바퀴 든 상태, 잴 값 표), 그림자 주행, 구동 측정, 결정할 것, 첫 자율 시험 순서 | 지난 계획(2026-11-16에 쓴 시험 전 문서) |
+| [CORRIDOR_TEST_KO.md](CORRIDOR_TEST_KO.md) | 건물 복도에서 처음 땅에 놓고 하는 시험의 준비물과 당일 순서: 채울 값(조향 극성·범위, 출발 duty, 속도, 정지 거리, 직진 휨, 거리 명령 보정), 안전 규칙 | 지난 절차(2026-11-17에 쓴 점검표, 시험은 2026-11-18~19) |
+| [ORCHARD_DAY_20261120_KO.md](ORCHARD_DAY_20261120_KO.md) | 과수원 자율주행 날(2026-11-20)의 현장 절차: 시험할 열, 준비, 버튼 셋, 기록, 멈췄을 때 | 지난 절차(그날 쓴 판) |
 
 ## 설치
 
@@ -64,9 +64,7 @@
 
 ## 차동 시절 관찰 묶음 (조향 실행기로 바뀔 때까지 둠)
 
-결정 나5(D-14): 조향 펌웨어가 차에 올라가 조향 실행기로 바뀔 때까지 둔다. 그때까지 지금 차(차동 V2)의 수동 주행과 설치된 native 관찰 이미지가 이 코드에 기댄다. 내리는 조건과 내릴 파일 목록은 [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 9절.
-
-결정 나5(D-14): 조향 펌웨어가 차에 올라가 조향 실행기로 바뀔 때까지 둔다. 그때까지 지금 차(차동 V2)의 수동 주행과 설치된 native 관찰 이미지가 이 코드에 기댄다. 내리는 조건과 내릴 파일 목록은 [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 9절.
+차동 구동 시절의 관찰 코드다. 지금 차는 2026-11-16부터 ESP32-S3 조향 차이지만 이 코드는 지우지 않고 두었다. 옛 차(차동 V2)의 수동 주행과 설치된 native 관찰 이미지가 이 코드에 기댄다. 내리는 조건과 내릴 파일 목록은 [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 9절.
 
 | 위치 | 내용 |
 | --- | --- |
@@ -81,7 +79,7 @@
 | 위치 | 내용 |
 | --- | --- |
 | [../README.md](../README.md) | 레포 소개와 빠른 실행 |
-| [../tools/ui_check/README_KO.md](../tools/ui_check/README_KO.md) | 화면 점검 도구(11경로 × 5화면 × 자료 2종 = 110쪽) |
+| [../tools/ui_check/README_KO.md](../tools/ui_check/README_KO.md) | 화면 점검 도구(메뉴 8쪽 × 5화면 × 자료 2종 = 80쪽, 화면 6개 판의 옛 기록은 110쪽) |
 | [../tools/slow_link/README_KO.md](../tools/slow_link/README_KO.md) | 느린 통신 시험대(속도 제한 중계기, 센서 재생원, 측정기, 받아들인 값과 견주기). 현장 연결 기록 보고 `link_log_report.py` |
 | [../deploy/offline_ap/README.md](../deploy/offline_ap/README.md) | 오프라인 AP 설정 파일과 회귀 검사 |
 | `../deploy/systemd/` | systemd 단위 파일(cloudflared 터널, 대시보드 직접 실행). Jetson 에서 지금 쓰는지는 확인하지 않았다 |
@@ -107,3 +105,41 @@ for f in tests/test_*.js tests/test_*.mjs; do node "$f" >/dev/null 2>&1 || echo 
 - ROS 가 있어야 하는 시험은 ROS 없이 건너뛴다. CI 는 ROS 이미지 안에서 따로 돌린다(`.github/workflows/smoke.yml`).
 - `dashboard_server/_field10/row_executor/tests/` 는 실행기 묶음의 시험이다(`python3 -m pytest dashboard_server/_field10/row_executor/tests`, pytest 필요). 그중 `test_field1010_closed_loop.py`, `test_navigation_observation.py` 는 시뮬레이션 레포의 배치에서만 돌고 여기서는 건너뛴다.
 - `tests/test_image_copies.py` 는 compose 의 각 서비스가 import 하는 파일이 그 이미지에 복사되는지 본다. `Dockerfile.ros2` 에 스크립트를 더하면 COPY 줄도 같이 고친다.
+
+묶음별 시험(README에 있던 목록):
+
+```bash
+# ESP32-S3 브리지 (가짜 보드. pty 끝단 시험은 Linux)
+python3 -m unittest tests.test_esp32_bridge tests.test_esp32_bridge_linux tests.test_jetson_esp32_bridge_kit tests.test_esp32_smooth
+python3 -m unittest tests.test_drive_distance tests.test_drive_distance_route
+node --test tests/test_drive_distance.mjs
+node --test tests/test_steer_drag.mjs
+
+# Wi-Fi 관리 (가짜 nmcli)
+python3 -m unittest tests.test_network_wifi_api tests.test_network_wifi_helper tests.test_network_helper_update tests.test_network_mode
+node --test tests/test_network_wifi_ui.mjs
+
+# 조종 회귀 (조종·STOP 경로를 바꿨을 때 꼭)
+node tests/test_control_path_regression.js && node tests/test_rover_browser.js && node tests/test_rover_pad_touch.js
+python3 -m unittest tests.test_control_deadman_regression
+
+# 화면 점검: 메뉴 8쪽 × 5화면 크기 × 자료 2종 = 80쪽, 받아들인 기록과 비교 (Playwright, 깔린 Chrome)
+python tools/ui_check/run_checks.py --static static --out <결과 폴더>
+python tools/ui_check/compare.py --run <결과 폴더>/ui_check.json --baseline tools/ui_check/accepted/ui_check.json
+
+# 느린 연결 시험대: 받아들인 값과 견주기 (사용법 tools/slow_link/README_KO.md)
+python -B tools/slow_link/compare.py --run <결과 폴더>
+```
+
+## 개발 실행의 환경 변수
+
+| 변수 | 뜻 |
+| --- | --- |
+| `DASHBOARD_VEHICLE` | `differential`(기본, 옛 차동 차) / `front_steer`(조향 차량 화면). 조종 브리지가 `vehicle_profile: front_steer`를 내면 이 값과 상관없이 조향 화면이 된다 |
+| `UBTS_EXECUTOR_URL`, `UBTS_EXECUTOR_TOKEN_FILE` | 자율 실행기 운영자 API 주소와 토큰 파일 |
+| `UBTS_EXECUTOR_LINK_FILE` | 위 둘이 없을 때 읽는 실행기 연결 파일(기본 `runtime/row_executor/dashboard_link.json`). 셋 다 없으면 자율·조정 칸은 "설정 없음" |
+| `LIDAR_WS_UPSTREAM`, `CAMERA_WS_UPSTREAM`, `IMU_WS_UPSTREAM`, `GPS_WS_UPSTREAM` | 센서 브리지 WebSocket 주소 |
+| `DASHBOARD_MODE` | `live`(기본) / `simulation`(시뮬레이션 확장을 꽂을 때, [STEERING_SERVER_KO.md](STEERING_SERVER_KO.md) 2절) |
+| `RECORDER_MEDIA_QUEUE_MAX_JOBS` | 녹화기의 재생용 영상 대기 줄 길이(기본 32, 최대 64) |
+
+`docker-compose.yml`은 서비스 구성(대시보드, 센서 드라이버와 브리지, 조종 브리지, 녹화기)을 적은 것이다. 빈 PC에서 전체를 처음 띄울 때의 참고로만 쓴다.

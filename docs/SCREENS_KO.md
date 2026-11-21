@@ -309,3 +309,27 @@ Rover Control에 패널이 다시 모였으므로, 느린 연결에서 페이지
 시험: `tests/test_menu_restore.js`(메뉴·페이지 제목·새 기능 자리·별칭), `tests/test_rover_panel_streams.js`(LiDAR·IMU·카메라 소켓과 패널, 주소),
 `tests/test_rover_panel_polls.mjs`(지도·국소 격자·조정 값·가변저항의 요청), `tests/test_ui_frame.js`(상태 막대와 STOP, 페이지 머리).
 화면 점검(`tools/ui_check`) 받아들인 기록은 이 구성의 80쪽이다. 느린 연결 측정은 `docs/slow_link.md` 13절.
+
+## 4. 화면 그림 (2026-11-22, 모의 자료)
+
+화면 점검 도구의 모의 서버(`tools/ui_check/mock_server.py`)가 내는 예시 자료로 찍었다. 주행 상태, 실행기 격자, 조향 각, 보정 값, 기록 목록, Wi-Fi 이름과 주소는 모두 지어낸 값이고 실제 센서 값이 아니다.
+
+| Rover Control 수동 조종 탭 (노트북 1440 px) | 휴대폰 (390 px) |
+|---|---|
+| ![Rover Control, 노트북](assets/screens/rover_control_1440.png) | ![Rover Control, 휴대폰](assets/screens/rover_control_390.png) |
+| [화면 · 모의 자료] 상태 띠, 탭 네 개, 수동 조종 탭 | [화면 · 모의 자료] 같은 화면, 휴대폰 |
+
+| 자율주행 탭 (노트북, 주행 중) | 자율주행 탭 (휴대폰) |
+|---|---|
+| ![자율주행 탭](assets/screens/rover_autonomy_1440.png) | ![자율주행 탭, 휴대폰](assets/screens/rover_autonomy_390.png) |
+| [화면 · 모의 자료] 버튼 셋, 주행 감시 타일, 실행기 국소 격자 | [화면 · 모의 자료] 같은 화면, 휴대폰 |
+
+| 조향 패널 (휴대폰) | 보정·설정 탭 | 기록 탭 |
+|---|---|---|
+| ![조향 패널](assets/screens/rover_drive_390.png) | ![보정·설정 탭](assets/screens/rover_setup_1440.png) | ![기록 탭](assets/screens/rover_record_1440.png) |
+| [화면 · 모의 자료] 끌어서 조향하는 막대 | [화면 · 모의 자료] 가변저항, 조향 보정, 실행기 조정 값 | [화면 · 모의 자료] 센서 고르기, 수동 주행 기록 목록 |
+
+| 다크 테마 | Wi-Fi 관리 (노트북) | Wi-Fi 시험 연결 (휴대폰) |
+|---|---|---|
+| ![Rover Control, 다크 테마](assets/screens/rover_control_1440_dark.png) | ![Wi-Fi 관리, 노트북](assets/screens/network_wifi_1440.png) | ![Wi-Fi 시험 연결, 휴대폰](assets/screens/network_wifi_390.png) |
+| [화면 · 모의 자료] 사이드바 아래 테마 스위치로 고르고 그 브라우저에 남는다. 사이드바 로고는 팀 로고(라이트·다크 판) | [화면 · 모의 자료] 주변 Wi-Fi에서 고르고 비밀번호 넣기 | [화면 · 모의 자료] 시험 연결 중 남은 시간과 '이 연결 유지' |
