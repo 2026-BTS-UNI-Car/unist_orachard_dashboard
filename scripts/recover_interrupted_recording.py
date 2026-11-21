@@ -17,9 +17,11 @@ recorder is idle:
 What it keeps: the bag file is never changed (ros2 bag reindex only adds metadata.yaml next to it; an empty one is kept
 as metadata.yaml.empty-before-reindex), metadata.json is kept as metadata.before-recovery.json, the cut mapping source as
 mapping_source.cut-before-recovery/, and the sidecars gps.jsonl, motor.jsonl and executor_state.jsonl are not rewritten.
-Differences from a recording that ended normally: camera preview frames come from the camera topic as far as the bag
-holds it (the live recorder sampled the live topic), the recording ends where the bag can be read, and the stopping
-of the vehicle after that is missing. metadata.json gets a "recovered" block that says so.
+Differences from a recording that ended normally: the live recorder took its camera preview frames from the raw camera
+topic, which the bag holds only now and then; the tool takes them from the bag's compressed camera topic (the same
+camera, decoded, then the recorder's own sampling and preview encoding) when the raw topic is sparse. The recording
+ends where the bag can be read, and the stopping of the vehicle after that is missing. metadata.json gets a
+"recovered" block that says so.
 """
 from __future__ import annotations
 
@@ -97,7 +99,10 @@ def read_bag(bag_dir):
     from rclpy.serialization import deserialize_message
     from rosidl_runtime_py.utilities import get_message
     reader = rosbag2_py.SequentialReader()
-    reader.open(rosbag2_py.StorageOptions(uri=str(bag_dir), storage_id='mcap'),
+    yaml = bag_dir / 'metadata.yaml'
+    # Without an index (the read-only run, before reindex) the bag file itself is opened.
+    uri = bag_dir if yaml.is_file() and yaml.stat().st_size > 0 else sorted(bag_dir.glob('*.mcap'))[0]
+    reader.open(rosbag2_py.StorageOptions(uri=str(uri), storage_id='mcap'),
                 rosbag2_py.ConverterOptions(input_serialization_format='cdr', output_serialization_format='cdr'))
     types = {t.name: get_message(t.type) for t in reader.get_all_topics_and_types()}
     while True:
@@ -172,13 +177,40 @@ def main():
         '/gps/driver_status': lambda msg: state.observe_gps(msg, status=True),
         args.rover_status_topic: state.observe_motor,
     }
+    first_ns = last_ns = None
+    raw_frames = 0
+    for topic, _, stamp_ns in read_bag(root / 'rosbag2'):
+        first_ns = stamp_ns if first_ns is None else first_ns
+        last_ns = stamp_ns
+        raw_frames += topic == args.camera_topic
+    span_s = (last_ns - first_ns) / 1e9 if first_ns is not None else 0.
+    camera_topic = args.camera_topic
+    if raw_frames < 0.5 * span_s * float(args.timeline_hz):
+        camera_topic = args.camera_compressed_topic   # raw camera too sparse in the bag: decode the compressed one
+
+    def as_image(message):
+        import cv2
+        import numpy as np
+        from types import SimpleNamespace
+        frame = cv2.imdecode(np.frombuffer(bytes(message.data), dtype=np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return None
+        return SimpleNamespace(header=message.header, height=frame.shape[0], width=frame.shape[1], encoding='bgr8',
+                               data=frame.tobytes())
+
     counts, last = {}, started
     for topic, message, stamp_ns in read_bag(root / 'rosbag2'):
         clock.now = stamp_ns / 1e9
         if clock.now < started:
             continue
         last = max(last, clock.now)
-        if topic == args.camera_topic:
+        if topic == camera_topic:
+            if camera_topic != args.camera_topic:
+                if clock.now < state.next_camera_sample_at:   # the recorder's own sampling, checked before decoding
+                    continue
+                message = as_image(message)
+                if message is None:
+                    continue
             state.observe_camera(message)
             sample, state.camera_pending_sample = state.camera_pending_sample, None
             if sample is not None:
@@ -221,7 +253,8 @@ def main():
             'source': 'rosbag2 replayed in order through the recorder state with the bag receive times',
             'replayed_messages': counts,
             'bag_readable_until_s': duration_s,
-            'camera_preview_source': args.camera_topic + ' as held by the bag',
+            'camera_preview_source': camera_topic + ' as held by the bag' + ('' if camera_topic == args.camera_topic else
+                                     ' (decoded; the raw topic %s has %d frames in the bag)' % (args.camera_topic, raw_frames)),
             'kept': ['rosbag2 bag file unchanged', 'metadata.before-recovery.json', 'mapping_source.cut-before-recovery/',
                      'gps.jsonl, motor.jsonl, executor_state.jsonl as recorded'],
             'not_in_recording': 'the vehicle stopping after the last readable message',
