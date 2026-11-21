@@ -7,33 +7,35 @@ UNIST BTS 과수원 로버의 웹 대시보드입니다. 차에 실린 Jetson에
 > **English summary.** Web dashboard of a small orchard rover (a converted ride-on toy car). It runs on the rover's
 > Jetson Orin Nano and is opened from a phone or laptop over the rover's own 2.4 GHz Wi-Fi access point. Eight menu
 > pages, as before the redesign: Overview, Connection (2D LiDAR RPLIDAR S2, USB camera, link status), System (Jetson
-> resources), Network, Docker, Fan Control, Rover Control (LiDAR with the live occupancy grid map, camera, GNSS position,
-> BNO085 IMU, manual control with a STOP that always goes first, autonomy start/stop, the row executor's field tuning
-> set, recording and synchronized playback) and Docs. A STOP is in the status bar of every page. The server is plain Python
-> (standard library HTTP server, no web framework); sensors come from ROS 2 bridge containers over WebSocket, manual
-> control goes to the motor bridge over a Unix socket, autonomy goes through the row executor's operator API. Since
-> 2026-11-16 the vehicle has front-wheel steering driven by one ESP32-S3 with three BTS7960 motor drivers (steering DC
-> motor with a belt-coupled potentiometer, left drive, right drive); A/D steers to full lock and a drag bar sets a fine
-> angle that returns to 0 on release. The Network page manages the Jetson's Wi-Fi (scan, connect with a password,
-> autoconnect, automatic rollback). This version runs on the rover's Jetson since 2026-11-16; steering has not yet been
-> tried on the real vehicle. The slow-link work was measured on a PC link emulator, not yet on the rover's real Wi-Fi.
-> The documents are in Korean.
+> resources), Network, Docker, Fan Control, Rover Control and Docs. Rover Control has four tabs inside the page: manual
+> driving (LiDAR, live occupancy grid map, camera, GNSS position, BNO085 IMU, steering and drive with a STOP that always
+> goes first), autonomy (row length, GPS on/off, speed, three buttons: prepare, start, stop; a monitoring view with a
+> moving picture of the row executor's local grid; every run is recorded), set-up (steering calibration, tape
+> corrections, the executor's field tuning set) and records (recording control, synchronized playback with the recorded
+> map). A STOP is in the status bar of every page. The server is plain Python (standard library HTTP server, no web
+> framework); sensors come from ROS 2 bridge containers over WebSocket, manual control goes to the motor bridge over a
+> Unix socket, autonomy goes through the row executor's operator API. Since 2026-11-16 the vehicle has front-wheel
+> steering driven by one ESP32-S3 with three BTS7960 motor drivers (steering DC motor with a belt-coupled potentiometer,
+> left drive, right drive). The dashboard was used on the vehicle for the indoor corridor tests (2026-11-18/19) and the
+> first orchard autonomy day (2026-11-20: 18 runs started from the autonomy tab, about 772 m, each recorded and played
+> back here). The grid map takes its heading from the IMU orientation since 2026-11-21. The slow-link numbers were
+> measured on a PC link emulator, not on the rover's real Wi-Fi. The screenshots are taken from the mock server. The
+> documents are in Korean.
 
 | Rover Control (노트북 1440 px) | 휴대폰 (390 px) |
 |---|---|
 | ![Rover Control, 노트북](docs/assets/screens/rover_control_1440.png) | ![Rover Control, 휴대폰](docs/assets/screens/rover_control_390.png) |
 
-[화면 · 모의 자료] 2026-11-16 판(조향 차량, ESP32-S3 브리지의 상태를 흉내 냄). 화면 점검 도구의 모의 서버(`tools/ui_check`)가 내는 예시 자료로 찍었다(실제 센서 값이 아니다).
-왼쪽은 Rover Control의 첫 화면(위 카드의 ESP32-S3 연결, LiDAR, 카메라, 조향 주행 제어: A/D·가운데·끌기 막대·목표와 측정 조향각), 오른쪽은 같은 페이지의 휴대폰 첫 화면이다.
-STOP은 모든 페이지의 상태 막대와 주행 제어에 있다. 메뉴는 2026-11-14에 수정 전 구성(8쪽)으로 되돌린 그대로다.
+[화면 · 모의 자료] 2026-11-21 판(조향 차량, ESP32-S3 브리지의 상태를 흉내 냄). 화면 점검 도구의 모의 서버(`tools/ui_check`)가 내는 예시 자료로 찍었다(실제 센서 값이 아니다).
+왼쪽은 Rover Control의 첫 화면(상태 띠, 탭 네 개, 수동 조종 탭의 LiDAR·카메라·주행 제어), 오른쪽은 같은 페이지의 휴대폰 첫 화면이다.
+STOP은 모든 페이지의 상태 막대와 주행 제어에 있다. 메뉴는 2026-11-14에 수정 전 구성(8쪽)으로 되돌린 그대로이고, 새 기능은 Rover Control 안의 탭에 있다.
 
-> **지금 상태.** 화면과 서버는 가짜 센서·가짜 MCU·가짜 실행기와 느린 연결 시험대로 확인했다. 2026-11-16 차의 보드가 ESP32-S3(BTS7960 3개: 조향,
-> 왼쪽·오른쪽 구동)로 바뀌었고, 같은 날 이 판(대시보드, ESP32-S3 조종 브리지 `ROVER_ESP_KIND=esp32_abs_hold`, Wi-Fi 관리용 호스트 도우미)을
-> Jetson에 설치했다. 설치 뒤 브리지는 보드와 연결된 채 조종 비활성(disarmed)이고, 실제 보드에는 상태 읽기와 정지 명령만 보냈다.
-> 같은 날 사용자 승인으로 펌웨어에 구동 감시(300 ms)를 넣어 썼고(모터 전원 끈 채, 전체 백업 뒤), 첫 조향 시험을 위해 브리지 구동 상한을 0 으로 뒀다.
-> 자율 실행기도 같은 날 SHADOW(차를 움직일 수 없는 상태)로 설치해 `/scan`·IMU를 받는 것까지 봤다.
-> 조향·구동·자율은 아직 실차에서 움직여 보지 않았다(첫 시험 순서: [`docs/FIELD_STEER_AUTONOMY_TEST_KO.md`](docs/FIELD_STEER_AUTONOMY_TEST_KO.md)).
-> 자세한 것은 [현재 한계](#현재-한계).
+> **지금 상태 (2026-11-21).** 이 판은 차의 Jetson에 설치돼 있다. 2026-11-18·19 실내 복도 시험과 2026-11-20 과수원 첫 자율주행에 썼다:
+> 그날 자율주행 탭에서 18번 출발했고(약 772 m, 10번은 열 끝까지), 주행마다 모든 센서가 자동으로 기록됐다. 주행 결과는 시뮬레이션 저장소의
+> 결과 문서(`docs/steering/ORCHARD_1120_RESULT_KO.md`)에 있다. 조종 브리지는 ESP32-S3(BTS7960 3개: 조향, 왼쪽·오른쪽 구동)용이고 구동 상한 255,
+> 자율 실행기는 MOTOR(실제 구동)로 설치돼 있다. 그날 드러난 화면 문제 가운데 기록 재생이 지도를 기다리며 멈추던 것과 격자 지도가 긴 열을 휘게
+> 그리던 것은 2026-11-21에 고쳤다([`docs/SCREENS_KO.md`](docs/SCREENS_KO.md) 2-0절, [`docs/GRID_MAP_KO.md`](docs/GRID_MAP_KO.md)). 고친 뒤의 판은 Jetson에서
+> 기록 재생으로 확인했고, 차를 몰면서는 아직 써 보지 않았다. 화면 그림은 모의 자료로 찍은 것이다. 자세한 것은 [현재 한계](#현재-한계).
 
 ## 주요 기능
 
@@ -48,7 +50,7 @@ STOP은 모든 페이지의 상태 막대와 주행 제어에 있다. 메뉴는 
 | Network | `/network` | 외부·내부 주소, 오프라인 AP / 저장된 Wi-Fi 전환, Wi-Fi 관리(주변 검색, 비밀번호로 연결, 자동 연결·우선순위, 자동 되돌림), RX / TX, 연결 정보 |
 | Docker | `/docker` | 컨테이너 CPU·메모리, 목록, 상세·로그, 시작·중지·재시작(확인 창) |
 | Fan Control | `/fan` | 온도, 팬 PWM(자동·수동) |
-| Rover Control | `/rover-control` | LiDAR(안에 실시간 점유 격자 지도와 실행기 국소 격자), 카메라, GPS 위치(오프라인 지도), IMU, 주행 제어(차동 패드 또는 조향 패널, 조향 가변저항, 조향 보정(접힘), 자율 시작·정지), 현장 조정 값(접힘), 기록 제어, 연동 상태, 기록 데이터(동기 재생, 기록 지도, 내려받기) |
+| Rover Control | `/rover-control` | 페이지 안 탭 네 개. **수동 조종**: LiDAR, 실시간 점유 격자 지도, 카메라, GPS 위치(오프라인 지도), IMU, 주행 제어(조향 조종, 거리 이동). **자율주행**: 열 길이·GPS·속도, 준비·자율 주행 시작·멈추기, 주행 감시(실행기 국소 격자의 움직이는 그림), LiDAR, 자율주행 기록. **보정·설정**: 조향 가변저항, 조향 보정, 거리 이동 줄자 보정, 현장 조정 값, 연동 상태. **기록**: 기록 제어, 기록 데이터(동기 재생, 기록 지도, 내려받기) |
 | Docs | `/docs` | 운영 문서 |
 
 화면 6개 판의 주소(`/map`, `/records`, `/tuning`, `/sensors`, `/system/*` 등)는 별칭으로 남아 그 기능이 있는 페이지로 간다.
@@ -61,24 +63,38 @@ ROS 2 브리지 컨테이너가 WebSocket으로 보내고 대시보드 서버가
 STOP·Esc·창 이탈은 즉시 정지와 조종 해제다. 조종 요청은 다른 요청과 따로, 가장 먼저 보낸다(`controlRequest`, NET-05).
 PWM 값은 요청한 출력이지 실제 바퀴 속도가 아니다(차에 휠 엔코더가 없다).
 
-**조향 차량(수동·자율·조정).** 차는 앞바퀴 조향이다. `DASHBOARD_VEHICLE=front_steer`이거나 조종 브리지가 `vehicle_profile: front_steer`를 내면
-Rover Control의 주행 제어 패널에 조향 패널(구동 W/S, 조향 A/D·가운데, 끌어서 조향 각, 목표·측정 조향각), 그 바로 아래 자율 칸, 조향 가변저항 값(조향 펌웨어 SMOOTH·PULSE 줄 포함)이 보인다. 휴대폰·태블릿 폭(900 px 미만)에서는 주행 제어 패널이 페이지 맨 위에 온다. 접힌 칸 '조향 보정'에서 좌우 끝을 다시 찾아 저장한다(펌웨어 `CAL_RUNTIME=1` 이 있어야 함, [docs/esp_rover_control.md](docs/esp_rover_control.md) 1-4절).
+**Rover Control의 탭 네 개 (2026-11-19~).** 상태 띠 아래 탭 줄이 보일 부분을 고른다(수동 조종, 자율주행, 보정·설정, 기록). 고른 탭은 그 브라우저에 남고,
+자율주행 탭 이름 옆에는 주행 상태 배지가 뜬다. STOP은 상태 막대와 각 탭에 있고 Esc도 어느 탭에서나 멈춘다. 조종 활성화를 쥔 채 수동 조종 탭을 떠나면 STOP을 보낸다.
+탭마다 있는 것과 규칙은 [`docs/SCREENS_KO.md`](docs/SCREENS_KO.md) 2-0절.
+
+**수동 조종 (조향 차량).** 차는 앞바퀴 조향이다. `DASHBOARD_VEHICLE=front_steer`이거나 조종 브리지가 `vehicle_profile: front_steer`를 내면
+주행 제어 패널이 조향 패널이 된다(구동 W/S, 조향 A/D·가운데, 끌어서 조향 각, 목표·측정 조향각). 휴대폰·태블릿 폭(900 px 미만)에서는 주행 제어 패널이 맨 위에 온다.
 ESP32-S3 브리지에서는 A/D를 누르는 동안 왼쪽·오른쪽 끝(±20 명령 도)까지 가고 놓으면 가운데로 오며, 막대를 끌면 그 각으로 가고 놓으면 0°로 돌아온다
-(키와 막대는 먼저 잡은 쪽만 듣고, STOP이 언제나 이긴다). SMOOTH 펌웨어(FW 줄 `SMOOTH=1`, 2026-11-16 저녁)에서는 A/D 한 번이 끊김 없는 한 번의 구동이고
-막대는 0.25° 단위로 따라간다. W/S 는 화면이 막지 않고, 브리지 구동 상한(설치 값)을 '구동 duty' 칸 아래에 보인다(1-5절). 접힌 칸 '거리 이동'에서는 지형·거리(앞으로 0.2~3.0 m)·속도(duty, 그 지형 표 범위 안)를 고르고 누르고 있는 동안 그만큼 간다: 2026-10 조향 장치 전 차의 지형별 duty 표로 시간을 정하고, 줄자로 잰 값으로 지형·속도별 배율을 고친다(1-6절). 브리지와 구동 안전: [`docs/esp_rover_control.md`](docs/esp_rover_control.md). 자율 칸에서 "준비 → Arm → 자율 주행 시작"을 누르면(칸 머리에 실행기 SHADOW·MOTOR 가 보인다. SHADOW 는 차를 몰지 않는다)
-실행기가 열 끝까지 간다(시뮬레이션에서 확인, 실차 전). Rover Control을 떠나거나 탭을 숨기면 화면이 운영자 연결 신호를 멈추고, 실행기의 운영자 연결 기한
-(기본 1.0 s, 시뮬레이션 저장소 결정 R60. 화면에 그 값이 보인다)이 지나면 차가 선다(페이지 안에서 스크롤하는 것은 괜찮다),
-다시 출발은 사람이 누른다. 현장 조정 값은 같은 페이지의 접힌 칸에 있다. 서버 사양: [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md).
+(키와 막대는 먼저 잡은 쪽만 듣고, STOP이 언제나 이긴다). SMOOTH 펌웨어에서는 A/D 한 번이 끊김 없는 한 번의 구동이고 막대는 0.25° 단위로 따라간다.
+구동 속도 상한은 0~100 %에서 고르고, 브리지 구동 상한(설치 값)을 '구동 duty' 칸 아래에 보인다. '거리 이동'에서는 거리(앞·뒤)와 속도(duty)를 고르고
+누르고 있는 동안 그만큼 간다: 2026-10 조향 장치 전 차의 duty 표로 시간을 정하고, 줄자로 잰 값으로 속도별 배율을 고친다(보정·설정 탭의 줄자 보정).
+브리지와 구동 안전: [`docs/esp_rover_control.md`](docs/esp_rover_control.md).
 
-| 조향 수동 조종 (휴대폰) | 자율 주행 칸 (실행기 상태 자세히) |
+**자율주행 (열 따라가기).** 자율주행 탭에서 열 길이, GPS 사용 여부, 속도를 고르고 버튼 셋을 쓴다. **준비**는 실행기 상태를 새로 읽고 필요한 것(멈춤 확인, 열린 주행 끝내기, 시작, Arm)을
+차례로 한다. 통로를 잡아 출발할 수 있게 되면 **자율 주행 시작**이 켜지고, 누르면 모든 센서 기록을 먼저 켠 뒤 출발한다(기록을 못 켜면 출발하지 않는다).
+**멈추기**는 늘 켜져 있다. 상태 한 줄이 지금 상태와 다음 할 일을 문장으로 알린다('통로를 찾고 있습니다.', '주행 중 · 12.3 m · 0.38 m/s · 35초', '열 끝에 도착해 멈췄습니다.').
+주행 감시에는 타일 일곱 개(상태, 속도, 횡 오차, 남은 거리, 주행 시간, GPS, 기록)와 실행기 국소 격자의 움직이는 그림(차를 한자리에 두고 바닥이 흐른다: 점유 셀, 두 나무 줄, 중심선, 지나온 길)이 있다.
+같은 탭에서 LiDAR 그림을 실시간으로 받는다. Rover Control을 떠나거나 브라우저 탭을 숨기면 화면이 운영자 연결 신호를 멈추고, 실행기의 운영자 연결 기한(기본 1.0 s)이 지나면 차가 선다.
+다시 출발은 사람이 누른다. 실행기가 SHADOW(연습 모드)면 상태 줄이 차가 움직이지 않는다고 알린다. 2026-11-20 과수원에서 이 탭으로 18번 출발했다.
+서버 사양: [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md), 현장 절차: [`docs/ORCHARD_DAY_20261120_KO.md`](docs/ORCHARD_DAY_20261120_KO.md).
+
+**보정·설정.** 조향 가변저항 값(측정 각도, 원값, 조향 펌웨어 SMOOTH·PULSE 줄, 결함), 조향 보정(지금 위치를 가운데로, 영점을 0.2°씩, 끝 찾기와 적용은 접힘; 펌웨어 `CAL_RUNTIME=1` 이 있어야 함,
+[docs/esp_rover_control.md](docs/esp_rover_control.md) 1-4절), 거리 이동 줄자 보정, 실행기의 현장 조정 값(접힘: 기본·고급·잠금 묶음, 프리셋, 변경 기록), 연동 상태(접힘)가 있다.
+
+| 자율주행 탭 (노트북 1440 px, 주행 중) | 자율주행 탭 (휴대폰 390 px) |
 |---|---|
-| ![조향 패널](docs/assets/screens/steer_drive_390.png) | ![자율 칸](docs/assets/screens/steer_autonomy_1440.png) |
+| ![자율주행 탭](docs/assets/screens/rover_autonomy_1440.png) | ![자율주행 탭, 휴대폰](docs/assets/screens/rover_autonomy_390.png) |
 
-| 현장 조정 값(펼친 칸) | 실시간 지도 아래 실행기 국소 격자 |
-|---|---|
-| ![조정 화면](docs/assets/screens/tuning_1440.png) | ![국소 격자](docs/assets/screens/map_local_grid_1440.png) |
+| 수동 조종의 조향 패널 (휴대폰) | 보정·설정 탭 | 기록 탭 |
+|---|---|---|
+| ![조향 패널](docs/assets/screens/rover_drive_390.png) | ![보정·설정 탭](docs/assets/screens/rover_setup_1440.png) | ![기록 탭](docs/assets/screens/rover_record_1440.png) |
 
-[화면 · 모의 자료] 위 네 장은 `front_steer`(조향 차량)의 Rover Control을 모의 서버의 예시 자료로 찍은 것이다(그 부분으로 스크롤한 화면). 휴대폰 그림(2026-11-16)은 ESP32-S3 브리지 응답을 흉내 내어 조종 활성화 뒤 막대를 왼쪽 10°까지 끌고 있는 순간이다(파란 막대가 목표, 검은 막대가 측정, 측정값은 지어낸 값). 실행기 상태·조정 값·격자는 가짜 실행기의 값이고
+[화면 · 모의 자료] 2026-11-21. `front_steer`(조향 차량)의 Rover Control을 모의 서버의 예시 자료로 찍은 것이다. 주행 상태, 실행기 격자, 조향 각, 보정 값, 기록 목록은 모두 지어낸 값이고
 현장 값이 아니다. 조정 묶음의 이름·범위·단위는 실행기가 알려 준 것을 그대로 보인다.
 
 **느린 연결 최적화.** PC에서 2.4 GHz 연결을 흉내 내는 시험대(`tools/slow_link`)로 재며 고쳤다. 아래는 그 측정의 일부다(주행 화면 2분, LiDAR는 주행 화면의
@@ -102,8 +118,16 @@ LiDAR 큰 보기, 지도는 지도 화면 10분. 기준은 화면 개편 전의 
 | 지도 응답 크기 10분째 ÷ 첫 1분 | 나쁨, 10분 | 8.65배 | 0.16배 |
 <!-- slow-link-summary:end -->
 
-**기록·재생.** 녹화는 ROS bag(LiDAR, 원본 IMU, GPS, 조종 요청·MCU 보고 PWM)과 원본 1080p 카메라를 함께 남긴다. 기록 화면에서 센서와 영상을 같은 시각으로
-되감아 보고, 기록으로 지도를 다시 만들고, 느린 연결용 영상 화질(HLS)을 고른다([`docs/motor_pwm_recording.md`](docs/motor_pwm_recording.md), [`docs/imu_ros2_recording.md`](docs/imu_ros2_recording.md)).
+**기록·재생.** 녹화는 ROS bag(LiDAR, 원본 IMU, GPS, 조종 요청·MCU 보고 PWM, 조향 상태, 실행기 상태)과 원본 1080p 카메라를 함께 남긴다. 자율주행은 달린 구간마다 기록 하나가 자동으로 생기고
+(출발과 다시 출발마다 새 기록, 주행이 멈추면 끝), 구간 기록에 주행 시간·거리·끝난 이유·다시 출발 여부가 남는다. 기록 목록은 탭에 따라 나뉜다(수동 주행은 기록 탭, 자율주행은 자율주행 탭).
+재생은 센서와 영상을 같은 시각으로 되감아 보여 주고, 자율주행 기록에서는 기록된 실행기 상태를 주행 감시와 같은 움직이는 그림으로 그린다. 영상과 센서는 바로 재생되고 기록 지도가 뒤따른다(2026-11-21부터.
+그 전에는 지도가 0.35초 넘게 늦으면 재생을 멈추고 기다려서, 터널 접속에서 재생이 0.58배로 느려졌다). 기록 지도는 그 기록을 처음 재생할 때 Jetson이 재생 시각까지 만든다(잰 값: 실시간보다 1.1~1.7배 빠르게).
+느린 연결용 영상(HLS, 1080~240p)은 녹화기가 한 번에 기록 하나씩 만든다(1080p 한 장에 0.73초, 기록 길이의 11~12배가 걸린다. 줄은 8개까지).
+([`docs/motor_pwm_recording.md`](docs/motor_pwm_recording.md), [`docs/imu_ros2_recording.md`](docs/imu_ros2_recording.md), [`docs/SCREENS_KO.md`](docs/SCREENS_KO.md) 2-0절)
+
+**격자 지도.** 실시간 지도와 기록 지도는 같은 위치 추정기를 쓴다: LiDAR 스캔을 앞 스캔(또는 1.25 m마다 잡는 기준 스캔)에 맞춰 움직임을 재고, 방향은 IMU 방향의 변화를 따르며(2026-11-21부터),
+GNSS는 속도와 큰 어긋남을 거르는 데만 쓴다. 조향 각, 구동 PWM, 카메라는 쓰지 않는다(휠 엔코더는 없다). 2026-11-20 과수원 기록으로 재 보니 고치기 전에는 100 m 열을 7~18° 휘게 그렸고,
+고친 뒤에는 1° 안이다. 방법, 측정, 한계: [`docs/GRID_MAP_KO.md`](docs/GRID_MAP_KO.md). 이 변경 전에 만든 기록 지도는 '새 지도 만들기'를 누른 뒤 재생하면 새 방식으로 다시 만들어진다.
 
 **Wi-Fi 관리 (Network).** Network 쪽의 "오프라인 AP / 저장된 Wi-Fi" 패널에서 AP 전환(이전과 같음)과 함께 Jetson의 Wi-Fi를 고른다.
 주변 검색 목록(신호 dBm·%, 대역·채널, 보안), 비밀번호로 연결, 자동 연결 여부와 우선순위, 저장된 Wi-Fi의 자동 연결·우선순위 바꾸기.
@@ -117,7 +141,7 @@ NetworkManager 파일에만 들어가고 명령행·로그·응답에는 나오�
 |---|---|
 | ![Wi-Fi 관리, 노트북](docs/assets/screens/network_wifi_1440.png) | ![Wi-Fi 시험 연결, 휴대폰](docs/assets/screens/network_wifi_390.png) |
 
-[화면 · 모의 자료] 2026-11-16. 화면 점검 도구의 모의 서버에 지어낸 SSID·주소(문서 예시 대역)를 넣어 찍었다. 실제 Jetson의 Wi-Fi 목록이 아니다.
+[화면 · 모의 자료] 2026-11-21(Network 쪽을 정리한 뒤의 화면). 화면 점검 도구의 모의 서버에 지어낸 SSID·주소(문서 예시 대역)를 넣어 찍었다. 실제 Jetson의 Wi-Fi 목록이 아니다.
 이 기능은 가짜 nmcli 시험과 모의 서버로 확인했고, 2026-11-16 Jetson에 설치했다(대시보드와 호스트 도우미). 같은 날 Jetson의 Wi-Fi를 5 GHz에서
 2.4 GHz로 옮겨 자동 연결 우선순위를 2.4 GHz 먼저로 두었다(그 전환은 화면이 아니라 명령으로 했다). 화면의 시험 연결 흐름은 차에서 아직 눌러 보지 않았다.
 
@@ -238,6 +262,8 @@ scripts/run_local.sh            # = python3 -m dashboard_server --host 127.0.0.1
 | 문서 | 내용 |
 | --- | --- |
 | [`docs/SCREENS_KO.md`](docs/SCREENS_KO.md) | 메뉴 8쪽(수정 전 구성), Rover Control 안의 새 기능 자리, 화면 6개 주소의 별칭 |
+| [`docs/GRID_MAP_KO.md`](docs/GRID_MAP_KO.md) | 격자 지도를 그리는 법(쓰는 센서, 위치 추정), 2026-11-21 방향 추정 변경과 과수원 기록으로 잰 결과, 한계 |
+| [`docs/ORCHARD_DAY_20261120_KO.md`](docs/ORCHARD_DAY_20261120_KO.md) | 과수원 자율주행 날의 현장 절차(준비, 버튼 셋, 기록, 멈췄을 때) |
 | [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) | 조향 차량 서버 사양: 조종 API, 조향 상태, 자율 시작·정지 중계, 조정 값, 정지 규칙, 차동 판과의 공존 |
 | [`docs/slow_link.md`](docs/slow_link.md) | 느린 연결: 시험대, 기준 측정, 목표 32개, 고친 뒤와 최종 측정 |
 | [`docs/WIFI_AP_CHECKLIST_KO.md`](docs/WIFI_AP_CHECKLIST_KO.md) | 차의 무선 AP 현장 점검표, 연결 기록(`?link_log=1`) |
@@ -282,19 +308,24 @@ CI(`.github/workflows/smoke.yml`)는 컴파일과 Python 시험을 돌린다. RO
 
 ## 현재 한계
 
-- **실차 확인 전.** 이 판(메뉴 8쪽, 느린 연결 최적화, 조향 칸, Wi-Fi 관리)은 PC에서 가짜 센서·MCU·실행기로 확인했다. 2026-11-16 Jetson에 설치해
-  페이지가 열리고 브리지가 보드와 연결되는 것까지 봤지만, 조종·조향·자율은 차에서 아직 눌러 보지 않았다.
-- **ESP32-S3 보드는 차에서 확인 전.** 2026-11-16 차에 ESP32-S3(ABS-HOLD 펌웨어)가 달렸다. 브리지는 가짜 보드로 시험했고, 실제 보드에는 상태 읽기와 정지 명령만 보냈다(펌웨어 쓰기 한 번 제외, 아래).
-  구동 방향(모터 2·3 의 F 가 앞인지), 명령 눈금과 실제 바퀴 각도의 관계는 재지 않았다. 원본 펌웨어에는 구동 시간 제한이 없어, 2026-11-16 사용자 승인으로
-  구동 감시 패치(명령이 300 ms 끊기면 구동 정지)를 보드에 썼다([`docs/esp_rover_control.md`](docs/esp_rover_control.md) 1절). 첫 조향 시험을 위해 브리지는 지금
-  구동 PWM 상한 0 으로 설치돼 있다(구동 방향 시험 때 푼다). 물리 비상정지는 그대로 마지막 수단이다.
-- **자율 실행기는 SHADOW 로만 설치됨.** 실행기가 ESP32 브리지와 말하는 어댑터(시뮬레이션 레포 `docs/steering/EXECUTOR_ESP32_KO.md`)는 가짜 보드로 확인했다. Jetson 에는 2026-11-16 SHADOW(조종 소켓 없음)로 설치해 `/scan`·IMU 를 받는 것까지 봤다([`deploy/jetson_row_executor/README_KO.md`](deploy/jetson_row_executor/README_KO.md)). 차를 움직이는 MOTOR 는 현장 측정(구동 방향, 조향 극성·눈금·속도, 구동 C2·C3·C7)과 결정(조향 GO 문턱, 펌웨어 구동 감시) 뒤에만 쓴다([`docs/FIELD_STEER_AUTONOMY_TEST_KO.md`](docs/FIELD_STEER_AUTONOMY_TEST_KO.md)).
-  차동 시절 자율·관찰 코드는 조향 실행기로 바뀔 때까지 남겨 둔다(결정 나5, [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) 9절).
+- **차에서 쓴 범위.** 2026-11-18·19 실내 복도와 2026-11-20 과수원 하루다. 수동 조종, 조향, 자율 시작·정지, 기록, 재생을 차에서 썼다. 2026-11-21에 고친 것(기록 재생, 격자 지도의 방향)은
+  Jetson에 설치해 그날의 기록으로 확인했고, 차를 몰면서는 아직 써 보지 않았다.
+- **ESP32-S3 브리지.** 2026-11-20 주행 중 브리지 오류가 7번 났다(Jetson에서 보드로 가는 명령이 잠깐 끊김: 보드의 구동 감시 2번, 브리지의 쓰기 기한 5번). 일곱 번 모두 차는 섰고 원인은 가르지 못했다.
+  그날 밤 브리지에 원인 기록(`link_diag`, `slow_step`)을 넣었다. 명령 눈금과 실제 바퀴 각도의 관계는 재지 않았다. 펌웨어에는 구동 감시(명령이 300 ms 끊기면 구동 정지)가 들어 있고
+  ([`docs/esp_rover_control.md`](docs/esp_rover_control.md) 1절), 물리 비상정지는 그대로 마지막 수단이다.
+- **자율 실행기.** MOTOR로 설치돼 있다([`deploy/jetson_row_executor/README_KO.md`](deploy/jetson_row_executor/README_KO.md)). 과수원에서 끝까지 간 10번은 모두 운영자가 넣은 열 길이의 거리 한도에서 섰고,
+  LiDAR로 열 끝을 보고 선 적은 없다. 주행 값(횡 오차, 거리)은 실행기의 자체 추정이고 줄자로 대조하지 않았다. 차동 시절 자율·관찰 코드는 남겨 둔다(결정 나5, [`docs/STEERING_SERVER_KO.md`](docs/STEERING_SERVER_KO.md) 9절).
+- **Jetson.** 2026-11-20 주행 중 한 번 재시작했다(Wi-Fi 카드 오류 뒤 커널 기록이 폭주하던 날, 원인 미확정). 현장에서 Wi-Fi 방식을 여러 번 바꾼 뒤에는 Jetson을 한 번 다시 켜고 주행한다.
+  인터넷 없이 켜면 Jetson 시계가 틀릴 수 있어, 화면은 상태의 나이를 화면 쪽 시계로 잰다.
+- **기록 용량과 영상 준비.** 모든 센서 기록은 5.6분에 약 4.8 GB다(2026-11-20, 18개 약 40 GB). 영상 변환은 한 번에 하나씩이고 줄이 8개를 넘으면 사람이 다시 걸어야 한다.
+  기록 지도는 한 번에 기록 하나만 만든다.
+- **격자 지도.** 위치와 방향은 LiDAR·IMU(와 품질이 맞는 GNSS)로만 추정한다. 방향은 IMU가 흐르는 만큼(2026-11-20 기록에서 5~8분에 1.5° 안) 흐르고, 한 바퀴 돌아와 맞추는 보정은 없다.
+  측량 기준과 견준 정확도는 없다([`docs/GRID_MAP_KO.md`](docs/GRID_MAP_KO.md) 6절).
 - **느린 연결 값은 흉내 낸 값.** 연결 프로필(좋음 10 Mbit/s ~ 아주 나쁨 150 kbit/s)과 연결 등급 경계(25 / 90 / 220 ms)는 가정이다.
   현장에서 `?link_log=1`로 기록을 받아 고친다. 목표 32개 중 못 미친 것과 까닭은 [`docs/slow_link.md`](docs/slow_link.md) 12절.
 - **브리지 쪽 변경은 이 설치 묶음에 없다.** LiDAR 이진 형식, IMU 흐름, GPS 응답 기한은 ROS 브리지 이미지를 다시 만들어야 차에 간다
-  ([설치 문서 4-1절](deploy/jetson_dashboard/README_KO.md)). 대시보드만 바꿔도 옛 브리지와 함께 동작한다.
-- **휠 엔코더가 없다.** 화면의 PWM·duty는 요청한 출력이고 속도가 아니다. 위치·지도는 LiDAR·IMU(와 품질이 맞는 GNSS)로만 만든다.
+  ([설치 문서 4-1절](deploy/jetson_dashboard/README_KO.md)). 대시보드만 바꿔도 옛 브리지와 함께 동작한다. 녹화기(영상 변환 줄 포함)도 이미지 안에 있다.
+- **휠 엔코더가 없다.** 화면의 PWM·duty는 요청한 출력이고 속도가 아니다.
 - 화면 그림은 모의 자료로 찍었다. 실차 화면과 실물 사진은 아직 없다.
 
 ## 라이선스
