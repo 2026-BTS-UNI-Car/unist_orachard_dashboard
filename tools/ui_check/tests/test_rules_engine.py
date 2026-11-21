@@ -217,23 +217,15 @@ class RulesFileTest(unittest.TestCase):
         self.assertEqual(sorted(touch["routes"]), sorted(["/", "/connection", "/system", "/network", "/docker", "/fan", "/rover-control"]))
         self.assertEqual((by_id["touch-target-44-docs"]["mode"], by_id["touch-target-44-mouse"]["mode"]), ("report", "report"))
 
-    def test_accepted_record_passes_and_the_record_before_the_overhaul_does_not(self):
+    def test_accepted_record_passes(self):
+        # The record from before the overhaul (baseline/, 90 pages) left the repository on 2026-11-22; it is in the
+        # git history up to b6b9bac.
         rules = json.loads((TOOL_DIR / "rules.json").read_text(encoding="utf-8"))
-
-        def failing_rule_ids(name):
-            run = json.loads((TOOL_DIR / name / "ui_check.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(run["pages"]), {"accepted": 80, "baseline": 90}[name], name)   # 8 or 9 routes x 5 sizes x 2 data sets
-            self.assertFalse(Path(run["static_dir"]).is_absolute(), f"{name}: static_dir must not be a local absolute path")
-            rows = rules_engine.evaluate_fixed_rules(run["pages"], rules) + rules_engine.load_error_violations(run["pages"], rules)
-            return sorted({row.get("rule_id", row["kind"]) for row in rows if row["mode"] == "fail"})
-
-        self.assertEqual(failing_rule_ids("accepted"), [])
-        # 개편 전 기록은 1차 버그 수정의 규칙과 디자인 1차의 규칙(STOP 위치, 누름 영역, 꾸밈 수치)을 모두 어긴다.
-        self.assertEqual(failing_rule_ids("baseline"), [
-            "canvas-follows-resize", "canvas-matches-box", "no-broken-image", "no-clipped-text",
-            "no-clipped-text-844x390", "no-clipped-text-docs-844x390", "no-content-overflow", "no-horizontal-overflow",
-            "stop-always-in-viewport", "stop-in-first-viewport", "style-font-size-kinds", "style-font-weight-kinds",
-            "style-no-blur", "style-no-gradient", "style-no-heavy-text", "style-shadow-kinds", "touch-target-44"])
+        run = json.loads((TOOL_DIR / "accepted" / "ui_check.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(run["pages"]), 80)   # 8 routes x 5 sizes x 2 data sets
+        self.assertFalse(Path(run["static_dir"]).is_absolute(), "static_dir must not be a local absolute path")
+        rows = rules_engine.evaluate_fixed_rules(run["pages"], rules) + rules_engine.load_error_violations(run["pages"], rules)
+        self.assertEqual(sorted({row.get("rule_id", row["kind"]) for row in rows if row["mode"] == "fail"}), [])
 
     def test_validation_rejects_bad_rules(self):
         for broken in (

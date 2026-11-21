@@ -9,7 +9,7 @@
   `tests/test_menu_restore.js`가 메뉴(이름·순서·주소)와 페이지마다의 패널 제목(순서 포함)을 이 판과 견준다(`tests/fixtures/menu_before_redesign_becfc6d.json`).
 - 그대로 둔 것: 새 디자인(색·글꼴·부품, 아이콘), 모든 페이지 위의 상태 막대와 STOP, 느린 연결 최적화(필요할 때 받는 라이브러리, 보이는 패널만 스트림,
   상태 묶음, 연결 등급), 조종·STOP 코드(`static/app/10-rover-control.js`, `controlRequest()`, `static/steer/steer-drive.mjs`, `steer-control-rules.js`, `auto-panel.mjs`는 글자 그대로. `auto-panel.mjs`에는 PW-10의 온라인 배율 줄과 주행 뒤 저장 묻기만 더했고 조종·STOP·heartbeat 줄은 그대로).
-- 2026-11-13의 화면 6개 구성(UI-06)은 이 문서의 git 이력(`a92cfec`)에 있다. 화면 점검의 그때 기록은 `tools/ui_check/accepted/six_screens_20261113.json`.
+- 2026-11-13의 화면 6개 구성(UI-06)은 이 문서의 git 이력(`a92cfec`)에 있다. 화면 점검의 그때 기록(`tools/ui_check/accepted/six_screens_20261113.json`)은 2026-11-22에 레포에서 내렸고 커밋 `b6b9bac`까지 이력에 있다.
 
 ## 1. 메뉴와 주소
 

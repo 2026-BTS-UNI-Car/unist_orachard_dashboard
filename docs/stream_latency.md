@@ -35,6 +35,17 @@ IMU 전송은 송신·ACK에 걸린 시간을 다음 갱신 간격에서 빼도�
 예를 들어 화면 주기가 100 ms인데 ACK에 이미 200 ms가 걸렸다면, 이전처럼
 추가 100 ms를 기다리지 않습니다. 카메라·LiDAR·GPS도 동일한 주기 원칙을 따릅니다.
 
+## 카메라 전송창 V2
+
+2026-10-25 실제 Jetson에 적용했다(설치 당시 검증 기록은 2026-11-22에 레포에서 내렸고 커밋 `b6b9bac`까지 `docs/camera_ack_window_v2.md`로 이력에 있다).
+
+- 옵션 없는 연결과 기존 브라우저는 V1 창 1을 쓴다. 지원 브라우저만 `?camera_ack_window=2` 또는 `?camera_ack_window=3`(또는 전역 `window.UBTS_CAMERA_ACK_WINDOW`)으로 V2를 요청한다. 지금 화면의 bootstrap 은 창 3을 요청하고, `?camera_ack_window=1`로 V1을 명시할 수 있다.
+- 서버는 `flow=decode-ack-v2&ack_window=2|3`을 함께 받은 경우에만 V2를 쓴다. 잘못된 값은 V1로 처리한다.
+- 서버는 서로 다른 최대 3개 delivery sequence를 관리한다. ACK는 자기 연결·source epoch·sequence·source frame에 해당하는 credit만 돌려준다. 중복·오래된·미래 ACK, 다른 source/frame, 형식 오류는 구분하며 다른 frame의 credit을 풀지 않는다.
+- 미응답 packet은 최대 3개·합계 8 MiB, 한 packet은 최대 5 MiB다. 오래된 미응답 frame의 8초 마감은 새 ACK로 연장되지 않고, 송신과 pacer 대기도 이 마감에 멈춘다. 종료하면 모든 task와 credit을 푼다. source가 바뀌면 연결을 닫고 새 연결에서 시작한다.
+- 브라우저는 해독 중인 한 장과 최신 대기 한 장만 가진다. 교체된 대기는 `superseded`로 ACK하며 해독 성공으로 세지 않는다. 해독 실패·시간 초과에서는 마지막 정상 이미지를 유지한다.
+- 기존 byte 상한, 화질·크기 적응 규칙, FramePacer, V1 예산 계산은 그대로다.
+
 ## 품질과 한계
 
 카메라 `auto`는 처음부터 640×360 출력 범위와 JPEG Q70을 사용합니다. 종횡비를

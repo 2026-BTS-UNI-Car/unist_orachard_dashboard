@@ -15,14 +15,12 @@
 | [gps_usb_reconnect.md](gps_usb_reconnect.md) | USB GPS 분리·재연결 처리 | 현재 |
 | [gps_reception_status.md](gps_reception_status.md) | GPS 신호·녹화 상태 표시 | 현재 |
 | [motor_pwm_recording.md](motor_pwm_recording.md) | 녹화에 남기는 요청·보고 PWM 핀 신호와 그 한계 | 현재(차동 핀 기준) |
-| [raw_sensor_dashboard.md](raw_sensor_dashboard.md) | 영상 인식(AI)을 걷어 낸 원본 센서 화면의 범위 | 현재 |
 
 ## 전송과 화면
 
 | 문서 | 내용 | 상태 |
 | --- | --- | --- |
-| [stream_latency.md](stream_latency.md) | 카메라·LiDAR·IMU 실시간 전송, 프레임 간격, ACK | 현재 |
-| [camera_ack_window_v2.md](camera_ack_window_v2.md) | 카메라 전송창 V2 적용과 검증(2026-10-25 설치) | 현재 |
+| [stream_latency.md](stream_latency.md) | 카메라·LiDAR·IMU 실시간 전송, 프레임 간격, ACK, 카메라 전송창 V2(2026-10-25 설치) | 현재 |
 | [CAMERA_ORIGINAL1080_PREVIEW.md](CAMERA_ORIGINAL1080_PREVIEW.md) | 원본 1080 JPEG 실시간 표시(2026-10-25 설치), 끄는 주소 옵션 | 현재 |
 | [GRID_MAP_KO.md](GRID_MAP_KO.md) | 격자 지도를 그리는 법(쓰는 센서, 위치 추정 순서), 2026-11-21 방향 추정 변경(IMU 방향을 따름)과 과수원 기록으로 잰 결과, 조향 값을 쓰지 않는 까닭, 한계. 확인 도구 `tools/map_check/` | 현재(2026-11-21) |
 | [grid_cell_transport.md](grid_cell_transport.md) | 격자 지도를 셀 숫자로 보내고 브라우저가 그리는 형식 | 현재 |
@@ -79,7 +77,7 @@
 | 위치 | 내용 |
 | --- | --- |
 | [../README.md](../README.md) | 레포 소개와 빠른 실행 |
-| [../tools/ui_check/README_KO.md](../tools/ui_check/README_KO.md) | 화면 점검 도구(메뉴 8쪽 × 5화면 × 자료 2종 = 80쪽, 화면 6개 판의 옛 기록은 110쪽) |
+| [../tools/ui_check/README_KO.md](../tools/ui_check/README_KO.md) | 화면 점검 도구(메뉴 8쪽 × 5화면 × 자료 2종 = 80쪽) |
 | [../tools/slow_link/README_KO.md](../tools/slow_link/README_KO.md) | 느린 통신 시험대(속도 제한 중계기, 센서 재생원, 측정기, 받아들인 값과 견주기). 현장 연결 기록 보고 `link_log_report.py` |
 | [../deploy/offline_ap/README.md](../deploy/offline_ap/README.md) | 오프라인 AP 설정 파일과 회귀 검사 |
 | `../deploy/systemd/` | systemd 단위 파일(cloudflared 터널, 대시보드 직접 실행). Jetson 에서 지금 쓰는지는 확인하지 않았다 |
