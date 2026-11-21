@@ -23,6 +23,12 @@ import urllib.request
 import uuid
 
 SCHEMA = "orchard.media_queue.v2"
+# Pending video preparations (queued, waiting, running or paused). A recording beyond this is marked
+# media_queue_full and needs an explicit resume. 8 was too few for a field day: on 2026-11-20 the
+# recorder made 18 autonomy recordings and the last 9 were left without video until resumed by hand.
+# One job runs at a time either way; the limit only bounds the pending list.
+DEFAULT_MAX_JOBS = 32
+MAX_JOBS_CAP = 64
 TERMINAL = {"complete", "failed", "cancelled"}
 CLEANUP_SCHEMA = "orchard.media_workspace_cleanup.v1"
 ATTEMPT = re.compile(r"[a-f0-9]{32}")
@@ -404,10 +410,16 @@ def child_main(archive, attempt, expected_parent=None):
 
 
 class MediaQueue:
-    def __init__(self, root, *, busy, limit=8, start_worker=True, launcher=None):
+    def __init__(self, root, *, busy, limit=None, start_worker=True, launcher=None):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.limit = max(1, min(8, int(limit)))
+        if limit is None:
+            limit = os.environ.get("RECORDER_MEDIA_QUEUE_MAX_JOBS") or DEFAULT_MAX_JOBS
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = DEFAULT_MAX_JOBS
+        self.limit = max(1, min(MAX_JOBS_CAP, limit))
         self.busy = busy
         self.launcher = launcher or self._launch
         self.lock = threading.RLock()

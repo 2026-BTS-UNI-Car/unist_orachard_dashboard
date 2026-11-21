@@ -64,6 +64,31 @@ class MediaQueueTests(unittest.TestCase):
             finally:
                 queue.close()
 
+    def test_pending_limit_default_environment_and_cap(self):
+        # 2026-11-21: a field day makes about 18 recordings; the default leaves room for two such days.
+        with tempfile.TemporaryDirectory() as root:
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('RECORDER_MEDIA_QUEUE_MAX_JOBS', None)
+                queue = MediaQueue(root, busy=lambda: 'recording_active', start_worker=False)
+                self.assertEqual(queue.limit, 32); self.assertEqual(queue.status()['max_jobs'], 32)
+                queue.close()
+            for value, expected in (('12', 12), ('500', 64), ('0', 1), ('many', 32)):
+                with patch.dict(os.environ, {'RECORDER_MEDIA_QUEUE_MAX_JOBS': value}):
+                    queue = MediaQueue(root, busy=lambda: 'recording_active', start_worker=False)
+                    self.assertEqual(queue.limit, expected, value)
+                    queue.close()
+            queue = MediaQueue(root, busy=lambda: 'recording_active', limit=3, start_worker=False)
+            self.assertEqual(queue.limit, 3)
+            queue.close()
+            for i in range(18):
+                archive(root, 'day' + str(i))
+            queue = MediaQueue(root, busy=lambda: 'recording_active', start_worker=False)
+            try:
+                self.assertTrue(all(queue.enqueue('day' + str(i))['ok'] for i in range(18)))
+                self.assertEqual(queue.status()['counts']['queued'], 18)
+            finally:
+                queue.close()
+
     def test_priority_and_operator_pause_stop_whole_child_group(self):
         with tempfile.TemporaryDirectory() as root:
             path = archive(root, 'new')
