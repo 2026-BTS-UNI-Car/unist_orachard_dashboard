@@ -1,0 +1,13 @@
+UBTS orchard rover dashboard
+Copyright 2026 the 2026-BTS-UNI-Car team
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It bundles third-party components that keep their own licenses (full texts next to each component):
+- hls.js (static/vendor/hls/) - Apache License 2.0
+- MapLibre GL JS (static/vendor/maplibre-gl/) - BSD-3-Clause
+- PMTiles (static/vendor/pmtiles/) - BSD-3-Clause
+- Protomaps basemaps (static/vendor/protomaps_basemaps/) - BSD-3-Clause; map styles CC0
+- UBTS Sans (static/vendor/ubts-sans/), a renamed subset of Pretendard - SIL Open Font License 1.1 (PRETENDARD-OFL.txt)
+- UBTS Map Korean (static/vendor/korean-font/), derived from Source Han Sans - SIL Open Font License 1.1 (KOREAN-OFL.txt)
+Versions and source hashes: static/vendor/gps-map-vendors.json, static/vendor/hls/provenance.json.

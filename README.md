@@ -116,7 +116,7 @@ for f in tests/test_*.js tests/test_*.mjs; do node "$f" >/dev/null 2>&1 || echo 
 
 ## 라이선스
 
-이 저장소의 코드에는 아직 라이선스 파일이 없다(팀이 정한다). 함께 들어 있는 제3자 구성요소는 각자의 라이선스를 따른다.
+Apache-2.0 ([`LICENSE`](LICENSE), [`NOTICE`](NOTICE)). 함께 들어 있는 제3자 구성요소는 각자의 라이선스를 따른다.
 
 | 구성요소 | 위치 | 라이선스 |
 | --- | --- | --- |
